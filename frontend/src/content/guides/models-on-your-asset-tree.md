@@ -5,13 +5,13 @@ category: "Maintenance strategy"
 prerequisites: "A position in your asset tree (or a product's design), and a saved model or some failure history."
 order: 27
 # Reliafy Maintenance is operators-only for now: this guide is linked from the
-# Models › Life models view itself and stays out of the index until Maintenance opens.
+# Explorer's Models tab itself and stays out of the index until Maintenance opens.
 hidden: true
 ---
 
 A life model on a position says how that functional location fails over time:
 how long it usually lasts, whether it wears out, and how sure we are. In
-Reliafy it's the Explorer's **Models** tab, on its **Life models** view. Each position can carry
+Reliafy it's the Explorer's **Models** tab. Each position can carry
 several models, for example one for every failure there and one for a single
 failure mode.
 
@@ -21,10 +21,15 @@ uses it, and one model can sit on many positions.
 
 ## See the models on your tree
 
-Open **Assets → Explorer**, pick a position, choose the **Models** tab (on a narrow
-screen it may be under **⋯** at the end of the tabs) and then **Life models**.
-The tree stays in the first column; under each position are the models attached
-to it, before the positions inside it. Each row shows:
+Open **Assets → Explorer**, pick a position and choose the **Models** tab (on a narrow
+screen it may be under **⋯** at the end of the tabs). It's one tree-table: the
+tree stays in the first column; under each position are the models attached to
+it (RBDs and predictions included), before the positions inside it, and under a
+model the missions flown on it, with their phases under them (the guide
+**Missions and phases** covers them). **Add a mission…** is on the **⋯** menu
+of every RBD, life model and covariate model, in use or not; on a life model
+with no covariates a mission is just a length from a starting age, so several
+missions of different lengths sit side by side under it. Each model row shows:
 
 - **Kind**: Weibull, exponential, lognormal, repairable, degradation, or
   condition and life.
@@ -114,7 +119,10 @@ saved model: pick it under **Accelerated life** or **Non-repairable** in
 **Assign a saved model…**. Its row shows the model as it was fitted: the life
 at its lowest tested stress, or at the average covariates of its data. The
 stress at this position isn't set here: it's set where the model is used, in
-an RBD block or a calculation.
+an RBD block, a mission's phases or a calculation. A covariate model fitted
+from readings that change over time (start and stop rows per unit) is a
+covariate model like any other: its row says it was fitted from readings that
+change over time, and it flies missions and drives blocks the same way.
 
 ## Predict the failure rate from the parts list
 
@@ -214,7 +222,7 @@ priority, and under **More** what a task can't say (an on-condition
 replacement's threshold, cost and time off-line). What nothing says (a cost, a
 repair time) is left blank and flagged. A saved simulation run before a task
 changed says it's out of date, and isn't rerun until you ask. The position's
-**Maintenance › Tasks** lists the RBDs that use its tasks. Blocks drawn by hand keep
+**Maintenance › Tasks** shows the RBDs that use a task when you open it. Blocks drawn by hand keep
 their own plan.
 
 ### Positions that back each other up
@@ -226,7 +234,7 @@ you build: **Every one needed**, **Fewer will do** (with how many are needed,
 for three or more) or **Duty and standby**. The last two are saved as a set,
 as below. To say
 two or more positions inside one back each other up, open the position's
-**⋯** menu on **Models › Life models** (or **Models › Missions**) and choose **RBD ›
+**⋯** menu on the **Models** tab and choose **RBD ›
 Redundancy inside…**. It fills the table area beside the tree, with no dialog:
 tick the positions, then say how they back each other up:
 
@@ -335,20 +343,36 @@ the asset's tree you have open. The classes, their counts and the table list
 the positions inside that asset and nothing else.
 
 A position has **Monitoring › Life left** too, however the tree is
-arranged (**Positions**, **Locations** or **Classes**). It shows that one
-position's risk now: a line in words (its age, its readings, the three
-chances and the median life left), then the same two charts. The view stays
-picked as you go from a class to one of its positions, and from one position
-to the next. A position with no condition and life model says so, with a link
-to its **Models › Life models**; one whose model can't score it yet says what is
-missing. A product's design has no such view: nothing is fitted or read there.
+arranged (**Positions**, **Locations** or **Classes**). On a position with
+nothing inside it, it shows that one position's risk now: a line in words
+(its age, its readings, the three chances and the median life left), then the
+same two charts. A position with no condition and life model says so, with a
+link to its **Models** tab; one whose model can't score it yet says
+what is missing.
+
+On a position with positions inside it, and on a place, **Life left** lists
+every position there and below it, at any depth, that has condition
+monitoring (a condition and life model, or a condition measurement point).
+Each row says where it lives (its name, and what it sits in underneath), then
+its item, age, last reading, the three chances and the **Median life left**
+with its 90% lower bound. The position you picked comes first when it has
+monitoring of its own; the rest are highest risk first, over the stretch that
+tells them apart, which the table names. Choose a row for its two charts. The
+chances are never added up: each is that position's own, and chances of
+failing don't sum. With the Explorer opened on one asset, only that asset's
+positions are listed.
+
+The view stays picked as you go from a class to one of its positions, and
+from one row to the next. An item has no such view: its risk is worked out
+at the position it's fitted to. A product's design has none either: nothing
+is fitted or read there.
 
 Each position is scored with its own model: the condition and life model
 attached to it, or else its position class's. So one class can hold positions
 on different models, and positions with none. For a number, a position needs:
 
 - **A model.** A position with none shows a dash. Attach one on its
-  **Models › Life models**.
+  **Models** tab.
 - **Readings.** A condition point on the position or its item, in the model's
   unit (mm/s for a model fitted on mm/s), with at least one reading since the
   item went into service. Readings taken on the position before that belonged
@@ -371,3 +395,9 @@ nothing is linked yet). The interval calculators on a task card start from the
 decision's evidence, else from the position's model: a Weibull for a
 replacement interval, a failure rate for failure finding, a degradation model
 for the P-F interval.
+
+A task's **Optimise…** (on the Maintenance tab) works its interval out from
+the model of the failure mode it prevents. Once used, the model's row says
+*Sets the interval of* that task, linked to its Optimise, in **Used by**; when
+the model is refitted it says so, and the task can be re-optimised. The RCM
+tab's guide says how, under *Optimise a task from its model*.

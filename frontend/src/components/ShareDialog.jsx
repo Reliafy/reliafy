@@ -10,6 +10,7 @@ import {
 import Chip from "./ui/Chip.jsx";
 import { formatDate } from "../dates.js";
 import { useConfirm } from "./ConfirmProvider.jsx";
+import { Checkbox, Select } from "./ui/Controls.jsx";
 
 
 // Collections with a public read-only renderer at /p/:token.
@@ -237,19 +238,17 @@ export function PublicLinks({ collection, artifactId, onError, openable = false 
           </label>
           <label className="login-field pl-new-expiry">
             <span>Expires</span>
-            <select value={expires} onChange={(e) => setExpires(e.target.value)}>
+            <Select value={expires} onChange={(e) => setExpires(e.target.value)}>
               {EXPIRY_OPTIONS.map(([v, text]) => <option key={v} value={v}>{text}</option>)}
-            </select>
+            </Select>
           </label>
         </div>
-        <label className="pl-check">
-          <input
-            type="checkbox"
-            checked={requirePassword}
-            onChange={(e) => setRequirePassword(e.target.checked)}
-          />
-          Require password
-        </label>
+        <Checkbox
+          className="pl-check"
+          checked={requirePassword}
+          onChange={(e) => setRequirePassword(e.target.checked)}
+          label="Require password"
+        />
         {requirePassword && (
           <label className="login-field">
             <span>Password</span>
@@ -338,7 +337,7 @@ export default function ShareDialog({ collection, artifactId, name, onClose }) {
         </>
       }
     >
-      <p className="muted-line" style={{ marginTop: 0 }}>
+      <p className="muted-line mt-0">
         Recipients get a read-only view — including any linked analyses this
         one relies on. They need a Reliafy account. You can revoke at any time.
       </p>
@@ -358,11 +357,11 @@ export default function ShareDialog({ collection, artifactId, name, onClose }) {
           {busy ? "Sharing…" : "Share"}
         </button>
       </div>
-      {error && <div className="error" style={{ marginTop: "0.6rem" }}>{error}</div>}
-      {note && <p className="muted-line" style={{ marginBottom: 0 }}>{note}</p>}
+      {error && <div className="error mt-2">{error}</div>}
+      {note && <p className="muted-line mb-0">{note}</p>}
 
       {shares && shares.length > 0 && (
-        <div style={{ marginTop: "0.9rem" }}>
+        <div className="mt-3">
           <label className="field-label">Shared with</label>
           {shares.map((s) => (
             <div key={s.id} className="share-row">

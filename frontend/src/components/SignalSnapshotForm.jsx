@@ -5,6 +5,8 @@ import { ACCENT } from "../plotTheme.js";
 import {
   fmt, localToIso, parseCsv, parseJsonSnapshots, parseWav, sizeProblem, snapshotBody, thinWave, trimAxes,
 } from "../signals.js";
+import { DateTimeInput } from "./ui/DateTimeInput.jsx";
+import { Select } from "./ui/Controls.jsx";
 
 // "Add a snapshot" on a channel (Signals tab): choose a JSON, CSV or WAV file,
 // see what it holds, fill in what the file doesn't say (when it was taken, the
@@ -168,7 +170,7 @@ export default function SignalSnapshotForm({ ch, onDone, onCancel }) {
           {needsTime && (
             <label className="sg-field">Time taken{parsed.kind === "json" ? " (for any snapshot without one)" : ""}
               <span className="sg-inline-row">
-                <input type="datetime-local" value={time} onChange={(e) => setTime(e.target.value)} required={parsed.kind === "axes"} />
+                <DateTimeInput value={time} onChange={(e) => setTime(e.target.value)} required={parsed.kind === "axes"} />
                 <button type="button" className="secondary sm" onClick={() => setTime(nowLocal())}>Now</button>
               </span>
               <span className="sg-hint">In your browser's time zone. Reliafy never guesses a time.</span>
@@ -192,11 +194,11 @@ export default function SignalSnapshotForm({ ch, onDone, onCancel }) {
                 <input type="number" inputMode="decimal" min="0" step="any" value={rpm} onChange={(e) => setRpm(e.target.value)} placeholder={ch.rpm ? `${ch.rpm} (the channel's)` : ""} />
               </label>
               <label className="sg-field">Was the machine running?
-                <select value={running} onChange={(e) => setRunning(e.target.value)}>
+                <Select value={running} onChange={(e) => setRunning(e.target.value)}>
                   <option value="unknown">Not stated</option>
                   <option value="yes">Running</option>
                   <option value="no">Stopped</option>
-                </select>
+                </Select>
               </label>
               <label className="sg-field">Note (optional)<input value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} /></label>
             </>

@@ -3,13 +3,21 @@ import { endOperatingPlan, getOperatingPlan, setOperatingPlan } from "../api.js"
 import { saveErrorText } from "../confirm.js";
 import { formatDate } from "../dates.js";
 import {
-  PLAN_KINDS, RATE_PER, WEEKDAYS, formFromPlan, hoursByDay, hoursShort, hoursWords, parseRuns, planFromForm, planWords,
+  PLAN_KINDS, RATE_PER, WEEKDAYS, formFromPlan, hoursByDay, hoursShort, hoursWords, overnightTimes, parseRuns, planFromForm, planWords,
   typicalWeek,
 } from "../operatingPlan.js";
 import { today as workspaceToday } from "./MaintenanceParts.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
+import { ShowMe } from "./SectionPage.jsx";
 import TablePane from "./TablePane.jsx";
+import ChoiceChips from "./ui/ChoiceChips.jsx";
+import { Checkbox, Select, TextArea, TextInput } from "./ui/Controls.jsx";
+import { DateInput, TimeInput } from "./ui/DateTimeInput.jsx";
+import { ReadsAs } from "./ui/InputGroup.jsx";
+import { ResultDetails } from "./ui/ResultSummary.jsx";
 import "./OperatingPlanPane.css";
+import LoadFailed from "./LoadFailed.jsx";
+import Loading from "./ui/Loading.jsx";
 
 // A position's operating plan, in the Explorer's table area beside the tree (?plan=<position id>,
 // from the Measurements tab's row menu and the Summary's "Operating plan" line; no modal): how it
@@ -59,8 +67,8 @@ function RunsBox({ label, hint, value, onChange, disabled }) {
     <div className="op-runs">
       <label className="op-label" htmlFor="op-runs-text">{label}</label>
       <p className="lib-date op-hint">{hint}</p>
-      <textarea id="op-runs-text" rows={5} value={value} disabled={disabled} spellCheck={false}
-                placeholder={"2026-11-14 12:31, 2026-11-15 03:27\n2026-11-15 12:30, 2026-11-16 03:30"}
+      <TextArea id="op-runs-text" rows={4} value={value} disabled={disabled} spellCheck={false} className="op-runs-text"
+                placeholder={"For example:\n2026-11-14 12:31, 2026-11-15 03:27\n2026-11-15 12:30, 2026-11-16 03:30"}
                 onChange={(e) => onChange(e.target.value)} />
       <div className="op-runs-foot">
         <button type="button" className="link" onClick={() => file.current?.click()} disabled={disabled}>Import a CSV…</button>
@@ -77,13 +85,13 @@ function KindForm({ form, set, disabled }) {
     return (
       <div className="op-row">
         <span>About</span>
-        <input className="op-num" type="number" min="0" step="any" inputMode="decimal" value={form.rate.amount} disabled={disabled}
-               aria-label="Hours" onChange={(e) => set({ rate: { ...form.rate, amount: e.target.value } })} />
+        <TextInput className="op-num" type="number" min="0" step="any" inputMode="decimal" value={form.rate.amount} disabled={disabled}
+                   aria-label="Hours" onChange={(e) => set({ rate: { ...form.rate, amount: e.target.value } })} />
         <span>hours a</span>
-        <select value={form.rate.per} disabled={disabled} aria-label="Per"
+        <Select className="op-per" value={form.rate.per} disabled={disabled} aria-label="Per"
                 onChange={(e) => set({ rate: { ...form.rate, per: e.target.value } })}>
           {Object.keys(RATE_PER).map((p) => <option key={p} value={p}>{p}</option>)}
-        </select>
+        </Select>
       </div>
     );
   }
@@ -93,18 +101,20 @@ function KindForm({ form, set, disabled }) {
     return (
       <div className="op-col">
         <div className="op-row">
-          <input className="op-num" type="number" min="1" step="1" inputMode="numeric" value={r.on} onChange={put("on")} disabled={disabled} aria-label="Days on" />
+          <TextInput className="op-num" type="number" min="1" step="1" inputMode="numeric" value={r.on} onChange={put("on")} disabled={disabled} aria-label="Days on" />
           <span>days on,</span>
-          <input className="op-num" type="number" min="0" step="1" inputMode="numeric" value={r.off} onChange={put("off")} disabled={disabled} aria-label="Days off" />
-          <span>days off</span>
+          <TextInput className="op-num" type="number" min="0" step="1" inputMode="numeric" value={r.off} onChange={put("off")} disabled={disabled} aria-label="Days off" />
+          <span>days off,</span>
+          <span>from</span>
+          <TimeInput value={r.start} onChange={put("start")} disabled={disabled} aria-label="Start" />
+          <span>to</span>
+          <TimeInput value={r.stop} onChange={put("stop")} disabled={disabled} aria-label="Stop" />
         </div>
         <div className="op-row">
-          <span>from</span>
-          <input type="time" value={r.start} onChange={put("start")} disabled={disabled} aria-label="Start" />
-          <span>to</span>
-          <input type="time" value={r.stop} onChange={put("stop")} disabled={disabled} aria-label="Stop" />
+          <label htmlFor="op-anchor">First day on</label>
+          <DateInput id="op-anchor" value={r.anchor} onChange={put("anchor")} disabled={disabled} />
         </div>
-        <label className="op-row">First day on <input type="date" value={r.anchor} onChange={put("anchor")} disabled={disabled} /></label>
+        <Overnight form={form} />
       </div>
     );
   }
@@ -121,17 +131,15 @@ function KindForm({ form, set, disabled }) {
           <legend className="sr-only">Shift {i + 1}</legend>
           <div className="op-days" role="group" aria-label={`Shift ${i + 1}: days`}>
             {WEEKDAYS.map((d) => (
-              <label key={d} className={"op-daybox" + (s.days.includes(d) ? " on" : "")}>
-                <input type="checkbox" checked={s.days.includes(d)} disabled={disabled}
-                       onChange={(e) => put(i, { days: e.target.checked ? [...s.days, d] : s.days.filter((x) => x !== d) })} />
-                {d.slice(0, 3)}
-              </label>
+              <Checkbox key={d} className={"op-daybox" + (s.days.includes(d) ? " on" : "")} checked={s.days.includes(d)} disabled={disabled}
+                        onChange={(e) => put(i, { days: e.target.checked ? [...s.days, d] : s.days.filter((x) => x !== d) })}
+                        label={d.slice(0, 3)} />
             ))}
           </div>
           <div className="op-row">
-            <input type="time" value={s.start} onChange={(e) => put(i, { start: e.target.value })} disabled={disabled} aria-label={`Shift ${i + 1}: start`} />
+            <TimeInput value={s.start} onChange={(e) => put(i, { start: e.target.value })} disabled={disabled} aria-label={`Shift ${i + 1}: start`} />
             <span>to</span>
-            <input type="time" value={s.stop} onChange={(e) => put(i, { stop: e.target.value })} disabled={disabled} aria-label={`Shift ${i + 1}: stop`} />
+            <TimeInput value={s.stop} onChange={(e) => put(i, { stop: e.target.value })} disabled={disabled} aria-label={`Shift ${i + 1}: stop`} />
             {shifts.length > 1 && (
               <button type="button" className="link" disabled={disabled} onClick={() => set({ shifts: shifts.filter((_, j) => j !== i) })}>Remove</button>
             )}
@@ -140,8 +148,19 @@ function KindForm({ form, set, disabled }) {
       ))}
       <button type="button" className="link op-add" disabled={disabled}
               onClick={() => set({ shifts: [...shifts, { days: ["Saturday"], start: "08:00", stop: "12:00" }] })}>+ Add a shift</button>
-      <p className="lib-date">A stop before its start is the next morning (22:00 to 06:00).</p>
+      <Overnight form={form} />
     </div>
+  );
+}
+
+// A stop before its start ends the next morning: said with the times entered, only when one does.
+function Overnight({ form }) {
+  const times = overnightTimes(form);
+  if (!times.length) return <p className="lib-date op-hint">A stop time before the start time ends the next morning.</p>;
+  return (
+    <p className="lib-date op-hint">
+      {times.map(([a, b]) => `${a} to ${b}`).join(" and ")} {times.length === 1 ? "runs" : "run"} past midnight, ending the next morning.
+    </p>
   );
 }
 
@@ -219,10 +238,10 @@ export default function OperatingPlanPane({ position, root = null, phone = false
   const own = plan && !data.inherited_from;
   return (
     <TablePane title="Operating plan" subject={position.name} phone={phone} busy={saving} headingRef={headingRef} onClose={onClose}
-               className="op-pane">
+               className="op-pane" actions={<ShowMe help={{ guide: "operating-plans-and-how-often" }} asHelp />}>
       <div className="op-body">
-        {error && <div className="card error">Couldn&apos;t load the operating plan: {error.message}</div>}
-        {!data && !error && <p className="lib-date">Loading…</p>}
+        {error && <LoadFailed what="Couldn't load the operating plan." error={error} />}
+        {!data && !error && <Loading />}
         {data && !form && (
           <section className="op-now" aria-label="How it runs now">
             {plan ? (
@@ -278,52 +297,51 @@ export default function OperatingPlanPane({ position, root = null, phone = false
         )}
         {form && (
           <form className="op-form" onSubmit={(e) => { e.preventDefault(); save(); }}>
-            {!plan && <p className="op-answer">Say how {position.name} runs. Usage tasks (every 2,000 operating hours) will go on dates from it.</p>}
-            {plan && data.inherited_from && <p className="lib-date">Starting from {data.inherited_from.name}&apos;s plan: change what differs here.</p>}
-            <fieldset className="op-kinds">
-              <legend className="op-label">It runs</legend>
-              <div className="op-kind-list" role="radiogroup">
-                {PLAN_KINDS.map(([k, label, hint]) => (
-                  <label key={k} className={"op-kind" + (form.kind === k ? " on" : "")} title={hint}>
-                    <input type="radio" name="op-kind" value={k} checked={form.kind === k} onChange={() => set({ kind: k })} disabled={saving} />
-                    {label}
-                  </label>
-                ))}
+            <div className="op-inputs">
+              {!plan && <p className="op-answer op-text">Say how {position.name} runs. Tasks that fall due by operating hours go on dates from it.</p>}
+              {plan && data.inherited_from && <p className="lib-date op-text">Starting from {data.inherited_from.name}&apos;s plan: change what differs here.</p>}
+              <div className="op-kinds" role="group" aria-labelledby="op-kinds-label">
+                <span className="op-label" id="op-kinds-label">It runs</span>
+                <ChoiceChips label="It runs" value={form.kind} disabled={saving} className="op-kind-list"
+                             options={PLAN_KINDS.map(([value, label, title]) => ({ value, label, title }))}
+                             onChange={(k) => k && set({ kind: k })} />
+                <p className="lib-date op-hint">{PLAN_KINDS.find(([k]) => k === form.kind)?.[2]}.</p>
               </div>
-              <p className="lib-date op-hint">{PLAN_KINDS.find(([k]) => k === form.kind)?.[2]}</p>
-            </fieldset>
-            <KindForm form={form} set={set} disabled={saving} />
-            <fieldset className="op-kinds op-use">
-              <legend className="op-label">Other use (optional)</legend>
-              <p className="lib-date op-hint">Distance or counts it does, such as 400 km a day, so a model in km or cycles can be read against dates.</p>
-              <div className="op-row">
-                <span>About</span>
-                <input className="op-num" type="number" min="0" step="any" inputMode="decimal" value={form.use.amount}
-                       disabled={saving} aria-label="How much" placeholder="400"
-                       onChange={(e) => set({ use: { ...form.use, amount: e.target.value } })} />
-                <input className="op-unit" value={form.use.meter} maxLength={24} disabled={saving}
-                       aria-label="Unit, such as km or cycles" placeholder="km"
-                       onChange={(e) => set({ use: { ...form.use, meter: e.target.value } })} />
-                <span>a</span>
-                <select value={form.use.per} disabled={saving} aria-label="Per"
-                        onChange={(e) => set({ use: { ...form.use, per: e.target.value } })}>
-                  {Object.keys(RATE_PER).map((p) => <option key={p} value={p}>{p}</option>)}
-                </select>
+              <KindForm form={form} set={set} disabled={saving} />
+              <div className="op-kinds op-use" role="group" aria-labelledby="op-use-label">
+                <span className="op-label" id="op-use-label">Other use <span className="field-opt">optional</span></span>
+                <p className="lib-date op-hint op-text">Distance or counts it does in a day, week, month or year, so a model in km or cycles can be read against dates.</p>
+                <div className="op-row">
+                  <span>About</span>
+                  <TextInput className="op-num" type="number" min="0" step="any" inputMode="decimal" value={form.use.amount}
+                             disabled={saving} aria-label="How much" placeholder="e.g. 400"
+                             onChange={(e) => set({ use: { ...form.use, amount: e.target.value } })} />
+                  <TextInput className="op-unit" value={form.use.meter} maxLength={24} disabled={saving}
+                             aria-label="Unit, such as km or cycles" placeholder="unit, e.g. km"
+                             onChange={(e) => set({ use: { ...form.use, meter: e.target.value } })} />
+                  <span>a</span>
+                  <Select className="op-per" value={form.use.per} disabled={saving} aria-label="Per"
+                          onChange={(e) => set({ use: { ...form.use, per: e.target.value } })}>
+                    {Object.keys(RATE_PER).map((p) => <option key={p} value={p}>{p}</option>)}
+                  </Select>
+                </div>
               </div>
-            </fieldset>
-            {form.kind !== "runs" && (
-              <details className="op-specific" open={!!form.specific.trim()}>
-                <summary>Set runs first (optional)</summary>
-                <RunsBox label="Runs you know about" value={form.specific} onChange={(v) => set({ specific: v })} disabled={saving}
-                         hint="Today's and tomorrow's runs, say. From the start of the first run's day to the end of the last, they're all the running there is; then the plan you picked above takes over, with no gap." />
-              </details>
-            )}
-            <div className="op-row op-meta">
-              <label className="op-row">From <input type="date" value={form.from} min={own ? plan.from : undefined} onChange={(e) => set({ from: e.target.value })} disabled={saving} /></label>
-              <label className="op-row op-grow">Name (optional) <input value={form.name} maxLength={200} placeholder="e.g. Day shifts" onChange={(e) => set({ name: e.target.value })} disabled={saving} /></label>
+              {form.kind !== "runs" && (
+                <ResultDetails summary="Set runs first (optional)" open={!!form.specific.trim()}>
+                  <RunsBox label="Runs you know about" value={form.specific} onChange={(v) => set({ specific: v })} disabled={saving}
+                           hint="Today's and tomorrow's runs, say. From the start of the first run's day to the end of the last, they're all the running there is; then the plan you picked above takes over, with no gap." />
+                </ResultDetails>
+              )}
+              <div className="op-row op-meta">
+                <label htmlFor="op-from">From</label>
+                <DateInput id="op-from" value={form.from} min={own ? plan.from : undefined} onChange={(e) => set({ from: e.target.value })} disabled={saving} />
+                <label htmlFor="op-name">Name <span className="field-opt">optional</span></label>
+                <TextInput id="op-name" className="op-name" value={form.name} maxLength={200} placeholder="e.g. Day shifts" onChange={(e) => set({ name: e.target.value })} disabled={saving} />
+              </div>
             </div>
-            {built?.problem ? <p className="field-error" role="alert">{built.problem}</p> : (
-              <section className="op-preview" aria-live="polite" aria-label="What it comes to">
+            {built?.problem ? <p className="field-error op-result" role="alert">{built.problem}</p> : (
+              <section className="op-preview op-result" aria-live="polite" aria-label="What it comes to">
+                <ReadsAs>{planWords(preview)}</ReadsAs>
                 <p className="op-answer">
                   <strong>{week != null ? hoursWords(week)[0].toUpperCase() + hoursWords(week).slice(1) : "Runs only when listed"}</strong>
                   {" · "}{hoursShort(total)} in the next two weeks
@@ -333,12 +351,12 @@ export default function OperatingPlanPane({ position, root = null, phone = false
                   <span className="op-key op-specific-key" aria-hidden="true" /> set runs
                   <span className="op-key op-background-key" aria-hidden="true" /> the plan
                   {form.kind === "rate" && <><span className="op-key op-spread-key" aria-hidden="true" /> a rate, spread over the day</>}
-                  {" "}· A quick preview in clock hours; once saved, the hours are worked out in the site&apos;s time zone (daylight saving counted).
                 </p>
+                <p className="lib-date op-text">A quick preview in clock hours; once saved, the hours are worked out in the site&apos;s time zone (daylight saving counted).</p>
               </section>
             )}
-            {failed && <p className="field-error" role="alert">{failed}</p>}
             <div className="op-actions">
+              {failed && <p className="field-error" role="alert">{failed}</p>}
               <button type="submit" disabled={saving || !!built?.problem}>{saving ? "Saving…" : "Save"}</button>
               {plan && <button type="button" className="secondary" onClick={() => edit(null)} disabled={saving}>Cancel</button>}
             </div>

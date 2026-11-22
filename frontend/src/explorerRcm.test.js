@@ -814,13 +814,15 @@ test("isolate opens a fourth and a fifth level on the RCM tab, down to the tasks
   assert.equal(levelsBelow(d, taskKey("m1", "t1")), 0);
   assert.equal(levelsBelow(d, "pump"), 4);
   assert.equal(levelsBelow(d, "plant"), 5);
-  const labels = (key) => isolateItems(d.rows.get(key), { can: true, levels: levelsBelow(d, key) })[0].items.map((i) => i.label);
-  assert.deepEqual(labels("f1"), ["With 1 level open", "With 2 levels open", "With 3 levels open", "With everything open"]);
-  assert.deepEqual(labels("pump"), ["With 1 level open", "With 2 levels open", "With 3 levels open", "With 4 levels open", "With everything open"]);
-  assert.deepEqual(labels("plant"), ["With 1 level open", "With 2 levels open", "With 3 levels open", "With 4 levels open", "With 5 levels open", "With everything open"]);
+  const labels = (key) => isolateItems(d.rows.get(key), { can: true, levels: levelsBelow(d, key) })[1].items.map((i) => i.label);
+  assert.deepEqual(labels("f1"), ["1 level", "2 levels", "3 levels"]);
+  assert.deepEqual(labels("pump"), ["1 level", "2 levels", "3 levels", "4 levels"]);
+  assert.deepEqual(labels("plant"), ["1 level", "2 levels", "3 levels", "4 levels", "5 levels"]);
+  // Focus here (every level) before them.
+  assert.equal(isolateItems(d.rows.get("plant"), { can: true })[0].label, "Focus here");
   // Without `levels` (the Summary tab), the three as before.
-  assert.equal(isolateItems(d.rows.get("plant"), { can: true })[0].items.length, 4);
-  // With 4 levels open from the position: its failure modes open, so their tasks show.
+  assert.equal(isolateItems(d.rows.get("plant"), { can: true })[1].items.length, 3);
+  // 4 levels from the position: its failure modes open, so their tasks show.
   const open = isolateOpen(d, new Set(), "pump", 4);
   assert.ok(open.has("m1") && !open.has(taskKey("m1", "t1")));
   const shown = flatten(d, open, null).list.map((x) => x.key);

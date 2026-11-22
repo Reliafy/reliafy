@@ -1,4 +1,4 @@
-// The Maintenance tab's Forecast view (?mview=forecast) on a position: tasks by use put on dates
+// A position's Forecast… on the Maintenance tab (?forecast=; the old ?mview=forecast address opens it): tasks by use put on dates
 // through the operating plan, the answer first, the month table, and nothing from another asset.
 import { test, expect, open, expectHealthy } from "./health.js";
 
@@ -28,7 +28,8 @@ test("forecast: the answer first, tasks by use on dates from the plan, kept insi
   await post(`${M}/positions/${other.id}/tasks`, { name: `Elsewhere ${tag}`, interval: 1, unit: "months" });
 
   await open(page, `/asset-register/explorer?arrange=positions&root=${pump.id}&sel=${pump.id}&tab=maintenance&mview=forecast`);
-  const view = page.getByRole("region", { name: "Forecast" });
+  await expect(page).toHaveURL(new RegExp(`forecast=${pump.id}`));
+  const view = page.locator("section.fc-view").first();
   await expect(view.getByText(/^To \d+ \w+ \d{4}: \d+ tasks/)).toBeVisible();
   await expect(view.getByText(/Hours from the operating plan \(Monday to Friday, 06:00 to 22:00\)/).first()).toBeVisible();
   await expect(view.getByRole("table").first()).toBeVisible();

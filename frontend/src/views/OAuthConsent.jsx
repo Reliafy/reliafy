@@ -5,6 +5,7 @@ import { useAuth } from "../AuthProvider.jsx";
 import { useAppConfig } from "../ConfigProvider.jsx";
 import { decideOAuthRequest, getOAuthRequest } from "../api.js";
 import { MCP_CONTACT } from "../appConfig.js";
+import Loading from "../components/ui/Loading.jsx";
 
 // OAuth consent: an app (Claude on the web/desktop/mobile, Claude Code, or
 // another MCP client) asks to use Reliafy on the user's behalf. The backend
@@ -109,7 +110,7 @@ export default function OAuthConsent() {
   }
 
   if (state === "loading" || loading || !info) {
-    return <div className="auth-loading">Loading…</div>;
+    return <div className="auth-loading"><Loading inline /></div>;
   }
 
   const name = info.client_name;
@@ -187,7 +188,7 @@ export default function OAuthConsent() {
                 Not you?
               </button>
             </p>
-            {error && <div className="error" style={{ marginTop: 0 }}>{error}</div>}
+            {error && <div className="error mt-0">{error}</div>}
             <p className="consent-who">
               Approving sends you to <b className="consent-host-inline">{info.loopback ? info.redirect_host : hostLabel}</b>.
             </p>

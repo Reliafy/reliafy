@@ -105,7 +105,7 @@ export default function ExcelSheetPicker({ inspection, value, onChange, sheetLab
           <button type="button" className="link" onClick={() => setHeader(firstRow)}>Undo</button>
         </p>
       ) : null}
-      <p className="hint" style={{ margin: 0 }}>
+      <p className="hint m-0">
         {header
           ? <>Row {header} holds the column names{header > 1 ? "; rows above it are skipped" : ""}. Click another row to change it.</>
           : <>No header row — every row is data. Click a row to use it as the header.</>}
@@ -177,7 +177,7 @@ function SheetModal({ file, confirmLabel, onDone, convert, inline = false }) {
   const body = (
     <>
       {loading && <p className="hint">Reading the workbook…</p>}
-      {error && <div className="error" style={{ marginTop: 0 }}>{error}</div>}
+      {error && <div className="error mt-0">{error}</div>}
       {inspection && value && (
         <ExcelSheetPicker inspection={inspection} value={value} onChange={setValue} />
       )}

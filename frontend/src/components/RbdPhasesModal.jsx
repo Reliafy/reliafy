@@ -5,6 +5,7 @@ import { cleanPhases, phaseBlocks, voteNodes } from "../rbdMission.js";
 import { BLOCK_STATES, STATE_SHORT, blockState, covValueText, isSchedule, withBlockState } from "../explorerMissions.js";
 import PhaseCovValue from "./PhaseCovValue.jsx";
 import "./RbdMission.css";
+import { Select } from "./ui/Controls.jsx";
 
 // The phased-mission editor (#160), from the builder's ⋯ menu: the mission's
 // phases in order, each with a name and a duration, and — folded under each
@@ -85,7 +86,7 @@ export default function RbdPhasesModal({ initial, nodes, edges, unit, conditions
       ) : (
         <span />
       )}
-      <div className="row" style={{ margin: 0 }}>
+      <div className="row m-0">
         <button className="secondary" onClick={onClose}>Cancel</button>
         <button onClick={submit} disabled={tried && errors.length > 0}>Save phases</button>
       </div>
@@ -94,7 +95,7 @@ export default function RbdPhasesModal({ initial, nodes, edges, unit, conditions
 
   return (
     <Modal title="Phased mission" onClose={onClose} footer={footer} className="rbd-phases-modal">
-      <p className="muted-line" style={{ marginTop: 0 }}>
+      <p className="muted-line mt-0">
         The mission runs through its phases in order. A block that fails in one phase stays failed for
         the rest of the mission, even through phases that don't need it.
       </p>
@@ -151,11 +152,11 @@ export default function RbdPhasesModal({ initial, nodes, edges, unit, conditions
                           return (
                             <label key={b.id} className={`rbd-phase-state is-${state}`}>
                               <span title={b.label}>{b.label}</span>
-                              <select value={state} aria-label={`${b.label} in ${row.name || `phase ${i + 1}`}`}
+                              <Select value={state} aria-label={`${b.label} in ${row.name || `phase ${i + 1}`}`}
                                       title={BLOCK_STATES.find((x) => x.id === state)?.title}
                                       onChange={(e) => update(row.key, withBlockState(row, b.id, e.target.value))}>
                                 {BLOCK_STATES.map((x) => <option key={x.id} value={x.id}>{STATE_SHORT[x.id]}</option>)}
-                              </select>
+                              </Select>
                             </label>
                           );
                         })}
@@ -175,10 +176,10 @@ export default function RbdPhasesModal({ initial, nodes, edges, unit, conditions
                               <span title={`${c.name}${c.unit ? ` (${c.unit})` : ""}`}>{c.name}{c.unit ? ` (${c.unit})` : ""}</span>
                               <PhaseCovValue cov={c} value={v} onChange={(x) => setValue(row, c.name, x)} unit={unit} duration={row.duration}
                                              constant={choice ? (
-                                <select aria-label={`${c.name}${c.unit ? ` (${c.unit})` : ""}`} value={isSchedule(v) ? "" : v} onChange={(e) => setValue(row, c.name, e.target.value)}>
+                                <Select aria-label={`${c.name}${c.unit ? ` (${c.unit})` : ""}`} value={isSchedule(v) ? "" : v} onChange={(e) => setValue(row, c.name, e.target.value)}>
                                   <option value="">Not set</option>
                                   {c.choices.map((x) => <option key={x.code} value={x.code}>{x.label}</option>)}
-                                </select>
+                                </Select>
                               ) : (
                                 <input type="number" inputMode="decimal" step="any" aria-label={`${c.name}${c.unit ? ` (${c.unit})` : ""}`} value={isSchedule(v) ? "" : v}
                                        placeholder={fallback != null ? covValueText(fallback, "") : "needs a value"}

@@ -15,6 +15,9 @@ import { ACCENT } from "../plotTheme.js";
 import "../views/Maintenance.css";
 import "./MeasurementViews.css";
 import { useWorkManagementOn } from "../ConfigProvider.jsx";
+import { DateInput } from "./ui/DateTimeInput.jsx";
+import Loading from "./ui/Loading.jsx";
+import { Select } from "./ui/Controls.jsx";
 
 // Consumables (salt added to the pool; acid; a stabiliser): the Measurements
 // tab's monthly bars, the dialogs to record a use (Record use…: another date,
@@ -59,7 +62,7 @@ export function ConsumableUseModal({ consumable: c, onClose, onDone }) {
       <Field label={`How much${c.unit ? ` (${c.unit})` : ""}`}>
         <input type="number" inputMode="decimal" step="any" min="0" autoFocus value={qty} onChange={(e) => setQty(e.target.value)} />
       </Field>
-      <Field label="Added on"><input type="date" value={on} max={workspaceToday()} onChange={(e) => setOn(e.target.value)} /></Field>
+      <Field label="Added on"><DateInput value={on} max={workspaceToday()} onChange={(e) => setOn(e.target.value)} /></Field>
       <Field label="Cost (optional)">
         <input type="number" inputMode="decimal" step="any" min="0" value={cost} onChange={(e) => setCost(e.target.value)}
                placeholder={unitCost != null && n > 0 ? `${(n * unitCost).toFixed(2)} at ${unitCost} each` : ""} />
@@ -104,18 +107,18 @@ export function AddConsumableModal({ position, onClose, onDone }) {
       <p className="lib-date">Something added at {position.name} that gets used up: salt, acid, a stabiliser. Each addition is kept, and comes out of stock where the part is held.</p>
       {parts && parts.length > 0 && (
         <Field label="It is">
-          <select value={mode} onChange={(e) => setMode(e.target.value)}>
+          <Select value={mode} onChange={(e) => setMode(e.target.value)}>
             <option value="pick">A part in the parts register</option>
             <option value="new">A new one (added to the register)</option>
-          </select>
+          </Select>
         </Field>
       )}
       {mode === "pick" && parts && (
         <Field label="Part">
-          <select value={partId} onChange={(e) => setPartId(e.target.value)} autoFocus>
+          <Select value={partId} onChange={(e) => setPartId(e.target.value)} autoFocus>
             <option value="">Choose…</option>
             {parts.map((p) => <option key={p.id} value={p.id}>{p.part_number === p.name ? p.name : `${p.part_number} ${p.name}`}{p.unit ? ` (${p.unit})` : ""}</option>)}
-          </select>
+          </Select>
         </Field>
       )}
       {mode === "new" && (
@@ -154,7 +157,7 @@ export function ConsumablePane({ id, today = workspaceToday(), onBack, onMenu = 
     }) } : null,
   ].filter(Boolean) : []);
   const months = useMemo(() => (c ? monthlyTotals(c.uses, today, 12) : []), [c, today]);
-  if (!state.loaded) return <div className="td-tab-page mv-view">{onBack && <Back onBack={onBack} />}<p className="lib-date">Loading…</p></div>;
+  if (!state.loaded) return <div className="td-tab-page mv-view">{onBack && <Back onBack={onBack} />}<Loading /></div>;
   if (!c) {
     return (
       <div className="td-tab-page mv-view">

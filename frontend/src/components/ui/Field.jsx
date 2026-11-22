@@ -54,10 +54,12 @@ export default function Field({
   const Label = as === "fieldset" ? "legend" : "label";
   return (
     <FieldContext.Provider value={ctx}>
-      <Tag className={"field" + (error ? " has-error" : "") + (className ? ` ${className}` : "")}>
+      {/* A group takes its name from its label (the legend sits inside the head, so it's named by id). */}
+      <Tag className={"field" + (error ? " has-error" : "") + (className ? ` ${className}` : "")}
+           aria-labelledby={as === "fieldset" ? `${id}-label` : undefined}>
         <span className={"field-head" + (labelHidden ? " sr-only" : "")}>
           <span className="field-name">
-            <Label className="field-label" htmlFor={as === "fieldset" ? undefined : id}>{label}</Label>
+            <Label className="field-label" id={as === "fieldset" ? `${id}-label` : undefined} htmlFor={as === "fieldset" ? undefined : id}>{label}</Label>
             {/* Beside the label, not in it: the control's name stays the label's words. */}
             {optional && <span className="field-opt">optional</span>}
           </span>

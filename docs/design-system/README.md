@@ -20,8 +20,9 @@ This is version 2: the app's look, with every value following a few rules.
 - **Eight type sizes, each with its own line height** on a 4px grid: 12/16, 13/20, 14/20, 16/24, 20/28, 24/32, 32/40, 40/48. Always use `fs-N` with `lh-N`, or a named style.
 - **Three weights:** 400 for reading, 500 for labels, 600 for headings and emphasis. Never 700.
 - **Everything sits on a 4px grid:** spacing, line heights and control heights.
-- **One control height per size:** buttons, inputs, selects and segmented controls are all 32px (`control-md`), or 28px compact (`control-sm`), or 40px on a phone (`control-lg`).
+- **One control height per size:** buttons, inputs, selects and segmented controls are all 32px (`control-md`), or 28px compact (`control-sm`), or 40px on a phone (`control-lg`). A text box is exactly that height (`.ctl` sets `height`, not just a minimum), so padding or a font never adds a pixel. The app's frame has two more: the top bar's workspace picker and help button are 36px (`control-bar`); on a phone the frame's own targets (menu button, help, workspace picker, the drawer's close button and rows) are 44px (`control-touch`). The sidebar's fold toggle and sub-menu rows are `control-md`.
 - **Touch on a phone:** at 720px and under (`usePhone`), every button, input, select, tab, segment and sidebar entry is at least 40px tall (`control-lg`), icon-only buttons 40px wide, and anything you type into uses 16px text. One block in `index.css` does it at no weight, so a control that sets its own size on purpose keeps it.
+- **Shared components, checked:** `npm run lint:js` (`frontend/eslint.config.js`, run in CI) fails on a raw `<select>`: use the shared `Select`.
 
 ## Colour
 
@@ -129,7 +130,10 @@ IBM Plex Sans for everything; IBM Plex Mono for IDs, code and dense numeric read
   - Between sections: `space-4`.
   - Card padding and the gap between cards: `space-6`.
   - Between page regions: `space-8`.
+  - **Two fine steps, for dense things only:** `space-0-5` (2px) and `space-1-5` (6px). Use them inside chips, badges, compact controls and table cells, where 4px or 8px would visibly change a row's height or a chip's shape. Never use them between blocks, fields or sections. Any other off-grid value (1, 3, 5, 7, 10, 14px…) snaps to the nearest step.
+- **No px for space, type size, radius or layer.** Write `var(--space-N)`, `var(--fs-N)`, `var(--radius-*)` and `var(--z-*)`; 0 stays 0.
 - **Radius:** `radius-md` (6px) for controls, buttons, chips and menus. `radius-lg` (12px) for cards, modals, drawers and result boxes. `radius-sm` (4px) for small marks and chart bars. `radius-full` for switches, avatars, discs and pills.
+- **Layers (`z-index`):** one scale, lowest first. Local layers order things inside one scroller or component: `z-raised` 1, `z-sticky` 2 (sticky rows, columns, footers), `z-sticky-head` 6 (a table's sticky header). Page-wide layers: `z-float` 10, `z-dropdown` 20, `z-popover` 30, `z-navbar` 40, `z-chat` 50, `z-canvas-menu` 60, `z-drawer` 70, `z-sheet` 90 (phone sheets), `z-sheet-menu` 95, `z-overlay` 100 (dialogs), `z-overlay-menu` 200 (menus and drawers over a dialog), `z-toast` 900, `z-fullscreen` 1000, `z-top` 1100. To sit one step above or below a layer, write `calc(var(--z-sheet) - 1)`, never a new number.
 - **Borders, not shadows.** Cards get a 1px `border` plus `shadow-sm` as a hairline lift. `shadow-md` is for sticky bars and dragged items; `shadow-lg` is for menus, popovers, modals and drawers.
 - **Icons:** `icon-sm` 14, `icon-md` 16, `icon-lg` 20.
 - **Motion:** 150ms on colour, border and shadow. Nothing bounces.
@@ -156,15 +160,25 @@ Write like an engineer briefing a manager: **the answer first, then the detail.*
 
 ## Components
 
-`components/` holds the shared primitives: `Button`, `Card`, `Chip`, `ChoiceChips`, `ContextMenu`, `Field`, `HelpLink`, `InputGroup`, `SegmentedControl`, `Select`, `Switch`, `Tabs`, `PageHeader`, `Section` and `ResultSummary`, the one error state for a load, `LoadFailed`, the one warning that an answer lies outside its data, `ExtrapolationNote`, the dialog, `Modal`, and the one search for everything in the top bar, `GlobalSearch`. Their guidelines are in `components/`; the design system artifact shows a preview of each.
+`components/` holds the shared primitives: `Button`, `Card`, `Chip`, `ChoiceChips`, `ContextMenu`, `Field`, the one date and time field, `DateTimeInput` (day first and 24-hour whatever the browser's language), `HelpLink`, `InputGroup`, `SegmentedControl`, `Select`, `Switch`, `Tabs`, `PageHeader`, `Section` and `ResultSummary`, the one loading state, `Loading` (inline or block), the one error state for a load, `LoadFailed`, the one warning that an answer lies outside its data, `ExtrapolationNote`, the Explorer's tree with a tab's columns, `TreeTable` (with Focus here and Pin this branch), a tree-table column's filter (and picking several rows), `ColumnFilter`, the dialog, `Modal`, and the one search for everything in the top bar, `GlobalSearch`. The RBD builder's toolbar (`RbdToolbar`) sets out an editor's toolbar: one primary, its settings in one popover, a save status instead of a Save button (autosave, with Undo and Redo), and a check that runs by itself. `WhereItLives` is the one cell that says where a rolled-up record lives in a flat table (the Explorer shows a node's records and everything below it). Their guidelines are in `components/`; the design system artifact shows a preview of each.
 
 - Use one primary button per view; everything else is secondary or ghost. Destructive actions are `danger` text and outline, never a red fill.
 - Don't nest grey panels in a card; divide it with `Section`s.
 - A thing's own actions go in a `ContextMenu` on right-click, and also behind its ⋯ button, never only on right-click.
 - **A list row's actions are one ⋯ button** (`RowActions` in `LibRows.jsx`, which opens the shared row menu): Open, the row's own actions, then Delete after a line. Never a row of icons, and never a bare delete bin beside Open. A row whose only action is Open keeps a plain Open button.
 - A page's help is one `HelpLink` after its purpose: "Take the tour" or "Read the guide", never "Show me how".
+- **A tree-table row's details open across the table** (Explorer: Models, Measurements, Maintenance tasks): a double-click, or Enter on the focused row, on a wide screen. The tree and its folding stay and the table pane is replaced by the details, which carry a "Back to table" button; Esc does the same, back to the same scroll position and selection. A single click opens the details beside the table as before. On a phone the details already fill the pane. This is the shared `expanded`, `onExpand`, `onCollapse` behaviour of the Explorer's side panels (`ModelSide`, `TaskSide`); a tab that opens a row's details adopts it rather than building its own. The RCM and FME(C)A tabs have it already.
+- **Focus in any tree (`TreeTable`; "Focus here", or "Focus tasks", "Focus failure modes", "Focus measurements", "Focus models", "Focus missions" on a tab with its own table)** closes every other branch and opens that row at every level, so all its tasks, failure modes or points show; Focus to a depth › opens 1, 2 or 3 levels. It never hides or pins. "Focused: <name>" with Clear focus sits in the tree column's header (the ⋯ menu has Clear focus too) and puts back what was open. Pin this branch is the one that filters to a subtree.
+- **A tree-table's columns filter from their headers** (`ColumnFilter`): the values come from the rows open in the tree, a filter keeps the way down to each match, and the tree column's header says "Filtered by …" with a one-click Clear. A table that acts on several rows lets you pick them with click, Shift-click, Ctrl/⌘-click or a row's box, and its right-click menu acts on all of them.
+- **A tree-table has no inner views** (the Explorer's Maintenance tab, Derryn, 22 Nov 2026): what would be a sub-tab is rows of the one table. A record that belongs to several rows sits at the lowest level they all share (a work package at the meeting point of its tasks), with references to them under it (`mpref` rows, "on <position>" after the name). Numbers about a row (its forecast) are a child row whose lines run their text across the columns (`rollupOf`), each line's label in the tree column; its ⋯ opens the full view in the table pane.
 - Pick a saved value from a few with `ChoiceChips`. Switch a view with `SegmentedControl`, move between panels with `Tabs` (more panels than fit: `Tabs` with `overflow`, the rest under "⋯ N"), and apply a setting at once with `Switch`.
 
 ## Iconography
 
 Use the app's own icon set in `assets/Icons/`: a 24px grid, 1.7px hairline strokes, round caps and joins, drawn in `currentColor`. The logo is in `assets/Logos/`; set the name beside it in the `heading` style.
+
+## Guards
+
+- **CSS:** `npm run lint:css` (in `frontend/`, and in CI's frontend job) runs stylelint (`frontend/.stylelintrc.json`) on every stylesheet but `tokens.css`. It fails on a hex, `rgb()` or `hsl()` colour; on px or rem for margin, padding, gap, font-size or border-radius; and on a `z-index` that isn't a `--z-*` token.
+- **The baseline:** what was there when the guard came in is counted in `frontend/stylelint-baseline.json`, per file and rule, so only new violations fail. A file's count may go down, never up. After removing some, run `npm run lint:css -- --update` and commit the smaller baseline. Never raise a count to make a change pass: use the token.
+- **Tokens:** `tokensSync.test.js` fails when `tokens.css` isn't what `tokens.json` generates; `tokenNames.test.js` fails on a token name from before v2.

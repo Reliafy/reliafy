@@ -19,6 +19,7 @@ import { PageTitle } from "../components/usePageTitle.js";
 import { AddToLibraryDialog } from "../components/LibraryParts.jsx";
 import ProTag from "../components/ProTag.jsx";
 import FromLibrary from "../components/FromLibrary.jsx";
+import Loading from "../components/ui/Loading.jsx";
 
 // A saved accelerated life model in the model frame: the answer line, the
 // result's tabs (Life-stress, Probability plot, Calculator, Diagnostics,
@@ -116,7 +117,7 @@ export default function AltModelPage() {
                          onUseTyped={keepUse} />
         </ErrorBoundary>
       ) : missing ? <ModelNotFound id={id} kind="alt" />
-        : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
+        : !error && <div className="mf-body mf-single"><Loading /></div>}
       {adding && model && (
         <AddToLibraryDialog modelId={model.id} modelName={itemName(model)} collection="alt_models" onClose={() => setAdding(false)} />
       )}

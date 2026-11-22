@@ -1,0 +1,96 @@
+/* Loading (Loading.jsx): the inline "Loading…" and the block placeholder rows.
+   A list row is sized like a "What changed" row, so the card barely moves
+   when the list arrives. */
+
+.loading-inline {
+  color: var(--text-secondary);
+  font-size: var(--fs-13);
+  line-height: var(--lh-13);
+}
+
+p.loading-inline { margin: 0; }
+
+/* In place of a card that will load: the rows carry their own padding. */
+.loading-card { padding: var(--space-2); }
+
+.wait-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+}
+
+.wait-row + .wait-row {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.wait-bar {
+  display: block;
+  height: var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--border);
+  animation: wait-pulse 1.6s ease-in-out infinite;
+}
+
+.wait-kind {
+  flex: 0 0 calc(var(--space-16) + var(--space-2));
+  margin-right: calc(var(--space-16) + var(--space-8));
+}
+
+.wait-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.wait-name {
+  width: min(320px, 70%);
+}
+
+.wait-detail {
+  width: min(180px, 40%);
+  background: var(--border-subtle);
+}
+
+/* Rows of differing length read as a list, not a block. */
+.wait-row:nth-child(even) .wait-name {
+  width: min(240px, 55%);
+}
+
+.wait-row:nth-child(3n) .wait-detail {
+  width: min(240px, 50%);
+}
+
+/* A form loading (shape="fields"): a label bar over a control-high box. */
+.wait-fields { display: flex; flex-direction: column; gap: var(--space-4); }
+.wait-field { display: flex; flex-direction: column; gap: var(--space-2); }
+.wait-label { width: min(160px, 45%); }
+.wait-box { height: var(--control-md); border-radius: var(--radius-md); background: var(--border-subtle); }
+.wait-field:nth-child(even) .wait-label { width: min(120px, 35%); }
+
+@keyframes wait-pulse {
+  50% { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wait-bar { animation: none; }
+}
+
+@media (max-width: 720px) {
+  .wait-row {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .wait-kind {
+    flex: none;
+    width: calc(var(--space-16) + var(--space-2));
+    margin-right: 0;
+  }
+
+  .wait-body {
+    width: 100%;
+  }
+}

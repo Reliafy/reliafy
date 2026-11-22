@@ -34,6 +34,7 @@ import SegmentedControl from "./ui/SegmentedControl.jsx";
 import Chip from "./ui/Chip.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import { formatNumber, formatPercent } from "../format.js";
+import { AT_TIME_NOTE, atTimeLead } from "../rbdAtTime.js";
 import { formatDate } from "../dates.js";
 import { hoursPerUnit } from "./rbdModelText.js";
 import { RBD_EVALUATE_AT_EVENT } from "../rbdBuilderOps.js";
@@ -43,6 +44,7 @@ import { importanceRows } from "../rbdImportance.js";
 import ProTag from "./ProTag.jsx";
 import PercentField from "./PercentField.jsx";
 import { readPercents } from "../percentForms.js";
+import { Checkbox, Select } from "./ui/Controls.jsx";
 
 // Linear interpolation of y at xq on the (x, y) grid (null y = gap).
 function interp(x, y, xq) {
@@ -189,10 +191,8 @@ function ImportanceHelp({ structural }) {
 const AS_OF_HINT = "Start from today: give each block its age now (or mark it failed), and the results run from now instead of from new.";
 function AsOfToggle({ checked, onChange }) {
   return (
-    <label className="rbd-asof-toggle" title={AS_OF_HINT}>
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-      <span>As of now <small className="rbd-asof-sub">from today's ages</small></span>
-    </label>
+    <Checkbox className="rbd-asof-toggle" title={AS_OF_HINT} checked={checked} onChange={(e) => onChange(e.target.checked)}
+              label={<span>As of now <small className="rbd-asof-sub">from today's ages</small></span>} />
   );
 }
 
@@ -325,7 +325,7 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
           <span className="drop">{(result.ccf.reliability_without * 100).toFixed(1)}%</span>
           <span>to</span>
           <span className="drop">{(result.ccf.reliability_with * 100).toFixed(1)}%</span>
-          <span className="muted-line" style={{ margin: 0 }}>
+          <span className="muted-line m-0">
             ({result.ccf.groups.map((g) => `${g.members.join(" & ")} β ${formatPercent(g.beta)}`).join("; ")}, at t={fmt(result.ccf.time)}{unit ? ` ${unitInText(unit)}` : ""})
           </span>
         </div>
@@ -540,7 +540,7 @@ function DowntimeBars({ rows, title, note }) {
           <span className="rbd-avail-bar-pct">{((n.share || 0) * 100).toFixed(1)}%</span>
         </div>
       ))}
-      {note && <p className="muted-line" style={{ margin: 0 }}>{note}</p>}
+      {note && <p className="muted-line m-0">{note}</p>}
     </div>
   );
 }
@@ -936,6 +936,43 @@ function windowWords(window, unit, label = null) {
   return `${formatNumber(window)}${unit ? ` ${unitInText(unit)}` : ""}`;
 }
 
+// "Availability at a time": the answer to the time the user typed, in words first. Point
+// availability A(t) is the chance the system is up at that moment; the average over 0 to t and
+// the failures and downtime by t come with it. Exact (RePyability, no simulation), so there is no
+// sampling range; the models are taken as given.
+function AtTimeAnswer({ at, unit, fromNow }) {
+  const u = unit ? ` ${unitInText(unit)}` : "";
+  if (at.status !== "ok") {
+    return <AnswerCard tone="caveat" lead={<>{at.message}</>} />;
+  }
+  return (
+    <>
+      {at.rows.map((r) => (
+        <AnswerCard
+          key={r.t}
+          className="rbd-at-time"
+          lead={<>{atTimeLead(r, unit ? unitInText(unit) : "", fromNow, pctOf)}</>}
+          rows={[
+            r.mission_availability != null && {
+              label: `Average over 0 to ${formatNumber(r.t, { sig: 4 })}${u}`,
+              value: <b>{pctOf(r.mission_availability)}</b>,
+            },
+            r.expected_failures != null && {
+              label: `Failures by ${formatNumber(r.t, { sig: 4 })}${u}`,
+              value: <><b>{formatNumber(r.expected_failures, { sig: 3 })}</b> expected</>,
+            },
+            r.downtime != null && {
+              label: `Downtime by ${formatNumber(r.t, { sig: 4 })}${u}`,
+              value: <><b>{formatNumber(r.downtime, { sig: 3 })}{u}</b> expected</>,
+            },
+          ]}
+          note={<p>{AT_TIME_NOTE}</p>}
+        />
+      ))}
+    </>
+  );
+}
+
 // Availability results for a repairable diagram, answer first (#311): the
 // answer card (availability, weakest link, best improvement — or, for a safety
 // function, PFDavg and its SIL), one chart, What to improve, then everything
@@ -1006,6 +1043,8 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
     over = "in the long run";
   }
   const downYear = a != null && hpu ? hoursText((1 - a) * 8760) : null;
+  // A horizon was asked for and its figures are exact: failures, downtime and uptime go in the answer.
+  const horizonOn = !simulatedOnly && !!windowLabel && exactOk && exact.mission_availability != null;
   // A simulated headline carries its range (the simulation's own interval), beside it, not only in Details.
   const prec = simulatedOnly && hasSim ? result.precision : null;
   const simRange = prec && prec.lower != null && prec.upper != null
@@ -1066,6 +1105,23 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
             </span>
           ),
         },
+        // Out to the horizon: what the window holds besides its average (exact, so no range).
+        horizonOn && exact.expected_failures != null && {
+          label: `Failures ${over}`,
+          value: <><b>{formatNumber(exact.expected_failures, { sig: 3 })}</b> expected</>,
+        },
+        horizonOn && exact.downtime != null && {
+          label: `Downtime ${over}`,
+          value: (
+            <>
+              <b>{formatNumber(exact.downtime, { sig: 3 })}{u}</b> down, <b>{formatNumber(Math.max(0, exact.window - exact.downtime), { sig: 3 })}{u}</b> up
+            </>
+          ),
+        },
+        horizonOn && steady != null && {
+          label: "In the long run",
+          value: <><b>{pctOf(steady)}</b><span className="rbd-answer-sub"> available once it has settled</span></>,
+        },
         weakest && {
           label: "Weakest link",
           value: (
@@ -1121,14 +1177,18 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
   const routes = Object.entries(exact?.routes || {});
 
   const tasksChanged = result.simulation_status?.tasks_changed || null;
+  const atAnswer = !safety && !needsSim && exact?.at_times ? (
+    <AtTimeAnswer at={exact.at_times} unit={unit} fromNow={fromNow} />
+  ) : null;
   return (
     <div className="rbd-avail">
       {answer}
+      {atAnswer}
       {/* The saved simulation used maintenance tasks (read from the tree) that have changed since:
           said, never rerun unasked. */}
       {tasksChanged?.length > 0 && (
         <div className="card note rbd-tasks-changed" role="status">
-          <p style={{ margin: 0 }}>
+          <p className="m-0">
             <b>The saved simulation is out of date.</b> It was run before {tasksChanged.length === 1 ? "this task" : "these tasks"} in
             the tree changed: {tasksChanged.join(", ")}. The exact figures above use the tasks as they are now; run the
             simulation again for its figures.
@@ -1139,7 +1199,7 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
           simulated chart, unless the exact ones are there to be asked for. */}
       {exact && (exact.status === "on_request" || (exact.status !== "ok" && exact.status !== "simulation_only" && !needsSim && exact.message)) && (
         <div className="card note rbd-exact-note" role="status">
-          <p style={{ margin: 0 }}>{exact.message}</p>
+          <p className="m-0">{exact.message}</p>
           {exact.status === "on_request" && onCompute && (
             <div className="rbd-upgrade-actions">
               <button type="button" onClick={onCompute} disabled={busy === "exact"}>
@@ -1391,14 +1451,14 @@ function AsOfPanel({ blocks, states, onChange, unitLabel, repairable, sources = 
   const outMode = repairable ? "down" : "failed";
   return (
     <div className="rbd-asof-panel">
-      <p className="hint" style={{ margin: 0 }}>
+      <p className="hint m-0">
         {repairable
           ? "Mark blocks that are down now (with how long they've been in repair) or set how long " +
             "they've been running since new or their last renewal. Blocks left as New start new."
           : "Mark blocks that have failed, or set how long they've been running. Results then run " +
             "from now: the remaining life. Blocks left as New start new."}
       </p>
-      {agesNote && <p className="hint" style={{ margin: 0 }}>{agesNote}</p>}
+      {agesNote && <p className="hint m-0">{agesNote}</p>}
       <ScrollCue className="rbd-avail-imp-scroll">
         <table className="calc-table rbd-asof-table">
           <thead>
@@ -1425,7 +1485,7 @@ function AsOfPanel({ blocks, states, onChange, unitLabel, repairable, sources = 
                     )}
                   </td>
                   <td>
-                    <select
+                    <Select
                       value={mode}
                       aria-label={`${b.label} state now`}
                       onChange={(e) => onChange(b.id, { mode: e.target.value })}
@@ -1433,7 +1493,7 @@ function AsOfPanel({ blocks, states, onChange, unitLabel, repairable, sources = 
                       <option value="new">New</option>
                       <option value="age">Running</option>
                       <option value={outMode}>{repairable ? "Down" : "Failed"}</option>
-                    </select>
+                    </Select>
                   </td>
                   <td>
                     {!timed ? (
@@ -1490,6 +1550,7 @@ export default function RbdCalculator({
   if (!runGuard.current) runGuard.current = createRunGuard();
   const [cancelNote, setCancelNote] = useState(null);
   const [tMax, setTMax] = useState(""); // x-axis 'to' limit (blank = auto)
+  const [atT, setAtT] = useState(""); // repairable: the time A(t) is read at ("Availability at")
   const [evalT, setEvalT] = useState(""); // time at which R(t)/F(t) is read off
   // Whether "To" / "Evaluate at" hold the values a calculation filled in
   // (auto) rather than ones the user typed. An auto "To" isn't sent back, so
@@ -1677,8 +1738,10 @@ export default function RbdCalculator({
   useEffect(() => {
     window.dispatchEvent(new CustomEvent(RBD_EVALUATE_AT_EVENT, { detail: atSent }));
   }, [atSent]);
+  // Repairable: the time the point availability is read at (blank or not above 0: none asked).
+  const atTimeSent = graph.repairable && atT !== "" && Number(atT) > 0 ? Number(atT) : null;
   const inputSig = JSON.stringify({
-    t: tSent, s: asOf && !graph.repairable ? "" : condAge, cov: covPayload(), band: bandSig,
+    t: tSent, ts: atTimeSent, s: asOf && !graph.repairable ? "" : condAge, cov: covPayload(), band: bandSig,
     now: statePayload(), target, at: atSent,
   });
   const dirty = result != null && calcSig != null && inputSig !== calcSig;
@@ -1757,6 +1820,7 @@ export default function RbdCalculator({
                 // Keep large diagrams' exact figures once asked for.
                 exact: exact || result?.exact?.status === "ok",
                 runToken: token,
+                times: atTimeSent != null ? [atTimeSent] : null,
               }
             : { currentState: now, targetReliability: target, evaluateAt: atUsed }),
         }
@@ -1790,7 +1854,7 @@ export default function RbdCalculator({
           setEvalTAuto(true);
         }
       }
-      setCalcSig(JSON.stringify({ t: tSent, s: sInput, cov, band: bandSig, now, target, at: atUsed }));
+      setCalcSig(JSON.stringify({ t: tSent, ts: atTimeSent, s: sInput, cov, band: bandSig, now, target, at: atUsed }));
       if (!res.job) {
         setPhase("idle");
         setBusy(null);
@@ -2104,11 +2168,12 @@ export default function RbdCalculator({
 
       {graph.repairable && (
         <div className="rbd-asof">
-          {/* One window control: the presets, the long run, or Custom
-              with one number; "As of now" beside it; then the action. */}
+          {/* Two questions, each with its own input (as the model pages' calculators ask them):
+              "Out to" a horizon (the presets, the long run, or Custom with one number) and
+              "Availability at" a time. "As of now" beside them; then the action. */}
           <div className="calc-controls rbd-calc-inputs rbd-window">
             <SegmentedControl
-              label={asOf ? "Window from now" : "Window"}
+              label={asOf ? "Out to (from now)" : "Out to (the horizon)"}
               showLabel
               value={windowPreset}
               onChange={(v) => {
@@ -2123,8 +2188,8 @@ export default function RbdCalculator({
               }}
               options={[
                 ...(hpu ? WINDOW_PRESETS.map((w) => ({ value: w.id, label: w.label })) : []),
-                { value: "long", label: "Long run", title: "The long-run (steady-state) availability; figures over time use an automatic window" },
-                { value: "custom", label: "Custom", title: "A window of your own length" },
+                { value: "long", label: "Long run", title: "The long-run (steady-state) availability; figures over time use an automatic horizon" },
+                { value: "custom", label: "Custom", title: "A horizon of your own length" },
               ]}
             />
             {windowPreset === "custom" && (
@@ -2133,7 +2198,7 @@ export default function RbdCalculator({
                   type="number" inputMode="decimal"
                   min="0"
                   step="any"
-                  aria-label={`Window${unitLabel}`}
+                  aria-label={`Horizon${unitLabel}`}
                   placeholder={autoWindow ? `auto (${autoWindow})` : "length"}
                   value={tMax === "" || tMaxAuto ? "" : tMax}
                   onChange={(e) => {
@@ -2144,6 +2209,18 @@ export default function RbdCalculator({
                 {graph.unit && <span>{unitInText(graph.unit)}</span>}
               </label>
             )}
+            <label className="calc-t">
+              <span>Availability at t{unitLabel}</span>
+              <input
+                type="number" inputMode="decimal"
+                min="0"
+                step="any"
+                placeholder="a time"
+                aria-label={`Availability at t${unitLabel}`}
+                value={atT}
+                onChange={(e) => setAtT(e.target.value)}
+              />
+            </label>
             <AsOfToggle checked={asOf} onChange={setAsOf} />
             {!asOf && action}
           </div>

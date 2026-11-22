@@ -165,5 +165,5 @@ test("a work order on a phone: when, then where, under its title", () => {
 test("Package tasks on… opens the picked tree isolated, on its LSA tab, its top row picked", () => {
   const url = new URL(packageTasksOn("pos 1"), "http://x");
   assert.equal(url.pathname, "/asset-register/explorer");
-  assert.deepEqual(Object.fromEntries(url.searchParams), { arrange: "positions", tab: "lsa", root: "pos 1", sel: "pos 1" });
+  assert.deepEqual(Object.fromEntries(url.searchParams), { arrange: "positions", tab: "maintenance", root: "pos 1", sel: "pos 1" });
 });

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
 import { fitLine, pointMarker, referenceShape } from "../plotTheme.js";
 import Select from "./Select.jsx";
@@ -311,7 +312,7 @@ function FromNow({ modelId, unit, renewal }) {
       <div className="calc-eval-body">
         <label className="calc-t">
           <span>The next{ut ? ` (${ut})` : ""}, from where each system is now</span>
-          <span className="row" style={{ gap: 8, margin: 0 }}>
+          <span className="row gap-2 m-0">
             <input type="number" inputMode="decimal" min={0} step="any" placeholder="e.g. 8000" value={h}
                    onChange={(e) => setH(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") run(); }} />
             <button type="button" className="btn" onClick={() => run()} disabled={busy || !(Number(h) > 0)}>
@@ -366,7 +367,12 @@ function CountRows({ res, unit, perSystem = false }) {
       {res.stock && (
         <div>
           <dt>Stock to hold</dt>
-          <dd>{res.stock.hold.toLocaleString("en-US")}{each} <span className="gof-sub">for a {stockLevel} chance of not running out; {runoutText(res.stock)}</span></dd>
+          <dd>{res.stock.hold.toLocaleString("en-US")}{each} <span className="gof-sub">for a {stockLevel} chance of not running out; {runoutText(res.stock)}</span>
+            <span className="gof-sub" data-testid="stock-when-to-use" style={{ display: "block" }}>
+              Use this for a stream of replacements counted as one process, such as a fleet's replacements against fleet hours.
+              For a fleet of individual items with known ages and a lead time, use the spares card in <Link to="/forecasts">Forecasts</Link>.
+            </span>
+          </dd>
         </div>
       )}
       {res.constant_rate && (

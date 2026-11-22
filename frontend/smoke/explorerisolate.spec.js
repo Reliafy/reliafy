@@ -45,11 +45,13 @@ const box = async (loc) => {
   const b = await loc.boundingBox();
   return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) };
 };
-// Right-click a row, then Focus › the level asked for (the submenu beside the menu).
-async function isolate(page, target, label) {
+// Right-click a row, then Focus › the level asked for (the submenu beside the menu). `focus` is
+// the submenu's label: "Focus" on the Summary tab, "Focus failure modes" on the RCM tab (where
+// the item above it, Focus here, reads the same: the submenu is the last of the two).
+async function isolate(page, target, label, focus = "Focus to a depth") {
   await target.click({ button: "right" });
-  await page.getByRole("menu").first().getByRole("menuitem", { name: "Focus", exact: true }).hover();
-  const sub = page.getByRole("menu", { name: "Focus" });
+  await page.getByRole("menu").first().getByRole("menuitem", { name: "Focus to a depth", exact: true }).hover();
+  const sub = page.getByRole("menu", { name: "Focus to a depth", exact: true });
   await expect(sub).toBeVisible();
   await sub.getByRole("menuitem", { name: label }).click();
   await expect(page.getByRole("menu")).toHaveCount(0);
@@ -72,17 +74,16 @@ test("isolate at 1, 2, 3 levels and everything: the rest closed but on show, the
   // The menu: Focus › (the four levels beside it), before Pin this branch and Delete.
   await row(page, `Works line A ${tag}`).locator(".tp-nm").click({ button: "right" });
   const menu = rowMenu(page, `Works line A ${tag}`);
-  await expect(menu.getByRole("menuitem")).toHaveText(["New position inside", "Add failure report…", "Log an event…", "Rename…", "Move to…", "Make this its own asset…", "Export this branch…", "Focus", "Pin this branch", "Delete…"]);
-  await expect(menu.getByRole("menuitem", { name: "Focus" })).toHaveAttribute("aria-haspopup", "menu");
-  await menu.getByRole("menuitem", { name: "Focus" }).hover();
-  const sub = page.getByRole("menu", { name: "Focus" });
-  await expect(sub.getByRole("menuitem")).toHaveText(["With 1 level open", "With 2 levels open", "With 3 levels open", "With everything open"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["New position inside", "Add failure report…", "Log an event…", "Rename…", "Move to…", "Make this its own asset…", "Export this branch…", "Focus here", "Focus to a depth", "Pin this branch", "Delete…"]);
+  await expect(menu.getByRole("menuitem", { name: "Focus to a depth", exact: true })).toHaveAttribute("aria-haspopup", "menu");
+  await menu.getByRole("menuitem", { name: "Focus to a depth", exact: true }).hover();
+  const sub = page.getByRole("menu", { name: "Focus to a depth" });  await expect(sub.getByRole("menuitem")).toHaveText(["1 level", "2 levels", "3 levels"]);
   const mb = await menu.boundingBox();
   expect((await sub.boundingBox()).x).toBeGreaterThanOrEqual(mb.x + mb.width - 10);
   await shot(page, "v2-1-row-menu-isolate-submenu-1280");
 
   // 1 level: line A open, its pump closed; line B closed but still there; the plant open (the way up).
-  await sub.getByRole("menuitem", { name: "With 1 level open" }).click();
+  await sub.getByRole("menuitem", { name: "1 level" }).click();
   await expect(row(page, `Works line A ${tag}`)).toHaveAttribute("aria-expanded", "true");
   await expect(row(page, `Works pump A ${tag}`)).toHaveAttribute("aria-expanded", "false");
   await expect(row(page, `Works seal A ${tag}`)).toHaveCount(0);
@@ -99,19 +100,20 @@ test("isolate at 1, 2, 3 levels and everything: the rest closed but on show, the
   await shot(page, "v2-2-isolated-1-level-1280");
 
   // 2 levels: the seal shows too.
-  await isolate(page, row(page, `Works line A ${tag}`).locator(".tp-nm"), "With 2 levels open");
+  await isolate(page, row(page, `Works line A ${tag}`).locator(".tp-nm"), "2 levels");
   await expect(row(page, `Works seal A ${tag}`)).toBeVisible();
   await expect(row(page, `Works line B ${tag}`)).toHaveAttribute("aria-expanded", "false");
   // The plant, 1 level: both lines show, closed (the seal's branch closes again).
-  await isolate(page, row(page, `Works plant ${tag}`).locator(".tp-nm"), "With 1 level open");
+  await isolate(page, row(page, `Works plant ${tag}`).locator(".tp-nm"), "1 level");
   await expect(row(page, `Works line A ${tag}`)).toHaveAttribute("aria-expanded", "false");
   await expect(row(page, `Works line B ${tag}`)).toHaveAttribute("aria-expanded", "false");
   await expect(row(page, `Works pump A ${tag}`)).toHaveCount(0);
   // 3 levels and everything: down to the seals.
-  await isolate(page, row(page, `Works plant ${tag}`).locator(".tp-nm"), "With 3 levels open");
+  await isolate(page, row(page, `Works plant ${tag}`).locator(".tp-nm"), "3 levels");
   await expect(row(page, `Works seal A ${tag}`)).toBeVisible();
   await expect(row(page, `Works pump B ${tag}`)).toBeVisible();
-  await isolate(page, row(page, `Works line B ${tag}`).locator(".tp-nm"), "With everything open");
+  await row(page, `Works line B ${tag}`).locator(".tp-nm").click({ button: "right" });
+  await page.getByRole("menu").first().getByRole("menuitem", { name: "Focus here", exact: true }).click();
   await expect(row(page, `Works pump B ${tag}`)).toBeVisible();
   await expect(row(page, `Works line A ${tag}`)).toHaveAttribute("aria-expanded", "false");
   await expect(spoken(page)).toContainText("opened every level.");
@@ -125,14 +127,14 @@ test("isolate at 1, 2, 3 levels and everything: the rest closed but on show, the
   const kmenu = rowMenu(page, `Works line B ${tag}`);
   // The menu puts the focus on its first item as it opens: wait for that, so it doesn't take it back from Isolate.
   await expect(kmenu.getByRole("menuitem").first()).toBeFocused();
-  await kmenu.getByRole("menuitem", { name: "Focus" }).focus();
-  await expect(kmenu.getByRole("menuitem", { name: "Focus" })).toBeFocused();
+  await kmenu.getByRole("menuitem", { name: "Focus to a depth", exact: true }).focus();
+  await expect(kmenu.getByRole("menuitem", { name: "Focus to a depth", exact: true })).toBeFocused();
   await page.keyboard.press("ArrowRight");
-  await expect(sub.getByRole("menuitem", { name: "With 1 level open" })).toBeFocused();
+  await expect(sub.getByRole("menuitem", { name: "1 level" })).toBeFocused();
   await page.keyboard.press("ArrowLeft"); // back to Isolate
-  await expect(kmenu.getByRole("menuitem", { name: "Focus" })).toBeFocused();
+  await expect(kmenu.getByRole("menuitem", { name: "Focus to a depth", exact: true })).toBeFocused();
   await page.keyboard.press("Enter");
-  await page.keyboard.press("Enter"); // With 1 level open
+  await page.keyboard.press("Enter"); // 1 level
   await expect(row(page, `Works line B ${tag}`)).toHaveAttribute("aria-expanded", "true");
   await expect(row(page, `Works pump B ${tag}`)).toBeVisible();
   await expect(row(page, `Works line A ${tag}`)).toHaveAttribute("aria-expanded", "false");
@@ -155,7 +157,7 @@ test("the RCM tab: isolate a function; inside a pinned branch; the mouse menus h
   // The function's menu with the mouse: Move to… (the picker), but no Move up / Move down (drag for those).
   await fnRow.locator(".tt-tree").click({ button: "right" });
   const fmenu = rowMenu(page, `Function: Pump water ${tag}`);
-  await expect(fmenu.getByRole("menuitem")).toHaveText(["Add a performance standard…", "Add functional failure", "Open…", "Edit description", "Move to…", "Focus", "Focus on incomplete rows", "Delete function…"]);
+  await expect(fmenu.getByRole("menuitem")).toHaveText(["Add a performance standard…", "Add functional failure", "Open…", "Edit description", "Move to…", "Focus failure modes", "Focus to a depth", "Focus on incomplete rows", "Delete function…"]);
   await shot(page, "v2-3-rcm-function-menu-no-moves-1280");
   await page.keyboard.press("Escape");
   // Its ⋯: the same.
@@ -167,16 +169,16 @@ test("the RCM tab: isolate a function; inside a pinned branch; the mouse menus h
   await trow(`Failure mode: Seal leaks ${tag}`).locator(".tt-tree").click({ button: "right" });
   await expect(page.getByRole("menu").getByRole("menuitem", { name: "Move to…" })).toBeVisible();
   await expect(page.getByRole("menu").getByRole("menuitem", { name: /^Move (up|down)$/ })).toHaveCount(0);
-  await expect(page.getByRole("menu").getByRole("menuitem", { name: "Focus", exact: true })).not.toHaveAttribute("aria-haspopup", "menu");
+  await expect(page.getByRole("menu").getByRole("menuitem", { name: "Focus failure modes", exact: true })).not.toHaveAttribute("aria-haspopup", "menu");
   await page.keyboard.press("Escape");
   // From the keyboard: the moves are there.
   await fnRow.locator(".tt-tree").click();
   await fnRow.press("Shift+F10");
-  await expect(fmenu.getByRole("menuitem")).toHaveText(["Add a performance standard…", "Add functional failure", "Open…", "Edit description", "Move to…", "Move up", "Move down", "Focus", "Focus on incomplete rows", "Delete function…"]);
+  await expect(fmenu.getByRole("menuitem")).toHaveText(["Add a performance standard…", "Add functional failure", "Open…", "Edit description", "Move to…", "Move up", "Move down", "Focus failure modes", "Focus to a depth", "Focus on incomplete rows", "Delete function…"]);
   await page.keyboard.press("Escape");
 
   // Isolate the function, 1 level: its failure shows, closed; line B closed, still on show; the pin stays.
-  await isolate(page, fnRow.locator(".tt-tree"), "With 1 level open");
+  await isolate(page, fnRow.locator(".tt-tree"), "1 level", "Focus failure modes");
   await expect(trow(`^Functional failure: No flow ${tag}`)).toHaveAttribute("aria-expanded", "false");
   await expect(trow(`Failure mode: Seal leaks ${tag}`)).toHaveCount(0);
   await expect(trow(`^Works pump A ${tag}`)).toHaveAttribute("aria-expanded", "true"); // the way up stays open
@@ -188,7 +190,7 @@ test("the RCM tab: isolate a function; inside a pinned branch; the mouse menus h
   expect([now.tree.x, now.tree.y, now.head.x, now.head.y]).toEqual([frame.tree.x, frame.tree.y, frame.head.x, frame.head.y]);
   await shot(page, "v2-4-rcm-function-isolated-1280");
   // 2 levels: the mode shows.
-  await isolate(page, fnRow.locator(".tt-tree"), "With 2 levels open");
+  await isolate(page, fnRow.locator(".tt-tree"), "2 levels", "Focus failure modes");
   await expect(trow(`Failure mode: Seal leaks ${tag}`)).toBeVisible();
   // Switching tabs moves nothing.
   await page.getByRole("tab", { name: "Summary" }).click();
@@ -218,21 +220,21 @@ test("the RCM tab goes five levels deep: a position's Isolate offers 4 levels, w
   // Its task is the fifth level, closed under the mode until asked for.
   await expect(trow(`^Task: Check the seal ${tag}`)).toHaveCount(0);
   await pumpRow.locator(".tt-tree").click({ button: "right" });
-  await page.getByRole("menu").first().getByRole("menuitem", { name: "Focus", exact: true }).hover();
-  const sub = page.getByRole("menu", { name: "Focus" });
-  await expect(sub.getByRole("menuitem")).toHaveText(["With 1 level open", "With 2 levels open", "With 3 levels open", "With 4 levels open", "With everything open"]);
-  await sub.getByRole("menuitem", { name: "With 4 levels open" }).click();
+  await page.getByRole("menu").first().getByRole("menuitem", { name: "Focus to a depth", exact: true }).hover();
+  const sub = page.getByRole("menu", { name: "Focus to a depth" });
+  await expect(sub.getByRole("menuitem")).toHaveText(["1 level", "2 levels", "3 levels", "4 levels"]);
+  await sub.getByRole("menuitem", { name: "4 levels" }).click();
   await expect(trow(`^Task: Check the seal ${tag}`)).toBeVisible();
   await expect(trow(`^Failure mode: Seal leaks ${tag}`)).toHaveAttribute("aria-expanded", "true");
   await expect(spoken(page)).toContainText("opened 4 levels");
   // 3 levels: down to the failure modes, their tasks closed again.
-  await isolate(page, pumpRow.locator(".tt-tree"), "With 3 levels open");
+  await isolate(page, pumpRow.locator(".tt-tree"), "3 levels", "Focus failure modes");
   await expect(trow(`^Failure mode: Seal leaks ${tag}`)).toHaveAttribute("aria-expanded", "false");
   await expect(trow(`^Task: Check the seal ${tag}`)).toHaveCount(0);
   // The function goes four deep (standards aside): no fifth level offered on it.
   await trow(`^Function: Pump water ${tag}`).locator(".tt-tree").click({ button: "right" });
-  await page.getByRole("menu").first().getByRole("menuitem", { name: "Focus", exact: true }).hover();
-  await expect(page.getByRole("menu", { name: "Focus" }).getByRole("menuitem")).toHaveText(["With 1 level open", "With 2 levels open", "With 3 levels open", "With everything open"]);
+  await page.getByRole("menu").first().getByRole("menuitem", { name: "Focus to a depth", exact: true }).hover();
+  await expect(page.getByRole("menu", { name: "Focus to a depth" }).getByRole("menuitem")).toHaveText(["1 level", "2 levels", "3 levels"]);
   await page.keyboard.press("Escape");
   await expectHealthy(page, problems, { label: "isolate five levels", root: ".tx" });
 });
@@ -250,18 +252,19 @@ test("at 400 px: Isolate opens in place in the ⋯ menu; the rest closes; the RC
   await expect(row(page, `Works pump B ${tag}`)).toBeVisible();
   await row(page, `Works line A ${tag}`).getByRole("button", { name: /^Actions for / }).click();
   const menu = rowMenu(page, `Works line A ${tag}`);
-  await menu.getByRole("menuitem", { name: "Focus" }).click();
-  await expect(menu.getByRole("menuitem", { name: "Focus" })).toHaveAttribute("aria-expanded", "true");
-  const group = menu.getByRole("group", { name: "Focus" });
-  await expect(group.getByRole("menuitem")).toHaveText(["With 1 level open", "With 2 levels open", "With 3 levels open", "With everything open"]);
+  await menu.getByRole("menuitem", { name: "Focus to a depth", exact: true }).click();
+  await expect(menu.getByRole("menuitem", { name: "Focus to a depth", exact: true })).toHaveAttribute("aria-expanded", "true");
+  const group = menu.getByRole("group", { name: "Focus to a depth" });  await expect(group.getByRole("menuitem")).toHaveText(["1 level", "2 levels", "3 levels"]);
   const mb = await menu.boundingBox();
   expect(mb.x + mb.width).toBeLessThanOrEqual(400);
   await shot(page, "v2-5-phone-400px-isolate-menu");
-  await group.getByRole("menuitem", { name: "With 2 levels open" }).click();
+  await group.getByRole("menuitem", { name: "2 levels" }).click();
   await expect(row(page, `Works seal A ${tag}`)).toBeVisible();
   await expect(row(page, `Works line B ${tag}`)).toHaveAttribute("aria-expanded", "false");
   await expect(row(page, `Works pump B ${tag}`)).toHaveCount(0);
-  expect((await page.locator(".tp-scroll").boundingBox()).y).toBe(treeTop);
+  // The one line that moves: "Focused: …" with Clear focus, under the search box.
+  await expect(page.getByRole("group", { name: "Focus" })).toContainText(`Focused: Works line A ${tag}`);
+  expect((await page.locator(".tp-scroll").boundingBox()).y).toBeGreaterThan(treeTop);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
   await shot(page, "v2-6-phone-400px-isolated");
   // The RCM tab: the phone's menus keep the moves (no dragging here).
@@ -271,7 +274,7 @@ test("at 400 px: Isolate opens in place in the ⋯ menu; the rest closes; the RC
   await fnRow.getByRole("button", { name: /^Actions for / }).click();
   await expect(page.getByRole("menu").getByRole("menuitem", { name: "Move to…" })).toBeVisible();
   await expect(page.getByRole("menu").getByRole("menuitem", { name: "Move up" })).toBeVisible();
-  await expect(page.getByRole("menu").getByRole("menuitem", { name: "Focus", exact: true })).toBeVisible();
+  await expect(page.getByRole("menu").getByRole("menuitem", { name: "Focus failure modes", exact: true }).first()).toBeVisible();
   await shot(page, "v2-7-phone-400px-rcm-menu-moves");
   await page.keyboard.press("Escape");
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);

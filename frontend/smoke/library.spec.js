@@ -4,6 +4,7 @@
 // dialog's "A library record" prior, both through "Pick a library record" (a modal search).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { headMenu } from "./explorer.js";
+import { choose, expectChosen } from "./select.js";
 
 const M = "/api/maintenance";
 const NRC = "NRC / INL industry-average parameter estimates (2020 update)";
@@ -31,9 +32,9 @@ test("the library's three levels, then a record used as a model", async ({ page,
   // A per-demand record is a model too, with its demands a year (a covariate of the record).
   const perDemand = table.locator("tr", { hasText: "Motor-operated valve: fails to open" }).first();
   await expect(perDemand.getByRole("button", { name: "Use as a model…" })).toBeEnabled();
-  await page.getByRole("combobox", { name: "Kind" }).selectOption("rate");
+  await choose(page.getByRole("combobox", { name: "Kind" }), "rate");
   await expect(table.locator("tr", { hasText: "fails to open" })).toHaveCount(0);
-  await page.getByRole("combobox", { name: "Sort" }).selectOption("mean");
+  await choose(page.getByRole("combobox", { name: "Sort" }), "mean");
 
   // A record: the distribution written out and plotted, its source, the two actions.
   await table.getByRole("link", { name: SOP, exact: true }).click();
@@ -98,13 +99,17 @@ test("attach a library record to a position, then fit with a library prior", asy
   await expect(picker).toBeVisible();
   const search = picker.getByRole("combobox", { name: "Search the data library" });
   await expect(search).toBeFocused();
-  await expect(picker.getByRole("combobox", { name: "Library", exact: true })).toHaveValue("nrc-inl-2020");
-  await picker.getByRole("combobox", { name: "Library", exact: true }).selectOption("");
+  // The first library with usable records: a library of the user's own (made by another test on this
+  // shared backend) may come before the published ones, so read the list rather than assume one.
+  const { sources } = await (await request.get("/api/library/sources")).json();
+  const first = sources.find((s) => s.basis !== "prediction_model" && (s.kinds?.rate || s.kinds?.life));
+  await expectChosen(picker.getByRole("combobox", { name: "Library", exact: true }), first.id);
+  await choose(picker.getByRole("combobox", { name: "Library", exact: true }), "");
   const options = picker.getByRole("listbox").getByRole("option");
   await expect(options).not.toHaveCount(0);
   // Filter: words, then a failure mode (its choices come with counts); nothing matching offers to clear.
   await search.fill("Motor-operated valve");
-  await picker.getByRole("combobox", { name: "Failure mode" }).selectOption("Spurious operation");
+  await choose(picker.getByRole("combobox", { name: "Failure mode" }), "Spurious operation");
   const row = picker.getByRole("listbox").getByRole("option", { name: new RegExp(SOP) }).first();
   await expect(row).toBeVisible();
   await expect(row).toContainText("NRC/INL 2020");
@@ -112,10 +117,10 @@ test("attach a library record to a position, then fit with a library prior", asy
   await search.fill("xyzzy");
   await expect(picker).toContainText("No records match.");
   await picker.getByRole("button", { name: "Clear the filters" }).click();
-  await expect(picker.getByRole("combobox", { name: "Failure mode" })).toHaveValue("");
+  await expectChosen(picker.getByRole("combobox", { name: "Failure mode" }), "");
   // Pick with the keyboard: the highlight moves with the arrows, Enter picks and closes the picker.
   await search.fill("Motor-operated valve");
-  await picker.getByRole("combobox", { name: "Failure mode" }).selectOption("Spurious operation");
+  await choose(picker.getByRole("combobox", { name: "Failure mode" }), "Spurious operation");
   await expect(options.first()).toContainText(SOP);
   await search.focus();
   await page.keyboard.press("ArrowDown");
@@ -142,7 +147,7 @@ test("attach a library record to a position, then fit with a library prior", asy
   const fit = page.getByRole("region", { name: "Fit a life model" });
   await fit.getByRole("radio", { name: "With a prior" }).click();
   await expect(page.getByRole("dialog", { name: "Fit a life model" })).toHaveCount(0);
-  await fit.getByRole("combobox", { name: "Prior", exact: true }).selectOption("library");
+  await choose(fit.getByRole("combobox", { name: "Prior", exact: true }), "library");
   await expect(picker).toBeVisible();
   await expect(fit).toBeVisible();
   await page.keyboard.press("Escape");
@@ -161,7 +166,7 @@ test("attach a library record to a position, then fit with a library prior", asy
   await expect(picked).toContainText(SOP);
   await expect(fit.getByRole("button", { name: "Change the library record" })).toBeFocused();
   await expect(fit.getByRole("listbox")).toHaveCount(0); // no list inside the dialog any more
-  await fit.getByRole("combobox", { name: "Distribution" }).selectOption("exponential");
+  await choose(fit.getByRole("combobox", { name: "Distribution" }), "exponential");
   await expect(fit.locator("p.ml-lead[role=status]")).toContainText("conjugate", { timeout: 30_000 });
   // Change… opens the picker again on the record picked; Escape leaves the pick as it was.
   await fit.getByRole("button", { name: "Change the library record" }).click();
@@ -176,12 +181,12 @@ test("attach a library record to a position, then fit with a library prior", asy
   await expect(numbers.locator("tr", { hasText: "Mean life" }).locator("td").nth(1)).toContainText(/\d/);
   await expect(numbers.locator("tr", { hasText: "B10 life" }).locator("td").nth(1)).toContainText(/\d/);
   // On a Weibull the record is a prior on the mean life with the shape between bounds: the prior still shows.
-  await fit.getByRole("combobox", { name: "Distribution" }).selectOption("weibull");
+  await choose(fit.getByRole("combobox", { name: "Distribution" }), "weibull");
   await expect(fit.locator("p.ml-lead[role=status]")).toContainText("prior on the mean life", { timeout: 60_000 });
   await expect(numbers.locator("tr", { hasText: "Mean life" }).locator("td").nth(1)).toContainText(/\d/);
   await expect(numbers.locator("tr", { hasText: "Shape" }).locator("td").nth(1)).toContainText(/\d/);
   await expect(fit.locator("p.ml-lead[role=status]")).not.toContainText("gave the belief its numbers.");
-  await fit.getByRole("combobox", { name: "Distribution" }).selectOption("exponential");
+  await choose(fit.getByRole("combobox", { name: "Distribution" }), "exponential");
   await expect(fit.locator("p.ml-lead[role=status]")).toContainText("conjugate", { timeout: 30_000 });
   const fitted = page.waitForResponse((r) => r.url().includes(`${M}/positions/${valve.id}/models`) && r.request().method() === "POST",
     { timeout: 60_000 });
@@ -220,7 +225,7 @@ test("build a library: data and a model added, used, shared and published", asyn
   await page.getByRole("button", { name: "Add to library…" }).click();
   const add = page.getByRole("dialog", { name: "Add to library" });
   await expect(add).toContainText("keeps a copy as it is now");
-  await add.getByRole("combobox", { name: "Library", exact: true }).selectOption({ label: `Site gearboxes ${tag}` });
+  await choose(add.getByRole("combobox", { name: "Library", exact: true }), { label: `Site gearboxes ${tag}` });
   await add.getByRole("button", { name: "Add to the library" }).click();
   await expect(add.getByRole("status")).toContainText("Added");
   await add.getByRole("link", { name: "Open the entry" }).click();
@@ -243,7 +248,7 @@ test("build a library: data and a model added, used, shared and published", asyn
   await panel.getByRole("radio", { name: /^Public/ }).check();
   await panel.getByRole("button", { name: "Save" }).click();
   await expect(panel.getByRole("alert")).toContainText("Choose a licence");
-  await panel.getByLabel("Licence").selectOption({ index: 1 });
+  await choose(panel.getByLabel("Licence"), { index: 1 });
   await panel.getByLabel("Citation").fill(`Mill gearbox records ${tag}`);
   await panel.getByRole("checkbox", { name: "I have the right to publish this" }).check();
   await panel.getByRole("button", { name: "Save" }).click();
@@ -270,8 +275,7 @@ test("an upload split into datasets goes into a library, from Data and from the 
   await dialog.locator('input[type="file"]').setInputFiles({ name: `sites ${tag}.csv`, mimeType: "text/csv", buffer: Buffer.from(sheet) });
   await dialog.getByRole("combobox", { name: "Split into datasets by" }).click();
   await page.getByRole("option", { name: "Site", exact: true }).click();
-  const choose = dialog.getByRole("combobox", { name: "Also add to library" });
-  await choose.selectOption("new");
+  await choose(dialog.getByRole("combobox", { name: "Also add to library" }), "new");
   await dialog.getByRole("textbox", { name: "New library's name" }).fill(`Sites ${tag}`);
   await dialog.getByRole("button", { name: "Save 3 datasets" }).click();
   const saved = dialog.getByRole("region", { name: "Saved datasets" });
@@ -296,7 +300,7 @@ test("an upload split into datasets goes into a library, from Data and from the 
     name: `west ${tag}.csv`, mimeType: "text/csv",
     buffer: Buffer.from(`Hours,Failed\n${410 + Number(tag.slice(-3))},1\n620,0\n900,1\n1050,0\n`),
   });
-  await expect(up.getByRole("combobox", { name: "Also add to library" })).toHaveValue(/[0-9a-f]{32}/);
+  await expectChosen(up.getByRole("combobox", { name: "Also add to library" }), /[0-9a-f]{32}/);
   await up.getByRole("button", { name: "Create dataset" }).click();
   await expect(up).toHaveCount(0, { timeout: 30_000 });
   await expect(page.getByRole("status").filter({ hasText: "Added it to" })).toBeVisible();

@@ -471,13 +471,7 @@ def test_negative_times_are_refused(samples):
                                                                "conditional_age": -1}))
 
 
-def test_repairable_analysis_refuses_reliability_only_arguments(env):
-    from backend.tests.test_mcp import REPAIRABLE_STAGES
-
-    rid = _ok(_call(env.token[A], "change", {"action": "rbd_create", "name": "R", "repairable": True,
-                                          "stages": REPAIRABLE_STAGES}))["id"]
-    assert "non-repairable" in _err(_call(env.token[A], "analyse", {"action": "rbd", "rbd_id": rid,
-                                                                         "times": [10]}))
+# A repairable diagram takes times since a71fd33a (availability at t): test_availability_at_times.py.
 
 
 def test_optimal_overhaul_refuses_a_non_positive_t_max(env):

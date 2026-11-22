@@ -196,6 +196,13 @@ def test_task_table_route(api):
     [row] = got.json()["tasks"]
     assert row["name"] == "Skim" and row["subject"]["name"] == "Pump" and row["package"] is None
     assert api.get(f"{M}/task-table").status_code == 422
+    # Inside the asset opened (?within=, the Explorer's ?root=): another asset's position is refused.
+    assert api.get(f"{M}/task-table", params={"position_id": pump["id"], "within": site["id"]}).json()["total"] == 1
+    other = api.post(f"{M}/positions", json={"name": "Other"}).json()
+    assert api.get(f"{M}/task-table", params={"position_id": other["id"], "within": site["id"]}).status_code == 422
+    # The whole asset opened (the Explorer's tree of tasks): within alone.
+    whole = api.get(f"{M}/task-table", params={"within": site["id"]}).json()
+    assert [r["name"] for r in whole["tasks"]] == ["Skim"]
 
 
 def test_over_mcp_a_package_by_operating_hours(env):

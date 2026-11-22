@@ -7,6 +7,7 @@ import {
   useLocation,
   useNavigationType,
 } from "react-router-dom";
+import BuildUpdateWatcher from "./components/BuildUpdateWatcher.jsx";
 import Login from "./views/Login.jsx";
 import Landing from "./views/Landing.jsx";
 import Blog from "./views/Blog.jsx";
@@ -31,6 +32,7 @@ import { WorkspaceProvider } from "./WorkspaceProvider.jsx";
 import { AUTH_DISABLED } from "./firebase.js";
 import { installTelemetry, trackEvent } from "./telemetry.js";
 import { publicLibraryId, showsPublicLibrary } from "./libraries.js";
+import Loading from "./components/ui/Loading.jsx";
 
 // The authenticated app (and its heavyweight dependencies — Plotly, the RBD
 // canvas) is a separate chunk: marketing/blog/learn visitors never download
@@ -50,7 +52,7 @@ const PublicLibraryPage = lazy(() => import("./views/PublicLibraryPage.jsx"));
 // spinner; if signed out, redirect to /login.
 function RequireAuth({ children }) {
   const { user, loading } = useAuth();
-  if (loading) return <div className="auth-loading">Loading…</div>;
+  if (loading) return <div className="auth-loading"><Loading inline /></div>;
   if (!user) return <Navigate to="/login" replace />;
   return children;
 }
@@ -65,7 +67,7 @@ function AppOrPublicLibrary() {
   const id = publicLibraryId(pathname);
   if (id && !loading && showsPublicLibrary(pathname, search, !!user)) {
     return (
-      <Suspense fallback={<div className="auth-loading">Loading…</div>}>
+      <Suspense fallback={<div className="auth-loading"><Loading inline /></div>}>
         <PublicLibraryPage id={id} preview={!!user} />
       </Suspense>
     );
@@ -73,7 +75,7 @@ function AppOrPublicLibrary() {
   return (
     <RequireAuth>
       <WorkspaceProvider>
-        <Suspense fallback={<div className="auth-loading">Loading…</div>}>
+        <Suspense fallback={<div className="auth-loading"><Loading inline /></div>}>
           <AppShell />
         </Suspense>
       </WorkspaceProvider>
@@ -112,6 +114,7 @@ export default function App() {
     <BrowserRouter useTransitions={false}>
       <PageViews />
       <ScrollToTop />
+      <BuildUpdateWatcher />
       <ConfigProvider>
         <AuthProvider>
           <ConfirmProvider>
@@ -153,13 +156,13 @@ export default function App() {
             {/* In both modes: the how-to guides and share pages (/p/:token).
                 With sign-in off (tst, the self-hosted single-user app) a
                 share link must still open the shared page, never the
-                workspace behind it, and "Show me how" must open its guide. */}
+                workspace behind it, and "Read the guide" must open it. */}
             <Route path="/guides" element={<GuidesIndex />} />
             <Route path="/guides/:slug" element={<GuidePage />} />
             <Route
               path="/p/:token"
               element={
-                <Suspense fallback={<div className="auth-loading">Loading…</div>}>
+                <Suspense fallback={<div className="auth-loading"><Loading inline /></div>}>
                   <PublicArtifact />
                 </Suspense>
               }
@@ -170,7 +173,7 @@ export default function App() {
             <Route
               path="/oauth/consent"
               element={
-                <Suspense fallback={<div className="auth-loading">Loading…</div>}>
+                <Suspense fallback={<div className="auth-loading"><Loading inline /></div>}>
                   <OAuthConsent />
                 </Suspense>
               }

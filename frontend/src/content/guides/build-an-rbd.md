@@ -28,7 +28,7 @@ Open **Modelling → System models → RBDs → New diagram**. Every diagram run
 them.
 
 Everything for laying out the diagram is in the one toolbar above the canvas.
-**+ Add block** at its left adds a component, a junction, a voting node or one of
+**+ Add block** at its left (the blue button) adds a component, a junction, a voting node or one of
 the other block types in the middle of the canvas (a right-click on the canvas
 offers the same list where you clicked). Drag from one block's handle to another
 to connect them. Series is a straight chain; parallel is two blocks that both
@@ -60,19 +60,40 @@ enough.)
 
 ![A pump station diagram: input, controller, redundant pumps, output](/guides/img/rbd-01-builder.png)
 
-Set the **Unit** in the toolbar. Everything in the diagram should share one time
-base, and Reliafy will warn you if you drop in a saved model that was fitted in
-different units. The menu beside it says what kind of diagram this is:
-**Non-repairable** (reliability over time, this guide), **Repairable**
-(availability) or **Network**. The **⋯** menu at the right holds the rest,
+The diagram's own settings are behind the button beside **Undo** and **Redo**,
+which shows them at a glance (for example "Hours · Non-repairable"). Open it to
+set the **Time unit**: everything in the diagram should share one time base, and
+Reliafy will warn you if you drop in a saved model that was fitted in different
+units. **Kind** says what the diagram is: **Non-repairable** (reliability over
+time, this guide), **Repairable** (availability) or **Network**. The **Safety
+function** switch is there too. The **⋯** menu at the right holds the rest,
 including **Auto-arrange** to tidy the layout.
 
-For a big diagram, press **Full screen** in the top-right corner of the canvas
-(or press `F`; on a phone it's the arrows icon there). The toolbar and canvas
-then fill the screen, and everything works as it does on the page, block dialogs
-included. The diagram's name and whether it's saved stay in the toolbar. **Exit
-full screen** at the toolbar's right end (or Escape) takes you back, with the
-diagram just as you left it. The results tabs stay on the page.
+## Saving and undoing
+
+Press **Save…** once to name a new diagram. From then on it **saves itself** a
+moment after each change, and the toolbar says **Saving…**, then **Saved**. If a
+save doesn't go through (you're offline, say), it says **Couldn't save** with a
+**Retry**; your changes stay on the canvas. A half-built diagram saves as it is:
+the check (below) says what's left to do, but never stops a save.
+
+Because every change is kept, **Undo** (`Ctrl+Z`, `⌘Z` on a Mac) and **Redo**
+(`Ctrl+Shift+Z`) are the way back, from the buttons beside **+ Add block** or
+the keys. They step through every edit you've made since you opened the diagram
+(they don't go back past that, and a reload starts afresh). An undo is saved too.
+**⋯ → Save as new…** keeps a copy under another name.
+
+Prefer to save by hand? Turn off **⋯ → Autosave** (or **Settings → Editing**;
+it's one setting for all your diagrams). The toolbar then shows **Save** and
+**Unsaved changes**, and Reliafy asks before you leave with changes not saved. A
+sample or shared diagram never saves itself: **Save a copy…** makes it yours.
+
+For a big diagram, press the **Full screen** arrows near the toolbar's right end
+(or press `F`). The toolbar and canvas then fill the screen, and everything
+works as it does on the page, block dialogs included. The diagram's name and
+whether it's saved stay in the toolbar. **Exit full screen** (or Escape) takes
+you back, with the diagram just as you left it. The results tabs stay on the
+page.
 
 ## Giving blocks their non-repairable models
 
@@ -133,15 +154,16 @@ together from a shared cause — the correction that stops parallel redundancy f
 flattering you. That has [its own guide](/guides/common-cause-group), and it's
 worth reading if you're relying on redundancy for anything that matters.
 
-## Validate before you calculate
+## Check before you calculate
 
-Press **Validate** at the right of the toolbar. This is a genuine structural check, not a formality: it will
-tell you if the diagram has a loop, if blocks aren't wired to anything, if a
-component is missing its non-repairable model, or if a k-of-n setting leaves no path
-through the system at all. It also tells you whether the diagram can be solved in
-closed form or needs simulation. Once it passes, the button becomes a status
-(**✓ Valid**, or the number of problems) that opens the full check, and it turns
-back into **Validate** when you change the diagram.
+The diagram is checked by itself a moment after each change, and the answer
+sits at the right of the toolbar: **✓ Valid**, or the number of problems or
+warnings. Click it for the full check. This is a genuine structural check, not a
+formality: it will tell you if the diagram has a loop, if blocks aren't wired to
+anything, if a component is missing its non-repairable model, or if a k-of-n
+setting leaves no path through the system at all. It also tells you whether the
+diagram can be solved in closed form or needs simulation. **Check again** in the
+list runs it on demand.
 
 Fix anything it reports, then switch to the **Calculator** tab and press
 **Calculate**. For the sample pump station (a controller in series with two
@@ -167,6 +189,10 @@ The result says what it assumed, block by block. Blocks still left as **New**
 are named (*Taken as new (no age given): …*), and if every block was left new
 the result says these are the figures for new equipment, not an answer from
 today's ages.
+
+For the whole job (the chance the system lasts the next season as it stands,
+compared with new, and with a part failed), see [the chance a system lasts from
+the equipment you have today](/guides/rbd-as-it-is-today).
 
 ## Reading the results
 
@@ -256,9 +282,9 @@ swap in a different SurPyval) and run the file. The script's header
 lists the exact commands for the versions Reliafy runs:
 
 ```
-pip install "surpyval==0.28"
+pip install "surpyval==0.29"
 pip install networkx tqdm
-pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.19.1"
+pip install --no-deps "git+https://github.com/derrynknife/RePyability.git@v0.20"
 python my_diagram.py
 ```
 

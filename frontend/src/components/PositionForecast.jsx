@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { getPositionForecast } from "../api.js";
+import { plannedTitle, promptGroups } from "../failureCosts.js";
 import { formatChance } from "../format.js";
 import {
   besidesRoutine, costRangeText, datesText, dayText, everyText, failuresText, hoursText, moneyText, periodLabel, restsOn, sig,
 } from "../positionForecast.js";
+import { ShowMe } from "./SectionPage.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { tabPlace } from "../explorerTabs.js";
 import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
@@ -39,6 +42,31 @@ function boldNumbers(text) {
   return [head, ...parts.map((part, i) => (i % 2 ? <b key={i}>{part}</b> : part))];
 }
 
+// Planned plus unplanned; with a failure forecast at no cost, the planned alone and "+ ?" (it isn't the whole cost).
+function totalText(r, totals) {
+  if (r.total_cost == null) return "—";
+  return totals.total_complete === false && totals.failures ? `${moneyText(r.total_cost)} + ?` : moneyText(r.total_cost);
+}
+
+// The "Cost by kind" fold's rows: [label, amount, what it rests on].
+function costRows(fc) {
+  const t = fc.totals;
+  const rows = [
+    ["Labour", moneyText(t.labour_cost), "Each task's LSA labour at the trade rates, × the times it's due"],
+    ["Parts and consumables", moneyText(t.materials_cost), "Each task's LSA spares and consumables, × the times it's due"],
+  ];
+  if (t.visits_cost) rows.push(["Visits", moneyText(t.visits_cost), `${t.visits} visit${t.visits === 1 ? "" : "s"}, each its call-out and setup (set on the package, or on a task in no package); tasks due at the same time on the same position are one visit`]);
+  if (t.other_planned_cost) rows.push(["Other planned", moneyText(t.other_planned_cost), "A task's typed cost beyond what its LSA prices"]);
+  rows.push(["Planned in all", moneyText(t.planned_cost), fc.cost_basis?.planned || ""]);
+  rows.push(["Unplanned (failures)", t.failure_cost == null ? "—" : moneyText(t.failure_cost), fc.cost_basis?.unplanned || ""]);
+  if (t.downtime_hours != null) {
+    rows.push(["Of which downtime", t.downtime_cost == null ? "—" : moneyText(t.downtime_cost),
+      `${hoursText(t.downtime_hours)} out of use expected, at each failure's cost of an hour down`]);
+  }
+  rows.push(["Total", totalText(t, t), t.total_complete === false ? "Some failures forecast have no failure cost: see What to enter." : "Planned plus unplanned"]);
+  return rows;
+}
+
 export default function PositionForecast({ positionId, name, root = null, bar = null }) {
   const [period, setPeriod] = useState("month");
   const [state, setState] = useState({ key: null, data: null, error: null });
@@ -54,12 +82,15 @@ export default function PositionForecast({ positionId, name, root = null, bar = 
   const fc = state.key === key ? state.data : null;
   const error = state.key === key ? state.error : null;
   const word = PERIODS.find((p) => p.value === period).label.replace(/s$/, "");
+  const downtime = fc?.totals?.downtime_hours != null;
+  const groups = fc ? promptGroups(fc.prompts) : [];
 
   return (
     <section className="fc-view" aria-label="Forecast">
       <div className="pk-bar fc-bar">
         <SegmentedControl size="sm" label="By" value={period} onChange={setPeriod}
                           options={PERIODS.map((p) => ({ value: p.value, label: p.label }))} />
+        <ShowMe help={{ guide: "forecast-the-maintenance-plan" }} asHelp />
         {bar}
       </div>
       {error && <div className="card error">Couldn&apos;t work out the forecast: {error}</div>}
@@ -77,6 +108,25 @@ export default function PositionForecast({ positionId, name, root = null, bar = 
               ))}
             </ul>
           )}
+          {groups.length > 0 && (
+            <ResultDetails summary={`What to enter (${groups.reduce((t, g) => t + g.items.length, 0)})`} open>
+              {groups.map((g) => (
+                <section key={g.id} className="fc-enter-group" aria-label={g.title}>
+                  <h3 className="fc-enter-title">{g.title}</h3>
+                  <p className="lib-date">{g.lead}</p>
+                  <ul className="td-rows fc-list">
+                    {g.items.map((x) => (
+                      <li key={x.key}>
+                        <strong>{x.name}</strong> <span className="lib-date">· {x.where}</span>
+                        {x.link && <> · <Link to={x.link}>{x.action}</Link></>}
+                        <div className="lib-date">{x.why}</div>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
+            </ResultDetails>
+          )}
           <div className="maint-scroll fc-scroll">
             <table className="lib-table fc-table">
               <caption className="sr-only">The forecast by {word.toLowerCase()}</caption>
@@ -86,9 +136,11 @@ export default function PositionForecast({ positionId, name, root = null, bar = 
                   <th scope="col" className="num" title={restsOn(fc, "hours")}>Operating hours</th>
                   <th scope="col" className="num" title={restsOn(fc, "work")}>Tasks</th>
                   <th scope="col" className="num" title={restsOn(fc, "work")}>Labour hours</th>
-                  <th scope="col" className="num" title={restsOn(fc, "work")}>Planned cost</th>
+                  <th scope="col" className="num" title={fc.cost_basis?.planned || restsOn(fc, "work")}>Planned cost</th>
                   <th scope="col" className="num" title={restsOn(fc, "failures")}>Expected failures</th>
-                  <th scope="col" className="num" title={restsOn(fc, "failures")}>Failure cost</th>
+                  <th scope="col" className="num" title={fc.cost_basis?.unplanned || restsOn(fc, "failures")}>Unplanned cost</th>
+                  {downtime && <th scope="col" className="num" title="Expected failures × the hours each keeps it out of use">Downtime</th>}
+                  <th scope="col" className="num" title="Planned plus unplanned">Total cost</th>
                   <th scope="col">Besides the routine</th>
                 </tr>
               </thead>
@@ -101,9 +153,11 @@ export default function PositionForecast({ positionId, name, root = null, bar = 
                       <td className="num" title={restsOn(fc, "hours")}>{hoursText(r.hours)}</td>
                       <td className="num">{r.tasks}</td>
                       <td className="num">{r.labour_hours ? hoursText(r.labour_hours) : "—"}</td>
-                      <td className="num">{r.planned_cost ? moneyText(r.planned_cost) : "—"}</td>
+                      <td className="num" title={plannedTitle(r) || undefined}>{r.planned_cost ? moneyText(r.planned_cost) : "—"}</td>
                       <td className="num" title={restsOn(fc, "failures")}>{failuresText(r.failures, r.failures_range)}</td>
                       <td className="num" title={restsOn(fc, "failures")}>{costRangeText(r.failure_cost, r.cost_range)}</td>
+                      {downtime && <td className="num">{hoursText(r.downtime_hours)}</td>}
+                      <td className="num">{totalText(r, fc.totals)}</td>
                       <td className="fc-besides">{besides.length ? besides.join(", ") : <span className="lib-date">—</span>}</td>
                     </tr>
                   );
@@ -115,9 +169,11 @@ export default function PositionForecast({ positionId, name, root = null, bar = 
                   <td className="num">{fc.rows.some((r) => r.hours != null) ? hoursText(fc.rows.reduce((t, r) => t + (r.hours || 0), 0)) : "—"}</td>
                   <td className="num">{fc.totals.tasks}</td>
                   <td className="num">{fc.totals.labour_hours ? hoursText(fc.totals.labour_hours) : "—"}</td>
-                  <td className="num">{fc.totals.planned_cost ? moneyText(fc.totals.planned_cost) : "—"}</td>
+                  <td className="num" title={plannedTitle(fc.totals) || undefined}>{fc.totals.planned_cost ? moneyText(fc.totals.planned_cost) : "—"}</td>
                   <td className="num">{failuresText(fc.totals.failures, fc.totals.failures_range)}</td>
                   <td className="num">{costRangeText(fc.totals.failure_cost, fc.totals.cost_range)}</td>
+                  {downtime && <td className="num">{hoursText(fc.totals.downtime_hours)}</td>}
+                  <td className="num">{totalText(fc.totals, fc.totals)}</td>
                   <td>{fc.totals.probability != null ? `${formatChance(fc.totals.probability)} chance of at least one failure` : ""}</td>
                 </tr>
               </tfoot>
@@ -163,7 +219,7 @@ export default function PositionForecast({ positionId, name, root = null, bar = 
                 <table className="lib-table fc-table">
                   <thead>
                     <tr><th scope="col">Position</th><th scope="col" className="num">Tasks</th><th scope="col" className="num">Labour hours</th>
-                      <th scope="col" className="num">Planned cost</th><th scope="col" className="num">Expected failures</th><th scope="col" className="num">Failure cost</th></tr>
+                      <th scope="col" className="num">Planned cost</th><th scope="col" className="num">Expected failures</th><th scope="col" className="num">Unplanned cost</th></tr>
                   </thead>
                   <tbody>
                     {fc.by_position.map((p) => (
@@ -193,6 +249,18 @@ export default function PositionForecast({ positionId, name, root = null, bar = 
               </ul>
             </ResultDetails>
           )}
+          <ResultDetails summary="Cost by kind">
+            <div className="maint-scroll">
+              <table className="lib-table fc-table">
+                <caption className="sr-only">The cost to {dayText(fc.end)} by kind</caption>
+                <tbody>
+                  {costRows(fc).map(([label, value, basis]) => (
+                    <tr key={label}><th scope="row">{label}</th><td className="num">{value}</td><td className="lib-date">{basis}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </ResultDetails>
           {fc.notes.length > 0 && <ul className="lib-date fc-notes">{fc.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>}
         </>
       )}

@@ -68,21 +68,26 @@ export { rankColumn, sortColumn };
 
 // The rows a risk table shows, highest risk first over the column ``col``
 // (left out, the one rankColumn picks); rows with no risk keep their order,
-// after the rest.
-export function riskOrder(rows, labels, col = null) {
-  const scored = (rows || []).filter((r) => r.risk);
-  return [...sortRiskRows(scored, col ?? rankColumn(scored, labels)), ...(rows || []).filter((r) => !r.risk)];
+// after the rest. ``first``: the id of a row that leads whatever its risk (the
+// Explorer's node's own position, above the ones below it).
+export function riskOrder(rows, labels, col = null, first = null) {
+  const all = rows || [];
+  const lead = first == null ? [] : all.filter((r) => r.id === first);
+  const rest = first == null ? all : all.filter((r) => r.id !== first);
+  const scored = rest.filter((r) => r.risk);
+  return [...lead, ...sortRiskRows(scored, col ?? rankColumn(scored, labels)), ...rest.filter((r) => !r.risk)];
 }
 
 // The table. `rows`: [{id, risk: [..], median_remaining, median_reached}] (a
 // row with no `risk` has none to show: a dash in each cell, or `whyNot(row)`
 // in words across them). `lead`: the columns before the risk ([{id, label,
-// num, cell(row)}]); `unit`: the time unit the median life left is in.
+// num, cell(row)}]); `unit`: the time unit the median life left is in. `first`: a
+// row's id that leads the table (riskOrder).
 export function RiskTable({
   rows: given, labels = [], unit = "", lead, selected, onPick, live = true, whyNot = null,
-  empty = "No units are still running in the data.", sortCol = null,
+  empty = "No units are still running in the data.", sortCol = null, first = null,
 }) {
-  const rows = riskOrder(given, labels, sortCol);
+  const rows = riskOrder(given, labels, sortCol, first);
   if (!rows.length) return <p className="mf-note">{empty}</p>;
   const columns = lead || [
     { id: "unit", label: "Unit", cell: (r) => r.id },

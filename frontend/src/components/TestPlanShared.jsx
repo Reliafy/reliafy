@@ -7,6 +7,7 @@ import { cancelRbdJob, downloadTestPlanPython, getRbdJob, simulateTestPlan, test
 import { CANCELLED_TEXT, createRunGuard } from "../jobCancel.js";
 import { percentApiMessage } from "../percent.js";
 import ProTag from "./ProTag.jsx";
+import { Select } from "./ui/Controls.jsx";
 
 export function Field({ label, value, onChange, type = "number", ...props }) {
   return (
@@ -27,11 +28,11 @@ export function Choice({ label, value, onChange, options }) {
   return (
     <label className="calc-t">
       <span>{label}</span>
-      <select value={value} onChange={(e) => onChange(e.target.value)}>
+      <Select value={value} onChange={(e) => onChange(e.target.value)}>
         {Object.entries(options).map(([v, text]) => (
           <option key={v} value={v}>{text}</option>
         ))}
-      </select>
+      </Select>
     </label>
   );
 }
@@ -237,7 +238,7 @@ export function SimulationCheck({ kind, inputs }) {
         {busy ? "Simulating…" : "Simulate this test"}<ProTag />
       </button>
       {busy && (
-        <button type="button" className="secondary" onClick={cancel} style={{ marginLeft: 8 }}>
+        <button type="button" className="secondary ml-2" onClick={cancel}>
           Cancel
         </button>
       )}
@@ -245,7 +246,7 @@ export function SimulationCheck({ kind, inputs }) {
       {cancelNote && !busy && <p className="hint" role="status">{cancelNote}</p>}
       {needsPro && (
         <div className="card note" role="status">
-          <p style={{ margin: 0 }}>
+          <p className="m-0">
             <b>Checking by simulation is part of Pro.</b> It fits the model to hundreds of simulated tests on
             Reliafy&apos;s calculation service. Every plan on this page is free.
           </p>

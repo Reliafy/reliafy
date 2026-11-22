@@ -38,7 +38,10 @@ for (const [w, h, label] of [[1440, 900, "desktop"], [400, 860, "phone"]]) {
     const { a, b, rbdId } = await station(request, tag);
     await page.setViewportSize({ width: 1440, height: 900 });
     await open(page, `/systems/b/${rbdId}`);
-    await page.locator('[data-wt="rbd-plan-chip"]').click();
+    // The Maintenance plan's switch is in the diagram's settings.
+    await page.getByRole("button", { name: /^Diagram settings/ }).click();
+    await page.getByRole("switch", { name: "Show the maintenance plan" }).click();
+    await page.keyboard.press("Escape");
     await page.setViewportSize({ width: w, height: h });
     const plan = page.getByRole("region", { name: "Maintenance plan" });
     await expect(plan.getByText(/take their maintenance from\s+that position's tasks/)).toBeVisible({ timeout: 15_000 });
@@ -59,11 +62,13 @@ for (const [w, h, label] of [[1440, 900, "desktop"], [400, 860, "phone"]]) {
   });
 }
 
-test("the position's Maintenance tab lists the RBDs that use its tasks", async ({ page, request, problems }) => {
+test("a task opened on the Maintenance tab lists the RBDs that use it", async ({ page, request, problems }) => {
   const tag = `u${Date.now()}`;
   const { a } = await station(request, tag);
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${a.id}&tab=maintenance`);
+  // The task is a row under its position in the tree: opened, its details beside the table.
+  await page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: "Replace the seal" }) }).first().locator(".tp-nm").click();
   const uses = page.getByRole("region", { name: "Used in RBDs" });
   await expect(uses).toBeVisible({ timeout: 15_000 });
   await expect(uses).toContainText("“Replace the seal” is its plan");

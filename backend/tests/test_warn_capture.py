@@ -175,7 +175,7 @@ def test_a_calendar_replacement_keeps_only_its_own_notes():
     inside, warned = threading.Event(), threading.Event()
 
     class Part:
-        def optimal_calendar_policy(self, cal, **kwargs):
+        def optimal_opportunity_policy(self, cal, **kwargs):
             warnings.warn("its own note", UserWarning)
             inside.set()
             assert warned.wait(TIMEOUT)

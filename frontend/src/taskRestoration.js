@@ -14,8 +14,12 @@ const text = (v) => (v == null ? "" : String(v));
 const pct = (q) => (q == null ? "" : String(Number(((1 - Number(q)) * 100).toPrecision(6))));
 
 // The form's fields from a task as read (its own restoration, not one a decision set for a mode).
+// A task with none set that's servicing work (greasing, cleaning) is taken to restore none of its
+// age (restoration.py default_for: source "assumed"): the form starts there, so the choice shown is
+// the one counted.
 export function restorationForm(task) {
-  const own = task?.restoration?.own || null;
+  const assumed = task?.restoration?.source === "assumed" ? task.restoration.restoration : null;
+  const own = task?.restoration?.own || assumed || null;
   const kind = own?.kind && own.kind !== "as_new" ? own.kind : "as_new";
   return {
     restoreKind: kind,
@@ -63,7 +67,11 @@ export function restorationBody(task, f) {
   const want = fixed ? restorationOf(f) : null;
   const ownNorm = own && own.kind !== "as_new" ? own : null;
   const decided = task?.restoration?.source === "decision";
-  if (fixed && (!same(ownNorm, want) || (decided && want !== null))) body.restoration = want;
+  const assumed = task?.restoration?.source === "assumed" ? task.restoration.restoration : null;
+  if (fixed && assumed) {
+    // Assumed from its name: kept as it is unless changed; As new is then said in so many words.
+    if (!same(assumed, want)) body.restoration = want ?? { kind: "as_new" };
+  } else if (fixed && (!same(ownNorm, want) || (decided && want !== null))) body.restoration = want;
   const calendar = ["days", "weeks", "months", "years"].includes(f.unit);
   const basis = calendar && f.runningHours ? "operating" : null;
   if (calendar && (task?.basis_set ?? null) !== basis) body.basis = basis;

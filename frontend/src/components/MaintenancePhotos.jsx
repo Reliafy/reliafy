@@ -22,6 +22,7 @@ import Modal from "./Modal.jsx";
 import { Field, FormModal, flatten, fmtDate } from "./MaintenanceParts.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { EXPLORER_PATH } from "../navigation.js";
+import { Checkbox, Radio, Select } from "./ui/Controls.jsx";
 
 // What the picker can choose from, loaded once per kind when it's first asked for.
 const LOADERS = {
@@ -80,14 +81,10 @@ function PhotoPlaceModal({ photo, here, hereLabel, related, onClose, onDone }) {
     <FormModal title="Link or move this photo" submitLabel={mode === "move" ? "Move" : "Link"} canSubmit={!!to}
                onClose={onClose} onSubmit={submit}>
       <div className="maint-place-modes" role="radiogroup" aria-label="Link or move">
-        <label>
-          <input type="radio" name="photo-place-mode" checked={mode === "link"} onChange={() => setMode("link")} />
-          {" "}Also show it there <span className="lib-date">(it stays here too)</span>
-        </label>
-        <label>
-          <input type="radio" name="photo-place-mode" checked={mode === "move"} onChange={() => setMode("move")} />
-          {" "}Move it there <span className="lib-date">(off {hereLabel})</span>
-        </label>
+        <Radio name="photo-place-mode" checked={mode === "link"} onChange={() => setMode("link")}
+               label={<>Also show it there <span className="lib-date">(it stays here too)</span></>} />
+        <Radio name="photo-place-mode" checked={mode === "move"} onChange={() => setMode("move")}
+               label={<>Move it there <span className="lib-date">(off {hereLabel})</span></>} />
       </div>
       {hints.length > 0 && (
         <div>
@@ -103,21 +100,19 @@ function PhotoPlaceModal({ photo, here, hereLabel, related, onClose, onDone }) {
         </div>
       )}
       <Field label="Kind">
-        <select value={kind} onChange={(e) => { setKind(e.target.value); setTo(""); }}>
+        <Select value={kind} onChange={(e) => { setKind(e.target.value); setTo(""); }}>
           {PLACE_KINDS.map((k) => <option key={k} value={k}>{placeKindWord(k).replace(/^./, (c) => c.toUpperCase())}</option>)}
-        </select>
+        </Select>
       </Field>
       <Field label={word.replace(/^./, (c) => c.toUpperCase())}>
-        <select value={to} onChange={(e) => setTo(e.target.value)} aria-label={`Which ${word}`}>
+        <Select value={to} onChange={(e) => setTo(e.target.value)} aria-label={`Which ${word}`}>
           <option value="">{loading ? "Loading…" : options.length ? "Choose…" : `No ${word}s yet`}</option>
           {options.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
-        </select>
+        </Select>
       </Field>
       {within && (
-        <label className="maint-place-any">
-          <input type="checkbox" checked={anyAsset} onChange={(e) => { setAnyAsset(e.target.checked); setTo(""); }} />
-          {" "}Any asset <span className="lib-date">(not only the one open)</span>
-        </label>
+        <Checkbox className="maint-place-any" checked={anyAsset} onChange={(e) => { setAnyAsset(e.target.checked); setTo(""); }}
+                  label={<>Any asset <span className="lib-date">(not only the one open)</span></>} />
       )}
     </FormModal>
   );
@@ -178,7 +173,7 @@ export default function MaintenancePhotos({ title = "Photos", targetId, targetNa
   useEffect(() => {
     if (!open || placing) return undefined;
     const onKey = (e) => {
-      if (e.target.closest?.("input, textarea, select")) return;
+      if (e.target.closest?.("input, textarea, select, .sel-trigger, .sel-menu")) return;
       const next = photoStep(openIndex, photos.length, e.key);
       if (next != null) { e.preventDefault(); setOpen(photos[next]); }
     };
@@ -250,7 +245,7 @@ export default function MaintenancePhotos({ title = "Photos", targetId, targetNa
     <section className="card">
       <div className="maint-head">
         <h2>{title}</h2>
-        <div className="maint-row" style={{ marginTop: 0 }}>
+        <div className="maint-row mt-0">
           <button className="secondary" onClick={phoneLink}>Link for a phone</button>
           <button onClick={() => input.current?.click()} disabled={!!busy}>{busy || "Add photos"}</button>
         </div>
@@ -264,7 +259,7 @@ export default function MaintenancePhotos({ title = "Photos", targetId, targetNa
             A photo has a location ({offer.lat.toFixed(5)}, {offer.lon.toFixed(5)}). Save it as where{" "}
             {targetName || "this equipment"} is?
           </p>
-          <div className="maint-row" style={{ marginTop: 0 }}>
+          <div className="maint-row mt-0">
             <button onClick={() => answer(true)}>Save location</button>
             <button className="secondary" onClick={() => answer(false)}>No thanks</button>
           </div>

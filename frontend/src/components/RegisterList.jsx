@@ -6,10 +6,11 @@ import { RowActions } from "./LibRows.jsx";
 import MoreMenu from "./ui/MoreMenu.jsx";
 import LoadFailed from "./LoadFailed.jsx";
 import "./RegisterList.css";
+import Loading from "./ui/Loading.jsx";
 
 // The landing page of a register: Assets (the places you look after) and
 // Products (what you design and build) share it, so the two look and work the
-// same. The section header (title, one-line purpose, "Show me how", the main
+// same. The section header (title, one-line purpose, "Read the guide", the main
 // action top right, a ⋯ menu); the counts line with one search box; one table:
 // the name with a quiet line under it, then the numbers, each column the same
 // width on both pages; the same empty state (what it is, the main action, the
@@ -48,7 +49,7 @@ export default function RegisterList({
       {loadError ? (
         <LoadFailed what={`Couldn't load your ${many}.`} error={loadError} onRetry={onRetry} />
       ) : rows === null ? (
-        !error && <div className="card empty">Loading…</div>
+        !error && <Loading card />
       ) : all.length === 0 && !after ? (
         <div className="card empty section-empty">
           <h2>{empty.title}</h2>
@@ -56,7 +57,7 @@ export default function RegisterList({
           <div className="section-empty-action">{primary}{empty.sample}</div>
           <p className="section-empty-more">
             {empty.more}{empty.more && help ? " " : ""}
-            {help && <ShowMe help={help}>{empty.guide || "Show me how"}</ShowMe>}
+            {help && <ShowMe help={help}>{empty.guide}</ShowMe>}
           </p>
         </div>
       ) : (

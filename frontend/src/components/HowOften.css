@@ -1,12 +1,16 @@
 /* "How often" (HowOften.jsx): a sentence with pickers that wraps on a phone. */
-.how-often { display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }
-.how-often .ho-line { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.45rem; min-width: 0; }
+.how-often { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.how-often .ho-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-width: 0; }
+/* "Every [n] [unit]" and "or every [n] [unit]": one unit that never breaks inside. */
+.how-often .ho-keep { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--space-2); min-width: 0; max-width: 100%; }
+.how-often .ho-keep > select, .how-often .ho-keep > .sel-trigger { flex: 0 1 auto; min-width: 0; }
 .how-often .ho-word { white-space: nowrap; }
-.how-often .ho-inline { display: inline-flex; align-items: center; gap: 0.35rem; }
-.how-often input.ho-num { width: 5.5rem; min-width: 0; }
+.how-often .ho-opt { color: var(--text-tertiary); }
+.how-often .ho-inline { display: inline-flex; align-items: center; gap: var(--space-2); }
+.how-often input.ho-num { width: 5.5rem; min-width: 0; flex: none; }
 .how-often input.ho-day { width: 4rem; }
-.how-often select { max-width: 100%; min-width: 0; }
+.how-often select, .how-often .sel-trigger { max-width: 100%; min-width: 0; }
 .how-often .ho-dates { margin: 0; }
-/* The fieldset it sits in on a form ("How often" as its legend). */
-.mt-how { border: 1px solid var(--border, #d0d7de); border-radius: 6px; padding: 6px 10px 8px; margin: 0; min-width: 0; }
-.mt-how legend { font-size: 0.9em; padding: 0 4px; }
+/* The fieldset it sits in on a package's form ("How often" as its legend). */
+.mt-how { border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); margin: 0; min-width: 0; }
+.mt-how legend { font-size: var(--fs-13); padding: 0 var(--space-1); }

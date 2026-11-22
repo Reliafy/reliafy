@@ -139,9 +139,11 @@ Each decision's **Evidence check** shows one of these:
 - **Supported** — the evidence agrees with the decision.
 - **Contradicted** — the evidence points the other way. A run-to-failure
   decision linked to a wear-out model is the common case.
-- **Shorter than its evidence** or **Longer than its evidence** — a
-  fixed-interval replacement set at less than half, or more than twice, the
-  cost-optimal interval of the analysis it links to. The line underneath gives
+- **Shorter than its evidence** or **Longer than its evidence** — a task
+  set at less than half, or more than twice, the interval of the analysis it
+  links to (the cost-optimal interval, or half the P-F interval for an
+  on-condition check). A check set further apart than its P-F interval allows
+  is still **Contradicted**: it can miss failures. The line underneath gives
   both intervals and how far apart they are, for example *set every 25 hours,
   far shorter than the cost-optimal interval its evidence supports, about 101
   hours: it is done about 4 times as often as the evidence needs*. It isn't a
@@ -180,6 +182,10 @@ The two analyses most RCM decisions cite have their own guides:
 and [set a failure-finding interval](/guides/failure-finding-interval).
 On-condition decisions cite a degradation model; see
 [predict failure from condition measurements](/guides/degradation-modelling).
+
+To check a plan you already run, one interval at a time, against your own
+failure data, see [check a maintenance plan against its
+evidence](/guides/check-a-maintenance-plan-against-evidence).
 
 To work on a study with colleagues, create it in a
 [team workspace](/guides/work-as-a-team). Everyone in the team can open it, and

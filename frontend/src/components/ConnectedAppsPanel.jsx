@@ -8,6 +8,7 @@ import Button from "./ui/Button.jsx";
 import Card, { CardHeader } from "./ui/Card.jsx";
 import ScrollCue from "./ui/ScrollCue.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
+import Loading from "./ui/Loading.jsx";
 
 // No app yet: how to connect Claude, with the MCP address to copy.
 function ConnectClaude() {
@@ -64,17 +65,17 @@ export default function ConnectedAppsPanel() {
 
   return (
     <div className="set-section">
-      <p className="muted-line" style={{ marginTop: 0 }}>
+      <p className="muted-line mt-0">
         Apps you've allowed to use Reliafy on your behalf, such as Claude. They work with
         your account's access; disconnect one to cut it off straight away.
       </p>
 
       <Card>
         <CardHeader title="Connected apps" />
-        {error && <div className="error" style={{ marginTop: 0 }}>{error}</div>}
+        {error && <div className="error mt-0">{error}</div>}
         {!mcp && grants?.length > 0 && <McpOnRequest />}
         {grants === null ? (
-          <p className="muted-line">Loading…</p>
+          <Loading />
         ) : grants.length === 0 ? (
           mcp ? <ConnectClaude /> : <McpOnRequest />
         ) : (

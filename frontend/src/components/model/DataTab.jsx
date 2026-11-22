@@ -16,6 +16,7 @@ import { dataWords, intervalLevel, ratioSign } from "../../modelFrame.js";
 import { ciPct, levelPct } from "../../levels.js";
 import { unitInText } from "../unitText.js";
 import { fmtP } from "../RegressionChecks.jsx";
+import Loading from "../ui/Loading.jsx";
 
 const fmtCi = (ci) => (ci && ci[0] != null && ci[1] != null ? `${formatNumber(ci[0])}–${formatNumber(ci[1])}` : "—");
 const PART = { baseline: "Baseline", coefficients: "Covariate", frailty: "Groups", parameters: "Spline" };
@@ -127,7 +128,7 @@ export function DatasetRows({ datasetId }) {
   return (
     <ScrollCard title="The data" sub={ds ? `first ${ds.preview?.length || 0} of ${Number(ds.n_rows).toLocaleString()} rows` : null}>
       {error ? <p className="mf-note">Couldn't load the data: {error}</p>
-        : !ds ? <p className="mf-note">Loading…</p>
+        : !ds ? <Loading />
         : <PreviewTable columns={ds.preview_columns} rows={ds.preview} />}
     </ScrollCard>
   );

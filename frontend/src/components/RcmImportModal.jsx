@@ -5,6 +5,7 @@ import ExcelSheetPicker, { useExcelInspection } from "./ExcelSheetPicker.jsx";
 import SheetColumnMapper, { mappingComplete } from "./SheetColumnMapper.jsx";
 import { excelTable, importPositionRcm, previewPositionRcmImport } from "../api.js";
 import { WORKSHEET_ACCEPT, importSummary, isCsvFile } from "../rcmImport.js";
+import { Checkbox } from "./ui/Controls.jsx";
 
 const CONSEQUENCES = [
   ["safety", "Safety"],
@@ -165,7 +166,7 @@ export default function RcmImportModal({ position, onClose, onImported }) {
            className="modal-xl" locked={busy} onClose={onClose} footer={footer}>
       {step === "file" && (
         <div className="fit-step">
-          <p className="muted-line" style={{ marginTop: 0 }}>
+          <p className="muted-line mt-0">
             An FMEA or RCM worksheet with one row per failure mode — columns like Function,
             Functional failure, Failure mode, Effects, Consequence, Task and Interval. Blank
             function / failure cells carry down from the row above, as in most worksheets.
@@ -198,7 +199,7 @@ export default function RcmImportModal({ position, onClose, onImported }) {
 
       {step === "map" && table && (
         <div className="fit-step">
-          <p className="muted-line" style={{ margin: 0 }}>
+          <p className="muted-line m-0">
             <b>{table.sheet}</b> · {table.n_rows.toLocaleString("en-AU")} rows. Only Failure mode is
             required; a missing Function or Functional failure column puts everything under “Imported”.
           </p>
@@ -207,21 +208,17 @@ export default function RcmImportModal({ position, onClose, onImported }) {
 
           {unmapped.length > 0 && (
             <div className="xl-extras">
-              <label className="ds-check">
-                <input type="checkbox" checked={extrasOn} onChange={(e) => setExtrasOn(e.target.checked)} />
-                <span>
-                  Keep other columns in each failure mode's notes (e.g. “Severity 8 · Occurrence 4 · RPN 96”)
-                  — Reliafy has no FMEA scoring yet.
-                </span>
-              </label>
+              <Checkbox className="ds-check" checked={extrasOn} onChange={(e) => setExtrasOn(e.target.checked)}
+                        label={<span>
+                          Keep other columns in each failure mode's notes (e.g. “Severity 8 · Occurrence 4 · RPN 96”)
+                          — Reliafy has no FMEA scoring yet.
+                        </span>} />
               {extrasOn && (
                 <div className="xl-chips">
                   {unmapped.map((c) => (
-                    <label key={c} className={"xl-chip" + (extras.includes(c) ? " on" : "")}>
-                      <input type="checkbox" checked={extras.includes(c)}
-                             onChange={(e) => setExtras((cur) => e.target.checked ? [...cur, c] : cur.filter((x) => x !== c))} />
-                      {c}
-                    </label>
+                    <Checkbox key={c} className={"xl-chip" + (extras.includes(c) ? " on" : "")} checked={extras.includes(c)}
+                              onChange={(e) => setExtras((cur) => e.target.checked ? [...cur, c] : cur.filter((x) => x !== c))}
+                              label={c} />
                   ))}
                 </div>
               )}
@@ -315,7 +312,7 @@ function PositionResult({ preview, summary, name }) {
       )}
       {preview.errors?.length > 0 && (
         <div className="error" role="alert">
-          <p style={{ margin: 0 }}>
+          <p className="m-0">
             {preview.errors.length === 1 ? "One row needs fixing" : `${preview.counts.errors} rows need fixing`} before
             anything can be added:
           </p>

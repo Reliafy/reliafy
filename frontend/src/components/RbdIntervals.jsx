@@ -11,6 +11,7 @@ import { intervalBasis, withTaskBasis } from "../rbdMaintenancePlan.js";
 import "./RbdIntervals.css";
 import ScrollCue from "./ui/ScrollCue.jsx";
 import ProTag from "./ProTag.jsx";
+import { Checkbox, Select } from "./ui/Controls.jsx";
 
 // Maintenance and proof-test intervals chosen together (#172, #228), on the
 // Design tab of a repairable diagram: RePyability's
@@ -154,7 +155,7 @@ export default function RbdIntervals({ graph, onApply, onView }) {
     return (
       <div className="rbd-design rbd-intervals">
         <div className="ds-section-h">Maintenance and proof-test intervals</div>
-        <p className="muted-line" style={{ margin: 0 }}>
+        <p className="muted-line m-0">
           Give blocks <b>age replacement</b> or <b>proof tests</b> (double-click a block on the Builder tab → Cost
           &amp; maintenance) to choose their intervals together here — the cheapest, or the cheapest that keeps the
           availability (or a safety function's PFDavg) on target.
@@ -287,7 +288,7 @@ export default function RbdIntervals({ graph, onApply, onView }) {
   return (
     <div className="rbd-design rbd-intervals">
       <div className="ds-section-h">Maintenance and proof-test intervals</div>
-      <p className="muted-line" style={{ marginTop: 0 }}>
+      <p className="muted-line mt-0">
         Every block's interval chosen together — a block whose failure stops the system is worth maintaining
         sooner than one with a standby. Each candidate plan is scored by the diagram's exact long-run cost and
         availability{safety ? " (PFDavg, with its common-cause groups)" : ""}.
@@ -326,7 +327,7 @@ export default function RbdIntervals({ graph, onApply, onView }) {
       <div className="param-fields rbd-cheapest-inputs">
         <label className="param-field rbd-cost-field">
           <span>Choose for</span>
-          <select value={target} onChange={(e) => {
+          <Select value={target} onChange={(e) => {
             const t = e.target.value;
             setTarget(t);
             setValue(t === "pfd" ? "0.001" : t === "sil" ? String(graph.target_sil || 2) : t === "availability" ? "99.9" : "");
@@ -336,7 +337,7 @@ export default function RbdIntervals({ graph, onApply, onView }) {
             {safety && <option value="pfd">Lowest cost, PFDavg at most</option>}
             {safety && <option value="sil">Lowest cost, reaching SIL</option>}
             <option value="budget">Most available within a cost rate</option>
-          </select>
+          </Select>
         </label>
         {target === "availability" && (
           <PercentField className="param-field rbd-cost-field" label="Minimum availability" value={value}
@@ -346,9 +347,9 @@ export default function RbdIntervals({ graph, onApply, onView }) {
           <label className="param-field rbd-cost-field">
             <span>{{ availability: "Minimum availability", pfd: "Maximum PFDavg", sil: "Target SIL", budget: "Maximum cost rate" }[target]}</span>
             {target === "sil" ? (
-              <select value={value} onChange={(e) => setValue(e.target.value)}>
+              <Select value={value} onChange={(e) => setValue(e.target.value)}>
                 {[1, 2, 3, 4].map((s) => <option key={s} value={String(s)}>SIL {s}</option>)}
-              </select>
+              </Select>
             ) : (
               <input type="number" inputMode="decimal" step="any" min="0" value={value} onChange={(e) => setValue(e.target.value)} />
             )}
@@ -368,13 +369,11 @@ export default function RbdIntervals({ graph, onApply, onView }) {
         )}
       </div>
       {kind === "proof_test" && tested > 1 && (
-        <label className="rbd-intervals-check">
-          <input type="checkbox" checked={stagger} onChange={(e) => setStagger(e.target.checked)} />
-          <span>
-            Stagger the tests — choose when each block is first tested too, so redundant channels are tested apart
-            and a common-cause failure is found sooner
-          </span>
-        </label>
+        <Checkbox className="rbd-intervals-check" checked={stagger} onChange={(e) => setStagger(e.target.checked)}
+                  label={<span>
+                    Stagger the tests — choose when each block is first tested too, so redundant channels are tested apart
+                    and a common-cause failure is found sooner
+                  </span>} />
       )}
       <div className="rbd-calc-actions">
         <button type="button" onClick={choose}
@@ -517,14 +516,14 @@ export default function RbdIntervals({ graph, onApply, onView }) {
               </tbody>
             </table>
           </ScrollCue>
-          {showTogether && !together.met && <p className="hint" style={{ margin: 0 }}>Tests together: {together.message}</p>}
+          {showTogether && !together.met && <p className="hint m-0">Tests together: {together.message}</p>}
           {result.current == null && result.current_note && (
-            <p className="hint" style={{ margin: 0 }}>As drawn: {result.current_note}</p>
+            <p className="hint m-0">As drawn: {result.current_note}</p>
           )}
 
           {waits && (
             <div className="card note" role="status">
-              <p style={{ margin: 0 }}>
+              <p className="m-0">
                 {crews.note} These intervals are chosen as if every repair started at once.
               </p>
               {crewSim?.state === "done" ? (
@@ -538,7 +537,7 @@ export default function RbdIntervals({ graph, onApply, onView }) {
                 </p>
               ) : crewSim?.state === "pro" ? (
                 <div style={{ margin: "6px 0 0" }}>
-                  <p style={{ margin: 0 }}>Simulating the plan with your crews is part of Pro.</p>
+                  <p className="m-0">Simulating the plan with your crews is part of Pro.</p>
                   <div className="rbd-upgrade-actions">
                     {crewSim.quick?.remaining_today > 0 && (
                       <button type="button" onClick={() => simulateCrews(true)}>
@@ -558,8 +557,8 @@ export default function RbdIntervals({ graph, onApply, onView }) {
               {crewSim?.state === "error" && <p className="hint" style={{ margin: "6px 0 0" }}>{crewSim.message}</p>}
             </div>
           )}
-          {result.common_cause?.note && <p className="hint" style={{ margin: 0 }}>{result.common_cause.note}</p>}
-          {(result.notes || []).map((n) => <p key={n} className="hint" style={{ margin: 0 }}>{n}</p>)}
+          {result.common_cause?.note && <p className="hint m-0">{result.common_cause.note}</p>}
+          {(result.notes || []).map((n) => <p key={n} className="hint m-0">{n}</p>)}
 
           {result.changed && (!stale || appliedCurrent) && (
             <div className="rbd-calc-actions">
@@ -579,7 +578,7 @@ export default function RbdIntervals({ graph, onApply, onView }) {
               )}
             </div>
           )}
-          <p className="muted-line" style={{ margin: 0 }}>
+          <p className="muted-line m-0">
             RePyability {result.repyability_version} ·{" "}
             {kind === "replacement"
               ? "optimal_replacement_intervals: a gradient search over the exact long-run values, shown to four significant figures."

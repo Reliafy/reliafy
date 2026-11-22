@@ -80,7 +80,7 @@ export default function RbdCompareDesigns({ graph, rbdId = null, t = null }) {
   return (
     <div className="rbd-compare">
       <div className="ds-section-h">Compare with other designs</div>
-      <p className="hint" style={{ margin: 0 }}>
+      <p className="hint m-0">
         Put this diagram beside other saved non-repairable designs: each one&rsquo;s reliability
         {hasT ? ` over ${timeInWords(time, unit)}` : " at Evaluate at t"}, MTTF and B-lives, worked out exactly.
       </p>
@@ -111,7 +111,7 @@ export default function RbdCompareDesigns({ graph, rbdId = null, t = null }) {
           ))}
         </ul>
       )}
-      {!hasT && <p className="hint" style={{ margin: 0 }}>Type a time in Evaluate at t to compare at it.</p>}
+      {!hasT && <p className="hint m-0">Type a time in Evaluate at t to compare at it.</p>}
       {error && <div className="card error">{error}</div>}
       {rows && (
         <div className="rbd-compare-result">
@@ -122,7 +122,7 @@ export default function RbdCompareDesigns({ graph, rbdId = null, t = null }) {
             </p>
           )}
           {unitClash(rows) && (
-            <p className="hint warn" style={{ margin: 0 }}>
+            <p className="hint warn m-0">
               These diagrams use different time units, so their figures aren&rsquo;t on the same scale.
             </p>
           )}
@@ -152,7 +152,7 @@ export default function RbdCompareDesigns({ graph, rbdId = null, t = null }) {
               </tbody>
             </table>
           </ScrollCue>
-          <p className="muted-line" style={{ margin: 0 }}>
+          <p className="muted-line m-0">
             Point values from each diagram&rsquo;s exact analysis (no confidence band). This diagram is as it is
             in the builder, saved or not.
           </p>

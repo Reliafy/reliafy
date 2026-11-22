@@ -22,13 +22,13 @@
 
 .mp-split {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: flex-start;
   margin: 0 0 var(--space-2);
   font-size: var(--fs-13);
   color: var(--text-secondary);
 }
-.mp-split input { margin-top: 2px; }
+.mp-split input { margin-top: var(--space-0-5); }
 
 .mp-lines { margin-top: var(--space-2); }
 /* One repair time per line fits a laptop; the five element columns need the
@@ -37,11 +37,11 @@
 .mp-lines.is-split table { min-width: 1060px; }
 .mp-lines th { white-space: nowrap; }
 .mp-lines th.mp-el { font-weight: 500; color: var(--text-secondary); }
-.mp-lines td { padding: 4px 6px; vertical-align: middle; }
+.mp-lines td { padding: var(--space-1) var(--space-1-5); vertical-align: middle; }
 .mp-lines input[type="text"] {
   width: 100%;
   min-width: 0;
-  padding: 6px 8px;
+  padding: var(--space-1-5) var(--space-2);
   font-size: var(--fs-13);
 }
 .mp-lines td.mp-text input { min-width: 150px; }
@@ -49,7 +49,7 @@
 .mp-lines td.mp-cell.mp-qty input { width: 54px; }
 .mp-lines tr.mp-row-total td { color: var(--text-secondary); font-size: var(--fs-13); }
 .mp-lines td.mp-sum { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.mp-lines .mp-remove { padding: 2px 6px; line-height: 1; }
+.mp-lines .mp-remove { padding: var(--space-0-5) var(--space-1-5); line-height: 1; }
 .mp-add { margin-top: var(--space-2); display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; }
 
 .mp-compute {
@@ -64,7 +64,7 @@
 .mp-result { margin-top: var(--space-4); }
 .mp-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-3) 0 0; }
 .mp-section { margin-top: var(--space-6); }
-.mp-section h3 { margin: 0 0 4px; font-size: var(--fs-15); }
+.mp-section h3 { margin: 0 0 var(--space-1); font-size: var(--fs-15); }
 .mp-section .muted-line { margin: 0 0 var(--space-2); }
 
 .mp-table th.mp-num, .mp-table td.mp-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -73,11 +73,11 @@
 .mp-bar {
   display: block;
   height: 10px;
-  border-radius: 5px;
+  border-radius: var(--radius-full);
   background: var(--bg-subtle);
   overflow: hidden;
 }
-.mp-bar-fill { display: block; height: 100%; background: var(--accent); border-radius: 5px; }
+.mp-bar-fill { display: block; height: 100%; background: var(--accent); border-radius: var(--radius-sm); }
 .mp-bar-muted .mp-bar-fill { background: var(--text-secondary); }
 
 .mp-paste textarea {

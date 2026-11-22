@@ -253,7 +253,7 @@ def test_each_mission_builds_an_rbd_of_its_own_and_isn_t_a_model_of_the_position
     assert one["mission"]["id"] == rm.LEGACY_ID and one["mission"]["phases"] == 0
     doc = db.rbds.find_one({"_id": one["rbd"]["id"]})
     # Nothing inside is connected, so the pumps went in series: the mission says so until it's rewired.
-    assert doc["graph"]["mission_of"] == {"position_id": plant, "built_in_series": True}
+    assert doc["graph"]["mission_of"] == {"position_id": plant, "built_in_series": True, "built_from": "tree"}
     assert doc["graph"]["mission_name"] == "Duty run" and "placed in series" in one["series_warning"]
     labels = sorted(n["data"]["label"] for n in doc["graph"]["nodes"] if n["type"] == "component")
     assert labels == ["Pump A", "Pump B"]
@@ -329,7 +329,7 @@ def test_a_mission_starts_from_the_positions_own_rbd_wired_as_it_is(m, db, repai
     assert made["notes"][0].startswith("Started from a copy of Pump station (from the tree), wired as it is")
     graph = db.rbds.find_one({"_id": made["rbd"]["id"]})["graph"]
     # It says which diagram it was copied from, so the RBD list shows it under that one.
-    assert graph["mission_of"] == {"position_id": plant, "from_rbd": src} and not graph.get("repairable") \
+    assert graph["mission_of"] == {"position_id": plant, "from_rbd": src, "built_from": "copy"} and not graph.get("repairable") \
         and "costs" not in graph
     from backend.schema import Rbd
     from backend.services import rbds as rbds_service
@@ -394,13 +394,227 @@ def test_a_leaf_with_a_model_in_use_flies_a_one_block_mission(m, db):
     blocks = [n for n in graph["nodes"] if n["type"] == "component"]
     assert [b["data"]["label"] for b in blocks] == ["Lone pump"]
     assert blocks[0]["data"]["model"].get("modelId") == SAMPLE and not blocks[0]["data"]["model"].get("placeholder")
-    assert graph["mission_of"] == {"position_id": pump}
+    assert graph["mission_of"] == {"position_id": pump, "built_from": "model"}
     # It works out like the model on its own: one block in series.
     g, _ = rm.save(graph, rm.LEGACY_ID, phases=[{"name": "Run", "duration": 100}])
     got = rm.analyze(db, OWNERS, g, g["phases"])
     assert 0 < got["reliability"] < 1
     with pytest.raises(Invalid, match="no model in use"):
         pm.build_mission_rbd(m, db, OWNERS, set(), bare, ORG)
+
+
+def test_a_mission_added_on_a_model_row_is_flown_on_that_model_and_says_so(m, db):
+    """Add a mission… on a model's row (the Explorer's Models tab): on an RBD row, a copy of that
+    RBD; on the model in use, one block. The mission keeps the row it was started on, and the
+    missions read says so, so the tab shows it under that model."""
+    from backend.services import rbds as rbds_service
+
+    plant = _station(m, db)
+    first = pm.build_rbd(m, db, OWNERS, set(), plant)
+    other = rbds_service.save_rbd(db, "Station, as drawn", _parallel(), ORG)
+    second = pm.link_rbd(m, db, OWNERS, set(), plant, other.id)
+    # The station's own RBD would be picked by default (the one built there); the row asked for wins.
+    made = pm.build_mission_rbd(m, db, OWNERS, set(), plant, ORG, "Night", link_id=second["id"])
+    assert made["built_from"] == "copy" and made["notes"][0].startswith("Started from a copy of Station, as drawn")
+    graph = db.rbds.find_one({"_id": made["rbd"]["id"]})["graph"]
+    assert graph["mission_of"] == {"position_id": plant, "from_rbd": other.id, "on_link": second["id"], "built_from": "copy"}
+    row = next(r for r in rm.position_missions(m, db, OWNERS) if r["rbd"] and r["rbd"]["id"] == made["rbd"]["id"])
+    assert (row["rbd"]["from_rbd"], row["rbd"]["on_link"], row["rbd"]["built_from"]) == (other.id, second["id"], "copy")
+    # From the position (no row): the default pick, as before (the RBD in use, else the one built
+    # there), and no row of its own kept.
+    plain = pm.build_mission_rbd(m, db, OWNERS, set(), plant, ORG, "Day")
+    owner = db.rbds.find_one({"_id": plain["rbd"]["id"]})["graph"]["mission_of"]
+    in_use = next(x for x in m.position_models(plant) if x.get("in_use"))
+    assert owner["from_rbd"] == in_use["model_id"] in (first["model_id"], other.id) and "on_link" not in owner
+    # A leaf's model in use: one block, kept as its row.
+    pump = m.create_position("Lone pump")["id"]
+    life = pm.link_saved(m, db, OWNERS, set(), pump, "model", SAMPLE)
+    one = pm.build_mission_rbd(m, db, OWNERS, set(), pump, ORG, "Duty", link_id=life["id"])
+    assert one["built_from"] == "model"
+    assert db.rbds.find_one({"_id": one["rbd"]["id"]})["graph"]["mission_of"] == {
+        "position_id": pump, "on_link": life["id"], "built_from": "model"}
+    # A row that isn't the position's, or a model not in use: refused, in words.
+    with pytest.raises(Invalid, match="isn't on this position"):
+        pm.build_mission_rbd(m, db, OWNERS, set(), pump, ORG, "Again", link_id=second["id"])
+    # With a second model linked, the one not in use flies a mission too: its own block, that model.
+    pm.link_saved(m, db, OWNERS, set(), pump, "model", "sample-model-bearings-lognormal")
+    idle = next(x for x in m.position_models(pump) if not x.get("in_use"))
+    spare = pm.build_mission_rbd(m, db, OWNERS, set(), pump, ORG, "Spare", link_id=idle["id"])
+    blocks = [n for n in db.rbds.find_one({"_id": spare["rbd"]["id"]})["graph"]["nodes"] if n["type"] == "component"]
+    assert blocks[0]["data"]["model"].get("modelId") == idle["model_id"]
+    # A covariate (PH) model in use flies a one-block mission too: its phases set the covariates.
+    seal = m.create_position("Seal")["id"]
+    ph = pm.link_saved(m, db, OWNERS, set(), seal, "model", "sample-model-seal-weibull-ph")
+    cov = pm.build_mission_rbd(m, db, OWNERS, set(), seal, ORG, "Hot run", link_id=ph["id"])
+    assert cov["built_from"] == "model"
+    [row] = [r for r in rm.position_missions(m, db, OWNERS, position_ids=[seal]) if r["rbd"]]
+    assert row["rbd"]["on_link"] == ph["id"] and row["missions"][0]["covariates"]
+
+
+# ---- a mission on any life or covariate model; a plain one is a length from an age ------------
+
+def _typed_weibull(db, alpha=1000.0, beta=2.0):
+    from backend.services import models as models_service
+
+    return models_service.import_model(db, ORG, "Typed Weibull", "weibull", unit="hours",
+                                       params=[{"name": "alpha", "value": alpha}, {"name": "beta", "value": beta}])
+
+
+@pytest.fixture()
+def live_db(db, monkeypatch):
+    """The seeded db as the app's own, so a saved fit can be brought back to bound it."""
+    from backend import db as db_mod
+
+    monkeypatch.setattr(db_mod, "_db", db)
+    monkeypatch.setattr(db_mod, "_simulated", True)
+    return db
+
+
+def test_a_plain_life_model_s_mission_is_its_length_from_its_starting_age(m, live_db):
+    """Hand checks: Weibull alpha 1000, beta 2. From new, 200 h: exp(-(200/1000)^2) = 0.9608. From
+    age 500, 200 h more: R(700) / R(500) = exp(-(0.7^2 - 0.5^2)) = 0.7866."""
+    db = live_db
+    w = _typed_weibull(db)
+    pump = m.create_position("Lone pump")["id"]
+    link = pm.link_saved(m, db, OWNERS, set(), pump, "model", w.id)
+    made = pm.build_mission_rbd(m, db, OWNERS, set(), pump, ORG, "Short run", link_id=link["id"])
+    assert made["mission"]["simple"] is True and made["mission"]["start"] == {"new": True}
+    graph = db.rbds.find_one({"_id": made["rbd"]["id"]})["graph"]
+    assert "mission_start" not in graph and not graph.get("phases")  # no length invented
+    g, _ = rm.save(graph, rm.LEGACY_ID, phases=[{"name": "Mission", "duration": 200}])
+    got = rm.analyze(db, OWNERS, g, g["phases"])
+    assert got["reliability"] == pytest.approx(0.9608, abs=5e-5)
+    assert got["reliability"] == pytest.approx(math.exp(-(200 / 1000) ** 2), rel=1e-9)
+    assert got["start"] == {"basis": "new", "age": 0.0}
+    # Typed in: no fit, so no bound, and it says so.
+    assert "lower_bound" not in got and got["bound_note"].startswith("No bound: its parameters were typed in")
+    g, mission = rm.save(g, rm.LEGACY_ID, start={"age": 500})
+    assert g["mission_start"] == {"age": 500.0} and rm.summary(g, mission)["start"] == {"age": 500.0}
+    got = rm.analyze(db, OWNERS, g, g["phases"])
+    assert got["reliability"] == pytest.approx(0.7866, abs=5e-5)
+    assert got["reliability"] == pytest.approx(math.exp(-(0.7 ** 2 - 0.5 ** 2)), rel=1e-9)
+    assert got["start"] == {"basis": "age", "age": 500.0}
+    # Back to new; a bad age is refused in words.
+    g, _ = rm.save(g, rm.LEGACY_ID, start=None)
+    assert "mission_start" not in g
+    with pytest.raises(rm.MissionError, match="starting age"):
+        rm.save(g, rm.LEGACY_ID, start=-3)
+
+
+def test_several_missions_on_one_model_compare_side_by_side(m, live_db):
+    db = live_db
+    w = _typed_weibull(db)
+    pump = m.create_position("Lone pump")["id"]
+    link = pm.link_saved(m, db, OWNERS, set(), pump, "model", w.id)
+    for name, length in (("Short", 200), ("Long", 600)):
+        made = pm.build_mission_rbd(m, db, OWNERS, set(), pump, ORG, name, link_id=link["id"])
+        doc = db.rbds.find_one({"_id": made["rbd"]["id"]})
+        g, _ = rm.save(doc["graph"], rm.LEGACY_ID, phases=[{"name": "Mission", "duration": length}])
+        got = rm.analyze(db, OWNERS, g, g["phases"])
+        db.rbds.update_one({"_id": doc["_id"]}, {"$set": {"graph": g, "mission_results.mission": rm.result_record(g, g["phases"], got)}})
+    rows = [r for r in rm.position_missions(m, db, OWNERS, position_ids=[pump]) if r["rbd"]]
+    got = {r["missions"][0]["name"]: r["missions"][0] for r in rows}
+    assert {r["rbd"]["on_link"] for r in rows} == {link["id"]}
+    assert got["Short"]["result"]["reliability"] == pytest.approx(math.exp(-0.04))
+    assert got["Long"]["result"]["reliability"] == pytest.approx(math.exp(-0.36))
+    assert got["Short"]["simple"] and got["Long"]["duration"] == 600
+
+
+def test_a_fitted_plain_model_s_mission_has_its_90_percent_one_sided_lower_bound(m, live_db):
+    """From new the bound is SurPyval's own lower bound on R(length) at 90% one-sided; from an age it
+    is the delta-method bound on log(H(age + length) - H(age)), which is that at age 0."""
+    from backend.services import models as models_service
+
+    db = live_db
+    pump = m.create_position("Lone pump")["id"]
+    link = pm.link_saved(m, db, OWNERS, set(), pump, "model", SAMPLE)
+    made = pm.build_mission_rbd(m, db, OWNERS, set(), pump, ORG, "Duty", link_id=link["id"])
+    g = db.rbds.find_one({"_id": made["rbd"]["id"]})["graph"]
+    g, _ = rm.save(g, rm.LEGACY_ID, phases=[{"name": "Mission", "duration": 200}])
+    live = models_service.get_live_model(db, SAMPLE, OWNERS)["model"]
+    got = rm.analyze(db, OWNERS, g, g["phases"])
+    assert got["reliability"] == pytest.approx(float(live.sf(200)))
+    ref = float(np.ravel(live.cb(np.array([200.0]), on="sf", alpha_ci=0.1, bound="lower"))[0])
+    assert got["lower_bound"] == {"lower": pytest.approx(ref), "confidence": 0.9, "side": "lower"}
+    assert "90% one-sided" in got["bound_note"]
+    assert rm.conditional_lower(live, 1e-12, 200) == pytest.approx(ref, rel=1e-6)  # the delta method, at new
+    g, _ = rm.save(g, rm.LEGACY_ID, start=500)
+    got = rm.analyze(db, OWNERS, g, g["phases"])
+    assert got["reliability"] == pytest.approx(float(live.sf(700) / live.sf(500)))
+    assert got["lower_bound"]["lower"] < got["reliability"]
+    # The tools carry the same.
+    assert rbd_phases.agent_summary(got)["lower_bound"] == got["lower_bound"]
+
+
+def test_a_plain_mission_on_a_fitted_item_starts_now_and_reads_its_age(m, live_db):
+    db = live_db
+    w = _typed_weibull(db)
+    pump = m.create_position("Pump")["id"]
+    item = m.create_item("Pump 7")["id"]
+    m.fit(pump, item_id=item, on="2026-01-01")
+    link = pm.link_saved(m, db, OWNERS, set(), pump, "model", w.id)
+    made = pm.build_mission_rbd(m, db, OWNERS, set(), pump, ORG, "Next shift", link_id=link["id"])
+    g = db.rbds.find_one({"_id": made["rbd"]["id"]})["graph"]
+    assert g["mission_start"] == {"now": True}
+    g, _ = rm.save(g, rm.LEGACY_ID, phases=[{"name": "Mission", "duration": 200}])
+    got = rm.analyze(db, OWNERS, g, g["phases"], age_now={"age": 500, "note": "since it was fitted"})
+    assert got["reliability"] == pytest.approx(0.7866, abs=5e-5)
+    assert got["start"]["basis"] == "now" and got["start"]["age"] == 500
+    # Its age can't be read: worked out from new, and said so.
+    got = rm.analyze(db, OWNERS, g, g["phases"], age_now={"reason": "nothing is fitted at Pump"})
+    assert got["reliability"] == pytest.approx(0.9608, abs=5e-5)
+    assert got["notes"][0] == "From new: nothing is fitted at Pump."
+
+
+def test_a_mission_flies_on_any_covariate_model_in_use_or_not_however_it_was_fitted(m, live_db):
+    """Covariate models fitted from readings that change over time are covariate models too: a
+    mission flies on them, and on a model that isn't the one in use."""
+    db = live_db
+    seal = m.create_position("Seal")["id"]
+    first = pm.link_saved(m, db, OWNERS, set(), seal, "model", SAMPLE)
+    tvc = pm.link_saved(m, db, OWNERS, set(), seal, "model", "sample-model-pump-load-weibull-ph")
+    ph = pm.link_saved(m, db, OWNERS, set(), seal, "model", "sample-model-seal-weibull-ph")
+    joint = pm.link_saved(m, db, OWNERS, set(), seal, "model", "sample-joint-feed-pumps")
+    flyable = pm.flyable_links(m, db, OWNERS, set(), m.all_position_models([seal]))
+    assert set(flyable) == {first["id"], tvc["id"], ph["id"]}  # a condition-and-life model isn't, yet
+    assert not next(x for x in m.position_models(seal) if x["id"] == tvc["id"]).get("in_use")
+    made = pm.build_mission_rbd(m, db, OWNERS, set(), seal, ORG, "Load profile", link_id=tvc["id"])
+    g = db.rbds.find_one({"_id": made["rbd"]["id"]})["graph"]
+    assert not rm.is_simple(g) and not made["mission"].get("simple")
+    g, _ = rm.save(g, rm.LEGACY_ID, phases=[{"name": "Low", "duration": 500, "values": {"load_pct": 60}},
+                                            {"name": "High", "duration": 500, "values": {"load_pct": 90}}])
+    got = rm.analyze(db, OWNERS, g, g["phases"])
+    assert 0 < got["reliability"] < 1 and "lower_bound" not in got
+    with pytest.raises(Invalid):
+        pm.build_mission_rbd(m, db, OWNERS, set(), seal, ORG, "Joint", link_id=joint["id"])
+    # A starting age is for a plain life model's mission only.
+    with pytest.raises(rm.MissionError, match="starting age"):
+        rm.save(g, rm.LEGACY_ID, start=100)
+
+
+def test_a_ph_model_s_two_phase_mission_equals_the_engine_s_own_calculation(m, live_db):
+    """A proportional-hazards block through two phases at two covariate values carries its age:
+    H = H(t1 | z1) + H(t1 + t2 | z2) - H(t1 | z2), from the fitted model itself."""
+    import pandas as pd
+
+    from backend.services import models as models_service
+
+    db = live_db
+    seal = m.create_position("Seal")["id"]
+    ph = pm.link_saved(m, db, OWNERS, set(), seal, "model", "sample-model-seal-weibull-ph")
+    made = pm.build_mission_rbd(m, db, OWNERS, set(), seal, ORG, "Hot then cool", link_id=ph["id"])
+    g = db.rbds.find_one({"_id": made["rbd"]["id"]})["graph"]
+    z1, z2 = {"temp_C": 95, "load": 0.85}, {"temp_C": 65, "load": 0.6}  # inside the fitted ranges
+    g, _ = rm.save(g, rm.LEGACY_ID, phases=[{"name": "Hot", "duration": 300, "values": z1},
+                                            {"name": "Cool", "duration": 400, "values": z2}])
+    got = rm.analyze(db, OWNERS, g, g["phases"])
+    live = models_service.get_live_model(db, "sample-model-seal-weibull-ph", OWNERS)["model"]
+
+    def hf(t, z):
+        return float(np.ravel(live.Hf(np.array([float(t)]), pd.DataFrame([z])))[0])
+
+    want = math.exp(-(hf(300, z1) + hf(700, z2) - hf(300, z2)))
+    assert got["reliability"] == pytest.approx(want, rel=1e-6)
 
 
 # ---- over REST --------------------------------------------------------------------------------
@@ -583,3 +797,31 @@ def test_only_placeholders_gives_no_figure_without_them():
     assert got["reliability"] == pytest.approx(e(-0.2))
     assert len(got["placeholders"]) == 2 and got["without_placeholders"] is None
     assert got["phases"][0]["weakest"] is None
+
+
+def test_rest_a_plain_mission_s_length_starting_age_and_bound(client):
+    """Add a mission… on a life model that isn't in use; its length and starting age over REST, an
+    unsaved age worked out without being kept, and the 90% one-sided bound with the answer."""
+    pump = _ok(client.post("/api/maintenance/positions", json={"name": "Lone pump"}))["id"]
+    _ok(client.post(f"/api/maintenance/positions/{pump}/models", json={"model_id": "sample-model-bearings-lognormal"}))
+    _ok(client.post(f"/api/maintenance/positions/{pump}/models", json={"model_id": SAMPLE}))
+    listed = _ok(client.get("/api/maintenance/position-missions"))
+    links = _ok(client.get(f"/api/maintenance/position-models?position_ids={pump}"))["links"]
+    weibull = next(x for x in links if x["model_id"] == SAMPLE)
+    assert weibull["id"] in listed["flyable"]
+    made = _ok(client.post(f"/api/maintenance/positions/{pump}/missions", json={"name": "Shift", "link_id": weibull["id"]}))
+    rid = made["rbd"]["id"]
+    assert made["mission"]["simple"] is True
+    full = _ok(client.get(f"/api/rbds/{rid}/missions/mission"))
+    assert full["summary"]["start"] == {"new": True} and full["age_now"]["reason"].startswith("nothing is fitted")
+    _ok(client.put(f"/api/rbds/{rid}/missions/mission", json={"phases": [{"name": "Mission", "duration": 200}],
+                                                               "start": {"age": 500}}))
+    got = _ok(client.post(f"/api/rbds/{rid}/missions/mission/calculate", json={}))
+    assert got["start"] == {"basis": "age", "age": 500.0}
+    assert got["lower_bound"]["side"] == "lower" and got["lower_bound"]["lower"] < got["reliability"]
+    new = _ok(client.post(f"/api/rbds/{rid}/missions/mission/calculate", json={"start": "new"}))
+    assert new["start"]["basis"] == "new" and new["reliability"] > got["reliability"]
+    # The row keeps the saved start's result (from 500 h), not the unsaved one.
+    row = next(x for x in _ok(client.get("/api/maintenance/position-missions"))["links"] if x["rbd"] and x["rbd"]["id"] == rid)
+    assert row["missions"][0]["result"]["reliability"] == pytest.approx(got["reliability"])
+    assert row["missions"][0]["result"]["lower_bound"] == got["lower_bound"]

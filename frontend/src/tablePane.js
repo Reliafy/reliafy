@@ -44,7 +44,7 @@ export const TABLE_PANES = {
       confirmLabel: "Discard them", cancelLabel: "Keep fixing",
     },
   },
-  // How a position runs (?plan=<position id>; the Measurements and Summary tabs): its operating plan.
+  // How a position runs (?plan=<position id>; Monitoring › Readings, where one opened from the Summary moves): its operating plan.
   plan: {
     param: "plan",
     discard: {
@@ -70,6 +70,25 @@ export const TABLE_PANES = {
     extra: { how: "how" },
     discard: {
       title: "Leave this strategy?", body: "The figures you've entered aren't saved.",
+      confirmLabel: "Leave it", cancelLabel: "Stay",
+    },
+  },
+  // A level's forecast (?forecast=<position id>; the Maintenance tab's Forecast… on a position): the
+  // work, failures and costs to come there and everything inside it. Nothing to discard.
+  forecast: {
+    param: "forecast",
+    discard: {
+      title: "Close the forecast?", body: "Nothing is lost: it's worked out again when opened.",
+      confirmLabel: "Close it", cancelLabel: "Keep it open",
+    },
+  },
+  // Optimise… on a task (?optimise=<task id>&on=<its position id>; the Maintenance tab): how often to
+  // do it, from its failure modes' life models. Each Use saves on its own: nothing to discard.
+  optimise: {
+    param: "optimise",
+    on: "on",
+    discard: {
+      title: "Leave Optimise?", body: "The figures you've changed aren't used until you press Use.",
       confirmLabel: "Leave it", cancelLabel: "Stay",
     },
   },

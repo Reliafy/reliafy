@@ -131,7 +131,7 @@ export default function JointBlockSource({ value, onChange, repairable = false }
               </label>
             </div>
           )}
-          <p className="hint" style={{ marginBottom: 0 }}>
+          <p className="hint mb-0">
             This block runs from the unit's age now: at time t in the diagram, its reliability is its chance of
             surviving from its age to age + t, given its readings.
           </p>

@@ -184,7 +184,7 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
         </button>
       </div>
       {!c && !error && !needsPro && (
-        <p className="hint" style={{ margin: 0 }}>
+        <p className="hint m-0">
           Compare this diagram with a copy that has one change — a faster repair, a spare.
           The difference is exact where both designs allow it; otherwise blocks with the same id are
           simulated with the same random numbers, so the interval measures the change itself.{" "}
@@ -206,7 +206,7 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
         </div>
       )}
       {error && <div className="card error">{error}</div>}
-      {c?.cost_note && <p className="hint" style={{ margin: 0 }}>{c.cost_note}</p>}
+      {c?.cost_note && <p className="hint m-0">{c.cost_note}</p>}
 
       {c && QUANTITIES.filter((q) => c.differences?.[q.key]).map((q) => {
         const diff = c.differences[q.key];
@@ -261,7 +261,7 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
               </table>
             </ScrollCue>
             {q.key === "cost" ? (
-              <p className="muted-line" style={{ margin: 0 }}>
+              <p className="muted-line m-0">
                 Owning each design for {windowText} from new: its purchase prices
                 {diff.acquisition ? ` (${signed(diff.acquisition, fmtMoney)} for ${nameB})` : ""} plus its running
                 costs{diff.method === "exact"
@@ -273,13 +273,13 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
                 Costs aren&rsquo;t discounted.
               </p>
             ) : diff.method === "exact" ? (
-              <p className="muted-line" style={{ margin: 0 }}>
+              <p className="muted-line m-0">
                 Exact: RePyability works out both designs&rsquo; expected availability over {windowText} from new,
                 so the difference has no simulation noise and nothing is simulated.
                 {longRunBoth ? " The long-run values are exact too." : ` ${longRun ? "One design has" : "Neither design has"} an exact long-run value.`}
               </p>
             ) : (
-            <p className="muted-line" style={{ margin: 0 }}>
+            <p className="muted-line m-0">
               {c.n_simulations?.toLocaleString()} simulations of each design over {windowText}
               {c.common_random_numbers
                 ? `, with common random numbers (${c.shared_blocks} block${c.shared_blocks === 1 ? "" : "s"} paired by id)`

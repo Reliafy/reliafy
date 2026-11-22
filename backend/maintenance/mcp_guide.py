@@ -201,6 +201,16 @@ hours), tasks, labour_hours (from each task's LSA labour), planned_cost (each ta
 and failure_cost (expected), with failures_range / cost_range when one model is forecast, and due: the tasks \
 done that period. totals: the same for the whole forecast, with its range. Ranges are 90%: the 5th to 95th \
 percentile of outcomes; with several positions the total's range assumes they fail independently.
+- Cost split (rows and totals): planned_cost = labour_cost + materials_cost (each task's LSA lines) + \
+visits_cost (visits x the package's visit_cost, or a lone task's; same position and time = one visit) + \
+other_planned_cost (a typed cost its LSA doesn't explain); unplanned_cost (= failure_cost) = failures x what a \
+failure costs (failure_cost + downtime_hours x downtime_rate, on the failure mode, else its position class: \
+failure_modes.update, reliability.set_class_costs); downtime_hours, downtime_cost; total_cost; total_complete \
+false when a life forecast has no failure cost. cost_basis says what each rests on.
+- prompts: what to enter for the forecast to count more, each with a link: no_failure_cost (failure modes), \
+no_pf (on-condition checks with no P-F calculation as evidence), no_effect (tasks with no modelled effect on \
+failures, and why). A fixed-interval task with no restoration set is as new, except servicing work by its \
+name (grease, clean, adjust...): restores none, shown as assumed.
 - tasks: each task's dates (each assumed done on its due date: an interval counts again from then, a pattern \
 keeps its dates; a date set by hand comes first; overdue shows at the start) and rests_on: on the calendar, or \
 the hours map it went by. hours_basis says where the position's hours come from: its operating plan (own or \
@@ -245,9 +255,9 @@ fails), fixed_interval (replace or restore on a schedule), failure_finding (chec
 evidence {type, id}: degradation_model for on_condition, strategy_analysis for fixed_interval, failure_finding \
 and rtf uneconomic, model (a non-repairable model) for rtf random; the result's status says whether it supports \
 the decision (supported, contradicted, inconclusive, unevidenced, stale, shorter_than_evidence, \
-longer_than_evidence; partly for a combination) and why; a fixed-interval task at under half its cost-optimal \
-interval is shorter_than_evidence, over twice it longer_than_evidence (a fact, not a verdict: the analyst decides), \
-and one under half a calculated interval is contradicted, each summary giving both and interval_share. Any decision can instead link \
+longer_than_evidence; partly for a combination) and why; a task (fixed-interval, on-condition or failure-finding) at under half the interval its evidence supports \
+is shorter_than_evidence, over twice it longer_than_evidence (a fact, not a verdict: the analyst decides), \
+each summary giving both and interval_share; an on-condition or failure-finding check further apart than its P-F or target limit stays contradicted (it misses failures). Any decision can instead link \
 a report (type report: a saved report's id) or a function's notes and rationale, where the working behind its \
 performance standard is written (type working: the function's id; it needs notes written): linked, not checked, so its status is linked \
 (evidence_kind report or working), or stale once it has gone. So can a record on the tree, linked the same way: \
@@ -285,6 +295,7 @@ for the fixed interval, set the task's interval (maintenance tasks.update) and a
 user. Both calculators also work in a unit of use (cycles, flight hours) when the P-F interval or the model is in \
 one, without costs. recommended is rounded down \
 to a unit people schedule in; quote the cost a year and the unavailability with it.
+- Optimising a task from its model in one call (the app's Optimise… on a task): maintenance rcm.optimise (task_id) works out each mode's interval from its life model (an earlier Optimise's, the decision's evidence, or the position's model for the mode; a degradation model by its time to the limit), with the cost-optimal range across the model's 90% parameter bounds, in the task's own unit (running hours meet the calendar at the position's duty). Missing inputs come back as problem: ask the user for them (planned_cost, unplanned_cost, pf_interval). use true sets the interval, saves the analysis as the mode's evidence (replacing what it had) and adds a line to the notes; tell the user the interval and the evidence status. A model refitted since shows as moved: offer to re-optimise, never change the interval unasked.
 - Scoring the same modes as an FME(C)A (the Explorer's FME(C)A tab; the RCM tab shows the same records): \
 maintenance failure_modes.score (failure_mode_id; severity, occurrence, detection, whole numbers 1-10; cause, \
 effect_local, effect_next, effects (the end effect: the RCM's effects, one field), detection_method; \
@@ -418,7 +429,10 @@ task (it follows the serial number) and a task by use are left out and stay on t
 the user, then packages.create (several at once: maintenance apply). With weekday (saturday), the drafts visit \
 on that day and the longer cadences are layers on the shortest in each area and trade (monthly on the first \
 Saturday): each draft has ref and layer_of, and a layer's create has parent_id '@<ref>', so send the agreed ones \
-as one maintenance apply with each operation's ref set to its draft's, tops first.
+as one maintenance apply with each operation's ref set to its draft's, tops first. A package on a position takes \
+any task on the same asset (never another asset's) and lives where its tasks meet: subject is the deepest position \
+all of them are on or inside, worked out on read, so packages.add_task or remove_task moves it; made_on is where it \
+was made (its hours counter and a shutdown go by that), asset the tree its tasks are all on.
   - create: name; exactly one of position_id (its tasks on it or positions inside it) or location_id (tasks at \
 it); tasks (task ids). A task has one home package: a job needed on two schedules is two tasks.
   - When: timing fixed (default: set dates) or from_last_visit (the close date plus the interval). every + unit \
@@ -534,7 +548,7 @@ user says so, maintenance proposals.accept (or reject, with a note). Never accep
 4. maintenance get.task: why a task is what it is (where it came from, every change, the proposals behind \
 them)."""),
     "modelling": ("Life models on positions: what one means, attaching, how they feed the RCM.", """\
-A life model on a position (the Explorer's Modelling tab) says how that functional location fails over time: a \
+A life model on a position (the Explorer's Models tab) says how that functional location fails over time: a \
 Weibull fitted to its own failure history, its position class's pooled model, or any saved model (non-repairable, \
 repairable, degradation, accelerated life, condition and life). It's a link: the model stays in Models, so a \
 refit or rename there shows here, and one model can sit on many positions. A position of a product's design \

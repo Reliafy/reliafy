@@ -7,6 +7,7 @@ import { buildProductItem, createProduct, getDesignRollup } from "../api.js";
 import { Field, FormModal, fmtDate } from "./MaintenanceParts.jsx";
 import { consequenceShort, isOpen, statusLabel } from "../failureReports.js";
 import { buildProblem, itemPagePath, itemTreePath, revText } from "../products.js";
+import Loading from "./ui/Loading.jsx";
 
 // Where one report is: its item's tree, on the Failure reports tab, opened on it.
 export function reportPath(r) {
@@ -30,7 +31,7 @@ export function DesignReports({ positionId, heading = false }) {
     return () => { live = false; };
   }, [positionId]);
   if (error) return <p className="lib-date">Couldn't load the failure reports: {error}</p>;
-  if (!data) return <p className="lib-date">Loading…</p>;
+  if (!data) return <Loading />;
   const reports = data.reports || [];
   const items = data.items || [];
   return (

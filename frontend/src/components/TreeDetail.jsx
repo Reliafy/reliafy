@@ -18,6 +18,7 @@ import ProductSummary, { ProductPartsList } from "./ProductSummary.jsx";
 import "./TreeSummary.css";
 import { createRecent } from "../recentCache.js";
 import { withFullPage } from "../panelMenu.js";
+import Loading from "./ui/Loading.jsx";
 
 // The Parts and stock and Classes tabs' bodies (the pages they were, with their
 // charts): loaded when one of the tabs is first opened.
@@ -149,7 +150,14 @@ function useTabQuery() {
   };
 }
 
-const loading = <div className="card empty">Loading…</div>;
+const loading = <Loading card />;
+
+// Whether a position has positions below it in the tree on show (at any depth: the display's sums),
+// so its Condition monitoring tab lists them with it rather than its own risk alone.
+export function hasPositionsBelow(row, display) {
+  const r = display?.rows?.get(row.key) || row;
+  return (r.sum?.positions || 0) > 0;
+}
 
 function PartsTab({ row, display }) {
   const q = useTabQuery();
@@ -383,6 +391,10 @@ const TreeDetail = forwardRef(function TreeDetail({
           ? <ClassesTab row={row} display={display} />
           // The Condition monitoring tab. A position's (any arrangement): its own risk now, in words
           // then its two charts, or why there is none and how to get one (the Modelling tab).
+          // With positions below it (a position with positions inside, or a place), the table of every
+          // position there and below with condition monitoring, its own first (ClassFleet `below`).
+          : shown === "condition" && (row.type === "loc" || (row.type === "pos" && hasPositionsBelow(row, display)))
+          ? <Suspense fallback={loading}><ClassFleet row={row} version={version} onSelect={onSelect} within={within} below /></Suspense>
           : shown === "condition" && row.type === "pos"
           ? <Suspense fallback={loading}><PositionRisk positionId={row.key} version={version} detail onModelling={() => onTab("models")} /></Suspense>
           // By Classes, a class's row: the fleet (every position under it, with risk now; `within`:

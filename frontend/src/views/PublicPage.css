@@ -57,7 +57,7 @@
 html.print-layout .public-page {
   width: 186mm;
   min-height: 0;
-  background: #fff;
+  background: var(--neutral-0); /* paper: white in either theme */
 }
 html.print-layout .public-artifact { min-height: 0; padding: var(--space-4) 0 0; }
 html.print-layout .public-app { max-width: none; margin: 0; padding: 0; }
@@ -66,22 +66,22 @@ html.print-layout .public-page .card { box-shadow: none; }
 /* A model's answer in one plain sentence, for a manager: above the
    figures and bounds (the answer line) and the tabs. */
 .share-plain {
-  margin: 6px 0 2px;
+  margin: var(--space-1-5) 0 var(--space-0-5);
   max-width: 62rem;
-  font-size: var(--fs-16, 16px);
+  font-size: var(--fs-16);
   line-height: 1.5;
   font-weight: 500;
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
-.report-section .share-plain { margin: 0 0 10px; }
+.report-section .share-plain { margin: 0 0 var(--space-2); }
 
 @media print {
   @page { margin: 14mm 12mm; }
 
   html,
   body,
-  .public-page { background: #fff !important; }
+  .public-page { background: var(--neutral-0) !important; }
   .public-page {
     min-height: 0;
     -webkit-print-color-adjust: exact;
@@ -143,9 +143,9 @@ html.print-layout .public-page .card { box-shadow: none; }
   .public-page .scroll-cue-body > table { min-width: 0 !important; width: 100%; }
   .public-page .scroll-cue-body > table th,
   .public-page .scroll-cue-body > table td {
-    font-size: 11px !important;
-    padding-left: 6px !important;
-    padding-right: 6px !important;
+    font-size: var(--fs-12) !important;
+    padding-left: var(--space-1-5) !important;
+    padding-right: var(--space-1-5) !important;
     white-space: normal !important;
   }
   .public-page .report-text p { orphans: 3; widows: 3; }

@@ -9,6 +9,7 @@
 import { test, expect } from "@playwright/test";
 
 const SIGNED_IN = [
+  ["GET", "/api/me/editor-preferences"], // the RBD builder's autosave, on unless turned off
   // Libraries: making one (reads are public, so only the writes need a sign-in).
   ["POST", "/api/libraries"],
   ["POST", "/api/rbds/standby-route"], // a standby block's route and words (#363)
@@ -23,6 +24,11 @@ const SIGNED_IN = [
   // The interval calculators on an RCM task card.
   ["POST", "/api/maintenance/rcm/interval/on-condition"],
   ["POST", "/api/maintenance/rcm/interval/failure-finding"],
+  // Optimise… on a task: the answer, its Use, what a task rests on and what a model sets.
+  ["POST", "/api/maintenance/tasks/none/optimise"],
+  ["POST", "/api/maintenance/tasks/none/optimise/use"],
+  ["GET", "/api/maintenance/tasks/none/interval-basis"],
+  ["GET", "/api/maintenance/model-tasks?model_ids=none"],
   // Life models on positions (the Explorer's Modelling tab).
   ["GET", "/api/maintenance/position-models"],
   // Trade rates: they price each task's labour (its cost each time; Nov 2026).
@@ -81,6 +87,8 @@ const SIGNED_IN = [
   ["GET", "/api/maintenance/classes/forecast"], // #407
   ["GET", "/api/maintenance/item-classes/smoke/fleet"], // the Explorer by Classes: a class's positions with risk now
   ["GET", "/api/maintenance/positions/smoke/condition"], // a position's Condition monitoring tab: its risk now
+  ["GET", "/api/maintenance/condition-below/smoke"], // Condition monitoring on a node: every monitored position below it
+  ["GET", "/api/maintenance/rollup/smoke"], // the Summary's counts here and below
   ["POST", "/api/maintenance/graph/query"], // #423
   ["GET", "/api/maintenance/graph/schema"], // #423
   ["GET", "/api/maintenance/graph/design"], // the Data model page
@@ -100,6 +108,7 @@ const SIGNED_IN = [
   ["GET", "/api/maintenance/positions/smoke/design-rollup"],
   ["GET", "/api/maintenance/items/overview"],
   ["PUT", "/api/maintenance/failure-modes/smoke/decision"],
+  ["GET", "/api/maintenance/failure-modes/smoke/costs"], // what a failure costs (the RCM panel, the forecast)
   ["GET", "/api/maintenance/tasks/smoke/measurement"], // what a task by use counts (its dialog, a move's question)
   ["GET", "/api/maintenance/overview"],
   ["GET", "/api/maintenance/tree"], // the asset tree pane

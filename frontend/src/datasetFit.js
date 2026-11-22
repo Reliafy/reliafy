@@ -17,7 +17,8 @@ export function fitOptions(d) {
   return [life];
 }
 
-const CHANGING = "with covariates that change over time";
+// A covariate model is one kind however it is fitted (Derryn, 22 Nov 2026); the note is about the data.
+const CHANGING = "with covariates (readings that change over time)";
 
 // Start and stop rows (or a timeline) whose covariates change over a unit's
 // life: its tag, or the page's profile finding start and stop columns.

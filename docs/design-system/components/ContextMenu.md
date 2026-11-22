@@ -12,7 +12,7 @@ Right-click, the row's ⋯ button (`MoreMenu`), or Shift+F10 / the Menu key on a
   - `pro` — a Pro-only action (making libraries, for example): the small `pro-tag` after its label, shown only to users without Pro (`ProTag`). The item still opens; what it opens explains Pro.
   - `danger` — a destructive action in `danger-text`, last in the menu.
   - `disabled` + `reason` — the item stays in the menu, greyed, with the reason in `help` type under it (and as its description to a screen reader). Don't hide what can't be used now; say why.
-  - `items` — a submenu ("Focus ›"). It opens beside the menu on a wide screen, in place under its item on a phone.
+  - `items` — a submenu ("Focus to a depth ›"). It opens beside the menu on a wide screen, in place under its item on a phone.
   - `checked` (true | false) — a radio in a submenu, ticked with ✓.
   - `separator` — a `border` line between groups; the arrow keys pass over it.
 - `at` — `{x, y}`, the pointer or the corner of what opened it. The menu moves in to stay on screen, at least 8 px from every edge: it is measured at its full width (hidden, top left) before it is placed, so items that wrap near an edge never make it spill off.
@@ -45,6 +45,10 @@ The menu's look lives in `index.css` (`.ovm-menu.row-menu`), not with any page, 
 ## Keyboard
 
 The first item takes focus. ↑ ↓ Home End move, Enter or Space chooses, → opens a submenu and ← or Esc goes back to its item. Esc or Tab closes the menu.
+
+## Focus and Pin
+
+Every row that has something inside it offers **Focus here** (opened at every level, every other branch closed), then **Focus ›** (1, 2 or 3 levels), then **Pin this branch**, before Delete. A row with nothing inside it has only Focus here. While a focus is on, **Clear focus** follows them. On a tab with its own table the words name what it shows (**Focus tasks**, **Focus failure modes**, **Focus measurements**, **Focus models**, **Focus missions**, and **Focus tasks ›** likewise); elsewhere they stay Focus here and Focus ›. See `TreeTable`.
 
 ## Order
 

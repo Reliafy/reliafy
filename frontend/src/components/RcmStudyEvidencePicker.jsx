@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { listModels, listStrategyAnalyses, listDegradationModels } from "../api.js";
+import { Radio } from "./ui/Controls.jsx";
 
 const VERDICT_LABEL = {
   random: "random ✓",
@@ -70,16 +71,17 @@ export default function RcmStudyEvidencePicker({ expectedType, analysisKind, val
   return (
     <div className="evidence-picker">
       {options.map((o) => (
-        <label key={o.id} className={"evidence-option" + (value === o.id ? " selected" : "")}>
-          <input
-            type="radio"
-            name="evidence"
-            checked={value === o.id}
-            onChange={() => onChange(o.id)}
-          />
-          <span className="evidence-name">{o.label}</span>
-          <span className="evidence-meta">{o.meta}</span>
-        </label>
+        <Radio
+          key={o.id}
+          className={"evidence-option" + (value === o.id ? " selected" : "")}
+          name="evidence"
+          checked={value === o.id}
+          onChange={() => onChange(o.id)}
+          label={<>
+            <span className="evidence-name">{o.label}</span>
+            <span className="evidence-meta">{o.meta}</span>
+          </>}
+        />
       ))}
     </div>
   );

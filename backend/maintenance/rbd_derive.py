@@ -220,7 +220,7 @@ def build(m: Maintenance, scope_id: str, block_model=None, unit: str = "days", s
         notes.append(f"No non-repairable model yet for {', '.join(placeholders)}: a placeholder is used. Fit one for "
                      "the position's class, or give each block a model in the RBD builder." if block_model is None else
                      f"No model in use yet for {', '.join(placeholders)}: a placeholder (flagged) stands in. Give "
-                     "each a model in Models › Life models and rebuild, or set one in the RBD builder.")
+                     "each a model on its Models tab and rebuild, or set one in the RBD builder.")
     alike = suspected_sets(m, children, said_series)
     for x in alike:
         names = x["names"]

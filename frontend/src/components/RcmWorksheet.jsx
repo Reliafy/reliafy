@@ -12,7 +12,7 @@ import InputGroup, { ReadsAs } from "./ui/InputGroup.jsx";
 import MoreMenu from "./ui/MoreMenu.jsx";
 import Section from "./ui/Section.jsx";
 import { InlineAddButton, InlineAddRow, useInlineAdd } from "./ui/InlineAdd.jsx";
-import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
+import { Checkbox, Select, TextArea, TextInput } from "./ui/Controls.jsx";
 import { Highlight } from "./OutlineBits.jsx";
 import { ancestorsOf } from "../outlineTree.js";
 import {
@@ -26,6 +26,7 @@ import { modeAnswers } from "../decisionCheck.js";
 import RcmFunctionStandards from "./RcmFunctionStandards.jsx";
 import { COMPARATORS, COMPARATOR_LABEL, limitReads, limitWords } from "../rcmStandards.js";
 import RcmModeTasks, { RcmTaskSections, StepLabel, removeTaskFromMode } from "./RcmModeTasks.jsx";
+import FailureCostRows from "./FailureCostRows.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { getTaskLsa } from "../api.js";
 import { explorerHere } from "../products.js";
@@ -45,6 +46,7 @@ import { apWords } from "../fmeaWorksheet.js";
 import { CriticalityGroup, FmeaGroup } from "./FmeaPanels.jsx";
 import { PanelField } from "./PanelField.jsx";
 import "./RcmWorksheet.css";
+import { DateInput } from "./ui/DateTimeInput.jsx";
 
 // The RCM worksheet's pieces, drawn by the Explorer's RCM tab (the asset tree
 // and the RCM as one table, TreePane): the level icons, a cell and its
@@ -315,6 +317,8 @@ export function CellEditor({ col, r, onCommit, onCancel }) {
     if (e.key === "Escape") { e.preventDefault(); done.current = true; onCancel(); }
   };
   const label = `${col.label} of ${nameOf(r) || LEVEL_OF[r.type].label.toLowerCase()}`;
+  // A date cell: the shared date field (day first, whatever the browser's language), typed.
+  const Edit = col.edit === "date" ? DateInput : "input";
   if (col.edit === "choice") {
     // One tap: the choices as chips under the cell (the Decide dialog's
     // tiles); ← → move, Enter or a click chooses, Escape or leaving them drops
@@ -349,11 +353,12 @@ export function CellEditor({ col, r, onCommit, onCancel }) {
   const range = col.range || (col.id === "interval" ? { min: 0 } : null);
   return (
     <span className="rw-edit-wrap">
-      <input className="rw-edit" autoFocus ref={field} aria-label={label} value={value} onKeyDown={keys} readOnly={busy} aria-busy={busy || undefined}
+      <Edit className="rw-edit" autoFocus ref={field} aria-label={label} value={value} onKeyDown={keys} readOnly={busy} aria-busy={busy || undefined}
              maxLength={count ? FUNCTION_MAX : undefined} title={count ? FUNCTION_NUDGE : col.title || undefined}
              aria-description={count ? `${count.n} of ${count.max} characters. ${FUNCTION_NUDGE}` : refused || undefined}
              aria-invalid={count?.over || refused ? "true" : undefined}
-             type={num ? "number" : col.edit === "date" ? "date" : "text"} inputMode={num ? (range?.integer ? "numeric" : "decimal") : undefined}
+             type={col.edit === "date" ? undefined : num ? "number" : "text"} picker={col.edit === "date" ? false : undefined}
+             inputMode={num ? (range?.integer ? "numeric" : "decimal") : undefined}
              min={num && range?.min != null ? String(range.min) : undefined} max={num && range?.max != null ? String(range.max) : undefined}
              step={num ? (range?.integer ? "1" : "any") : undefined}
              onChange={(e) => { setValue(e.target.value); setRefused(null); }} onBlur={() => commit()} />
@@ -846,7 +851,11 @@ export function Details({
           </section>
         )}
         {r.type === "mode" && !fmea?.on && (
-          <section className="rw-sg" aria-label="Failure consequences">{consequenceRows}</section>
+          <section className="rw-sg" aria-label="Failure consequences">
+            {consequenceRows}
+            {/* What one failure costs: what the forecast and Optimise… charge it (failure_costs.py). */}
+            {ops && r.ref.id && <FailureCostRows key={`${r.key}:cost`} modeId={r.ref.id} readOnly={readOnly} onSaid={said} />}
+          </section>
         )}
         {(r.type === "mode" || isTask) && linkingEvidence && (isTask ? modeRow?.ref.decision : d) && (
           <EvidenceDialog r={isTask ? modeRow : r} at={linkingEvidence.at} options={options} workings={workings} ops={ops}
@@ -1252,11 +1261,9 @@ export function ColumnChooser({ cols, onCols, usual = DEFAULT_COLUMNS, columns =
       {open && (
         <div className="rw-pop" role="group" aria-label="Columns to show">
           {columns.map((c) => (
-            <label key={c.id} className="rw-pop-item" title={c.title}>
-              <input type="checkbox" checked={cols.includes(c.id)}
-                     onChange={(e) => onCols(e.target.checked ? columns.map((x) => x.id).filter((id) => id === c.id || cols.includes(id)) : cols.filter((x) => x !== c.id))} />
-              {c.label}{c.sum ? <span className="rw-sig" title="A parent row counts what's inside it"> Σ</span> : null}
-            </label>
+            <Checkbox key={c.id} className="rw-pop-item" title={c.title} checked={cols.includes(c.id)}
+                      onChange={(e) => onCols(e.target.checked ? columns.map((x) => x.id).filter((id) => id === c.id || cols.includes(id)) : cols.filter((x) => x !== c.id))}
+                      label={<>{c.label}{c.sum ? <span className="rw-sig" title="A parent row counts what's inside it"> Σ</span> : null}</>} />
           ))}
           <button type="button" className="link rw-pop-reset" onClick={() => onCols(usual, { reset: true })}>Show the usual columns</button>
         </div>
@@ -1345,8 +1352,8 @@ function TaskLogistics({ taskId, positionId }) {
               : parts.length ? parts.join(" · ") : "No labour, tools or method set yet."}
           </span>
           {" · "}
-          <Link to={explorerHere(location.pathname, location.search, { sel: positionId, tab: "lsa", task: taskId })}
-                title="How it's done: its instructions, labour, tools, spares and method">Open in LSA</Link>
+          <Link to={explorerHere(location.pathname, location.search, { sel: positionId, tab: "maintenance", mtask: taskId, needs: "1" })}
+                title="How it's done: its instructions, labour, tools, spares and method (its LSA), on the Maintenance tab">What it needs</Link>
         </p>
       </div>
       {/* What it costs each time (Nov 2026): the task's own figure on its position, typed or from

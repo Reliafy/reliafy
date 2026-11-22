@@ -15,6 +15,8 @@ import { worksheetCsvRows } from "../rcmStudyWorksheet.js";
 import usePhone from "../usePhone.js";
 import { itemName } from "../components/LibRows";
 import { useNavCrumbs } from "../RolesProvider.jsx";
+import LoadFailed from "../components/LoadFailed.jsx";
+import Loading from "../components/ui/Loading.jsx";
 
 function exportCsv(study, functions) {
   const rows = worksheetCsvRows(functions);
@@ -173,8 +175,8 @@ export default function RcmStudyPage() {
     }
   };
 
-  if (error && !study) return <div className="app"><div className="card error">{error}</div></div>;
-  if (!study) return <div className="app"><div className="card empty">Loading…</div></div>;
+  if (error && !study) return <div className="app"><LoadFailed what="Couldn't load the study." error={error} header /></div>;
+  if (!study) return <div className="app"><Loading card /></div>;
 
   const readOnly = study.read_only ?? study.is_sample;
 
@@ -217,7 +219,7 @@ export default function RcmStudyPage() {
         <div className="card error">
           {error}
           {conflict && (
-            <div style={{ marginTop: "0.6rem" }}>
+            <div className="mt-2">
               <button className="secondary" onClick={onReload}>Reload latest version</button>
             </div>
           )}

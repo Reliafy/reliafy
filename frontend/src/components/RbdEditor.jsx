@@ -1,6 +1,7 @@
+import { useUnsavedSignal } from "../useUnsavedSignal.js";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import useMenuDismiss from "./useMenuDismiss.js";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { CloseIcon } from "./icons.jsx";
 import ReactFlow, {
   Background,
@@ -55,6 +56,13 @@ import { lazy, Suspense } from "react";
 import { unitInText } from "./unitText.js";
 import Chip from "./ui/Chip.jsx";
 import Switch from "./ui/Switch.jsx";
+import Field from "./ui/Field.jsx";
+import { TextInput } from "./ui/Controls.jsx";
+import ChoiceChips from "./ui/ChoiceChips.jsx";
+import { useConfirm } from "./ConfirmProvider.jsx";
+import { saveEditorPrefs, useEditorPrefs } from "../editorPrefs.js";
+import { createAutosaver, leaveLosesChanges, unloadAction, savePending } from "../rbdAutosave.js";
+import { canRedo, canUndo, emptyHistory, historyKey, recordHistory, redoHistory, resetHistory, undoHistory } from "../rbdHistory.js";
 import { formatPercent } from "../format.js";
 import {
   RBD_EVALUATE_AT_EVENT, STEP_Y, addParallelPair, allInstant, bridgeEdges, chainPairs, clearSpot, copyForAlongside, inPlaceItems, insertAfter, insertAlongside, insertFirst, insertOnEdge, setInstantRepair, trackSelection,
@@ -75,6 +83,7 @@ import { builderWidthClass } from "../rbdEditorLayout.js";
 import { applyTreePlan, treeGraph, treeKey, treePositionPath, treeRow } from "../rbdTreePlan.js";
 import { getRbdTreePlan } from "../api.js";
 import { useRoles } from "../RolesProvider.jsx";
+import Loading from "./ui/Loading.jsx";
 
 // The "Outage history" tab (an observed-history import and charts) loads on
 // first open, so the builder's own bundle doesn't carry it.
@@ -242,7 +251,8 @@ function policyFields(policies) {
 
 // A toolbar dropdown (#314): the trigger, and a menu of .ovm-item buttons that
 // closes like every menu (useMenuDismiss) or on choosing an item. Items stay mounted.
-function ToolbarMenu({ label, title, aria, caret = true, className = "", wt, children }) {
+// ``look``: the trigger's button classes ("secondary sm", or "sm" for the primary, "ghost sm").
+function ToolbarMenu({ label, title, aria, caret = true, className = "", wt, look = "secondary sm", triggerRef, children }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const close = useCallback(() => setOpen(false), []);
@@ -250,8 +260,9 @@ function ToolbarMenu({ label, title, aria, caret = true, className = "", wt, chi
   return (
     <div className={"ovm rbd-tb-menu " + className} ref={ref} data-wt={wt}>
       <button
+        ref={triggerRef}
         type="button"
-        className="secondary sm rbd-tb-trigger"
+        className={look + " rbd-tb-trigger"}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={aria}
@@ -277,80 +288,193 @@ const Caret = () => (
   </svg>
 );
 
+// The save status's icon: a tick (saved), a spinner (saving), a warning (couldn't save) or a dot.
+function SaveIcon({ kind }) {
+  if (kind === "tick") {
+    return (
+      <svg className="rbd-save-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m3 8.5 3.2 3.2L13 4.8" /></svg>
+    );
+  }
+  if (kind === "warn") {
+    return (
+      <svg className="rbd-save-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 2.2 14.2 13H1.8L8 2.2Z" /><path d="M8 6.5v3M8 11.4v.1" /></svg>
+    );
+  }
+  if (kind === "saving") return <span className="rbd-save-icon rbd-save-spin" aria-hidden="true" />;
+  return <span className="rbd-save-dot" aria-hidden="true" />;
+}
+
 const MoreIcon = () => (
   <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
     <circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" />
   </svg>
 );
 
-// Validation as a slim toolbar status (#314): "✓ Valid", "! Valid · 1 warning"
-// or "✕ Not valid · 2 problems", toned by the worst item, that opens the full
-// check. Before a check (or once the diagram has changed) it's the Validate
-// button itself.
-function ValidationStatus({ validation, stale, validating, onValidate }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  useEffect(() => {
-    if (!open) return undefined;
-    const onDoc = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [open]);
-  // A failed check opens itself: the problems are the next thing to read.
-  useEffect(() => {
-    if (validation && !validation.valid && !validation.empty) setOpen(true);
-  }, [validation]);
-  // Keep the open check on screen (a phone's toolbar puts the status mid-row).
-  const popRef = useRef(null);
+// Keep an open popover inside the window (a phone's toolbar wraps, so a trigger can sit
+// anywhere along the row).
+function useKeepOnScreen(open, popRef) {
   useLayoutEffect(() => {
     const el = popRef.current;
     if (!open || !el) return;
-    el.style.right = "";
+    el.style.transform = "";
     const { left, right } = el.getBoundingClientRect();
     const gap = 12;
-    if (left < gap) el.style.right = `${left - gap}px`;
-    else if (right > window.innerWidth - gap) el.style.right = `${right - (window.innerWidth - gap)}px`;
-  }, [open]);
+    const shift = left < gap ? gap - left : right > window.innerWidth - gap ? window.innerWidth - gap - right : 0;
+    if (shift) el.style.transform = `translateX(${Math.round(shift)}px)`;
+  }, [open, popRef]);
+}
+
+// Validation runs by itself a moment after each change (#314): the toolbar shows its answer as
+// a chip, "✓ Valid", "! 1 warning" or "✕ 2 problems", toned by the worst item, that opens the
+// full check. It never stops a save: a half-built diagram saves as it is and the chip says
+// what's left to do.
+function ValidationStatus({ validation, stale, validating, onValidate }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const close = useCallback(() => setOpen(false), []);
+  useMenuDismiss(open, close, ref);
+  const popRef = useRef(null);
+  useKeepOnScreen(open, popRef);
 
   if (validating || !validation || stale) {
     return (
-      <button
-        type="button"
-        className="sm"
-        onClick={onValidate}
-        disabled={validating}
-        title={stale ? "The diagram has changed since the last check" : "Check the diagram"}
-      >
-        {validating ? "Validating…" : "Validate"}
-      </button>
+      <span className="rbd-valid-toggle is-checking" role="status" title="Checking the diagram after your change">
+        <span className="rbd-valid-icon" aria-hidden="true">…</span>
+        <span className="rbd-valid-text">Checking…</span>
+      </span>
     );
   }
   const errors = validation.errors?.length || 0;
   const warnings = validation.warnings?.length || 0;
   const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
-  const [tone, icon, text] = validation.empty
-    ? ["todo", emptyStatus(validation).icon, emptyStatus(validation).text]
+  // [tone, icon, words, the count that stays beside the icon on a phone, the accessible name]
+  const [tone, icon, text, count, name] = validation.empty
+    ? ["todo", emptyStatus(validation).icon, emptyStatus(validation).text, null, emptyStatus(validation).text]
     : !validation.valid
-    ? ["bad", "✕", `Not valid${errors ? ` · ${plural(errors, "problem")}` : ""}`]
+    ? ["bad", "✕", errors ? plural(errors, "problem") : "Not valid", errors || null, errors ? plural(errors, "problem") : "Diagram not valid"]
     : warnings
-    ? ["caveat", "!", `Valid · ${plural(warnings, "warning")}`]
-    : ["ok", "✓", "Valid"];
+    ? ["caveat", "!", plural(warnings, "warning"), warnings, plural(warnings, "warning")]
+    : ["ok", "✓", "Valid", null, "Diagram valid"];
   return (
-    <div className="ovm rbd-tb-menu" ref={ref}>
+    <div className="ovm rbd-tb-menu rbd-valid-menu" ref={ref}>
       <button
         type="button"
         className={`rbd-valid-toggle is-${tone}`}
         aria-expanded={open}
+        aria-haspopup="dialog"
+        aria-label={name}
+        title={`${name}: click for the list`}
         onClick={() => setOpen((o) => !o)}
       >
-        <span aria-hidden="true">{icon}</span> {text}
+        <span className="rbd-valid-icon" aria-hidden="true">{icon}</span>
+        {count != null ? (
+          <>
+            <span className="rbd-valid-count" aria-hidden="true">{count}</span>
+            <span className="rbd-valid-text" aria-hidden="true">{text.replace(/^\d+/, "")}</span>
+          </>
+        ) : (
+          <span className="rbd-valid-text" aria-hidden="true">{text}</span>
+        )}
         <span className="rbd-tb-caret"><Caret /></span>
       </button>
       <div className="ovm-menu rbd-valid-pop" hidden={!open} ref={popRef}>
         <ValidationPanel validation={validation} stale={false} />
-        <button type="button" className="secondary sm" onClick={() => { setOpen(false); onValidate(); }}>
-          Validate again
+        <button type="button" className="secondary sm" onClick={() => onValidate()}>
+          Check again
         </button>
+      </div>
+    </div>
+  );
+}
+
+const UndoIcon = () => (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+  </svg>
+);
+const RedoIcon = () => (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="m15 14 5-5-5-5" /><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />
+  </svg>
+);
+const SlidersIcon = () => (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M4 7h10M18 7h2M4 17h4M12 17h8" /><circle cx="16" cy="7" r="2" /><circle cx="10" cy="17" r="2" />
+  </svg>
+);
+const KIND_OPTIONS = [
+  { value: "non", label: "Non-repairable", title: "Reliability over time: blocks fail and stay failed" },
+  { value: "repairable", label: "Repairable", title: "Availability (uptime): every block also needs a repair time" },
+  { value: "network", label: "Network", title: "Connections work both ways: whether two points stay connected" },
+];
+const KIND_HELP = {
+  non: "Analyses reliability over time: a block that fails stays failed.",
+  repairable: "Analyses availability (uptime): every block also needs a repair time.",
+  network: "Connections work both ways: analyses whether Input and Output stay connected.",
+};
+
+// The diagram's own settings (its properties, not actions), in one popover off the toolbar:
+// the time unit, the kind, Safety function and, on a repairable diagram, the Maintenance plan
+// table. The trigger says what they are now ("Hours · Repairable").
+function DiagramSettings({ unit, onUnit, kind, onKind, network, safety, onSafety, sil, onSil, repairable, planOpen, onPlan }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const popRef = useRef(null);
+  const close = useCallback(() => setOpen(false), []);
+  // Typing in it: only a click outside or Escape closes it, not the mouse drifting away.
+  useMenuDismiss(open, close, ref, { leavePx: Infinity });
+  useKeepOnScreen(open, popRef);
+  const kindLabel = KIND_OPTIONS.find((o) => o.value === kind)?.label || "";
+  const summary = [unit || "No unit", kindLabel, safety ? "Safety function" : null].filter(Boolean).join(" · ");
+  return (
+    <div className="ovm rbd-tb-menu rbd-settings-menu" ref={ref}>
+      <button
+        type="button"
+        className="secondary sm rbd-tb-trigger rbd-settings-trigger"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={`Diagram settings: ${summary}`}
+        title="Diagram settings: time unit, kind, safety function"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <SlidersIcon />
+        <span className="rbd-settings-summary">{summary}</span>
+        <span className="rbd-tb-caret"><Caret /></span>
+      </button>
+      <div className="ovm-menu rbd-settings-pop" hidden={!open} ref={popRef} role="dialog" aria-label="Diagram settings">
+        <Field label="Time unit" help="The unit every block's times are in.">
+          <TextInput className="rbd-unit-input" list="rbd-time-units" placeholder="e.g. Hours" value={unit}
+                     onChange={(e) => onUnit(e.target.value)} />
+        </Field>
+        <Field as="fieldset" label="Kind" help={KIND_HELP[kind]}>
+          <ChoiceChips label="Diagram kind" options={KIND_OPTIONS} value={kind} onChange={(v) => v && onKind(v)} />
+        </Field>
+        {!network && (
+          <div className="rbd-settings-row">
+            <Switch
+              className="rbd-safety-switch"
+              checked={safety}
+              onChange={onSafety}
+              label="Safety function"
+              title="A safety instrumented function (IEC 61511): its results lead with PFDavg and the SIL band. Turning it on makes the diagram repairable."
+            />
+            {safety && (
+              <Chip onClick={() => { setOpen(false); onSil(); }} title="The SIL this function must meet. Click to change it.">
+                {sil ? `Target SIL ${sil}` : "Set a target SIL"}
+              </Chip>
+            )}
+          </div>
+        )}
+        {repairable && (
+          <div className="rbd-settings-row" data-wt="rbd-plan-chip">
+            <Switch
+              checked={planOpen}
+              onChange={(on) => onPlan(on)}
+              label="Show the maintenance plan"
+              title="Every block's planned work and running share in one table, under the diagram"
+            />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -453,7 +577,15 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
   // way: only its container's classes change, so nothing on the canvas resets.
   const builderRef = useRef(null);
   const fullBtnRef = useRef(null); // the button on show: on the canvas, or Exit in the toolbar
-  const { full, toggle: toggleFull, exit: exitFull } = useFullScreen(builderRef, { returnFocus: fullBtnRef });
+  const moreBtnRef = useRef(null); // ⋯: where Full screen sits when the toolbar is narrow
+  // Focus returns to the toolbar's Full screen button, or to ⋯ when that has moved into it.
+  const [fullFocusRef] = useState(() => ({
+    get current() {
+      const b = fullBtnRef.current;
+      return b && b.getClientRects().length ? b : moreBtnRef.current;
+    },
+  }));
+  const { full, toggle: toggleFull, exit: exitFull } = useFullScreen(builderRef, { returnFocus: fullFocusRef });
   // Saved or not, for the full-screen status (the page's title is hidden there):
   // the diagram as last opened or saved, against the canvas now.
   const [savedSnap, setSavedSnap] = useState(null);
@@ -618,39 +750,59 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     () => ({ nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }),
     [nodes, edges, rbdUnit, repairable, ccfGroups, costsField]
   );
+  // The diagram as it is now, as a string to compare (what a save keeps).
+  const snapNow = useMemo(() => rbdSaveSnapshot(saveGraph), [saveGraph]);
+  const saveGraphRef = useRef(saveGraph);
+  saveGraphRef.current = saveGraph;
+  // Undo and Redo (rbdHistory.js): every edit on this canvas, for this session. Autosave keeps
+  // each change, so this is the way back from one. Started again when a diagram is opened.
+  const [history, setHistory] = useState(emptyHistory);
+  const historyRef = useRef(history);
+  historyRef.current = history;
+  const putHistory = useCallback((h) => { historyRef.current = h; setHistory(h); }, []);
+  // A diagram opened with a change already made to it (a model's "Add to an RBD"): it counts as
+  // changed, so autosave keeps the change.
+  const changedOnOpenRef = useRef(false);
   useEffect(() => {
     if (!rebaseRef.current) return;
     rebaseRef.current = false;
-    setSavedSnap(rbdSaveSnapshot(saveGraph));
-  }, [saveGraph]);
-  // Changed since it was opened or saved: shown in full screen and in the Explorer's pane (where
-  // the page's title isn't), and told to the pane, which asks before leaving unsaved changes.
-  const tracked = full || embedded || !!onDirty;
+    setSavedSnap(changedOnOpenRef.current ? "" : snapNow);
+    changedOnOpenRef.current = false;
+    putHistory(resetHistory(saveGraph, snapNow));
+  }, [saveGraph, snapNow, putHistory]);
   // Not changed while a diagram just loaded waits for its snapshot (the effect above).
   const rebasing = rebaseRef.current;
-  const dirty = useMemo(
-    () => rbdDirty({ tracked, rebasing, graph: saveGraph, savedSnap }),
-    [tracked, rebasing, saveGraph, savedSnap]
-  );
-  useEffect(() => { onDirty?.(dirty); }, [onDirty, dirty]);
+  // Changed since it was opened or saved.
+  const dirty = !rebasing && savedSnap != null && snapNow !== savedSnap;
+  // Each change is a step for Undo; a drag is one step (where it's let go), not one per frame.
+  const dragging = nodes.some((n) => n.dragging);
+  useEffect(() => {
+    if (rebasing || dragging) return;
+    putHistory(recordHistory(historyRef.current, saveGraphRef.current, snapNow));
+  }, [snapNow, rebasing, dragging, putHistory]);
+  // An edit made in the moment before it counts as a step can be undone too.
+  const dirtySinceStep = !rebasing && history.present != null && snapNow !== history.present.key;
   // An unsaved diagram's canvas, for the page to keep over a reload (views/RbdBuilder.jsx).
   useEffect(() => {
     // Only once it differs from what was opened: an untouched starter isn't "your edits".
     if (onDraft && !savedRbdId && rbdDirty({ rebasing, graph: saveGraph, savedSnap })) onDraft(saveGraph);
   }, [onDraft, savedRbdId, saveGraph, rebasing, savedSnap]);
-  const saveStatus = useMemo(() => {
-    if (!full && !embedded) return null;
-    return rbdSaveStatus({ savedId: savedRbdId, readOnly: savedRbdReadOnly, dirty });
-  }, [full, embedded, dirty, savedRbdId, savedRbdReadOnly]);
 
+  // Validation: one check at a time, the latest wins (an answer for an older diagram that comes
+  // back late is dropped).
+  const checkSeq = useRef(0);
   const runValidate = useCallback(async () => {
+    checkSeq.current += 1;
+    const mine = checkSeq.current;
     setValidating(true);
     try {
       const v = await validateRbd({ nodes: calcNodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField });
+      if (mine !== checkSeq.current) return v;
       setValidation(v);
       setCheckedSig(graphSignature({ nodes: calcNodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }));
       return v;
     } catch (err) {
+      if (mine !== checkSeq.current) return null;
       const v = {
         valid: false,
         analytic: false,
@@ -663,9 +815,17 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
       setCheckedSig(graphSignature({ nodes: calcNodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField }));
       return v;
     } finally {
-      setValidating(false);
+      if (mine === checkSeq.current) setValidating(false);
     }
   }, [calcNodes, edges, rbdUnit, repairable, ccfGroups, costsField]);
+  // The check runs by itself a moment after each change (there's no Validate button).
+  const runValidateRef = useRef(runValidate);
+  runValidateRef.current = runValidate;
+  useEffect(() => {
+    if (rebasing || (validation != null && sig === checkedSig)) return undefined;
+    const t = setTimeout(() => runValidateRef.current(), 800);
+    return () => clearTimeout(t);
+  }, [sig, checkedSig, rebasing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onConnect = useCallback(
     (params) => setEdges((eds) => addEdge({ ...params, ...EDGE_OPTIONS }, eds)),
@@ -751,7 +911,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
       if (e.key !== "c" && e.key !== "C") return;
       if (e.metaKey || e.ctrlKey || e.altKey || !ownsKey(e)) return;
       const el = e.target;
-      if (el?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el?.tagName)) return;
+      if (el?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el?.tagName) || el?.closest?.(".sel-trigger, .sel-menu")) return;
       e.preventDefault();
       connectSelected();
     };
@@ -1057,20 +1217,26 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
 
   // Persist the current diagram as a saved RBD (updates the open one if any).
   // ``asNew`` (Save as new) saves a copy under a new id and opens it.
+  // ``auto``: autosave's, which leaves any open dialog alone and isn't a new id for the page.
+  // The last saved time is kept in a ref too, so one save straight after another sends the
+  // newer one (else the server would call it a conflict).
+  const updatedAtRef = useRef(null);
+  updatedAtRef.current = savedRbdUpdatedAt;
   const onSaveRbd = useCallback(
-    async (name, asNew = false) => {
-      const graph = { nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField };
-      const saved = await saveRbd(name, graph, asNew ? null : savedRbdId, asNew ? null : savedRbdUpdatedAt);
+    async (name, asNew = false, { auto = false } = {}) => {
+      const graph = saveGraphRef.current;
+      const saved = await saveRbd(name, graph, asNew ? null : savedRbdId, asNew ? null : updatedAtRef.current, { auto });
       loadedRef.current = saved.id;
+      updatedAtRef.current = saved.updated_at || null;
       setSavedSnap(rbdSaveSnapshot(graph));
       setSavedRbdId(saved.id);
       setSavedRbdName(name);
       setSavedRbdUpdatedAt(saved.updated_at || null);
       setSavedRbdReadOnly(false);
-      setModal(null);
-      onSaved?.(saved.id);
+      if (!auto) setModal(null);
+      onSaved?.(saved.id, { auto });
     },
-    [nodes, edges, rbdUnit, repairable, ccfGroups, costsField, savedRbdId, savedRbdUpdatedAt, onSaved]
+    [savedRbdId, onSaved]
   );
 
   // Save (#303): a diagram the user has named and can write saves straight
@@ -1093,6 +1259,99 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
       setModal("saverbd");
     }
   }, [savedRbdId, savedRbdReadOnly, savedRbdName, onSaveRbd]);
+
+  // Autosave (rbdAutosave.js): a diagram the user can write, once it has a name, saves itself a
+  // moment after each change, unless they turned autosave off (Settings, or ⋯ here). A sample,
+  // a shared diagram or one not saved yet keeps the explicit Save. Invalid half-built diagrams
+  // save too: the check says what's wrong, it never stops a save.
+  const { autosave: autosavePref } = useEditorPrefs();
+  const autosave = autosavePref && !!savedRbdId && !savedRbdReadOnly && !!savedRbdName.trim();
+  const [saveState, setSaveState] = useState({ state: "idle", error: null });
+  const autoSaveRef = useRef(null);
+  autoSaveRef.current = () => onSaveRbd(savedRbdName, false, { auto: true });
+  const saverRef = useRef(null);
+  if (!saverRef.current) {
+    saverRef.current = createAutosaver({ save: () => autoSaveRef.current(), onState: setSaveState });
+  }
+  useEffect(() => {
+    const saver = saverRef.current;
+    if (!autosave) saver.cancel();
+    else if (dirty) saver.schedule();
+  }, [autosave, dirty, snapNow]);
+  // Closing the builder (the pane, or another page) with a save waiting: save it now.
+  useEffect(() => () => {
+    const saver = saverRef.current;
+    saver.flush();
+    saver.dispose();
+  }, []);
+  const saveStatus = useMemo(
+    () => rbdSaveStatus({ savedId: savedRbdId, readOnly: savedRbdReadOnly, dirty, autosave, saveState: saveState.state, error: saveState.error }),
+    [savedRbdId, savedRbdReadOnly, dirty, autosave, saveState]
+  );
+  // Leaving would lose changes (autosave off, or its save failed): the Explorer's pane asks
+  // before closing, and the page asks before a link takes it away.
+  const losesChanges = leaveLosesChanges({ dirty, autosave, saveState: saveState.state });
+  useEffect(() => { onDirty?.(losesChanges); }, [onDirty, losesChanges]);
+  // Also the update bar's unsaved signal: a new release doesn't reload the tab over changes
+  // or a save still going.
+  useUnsavedSignal("rbd-editor", losesChanges || savePending({ dirty, autosave, saveState: saveState.state }));
+  // Closing or reloading the tab: with autosave on, a waiting save goes out at once (keepalive,
+  // so it finishes as the page goes) and nothing is asked. The browser asks only when changes
+  // would be lost (autosave off, its save failed, or the diagram is too big to send that way).
+  const unloadRef = useRef(null);
+  unloadRef.current = () => {
+    const state = { dirty, autosave, saveState: saveState.state };
+    const graph = saveGraphRef.current;
+    const bodyBytes = state.dirty || savePending(state) ? JSON.stringify(graph || {}).length : 0;
+    const act = unloadAction({ ...state, bodyBytes });
+    if (act === "send") {
+      saveRbd(savedRbdName, graph, savedRbdId, updatedAtRef.current, { auto: true, keepalive: true }).catch(() => {});
+    }
+    return act === "ask";
+  };
+  const watchUnload = losesChanges || savePending({ dirty, autosave, saveState: saveState.state });
+  useEffect(() => {
+    if (!watchUnload) return undefined;
+    const onUnload = (e) => {
+      if (unloadRef.current()) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", onUnload);
+    return () => window.removeEventListener("beforeunload", onUnload);
+  }, [watchUnload]);
+  const confirm = useConfirm();
+  const navigate = useNavigate();
+  useEffect(() => {
+    // In the Explorer the pane asks itself (onDirty).
+    if (embedded || !watchUnload) return undefined;
+    const leave = (url) => navigate(url.pathname + url.search + url.hash);
+    const onClick = (e) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = e.target?.closest?.("a[href]");
+      if (!a || (a.target && a.target !== "_self") || a.hasAttribute("download")) return;
+      const url = new URL(a.href, window.location.href);
+      if (url.origin !== window.location.origin || url.pathname === window.location.pathname) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const ask = () => confirm({
+        title: "Leave without saving?",
+        body: "Your changes to this diagram aren't saved. Leave and lose them, or stay and Save.",
+        confirmLabel: "Leave without saving",
+        cancelLabel: "Stay",
+      }).then((ok) => { if (ok) leave(url); });
+      // Autosave on: save what waits first, then go; ask only if that save fails.
+      if (losesChanges) { ask(); return; }
+      const saver = saverRef.current;
+      saver.flush().then(() => (saver.state === "failed" ? ask() : leave(url)));
+    };
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, [embedded, watchUnload, losesChanges, confirm, navigate]);
+  const toggleAutosave = useCallback(() => {
+    saveEditorPrefs({ autosave: !autosavePref }).catch(() => setConnectHint("Couldn't change autosave. Try again in a moment."));
+  }, [autosavePref]);
 
   // Replace the canvas with a saved graph; bump the id counter past loaded ids.
   const loadGraph = useCallback(
@@ -1140,6 +1399,8 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     async (id, model = null) => {
       const full = await getRbd(id);
       const added = model ? graphWithModel(full.graph, model) : null;
+      // The block just added is a change to the saved diagram: autosave keeps it.
+      if (added) changedOnOpenRef.current = true;
       loadGraph(added ? added.graph : full.graph, full.id, full.name, full.updated_at || null, !!full.read_only);
       setModal(null);
       if (added) onModelAdded?.(plainName(model.name), added.wired);
@@ -1188,6 +1449,35 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     if (MISSION_KEYS.some((k) => graph[k] !== undefined)) setMission(missionFields(graph));
     fitWhenMeasured(norm.nodes);
   }, [setNodes, setEdges, fitWhenMeasured]);
+
+  // Undo and Redo: put the canvas back as it was at a step (the blocks, connections and the
+  // diagram's settings), leaving which diagram is open, and its name, alone. An edit not yet
+  // counted as a step (within the moment after it) is counted first.
+  const restoreGraph = useCallback((g) => {
+    setNodes((g.nodes || []).map((n) => (n.selected ? { ...n, selected: false } : n)));
+    setEdges(g.edges || []);
+    setRbdUnit(g.unit || "");
+    setRepairable(!!g.repairable);
+    setCcfGroups(g.ccf_groups || []);
+    setDiagramCosts(g.costs || null);
+    setPolicies(policyFields(g));
+    setProduction(g.production || null);
+    setMission(missionFields(g));
+    setConditions(g.conditions || []);
+  }, [setNodes, setEdges]);
+  const stepHistory = useCallback((which) => {
+    const now = recordHistory(historyRef.current, saveGraphRef.current, rbdSaveSnapshot(saveGraphRef.current));
+    const step = which === "undo" ? undoHistory(now) : redoHistory(now);
+    if (!step) {
+      putHistory(now);
+      return;
+    }
+    putHistory(step.history);
+    restoreGraph(step.state);
+    setConnectHint(which === "undo" ? "Undone." : "Redone.");
+  }, [putHistory, restoreGraph]);
+  const undo = useCallback(() => stepHistory("undo"), [stepHistory]);
+  const redo = useCallback(() => stepHistory("redo"), [stepHistory]);
 
   // Expand the sub-system blocks into their own blocks, wired as inside them (the server reads each
   // sub-system's RBD): what a repairable diagram and its Maintenance plan need. Unsaved until Save.
@@ -1388,7 +1678,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     const onKey = (e) => {
       if (e.key !== "F2" || !ownsKey(e)) return;
       const el = e.target;
-      if (el?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el?.tagName)) return;
+      if (el?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el?.tagName) || el?.closest?.(".sel-trigger, .sel-menu")) return;
       const chosen = liveRef.current.nodes.filter((n) => n.selected && n.type !== "input" && n.type !== "output");
       // One block selected, or of several the one clicked last.
       const last = clickOrder.current.ids[clickOrder.current.ids.length - 1];
@@ -1400,6 +1690,20 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [tab, modal, renaming, rename, ownsKey]);
+
+  // Ctrl/⌘-Z undoes, Ctrl/⌘-Shift-Z (or Ctrl-Y) redoes. In a text box the box's own undo
+  // works instead; with a dialog or menu open, nothing.
+  useEffect(() => {
+    if (tab !== "builder" || modal || renaming) return undefined;
+    const onKey = (e) => {
+      const which = historyKey(e);
+      if (!which || isTyping(e) || !ownsKey(e) || hasOpenLayer(document)) return;
+      e.preventDefault();
+      stepHistory(which);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tab, modal, renaming, ownsKey, stepHistory]);
 
   // F toggles full screen, on the same terms as C (not while typing, nor with
   // a menu or dialog open, nor with a modifier down: Cmd/Ctrl+F still finds).
@@ -1620,6 +1924,11 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     <RbdCcfContext.Provider value={ccfMap}>
     <RbdRenameContext.Provider value={rename}>
     <div className="rbd-shell" ref={shellRef}>
+    {/* Beside the tree (no page title, and no pane heading on a wide screen) the diagram's name
+        is the pane's title. */}
+    {embedded && pane && (
+      <h2 className="rbd-pane-title" title={savedRbdName || undefined}>{(savedRbdName || "").replace(SAMPLE_SUFFIX, "") || "Untitled RBD"}</h2>
+    )}
     <Tabs tabs={RBD_TABS} value={tab} onChange={setTab} label="Diagram views" className="rbd-tabs" />
     <div
       ref={builderRef}
@@ -1628,12 +1937,16 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
       role={full ? "region" : undefined}
       aria-label={full ? "Diagram editor, full screen" : undefined}
     >
-    {/* One row above the canvas (#314): the diagram's settings on the left;
-        Validate, Save ▾ and ⋯ on the right. On a phone the settings move into ⋯. */}
+    {/* One toolbar row above the canvas (docs/design-system/components/RbdToolbar.md): the
+        building tools on the left (+ Add block, the one primary; Undo, Redo; the diagram's
+        settings), what it's doing in the middle, and its state and the rest on the right (saved,
+        the check, Full screen, ⋯). One row at every width: as space runs short Full screen, then
+        Undo and Redo, move into ⋯ and the status and check show their icon alone. */}
     <div className="rbd-toolbar">
+      <div className="rbd-tb-tools">
       {/* Add a block without right-clicking (#299); on a phone the only way. */}
-      <ToolbarMenu label={<span>+ Add<span className="rbd-add-word"> block</span></span>} title="Add a block: wired in after or alongside what's selected, or in the middle of the canvas"
-                   aria="Add block" className="rbd-add-menu" wt="rbd-add">
+      <ToolbarMenu label={<span><span aria-hidden="true">+</span><span className="rbd-add-word"> Add block</span></span>} title="Add block: wired in after or alongside what's selected, or in the middle of the canvas"
+                   aria="Add block" className="rbd-add-menu" wt="rbd-add" look="sm">
         {/* In place first, when something is selected (#282); then anywhere. */}
         {inPlace && (
           <>
@@ -1680,51 +1993,26 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           </p>
         )}
       </ToolbarMenu>
-      <div className="rbd-toolbar-row rbd-tb-settings">
-        <label className="rbd-unit-field">
-          <span>Unit</span>
-          <input
-            className="rbd-unit-input"
-            list="rbd-time-units"
-            placeholder="e.g. Hours"
-            value={rbdUnit}
-            onChange={(e) => setRbdUnit(e.target.value)}
-          />
-        </label>
-        <Select
-          className="rbd-mode-select"
-          ariaLabel="Diagram kind"
-          value={repairable ? "repairable" : network ? "network" : "non"}
-          onChange={setMode}
-          title="Repairable diagrams analyse availability (uptime) — every component also needs a repair-time distribution. Non-repairable diagrams analyse reliability over time. A network's connections work both ways: it analyses whether two points stay connected."
-          options={[
-            { value: "non", label: "Non-repairable" },
-            { value: "repairable", label: "Repairable" },
-            { value: "network", label: "Network" },
-          ]}
-        />
-        {/* A safety function (#298): on, the results lead with PFDavg and the SIL. A network isn't one. */}
-        {!network && (
-        <Switch
-          className="rbd-safety-switch"
-          checked={repairable && !!policies.safety_function}
-          onChange={setSafety}
-          label="Safety function"
-          title="A safety instrumented function (IEC 61511): its results lead with PFDavg and the SIL band. Turning it on makes the diagram repairable."
-        />
-        )}
-        {repairable && policies.safety_function && (
-          <Chip onClick={() => setModal("safety")} title="The SIL this function must meet. Click to change it.">
-            {policies.target_sil ? `Target SIL ${policies.target_sil}` : "Set a target SIL"}
-          </Chip>
-        )}
-        {repairable && (
-          <button type="button" className={"secondary sm rbd-plan-btn" + (planOpen ? " is-on" : "")} onClick={() => togglePlan()}
-                  aria-pressed={planOpen} data-wt="rbd-plan-chip"
-                  title="Every block's planned work and running share in one table, under the diagram">
-            Maintenance plan {planOpen ? "▾" : "▸"}
-          </button>
-        )}
+      <div className="rbd-tb-history rbd-tb-history-bar" role="group" aria-label="Undo and redo" data-steps={`${history.past.length}/${history.future.length}`}>
+        <button type="button" className="ghost sm rbd-icon-btn" onClick={undo} disabled={!canUndo(history) && !dirtySinceStep}
+                aria-label="Undo" title="Undo (Ctrl+Z, ⌘Z on a Mac)"><UndoIcon /></button>
+        <button type="button" className="ghost sm rbd-icon-btn" onClick={redo} disabled={!canRedo(history)}
+                aria-label="Redo" title="Redo (Ctrl+Shift+Z, ⌘⇧Z on a Mac)"><RedoIcon /></button>
+      </div>
+      <DiagramSettings
+        unit={rbdUnit}
+        onUnit={setRbdUnit}
+        kind={repairable ? "repairable" : network ? "network" : "non"}
+        onKind={setMode}
+        network={network}
+        safety={repairable && !!policies.safety_function}
+        onSafety={setSafety}
+        sil={policies.target_sil}
+        onSil={() => setModal("safety")}
+        repairable={repairable}
+        planOpen={planOpen}
+        onPlan={togglePlan}
+      />
         {/* Common-cause groups: a chip that drops the list beneath it. */}
         {ccfGroups.length > 0 && (
           <div className="rbd-ccf-menu">
@@ -1759,14 +2047,17 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
       </datalist>
       <div className="rbd-tb-flash" role="status" title={connectHint || undefined}>{connectHint}</div>
       <div className="rbd-toolbar-actions">
-        {/* Full screen hides the page's title: the diagram's name and whether
-            it's saved stay in sight here. */}
-        {saveStatus && (
-          <span className={`rbd-full-status is-${saveStatus.tone}`} title={saveStatus.title} role="status">
-            <span className="rbd-full-name">{(savedRbdName || "").replace(SAMPLE_SUFFIX, "") || "Untitled RBD"}</span>
-            <span className="rbd-full-dot" aria-hidden="true" />
-            <span className="rbd-full-saved">{saveStatus.text}</span>
-          </span>
+        {/* In full screen the page's title is out of sight: the diagram's name shows here. */}
+        {full && <span className="rbd-full-name">{(savedRbdName || "").replace(SAMPLE_SUFFIX, "") || "Untitled RBD"}</span>}
+        <span className={`rbd-save-status is-${saveStatus.tone}`} title={saveStatus.title} role="status">
+          <SaveIcon kind={saveStatus.icon} />
+          <span className="rbd-save-text">{saveStatus.text}</span>
+        </span>
+        {saveStatus.action === "retry" && (
+          <button type="button" className="link rbd-save-retry" onClick={() => saverRef.current.retry()}>Retry</button>
+        )}
+        {saveStatus.action === "copy" && (
+          <button type="button" className="link rbd-save-retry" onClick={() => setModal("saveasnew")}>Save a copy…</button>
         )}
         <ValidationStatus
           validation={validation}
@@ -1774,41 +2065,30 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           validating={validating}
           onValidate={runValidate}
         />
-        {/* Save saves in one click; once saved, the arrow beside it holds Save as new.
-            The downloads are in the ⋯ menu. */}
-        {savedRbdId ? (
-          <div className="rbd-save-split">
-            <button type="button" className="secondary sm rbd-save-main" onClick={quickSave}>
-              {!savedRbdReadOnly && savedRbdName.trim() ? "Save" : "Save…"}
-            </button>
-            <ToolbarMenu label="" title="Save as new" aria="More ways to save" className="rbd-save-more">
-              <button className="ovm-item" onClick={() => setModal("saveasnew")}>Save as new…</button>
-            </ToolbarMenu>
-          </div>
-        ) : (
-          <button type="button" className="secondary sm" onClick={quickSave}>Save…</button>
+        {/* The explicit Save: a diagram not saved yet, a sample (a copy), or autosave turned off. */}
+        {!autosave && (
+          <button type="button" className="secondary sm rbd-save-main" onClick={quickSave}>
+            {savedRbdId && !savedRbdReadOnly && savedRbdName.trim() ? "Save" : savedRbdReadOnly ? "Save a copy…" : "Save…"}
+          </button>
         )}
-        <ToolbarMenu label={<MoreIcon />} title="More" aria="More diagram settings" caret={false}>
-          {/* On a phone the toolbar's settings live here (#301). */}
-          <div className="rbd-ovm-settings">
-            <label>
-              <span>Unit</span>
-              <input
-                list="rbd-time-units"
-                placeholder="e.g. Hours"
-                value={rbdUnit}
-                onChange={(e) => setRbdUnit(e.target.value)}
-              />
-            </label>
-            <label>
-              <span>System</span>
-              <select value={repairable ? "repairable" : network ? "network" : "non"} onChange={(e) => setMode(e.target.value)}>
-                <option value="non">Non-repairable</option>
-                <option value="repairable">Repairable</option>
-                <option value="network">Network</option>
-              </select>
-            </label>
-          </div>
+        <FullScreenButton ref={fullBtnRef} full={full} onClick={toggleFull} base="ghost sm"
+                          className={full ? "" : "rbd-icon-btn is-icon rbd-tb-full"} />
+        <ToolbarMenu label={<MoreIcon />} title="More" aria="More" caret={false} look="ghost sm" triggerRef={moreBtnRef}>
+          {/* What a narrow toolbar had no room for (shown by the builder's width, rbdEditorLayout.js). */}
+          {!full && (
+            <button className="ovm-item rbd-mi-tight" onClick={toggleFull} aria-keyshortcuts="F" title="Full screen (F)">Full screen</button>
+          )}
+          <button className="ovm-item rbd-mi-cramped" onClick={undo} disabled={!canUndo(history) && !dirtySinceStep}>Undo</button>
+          <button className="ovm-item rbd-mi-cramped" onClick={redo} disabled={!canRedo(history)}>Redo</button>
+          <div className="rbd-menu-sep rbd-mi-tight" role="separator" />
+          {savedRbdId && (
+            <button className="ovm-item" onClick={() => setModal("saveasnew")}>Save as new…</button>
+          )}
+          <button className="ovm-item" role="menuitemcheckbox" aria-checked={!!autosavePref} onClick={toggleAutosave}
+                  title="Save each change a moment after you make it. For all your diagrams; also in Settings.">
+            Autosave{autosavePref ? " ✓" : ""}
+          </button>
+          <div className="rbd-menu-sep" role="separator" />
           <button className="ovm-item" onClick={autoLayout}>Auto-arrange</button>
           {!repairable && !network && (
             <button
@@ -1830,12 +2110,6 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
                 : "Repair every block instantly — it still fails and costs, but is never down (e.g. proof-tested channels, or no repair-time data). Each block's repair time is kept for later."}
             >
               Every block repaired instantly{everyInstant ? " ✓" : ""}
-            </button>
-          )}
-          {repairable && (
-            <button className="ovm-item" role="menuitemcheckbox" aria-checked={planOpen} onClick={() => togglePlan()}
-                    title="Every block's planned work and running share in one table, under the diagram">
-              Maintenance plan{planOpen ? " ✓" : ""}
             </button>
           )}
           {repairable && (
@@ -1899,7 +2173,6 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
       </div>
       {/* In full screen, Exit is the toolbar's last button, always on show.
           (The way in is on the canvas's corner: the toolbar is full.) */}
-      {full && <FullScreenButton ref={fullBtnRef} full onClick={toggleFull} />}
     </div>
     <div
       className={"rbd-canvas" + (canvasH && !full && !(planOpen && repairable) ? " is-sized" : "")}
@@ -1944,11 +2217,6 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           </div>
         )}
         </Panel>
-        {!full && (
-          <Panel position="top-right" className="rbd-full-panel">
-            <FullScreenButton ref={fullBtnRef} full={false} onClick={toggleFull} compact />
-          </Panel>
-        )}
         <Background gap={22} />
         <Controls showInteractive={false} onFitView={() => fitWhenMeasured()} />
         {/* Only for a large diagram (#314): on a small one it covers blocks. */}
@@ -2474,7 +2742,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     </div>
     {tab === "outages" && (
       <div className="rbd-calc-panel">
-        <Suspense fallback={<p className="muted-line">Loading…</p>}>
+        <Suspense fallback={<Loading />}>
           <OutageHistory
             rbdId={savedRbdId}
             graph={{ nodes, edges, unit: rbdUnit }}

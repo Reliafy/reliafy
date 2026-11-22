@@ -13,7 +13,7 @@ from backend.services import rbd_export
 from backend.tests.python_scripts import assert_checks_versions_first
 from backend.tests.test_rbd_export_text import PLAIN, _network, _nonrepairable, _phased, _repairable, _script
 
-V = {"surpyval": "0.28", "repyability": "0.19.1"}
+V = {"surpyval": "0.29", "repyability": "0.20"}
 
 
 def _px_script(**kw) -> str:
@@ -63,8 +63,8 @@ def test_an_older_surpyval_stops_with_what_to_install(monkeypatch):
     with pytest.raises(SystemExit) as stop:
         _run_check(source, {"surpyval": "0.27.2"}, monkeypatch)
     message = str(stop.value.code)
-    assert "This script needs surpyval 0.28 or later (surpyval 0.27.2 is installed)." in message
-    assert 'pip install "surpyval>=0.28"' in message
+    assert "This script needs surpyval 0.29 or later (surpyval 0.27.2 is installed)." in message
+    assert 'pip install "surpyval>=0.29"' in message
 
 
 def test_a_diagram_names_both_libraries_and_a_missing_one(monkeypatch):
@@ -73,10 +73,10 @@ def test_a_diagram_names_both_libraries_and_a_missing_one(monkeypatch):
         _run_check(source, {"surpyval": "0.11"}, monkeypatch)
     message = str(stop.value.code)
     assert "surpyval 0.11 is installed; repyability isn't installed" in message
-    assert 'pip install "surpyval>=0.28" "repyability>=0.19.1"' in message
+    assert 'pip install "surpyval>=0.29" "repyability>=0.20"' in message
 
 
-@pytest.mark.parametrize("installed", [{"surpyval": "0.28"}, {"surpyval": "0.28.1"}, {"surpyval": "1.0rc1"},
+@pytest.mark.parametrize("installed", [{"surpyval": "0.29"}, {"surpyval": "0.29.1"}, {"surpyval": "1.0rc1"},
                                        {"surpyval": "0.30.dev4"}])
 def test_the_version_made_with_or_newer_runs_on(installed, monkeypatch):
     _run_check(_px_script(), installed, monkeypatch)
@@ -84,6 +84,6 @@ def test_the_version_made_with_or_newer_runs_on(installed, monkeypatch):
 
 def test_a_diagram_with_new_enough_libraries_runs_on(monkeypatch):
     source = rbd_export.to_python(_nonrepairable(PLAIN)[0], PLAIN, resolve_model=None, versions=V)
-    _run_check(source, {"surpyval": "0.28", "repyability": "0.19.1"}, monkeypatch)
+    _run_check(source, {"surpyval": "0.29", "repyability": "0.20"}, monkeypatch)
     with pytest.raises(SystemExit):
-        _run_check(source, {"surpyval": "0.28", "repyability": "0.19"}, monkeypatch)
+        _run_check(source, {"surpyval": "0.29", "repyability": "0.19.1"}, monkeypatch)

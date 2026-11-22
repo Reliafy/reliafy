@@ -28,7 +28,8 @@ export default function useFullScreen(ref, { returnFocus } = {}) {
     // Two frames: the browser settles its own focus after leaving full screen.
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
       const now = document.activeElement;
-      const lost = !now || now === document.body || !now.isConnected;
+      // Hidden counts as lost: the button pressed may now be display:none (moved into a menu).
+      const lost = !now || now === document.body || !now.isConnected || now.getClientRects().length === 0;
       const to = returnFocus?.current;
       if (lost && to && to.isConnected) to.focus({ preventScroll: true });
     }));

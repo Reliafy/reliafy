@@ -1,7 +1,7 @@
-// The Strategy tools' shared bits: which guide "Show me how" opens, which
+// The Strategy tools' shared bits: which guide "Read the guide" opens, which
 // saved analyses each tool makes, and why Compute is greyed out.
 
-// Each tool's saved-analysis kind and its "Show me how".
+// Each tool's saved-analysis kind and its guide.
 export const STRATEGY_TOOLS = {
   replacement: {
     kind: "optimal_replacement",

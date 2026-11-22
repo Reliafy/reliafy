@@ -8,6 +8,8 @@ import {
 import { ACCENT, DANGER, REFERENCE } from "../plotTheme.js";
 import { PROCESSES, dateText, datasetName, daysText, measurementsOf, percent, usefulHorizons } from "../timeToLimit.js";
 import "./TimeToLimit.css";
+import { DateInput } from "./ui/DateTimeInput.jsx";
+import { Select } from "./ui/Controls.jsx";
 
 const GUIDE = "/guides/signal-channels#time-to-the-limit";
 
@@ -128,21 +130,21 @@ export default function TimeToLimit({ bands, channelName, selectedId }) {
       </div>
       <div className="sg-bar">
         <label className="sg-field">Band
-          <select value={band.point_id} onChange={(e) => setPointId(e.target.value)}>
+          <Select value={band.point_id} onChange={(e) => setPointId(e.target.value)}>
             {live.map((b) => <option key={b.point_id} value={b.point_id}>{b.name}</option>)}
-          </select>
+          </Select>
         </label>
         <label className="sg-field">Model
-          <select value={process} onChange={(e) => setProcess(e.target.value)} title={PROCESSES.find((p) => p.id === process).hint}>
+          <Select value={process} onChange={(e) => setProcess(e.target.value)} title={PROCESSES.find((p) => p.id === process).hint}>
             {PROCESSES.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-          </select>
+          </Select>
         </label>
         <label className="sg-field">Limit ({band.unit})
           <input type="number" step="any" value={limit} onChange={(e) => setLimit(e.target.value)}
                  placeholder={band.alarm_above ?? band.alarm_below ?? "needed"} />
         </label>
         <label className="sg-field">Readings from
-          <input type="date" value={since} onChange={(e) => setSince(e.target.value)} />
+          <DateInput value={since} onChange={(e) => setSince(e.target.value)} />
         </label>
       </div>
 

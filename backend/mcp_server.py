@@ -882,7 +882,7 @@ ONE_OF = {
     ("change", "upload_send_part"): "upload_id ...", ("analyse", "plan_accelerated_test"): "life_params ...",
 }
 #: Kept short: tools/list is capped at 8,000 characters (test_mcp_tools.py); it appears on every tool.
-ARGS_HELP = "Args: see guide(action='<tool>.<action>')."
+ARGS_HELP = "See guide(action='<tool>.<action>')."
 
 
 def _pointer(tool: str, value: str) -> str:
@@ -3592,8 +3592,12 @@ _RMeanings = Annotated[Optional[dict[str, int]], Field(description=(
     "{\"Failed\": 0, \"Running\": 1}. 0/1 codes need none (c_invert flips a 1 = failed column)."))]
 _RInvert = Annotated[Optional[bool], Field(description="c_col's 0/1 codes use 1 = failed.")]
 _RAllFailed = Annotated[Optional[bool], Field(description="No status column: every row is a failure.")]
+_ROneStream = Annotated[Optional[bool], Field(description="No i column: every row is one stream of events (one system).")]
 _RUnit = Annotated[Optional[str], Field(description="x's unit (hours, cycles, km, any unit).")]
 _RMUnit = Annotated[Optional[str], Field(description="m's unit (mm, %, mm/s…).")]
+_RRecordEnd = Annotated[Optional[float], Field(gt=0, description=(
+    "Repairable data: where observation stopped, one number in x's unit (216000 fleet hours). Later fits use "
+    "it as the end of test unless they give their own; a column of ends is tr_col."))]
 _RZUnits = Annotated[Optional[dict[str, str]], Field(description="Units of covariates, {column: unit} (optional).")]
 
 
@@ -3601,8 +3605,8 @@ def _reading_given(**kw) -> dict:
     """The reading fields a call named (None left out), in the reading's keys."""
     keys = {"x_col": "x", "xl_col": "xl", "xr_col": "xr", "c_col": "c", "n_col": "n", "tl_col": "tl",
             "tr_col": "tr", "i_col": "i", "m_col": "m", "e_col": "e", "s_col": "s", "z_cols": "z", "not_used": "not_used",
-            "c_meanings": "c_map", "c_invert": "c_invert", "all_failed": "all_failed", "unit": "unit",
-            "m_unit": "m_unit", "z_units": "z_units", "x2_col": "x2", "x2_unit": "x2_unit"}
+            "c_meanings": "c_map", "c_invert": "c_invert", "all_failed": "all_failed", "one_stream": "one_stream", "unit": "unit",
+            "m_unit": "m_unit", "z_units": "z_units", "x2_col": "x2", "x2_unit": "x2_unit", "record_end": "record_end"}
     return {keys[k]: v for k, v in kw.items() if v is not None}
 
 
@@ -3632,7 +3636,8 @@ def upload_dataset(
     tl_col: _RTL = None, tr_col: _RTR = None, i_col: _RI = None, m_col: _RM = None, e_col: _RE = None,
     s_col: _RS = None, x2_col: _RX2 = None, x2_unit: _RX2Unit = None,
     z_cols: _RZ = None, not_used: _RNotUsed = None, c_meanings: _RMeanings = None, c_invert: _RInvert = None,
-    all_failed: _RAllFailed = None, unit: _RUnit = None, m_unit: _RMUnit = None, z_units: _RZUnits = None,
+    all_failed: _RAllFailed = None, one_stream: _ROneStream = None, unit: _RUnit = None, m_unit: _RMUnit = None, z_units: _RZUnits = None,
+    record_end: _RRecordEnd = None,
     library_id: Annotated[Optional[str], Field(max_length=64, description=(
         "Also add every dataset made (each part of a split too) to this library of the user's, as snapshots: "
         "all or nothing."))] = None,
@@ -3669,8 +3674,8 @@ def upload_dataset(
     data = datasets_service.normalize_pasted(text, apply)
     given = _reading_given(x_col=x_col, xl_col=xl_col, xr_col=xr_col, c_col=c_col, n_col=n_col, tl_col=tl_col,
                            tr_col=tr_col, i_col=i_col, m_col=m_col, e_col=e_col, s_col=s_col, z_cols=z_cols,
-                           not_used=not_used, c_meanings=c_meanings, c_invert=c_invert, all_failed=all_failed,
-                           unit=unit, m_unit=m_unit, z_units=z_units, x2_col=x2_col, x2_unit=x2_unit)
+                           not_used=not_used, c_meanings=c_meanings, c_invert=c_invert, all_failed=all_failed, one_stream=one_stream,
+                           unit=unit, m_unit=m_unit, z_units=z_units, x2_col=x2_col, x2_unit=x2_unit, record_end=record_end)
     reading = _upload_reading(data, given, split)
     if split:
         return _split_upload(db, user, name.strip(), data, split, upload, guess, hint, reading, lib)
@@ -4819,7 +4824,7 @@ def _as_of_now_summary(result: dict, labels: dict) -> dict:
     return out
 
 
-_EXACT_KEYS = ("status", "message", "from", "current_state", "window", "unit", "availability_start",
+_EXACT_KEYS = ("status", "message", "at_times", "from", "current_state", "window", "unit", "availability_start",
                "availability_end", "availability_min", "availability_min_at", "mission_availability",
                "expected_failures", "planned_outages", "expected_outages", "downtime", "cost", "cost_note",
                "method", "n_blocks", "cached", "mission_unavailability")
@@ -5145,6 +5150,8 @@ def analyze_rbd(
     ctx: Context,
     rbd_id: Annotated[str, Field(description="An RBD id from list kind rbds or change rbd_create.")],
     times: Annotated[Optional[list[float]], Field(max_length=200, description=(
+        "Repairable: times (diagram unit) to read the availability at, each exact (no simulation), in "
+        "exact.at_times: A(t), the mean availability over 0 to t, and the expected failures and downtime by t. "
         "Non-repairable: times (diagram unit) to report system reliability at, each evaluated exactly, in "
         "reliability_at. They don't change `curve`, which is always ~21 points over an automatic axis (sized to "
         "the system; t_max sets its end): to read the curve at given times, pass them here."))] = None,
@@ -5240,9 +5247,9 @@ def analyze_rbd(
             raise ToolError(f"times must be finite and ≥ 0 (in the diagram's unit); got {t:g}.")
     if conditional_age is not None and (not np.isfinite(conditional_age) or conditional_age < 0):
         raise ToolError(f"conditional_age must be finite and ≥ 0; got {conditional_age:g}.")
-    if graph.get("repairable") and (times or conditional_age is not None):
-        raise ToolError("times and conditional_age apply to non-repairable diagrams; this one is repairable "
-                        "(analysed for availability). Drop them — t_max sets the window (and the simulated "
+    if graph.get("repairable") and conditional_age is not None:
+        raise ToolError("conditional_age applies to non-repairable diagrams; this one is repairable "
+                        "(analysed for availability). Drop it — t_max sets the window (and the simulated "
                         "horizon); current_state starts it from now.")
     if graph.get("repairable") and (target_reliability is not None or confidence is not None
                                     or evaluate_at is not None):
@@ -5300,7 +5307,7 @@ def analyze_rbd(
             status, payload = availability_payload(db, actx, graph, t_max, rbd, recompute, owners,
                                                    simulate=True if asked else simulate, current_state=state,
                                                    exact=compute_exact, quick=asked, surface="mcp",
-                                                   auto=simulate is None)
+                                                   auto=simulate is None, at_times=list(times) if times else None)
             pending = None
             if status == 202:
                 # Queued on the calculation service: wait a little, then hand
@@ -5621,10 +5628,15 @@ def analyse_rbd_mission(
         raise ToolError(f"“{rbd.name}” has no mission '{mission_id}': it has "
                         f"{', '.join(repr(m['id']) for m in every) or 'none'}.")
     detail = rbd_missions.detail(db, owners, graph, mission)
+    from backend.routers.rbd_missions import age_now_for
+    from backend.services import time_zones
+
+    # A mission on a life model with no covariates, started "now": the fitted item's age now.
+    age_now = None if state else age_now_for(user, user["uid"], user["uid"], time_zones.of_owner(db, user["uid"]), graph)
     try:
         with rbd_standby.simulation("run" if entitled else None):
             result = rbd_phases.agent_summary(rbd_missions.analyze(db, owners, graph, mission["phases"],
-                                                                   current_state=state))
+                                                                   current_state=state, age_now=age_now))
     except rbd_standby.SimulationNeedsPro as exc:
         result = _mission_pro(exc)
     except AnalysisError as exc:
@@ -6941,7 +6953,7 @@ def optimal_replacement(
     position_id: _POSITION_ID = None,
 ) -> dict[str, Any]:
     """The cost-optimal age-replacement interval for a component with a known life
-    model; beneficial=false means run to failure is cheaper; block is the block-replacement alternative. For a saved
+    model; beneficial=false means run to failure is cheaper. For a saved
     Weibull fitted to data, shape_uncertainty answers at each end of β's 90% interval: relay uncertainty_note when
     present."""
     user, db = _caller(ctx), _db()
@@ -7863,7 +7875,9 @@ def fit_recurrent_model(
     options = {k: v for k, v in (("baseline", baseline), ("m", memory)) if v is not None}
     spec = {"mapping": mapping, "model_id": model, "unit": (unit or "").strip(), **({"options": options} if options else {}),
             **({"windows": recurrent_models.parse_windows(windows)} if windows else {}),
-            **({"record_end": float(observed_to)} if dataset is not None and observed_to is not None else {})}
+            **({"record_end": float(observed_to)} if dataset is not None and observed_to is not None
+               else {"record_end": recurrent_fit.dataset_record_end(dataset)}
+               if dataset is not None and recurrent_fit.dataset_record_end(dataset) is not None else {})}
     if not save:
         payload, _ = recurrent_fit.fit_spec(df, spec)
         out = {"saved": False, "model": payload.get("model"), "family": payload.get("family"),
@@ -9427,7 +9441,8 @@ def update_dataset(
     tl_col: _RTL = None, tr_col: _RTR = None, i_col: _RI = None, m_col: _RM = None, e_col: _RE = None,
     s_col: _RS = None, x2_col: _RX2 = None, x2_unit: _RX2Unit = None,
     z_cols: _RZ = None, not_used: _RNotUsed = None, c_meanings: _RMeanings = None, c_invert: _RInvert = None,
-    all_failed: _RAllFailed = None, unit: _RUnit = None, m_unit: _RMUnit = None, z_units: _RZUnits = None,
+    all_failed: _RAllFailed = None, one_stream: _ROneStream = None, unit: _RUnit = None, m_unit: _RMUnit = None, z_units: _RZUnits = None,
+    record_end: _RRecordEnd = None,
 ) -> dict[str, Any]:
     """Rename one of the user's own datasets, set its notes, or change its reading (x_col, c_col, …, z_cols:
     later fits use it; models already made keep theirs); never the data, never a sample."""
@@ -9435,8 +9450,8 @@ def update_dataset(
     uid = user["uid"]
     given = _reading_given(x_col=x_col, xl_col=xl_col, xr_col=xr_col, c_col=c_col, n_col=n_col, tl_col=tl_col,
                            tr_col=tr_col, i_col=i_col, m_col=m_col, e_col=e_col, s_col=s_col, z_cols=z_cols,
-                           not_used=not_used, c_meanings=c_meanings, c_invert=c_invert, all_failed=all_failed,
-                           unit=unit, m_unit=m_unit, z_units=z_units, x2_col=x2_col, x2_unit=x2_unit)
+                           not_used=not_used, c_meanings=c_meanings, c_invert=c_invert, all_failed=all_failed, one_stream=one_stream,
+                           unit=unit, m_unit=m_unit, z_units=z_units, x2_col=x2_col, x2_unit=x2_unit, record_end=record_end)
     if name is None and notes is None and not given:
         raise ToolError("Nothing to change: give name, notes, or the reading (x_col, c_col, …, z_cols).")
     if name is not None or notes is not None:

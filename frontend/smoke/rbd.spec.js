@@ -3,6 +3,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { test, expect, open, expectHealthy } from "./health.js";
+import { choose, expectChosen } from "./select.js";
 
 const fixture = (name) => fileURLToPath(new URL(`fixtures/${name}`, import.meta.url));
 
@@ -101,12 +102,13 @@ test("full screen: edit, open dialogs and save without leaving it", async ({ pag
   await addComponent(page); // made before entering: still there after
   await expect(nodes).toHaveCount(before + 1);
 
-  const toggle = page.locator(".rbd-full-panel .full-screen-btn");
+  // Full screen is in the toolbar, its icon with the words as its name.
+  const toggle = page.locator(".rbd-toolbar").getByRole("button", { name: "Full screen", exact: true });
   await expect(toggle).toHaveAttribute("title", "Full screen (F)");
   await toggle.click();
   await expect.poll(() => nativeFull(page)).toBe(true);
   await expect(page.getByRole("button", { name: "Exit full screen" })).toBeVisible();
-  await expect(page.locator(".rbd-full-status")).toContainText("Not saved yet");
+  await expect(page.locator(".rbd-save-status")).toContainText("Not saved yet");
   const box = await page.locator(".rbd-builder").boundingBox();
   expect(box.width).toBe(1280);
   expect(box.height).toBe(900);
@@ -125,14 +127,17 @@ test("full screen: edit, open dialogs and save without leaving it", async ({ pag
   await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
-  // The diagram's mode dropdown in the toolbar.
-  await page.locator(".rbd-mode-select").click();
-  await expect(page.getByRole("listbox")).toBeVisible();
-  expect(await inFull(page, ".sel-menu")).toBe(true);
-  await page.getByRole("option", { name: "Non-repairable" }).click();
+  // The diagram's settings, a popover off the toolbar, open inside full screen.
+  await page.getByRole("button", { name: /^Diagram settings/ }).click();
+  const settings = page.getByRole("dialog", { name: "Diagram settings" });
+  await expect(settings).toBeVisible();
+  expect(await inFull(page, ".rbd-settings-pop")).toBe(true);
+  await settings.getByRole("radio", { name: /Non-repairable/ }).click();
+  await page.keyboard.press("Escape");
+  await expect(settings).toBeHidden();
 
   // Save: the name dialog shows, and the first save keeps full screen and the canvas.
-  // Not saved yet: one Save… button (the split Save with Save as new comes once it's saved).
+  // Not saved yet: one Save… button; once saved, autosave keeps each change.
   await page.getByRole("button", { name: "Save…", exact: true }).click(); // the first save asks for a name
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
@@ -140,12 +145,13 @@ test("full screen: edit, open dialogs and save without leaving it", async ({ pag
   await dialog.locator("input").first().fill("Full screen smoke");
   await dialog.locator("input").first().press("Enter");
   await page.waitForURL(/\/systems\/b\/[\w-]+$/);
-  await expect(page.locator(".rbd-full-status")).toContainText("Saved");
+  await expect(page.locator(".rbd-save-status")).toContainText("Saved");
   await expect.poll(() => nativeFull(page)).toBe(true);
   await expect(nodes).toHaveCount(before + 2);
   await page.locator(".react-flow__pane").click({ position: { x: 40, y: 40 } });
   await addComponent(page);
-  await expect(page.locator(".rbd-full-status")).toContainText("Unsaved changes");
+  await expect(page.locator(".rbd-save-status")).toContainText("Saved", { timeout: 10_000 });
+  await expect(page.getByRole("button", { name: /^Save/ })).toHaveCount(0); // autosave: no Save button
 
   // Out again: the browser's full screen ends, focus is back on the button,
   // and every block is still there.
@@ -165,6 +171,62 @@ test("full screen: edit, open dialogs and save without leaving it", async ({ pag
   await expectHealthy(page, problems, { label: "full screen" });
 });
 
+// Autosave: a saved diagram keeps each change by itself; Undo and Redo step back and forward
+// (and the step back is saved too). Off (⋯ › Autosave), Save is back and leaving asks first.
+test("autosave keeps each change, Undo takes it back, and off it asks before leaving", async ({ page, request, problems }) => {
+  await open(page, "/systems/b");
+  const nodes = page.locator(".react-flow__node");
+  const status = page.locator(".rbd-save-status");
+  await addComponent(page);
+  await expect(status).toContainText("Not saved yet");
+  await page.getByRole("button", { name: "Save…", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.locator("input").first().fill(`Autosave smoke ${Date.now()}`);
+  await dialog.locator("input").first().press("Enter");
+  await page.waitForURL(/\/systems\/b\/[\w-]+$/);
+  const id = page.url().split("/").pop();
+  const blocksSaved = async () => ((await (await request.get(`/api/rbds/${id}`)).json()).graph.nodes || []).length;
+  const opened = await blocksSaved();
+  await expect(status).toContainText("Saved");
+
+  // A change saves itself.
+  await page.locator(".react-flow__pane").click({ position: { x: 40, y: 40 } });
+  await addComponent(page);
+  await expect.poll(blocksSaved, { timeout: 10_000 }).toBe(opened + 1);
+  await expect(status).toContainText("Saved");
+
+  // Undo (Ctrl+Z) takes it back, and that is saved too; Redo puts it back.
+  await page.locator(".react-flow__pane").click({ position: { x: 40, y: 40 } });
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(nodes).toHaveCount(opened);
+  await expect.poll(blocksSaved, { timeout: 10_000 }).toBe(opened);
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(nodes).toHaveCount(opened + 1);
+  await expect.poll(blocksSaved, { timeout: 10_000 }).toBe(opened + 1);
+
+  // Off: Save is back, the status says what's unsaved, and a link away asks first.
+  await page.getByRole("button", { name: "More", exact: true }).click();
+  await page.getByRole("menuitemcheckbox", { name: /Autosave/ }).click();
+  try {
+    await addComponent(page);
+    await expect(status).toContainText("Unsaved changes");
+    await page.waitForTimeout(2000);
+    expect(await blocksSaved()).toBe(opened + 1); // not saved by itself
+    await page.getByRole("link", { name: "Home" }).first().click();
+    const ask = page.getByRole("alertdialog").or(page.getByRole("dialog")).filter({ hasText: "Leave without saving?" });
+    await expect(ask).toBeVisible();
+    await ask.getByRole("button", { name: "Stay" }).click();
+    await expect(page).toHaveURL(new RegExp(`/systems/b/${id}$`));
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(status).toContainText("Saved");
+    expect(await blocksSaved()).toBe(opened + 2);
+  } finally {
+    // The preference is the account's: put it back for the other tests.
+    await request.put("/api/me/editor-preferences", { data: { autosave: true } });
+  }
+  await expectHealthy(page, problems, { label: "autosave and undo" });
+});
+
 test("full screen without the browser's Fullscreen API (iPhone): covers the page", async ({ page, problems }) => {
   await page.addInitScript(noFullscreenApi);
   await open(page, "/systems/b/sample-rbd-pump-station");
@@ -179,7 +241,7 @@ test("full screen without the browser's Fullscreen API (iPhone): covers the page
   await expect(page.locator("html.full-screen-lock")).toHaveCount(1);
   const box = await builder.boundingBox();
   expect([box.x, box.y, box.width, box.height]).toEqual([0, 0, 1280, 900]);
-  await expect(page.locator(".rbd-full-status")).toContainText("Read only");
+  await expect(page.locator(".rbd-save-status")).toContainText("Read only");
 
   // Escape closes the dialog first, then leaves full screen.
   await addComponent(page);
@@ -207,9 +269,19 @@ test("full screen on a phone (400 px): no sideways scroll, big enough to tap", a
   await page.addInitScript(noFullscreenApi);
   await open(page, "/systems/b/sample-rbd-pump-station");
   await expect(page.locator(".react-flow__node").first()).toBeVisible();
-  const enter = page.getByRole("button", { name: "Full screen", exact: true });
-  expect((await enter.boundingBox()).height).toBeGreaterThanOrEqual(40);
-  await enter.click();
+  // One row on a phone: Full screen is in ⋯, the status and the check are icons (named in words).
+  const bar = page.locator(".rbd-toolbar");
+  await expect(bar.getByRole("button", { name: "Full screen", exact: true })).toBeHidden();
+  await expect(bar.getByRole("button", { name: "Add block" })).toBeVisible();
+  await expect(bar.locator(".rbd-save-status")).toHaveAttribute("title", /./);
+  await expect(bar.locator(".rbd-save-text")).toBeAttached();
+  await expect(bar.getByRole("button", { name: /Diagram valid|problem|warning|Nothing to check|Not connected/ })).toBeVisible({ timeout: 15_000 });
+  const tops = await bar.locator(":scope > div > *:visible").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+  expect(Math.max(...tops) - Math.min(...tops)).toBeLessThan(40); // one row
+  const more = bar.getByRole("button", { name: "More", exact: true });
+  expect((await more.boundingBox()).height).toBeGreaterThanOrEqual(40);
+  await more.click();
+  await page.getByRole("button", { name: "Full screen", exact: true }).click();
   await expect(page.locator(".rbd-builder.is-full")).toBeVisible();
   const exit = page.getByRole("button", { name: "Exit full screen" });
   await expect(exit).toBeVisible();
@@ -222,7 +294,7 @@ test("full screen on a phone (400 px): no sideways scroll, big enough to tap", a
   await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
   await exit.click();
   await expect(page.locator(".rbd-builder.is-full")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Full screen", exact: true })).toBeFocused();
+  await expect(page.getByRole("button", { name: "More", exact: true })).toBeFocused();
   await expectHealthy(page, problems, { label: "full screen at 400 px" });
 });
 
@@ -281,11 +353,11 @@ test("a new diagram built with Add block is connected from Input to Output", asy
   const out = right.find((n) => n.out);
   for (const n of right.filter((x) => !x.out)) expect(n.r).toBeLessThanOrEqual(out.x + 1);
 
-  // Validate: the blocks have no models yet, but nothing is left unconnected.
-  await page.getByRole("button", { name: "Validate" }).click();
-  const status = page.locator(".rbd-tb-menu").filter({ hasText: /Valid|Not valid|Nothing to check/ }).first();
-  await expect(status).toContainText(/Valid|Not valid/, { timeout: 15_000 });
+  // The check runs by itself: the blocks have no models yet, but nothing is left unconnected.
+  const status = page.locator(".rbd-valid-menu .rbd-valid-toggle");
+  await expect(status).toContainText(/Valid|problem|warning/, { timeout: 15_000 });
   await expect(status).not.toContainText("Nothing to check");
+  await status.click();
   const check = page.locator(".rbd-check").first();
   await expect(check).toBeVisible();
   await expect(check).not.toContainText(/Not connected|Nothing feeds into|don't lead anywhere|not on any path/);
@@ -299,14 +371,16 @@ test("the maintenance plan edits planned work and duty in place", async ({ page,
   await open(page, "/systems/b");
   await page.getByRole("button", { name: "Add block" }).click();
   await page.locator(".ovm-item", { hasText: /^Component$/ }).click();
-  await page.locator(".rbd-mode-select").first().click();
-  await page.getByRole("option", { name: "Repairable", exact: true }).click();
-  await page.locator(".rbd-unit-input").fill("Hours");
-  await page.locator('[data-wt="rbd-plan-chip"]').click();
+  await page.getByRole("button", { name: /^Diagram settings/ }).click();
+  const settings = page.getByRole("dialog", { name: "Diagram settings" });
+  await settings.getByRole("radio", { name: /^Repairable/ }).click();
+  await settings.getByLabel("Time unit").fill("Hours");
+  await settings.getByRole("switch", { name: "Show the maintenance plan" }).click();
+  await page.keyboard.press("Escape");
   const plan = page.getByRole("region", { name: "Maintenance plan" });
   await expect(plan).toBeVisible();
-  await plan.getByLabel("Component 1: task").selectOption("age");
-  await plan.getByLabel("Component 1: counted in").selectOption("operating");
+  await choose(plan.getByLabel("Component 1: task"), "age");
+  await choose(plan.getByLabel("Component 1: counted in"), "operating");
   await plan.getByLabel("Component 1: every").fill("500");
   // Runs blank is "all the time" since #829: running time is calendar time, nothing to fix.
   await expect(plan.locator(".rbd-plan-problem")).toHaveCount(0);
@@ -315,8 +389,8 @@ test("the maintenance plan edits planned work and duty in place", async ({ page,
   await expect(plan).toContainText("= 2,000 h on the calendar at Runs 25%");
   await expect(page.locator(".rbd-chip", { hasText: "25%" })).toBeVisible();
   // A proof test takes running hours too (#365): the unit stays with the interval.
-  await plan.getByLabel("Component 1: task").selectOption("test");
-  await expect(plan.getByLabel("Component 1: counted in")).toHaveValue("operating");
+  await choose(plan.getByLabel("Component 1: task"), "test");
+  await expectChosen(plan.getByLabel("Component 1: counted in"), "operating");
   await expect(plan).toContainText("= 2,000 h on the calendar at Runs 25%");
   await expect(page.locator(".rbd-chip", { hasText: "running" })).toBeVisible();
   await page.setViewportSize({ width: 400, height: 860 });

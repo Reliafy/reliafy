@@ -13,7 +13,7 @@ import mongomock
 import pytest
 import surpyval as surv
 from fastapi.testclient import TestClient
-from repyability import Calendar, NonRepairable, Opportunity
+from repyability import NonRepairable, Opportunities, Opportunity
 
 from backend.services import strategy_calendar as sc
 from backend.services.strategy import StrategyError
@@ -40,10 +40,11 @@ def _uc13(**kw):
 def test_uc13_matches_repyability():
     out = _uc13()
     # RePyability on the same calendar, built by hand in model time.
-    part = NonRepairable(surv.Weibull.from_params([1000.0, 2.5]))
-    cal = Calendar([Opportunity("weekly stop", 3.0, period=7.0), Opportunity("quarterly shut", 2.0, period=91.0),
-                    Opportunity("annual shut", 1.0, period=364.0)], failure=20.0, anytime=4.0)
-    ref = part.optimal_calendar_policy(cal, method="dp")
+    part = NonRepairable(surv.Weibull.from_params([1000.0, 2.5]), planned_cost=4.0, unplanned_cost=20.0,
+                         opportunity_costs={"weekly stop": 3.0, "quarterly shut": 2.0, "annual shut": 1.0})
+    cal = Opportunities([Opportunity("weekly stop", period=7.0), Opportunity("quarterly shut", period=91.0),
+                         Opportunity("annual shut", period=364.0)])
+    ref = part.optimal_opportunity_policy(cal, method="dp")
     assert out["cost_rate"] == pytest.approx(ref.cost_rate, rel=1e-12)
     # The README's figures: 25.27 over ten years (3,640 days), 0.962 annual replacements and
     # 0.078 failures a year (364 days), the annual shut replacing from 88 days.
@@ -182,9 +183,10 @@ def test_irregular_dates_are_a_plan_repeated():
     shuts = [{"name": "turnaround", "cost": 1, "dates": ["2027-01-26", "2027-12-12", "2028-12-25"]}]
     out = sc.calendar_replacement("weibull", UC13, unit="Days", today=TODAY, opportunities=shuts, failure_cost=20,
                                   anytime_cost=4)
-    part = NonRepairable(surv.Weibull.from_params([1000.0, 2.5]))
-    ref = part.optimal_calendar_policy(Calendar([Opportunity("turnaround", 1.0, dates=[100.0, 420.0, 799.0])],
-                                                failure=20.0, anytime=4.0), method="dp")
+    part = NonRepairable(surv.Weibull.from_params([1000.0, 2.5]), planned_cost=4.0, unplanned_cost=20.0,
+                         opportunity_costs={"turnaround": 1.0})
+    ref = part.optimal_opportunity_policy(Opportunities([Opportunity("turnaround", dates=[100.0, 420.0, 799.0])]),
+                                          method="dp")
     assert out["cost_rate"] == pytest.approx(ref.cost_rate, rel=1e-12)
     assert [r["date"] for r in out["schedule"]] == ["2027-01-26"]
     assert out["determined_until_date"] is not None

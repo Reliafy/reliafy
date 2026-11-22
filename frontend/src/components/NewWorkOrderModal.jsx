@@ -2,6 +2,8 @@ import { useState } from "react";
 import { openWorkOrder } from "../api.js";
 import { Field, FormModal, PositionPicker } from "./MaintenanceParts.jsx";
 import { tooLong } from "../maintenanceText.js";
+import { DateInput } from "./ui/DateTimeInput.jsx";
+import { Select } from "./ui/Controls.jsx";
 
 // A new work order on a position: what needs doing, its type and when it's due.
 // On a position's page the position is that one (`positionId`); on the
@@ -23,14 +25,14 @@ export default function NewWorkOrderModal({ positionId = null, positions = null,
         <input autoFocus={!!positionId} value={title} placeholder="e.g. No hot water" onChange={(e) => setTitle(e.target.value)} />
       </Field>
       <Field label="Type">
-        <select value={type} onChange={(e) => setType(e.target.value)}>
+        <Select value={type} onChange={(e) => setType(e.target.value)}>
           <option value="corrective">Corrective (something's wrong)</option>
           <option value="preventive">Preventive</option>
           <option value="inspection">Inspection</option>
           <option value="other">Other</option>
-        </select>
+        </Select>
       </Field>
-      <Field label="Due (optional)"><input type="date" value={due} onChange={(e) => setDue(e.target.value)} /></Field>
+      <Field label="Due (optional)"><DateInput value={due} onChange={(e) => setDue(e.target.value)} /></Field>
     </FormModal>
   );
 }

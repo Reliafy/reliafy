@@ -1,0 +1,20 @@
+{
+  "ignoreFiles": ["src/tokens.css", "dist/**", "node_modules/**"],
+  "rules": {
+    "color-no-hex": [true, { "message": "Use a colour role from tokens.css (var(--text), var(--accent)…), not a hex value (docs/design-system)" }],
+    "function-disallowed-list": [["rgb", "rgba", "hsl", "hsla"], { "message": "Use a colour role from tokens.css, not %s() (docs/design-system)" }],
+    "declaration-property-unit-disallowed-list": [
+      {
+        "/^(margin|padding)/": ["px", "rem"],
+        "/^(gap|row-gap|column-gap)$/": ["px", "rem"],
+        "font-size": ["px", "rem", "pt"],
+        "/radius$/": ["px"]
+      },
+      { "message": "Use a token: var(--space-N) for space, var(--fs-N) for type size, var(--radius-*) for radius (docs/design-system)" }
+    ],
+    "declaration-property-value-allowed-list": [
+      { "z-index": ["/var\\(--z-/", "auto", "0", "-1", "inherit", "initial", "unset"] },
+      { "message": "Use a layer token for z-index: var(--z-*), or calc(var(--z-*) + 1) (docs/design-system)" }
+    ]
+  }
+}

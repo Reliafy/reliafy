@@ -249,7 +249,7 @@ reliafy maintenance rcm.ff_interval --failure-rate 0.1 --target-unavailability 0
 (These two were `rcm.interval_on_condition` and `rcm.interval_failure_finding`
 until Nov 2026; `parts.build_positions` was `parts.positions_from_structure`.)
 
-Life models on positions (the Explorer's Models › Life models): `maintenance
+Life models on positions (the Explorer's Models tab): `maintenance
 models.link` attaches a model to a position (a link, never a copy): a saved one
 (`model_id`, with `model_type` `model` (the default), `recurrent_model`,
 `degradation_model` or `alt_model`), the position class's (`from_class: true`)
@@ -347,7 +347,21 @@ class (`item_class` null with none); with nothing fitted `member` is null and
 `why` says so. `model` is the condition and life model that scores it, null
 with none linked. It is a read for the page, with no tool or CLI twin.
 
-Missions (the Explorer's Models › Missions): a non-repairable RBD can carry several
+A node and everything below it (the Explorer's Monitoring › Life left on a
+position with positions inside it, or on a place): `GET
+/api/maintenance/condition-below/{id}` answers `{node, today, age_unit,
+horizons, below, positions, members, models, scored, no_model, not_scored,
+note}`. `members` are the positions there and below at any depth with
+condition monitoring (a condition and life model, or a condition point), each
+a row as above plus `subject` (`{id, name, within}`: where it lives) and
+`here` (the node's own); the node's own comes first, then highest risk first.
+Risks are never summed. `within` (the asset opened) keeps it to that asset.
+The Summary's counts: `GET /api/maintenance/rollup/{id}` answers `{node,
+design, here, inside}`, each with `positions`, `items` (fitted), `tasks`,
+`failure_modes`, `models` (RBDs included), `failure_reports` and `open_reports`;
+`within` as above. Both are reads for the page, with no tool or CLI twin.
+
+Missions (rows under their model on the Explorer's Models tab): a non-repairable RBD can carry several
 named phased missions over the same blocks, in `graph.missions` (`[{id, name,
 phases}]`; the diagram's own `phases` reads as one more mission, id `mission`,
 named by `mission_name`). A phase is `{name, duration, not_needed?: [block
@@ -370,8 +384,10 @@ adds a mission to a position with an RBD of its own, built from the positions
 inside (as Build from what's inside builds it: placeholders flagged), or,
 where it has nothing inside, copied from the position's non-repairable RBD, or
 else one block, the position's own model in use (refused when it has none).
+`link_id` (one of the position's model rows) flies it on that model instead:
+an RBD row is copied, the model in use is the one block (any other is refused).
 It is saved as "<position> — <mission>" with `graph.mission_of:
-{position_id}` and answers `{rbd: {id, name, updated_at}, mission, position_id,
+{position_id, built_from, on_link?, from_rbd?}` and answers `{rbd: {id, name, updated_at}, mission, position_id,
 notes, placeholders, built_from` (`tree`, `copy` or `model`)`}`. In `GET
 /api/rbds` such a diagram carries `mission: {name, position_id, position}`. The mission is that RBD's own (id `mission`, named by
 `mission_name`, kept with no phases); it isn't linked as one of the position's
@@ -380,7 +396,9 @@ RBD. Missions stored on a position's RBD keep working as before.
 `GET /api/maintenance/position-missions?position_ids=` lists each
 position's RBDs and their missions (a position has its own RBDs' missions,
 never a parent's); a mission's own RBD is a row with `link_id` null and
-`rbd.mission_rbd` true. `has_model` lists the positions whose model in use can
+`rbd.mission_rbd` true, with `rbd.from_rbd`, `rbd.on_link` and `rbd.built_from`
+saying which model it was started from (the Models tab shows it under that
+model's row). `has_model` lists the positions whose model in use can
 be a mission's one block. A mission in a list is `{id, name, phases` (how many)`,
 phase_names, phase_durations` (each phase's own length, in the same
 order)`, duration` (the whole mission)`, unit, result?}`. On an RBD: `GET /api/rbds/{id}/missions`, `POST
@@ -563,11 +581,19 @@ the date comes from the counter's recent rate, as before. `limits[].basis` says 
 `get forecast` (`id` a position; `root` the asset opened; `period` `month`, `quarter` or `year`;
 `periods`, default 12) is the forecast for the position and everything inside it, from today to
 the end of the last whole period: `answer` (the whole forecast in a line), `rows` per period
-(the position's operating `hours`, `tasks`, `labour_hours`, `planned_cost`, expected `failures`
-and `failure_cost`, and the tasks `due`), `totals` with a 90% range (the 5th to 95th percentile
-of outcomes), each task's dates with what they rest on, the life models it used (`models`, each
-with its age, cost per failure and `rests_on`; `placeholder` when typed in) and what it left out
-(`not_on_dates`, `not_forecast`, `states`). Nothing is saved. `maintenance guide` topic
+(the position's operating `hours`, `tasks`, `labour_hours`, `planned_cost` split into
+`labour_cost`, `materials_cost` and `other_planned_cost`, expected `failures`, `unplanned_cost`
+(also `failure_cost`), `downtime_hours`, `downtime_cost` and `total_cost`, and the tasks `due`),
+`totals` with a 90% range (the 5th to 95th percentile of outcomes) and `total_complete`,
+`cost_basis` (what planned and unplanned rest on), each task's dates with what they rest on, the
+life models it used (`models`, each with its age, cost per failure and `rests_on`; `placeholder`
+when typed in), what it left out (`not_on_dates`, `not_forecast`, `states`) and `prompts`: what to
+enter, each with a link (`no_failure_cost`, `no_pf`, `no_effect`). Nothing is saved.
+
+What one failure costs lives on the failure mode (`failure_modes.update` with `failure_cost`,
+`downtime_hours`, `downtime_rate`; `clear` unsets them; `PATCH /api/maintenance/failure-modes/{id}`,
+`GET …/failure-modes/{id}/costs`), else on its position class (`reliability.set_class_costs` with
+`failure_cost`, `downtime_hours`, `downtime_rate`). Each figure is the mode's own, else the class's. `maintenance guide` topic
 `forecast` has the detail. The app's route: `GET /api/maintenance/positions/{id}/forecast`
 (`?root=&period=&periods=`).
 
@@ -611,9 +637,18 @@ then has a `ref`, `layer_of` and `cadence_text`, and a layer's `create` has
 own routes do the same: `GET /api/maintenance/packages/propose?weekday=`,
 `POST /api/maintenance/packages/batch` (`packages`: the creates, all or
 nothing) and `GET /api/maintenance/packages?position_id=` (those there or
-inside it, or holding a task there). `GET /api/maintenance/task-table?position_id=` (or
-`location_id=`) is the Explorer's Maintenance › What it needs: every task there and below, one
-row each, with its failure modes, kind, interval, trade, next due and package.
+inside it, or holding a task there). A package on a position takes any task on
+the same asset (`packages.add_task`, `POST /api/maintenance/packages/{package_id}/tasks`,
+`reliafy maintenance packages.add_task`; another asset's is refused with the
+reason) and lives where its tasks meet: a package's `subject` is the deepest
+position all its tasks are on or inside, worked out on read, `made_on` the
+position it was made on (its hours counter) and `asset` the tree its tasks are
+on. `GET /api/maintenance/task-table?position_id=` (or
+`location_id=`) is the Explorer's Maintenance › Tasks and What it needs: every task there and on
+everything below it at any depth, one row each, with where it lives (`subject.within`), its failure
+modes, kind, interval, trade, next due and package. `within=` (a position or place: the asset
+opened) lists only what's inside that asset; given alone, it lists the whole asset (the
+Explorer's Maintenance tab draws them as a tree).
 
 ### Things only the API can do
 
@@ -810,6 +845,11 @@ each part of a `dataset_col` split) is added to it as a snapshot, all or
 nothing; the answer's `library` lists what was `added` (entry ids) and what was
 `already` there. Over MCP, `change dataset_upload` takes the same `library_id`.
 
+A log with no item column (one fleet or one system, every row an event) is said
+on purpose: `one_stream: true` on `change dataset_upload` or `change
+dataset_update` (`--one-stream` on `reliafy upload`) tags the dataset Repairable
+as one stream. It is cleared when an item column is named.
+
 The older `/api/library/mine` calls still work for life-model records. Over
 MCP and `/api/v1`: `list kind libraries` (`scope?`), `get kind library` (`id`,
 `entry_id?`) and the `change` actions `library_create`, `library_update` (also
@@ -912,6 +952,7 @@ reliafy fit failures.csv --dist weibull --censor-column status
 reliafy fit failures.csv --dist best --criterion bic   # rank every distribution by BIC (aic, aic_c, bic, neg_ll)
 reliafy push model.json
 reliafy upload bearings.xlsx --name Bearings
+reliafy upload replacements.csv --x-col fleet_hours --one-stream --record-end 216000   # no item column: one stream of events, record ending at 216000
 reliafy import rbd plant.xml
 reliafy import rcm fmea.csv --position POSITION_ID --dry-run   # preview, then again without --dry-run
 reliafy change model_fit_degradation --name "Liner wear" --dataset-id DATASET_ID \

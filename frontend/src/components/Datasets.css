@@ -30,9 +30,7 @@
 .ds-part-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 /* A part's input (a file or a paste) in the dialogs. */
 .ds-part-input { display: flex; flex-direction: column; gap: var(--space-3); }
-.ds-part-modes { display: flex; gap: var(--space-1); }
-.ds-part-modes .tab { padding: 4px 12px; }
-.dropzone.ds-part-drop { padding: 22px 16px; }
+.dropzone.ds-part-drop { padding: var(--space-5) var(--space-4); }
 .ds-meas > summary { margin-top: var(--space-2); }
 /* Every preview row shows: the page has room, so no inner scroller. */
 .preview-wrap.ds-preview {
@@ -49,7 +47,7 @@
 .preview-wrap.ds-allrows .preview-table thead th {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: var(--z-raised);
   background: var(--bg-subtle);
 }
 /* The row numbers: quiet, narrow, right-aligned. */
@@ -145,7 +143,7 @@
 .cg-result > .result-summary:first-child { margin-top: 0; }
 /* "vs [group ▾] (95% CI)": the reference group is chosen in the column head. */
 .cg-ref { display: inline-flex; align-items: center; gap: var(--space-1); }
-.cg-ref .sel-trigger { padding: 2px 8px; font-size: var(--fs-12); font-weight: 600; }
+.cg-ref .sel-trigger { padding: var(--space-0-5) var(--space-2); font-size: var(--fs-12); font-weight: 600; }
 
 @media (max-width: 860px) {
   /* Settings, then the answer, on a narrow screen. */
@@ -190,7 +188,7 @@
 .ds-listcount.bad { color: var(--danger-text); font-weight: 600; }
 .ds-fieldwrap { display: flex; flex-direction: column; gap: var(--space-1); }
 .ds-fieldwrap .ds-listinput {
-  padding-inline: 10px;
+  padding-inline: var(--space-3);
   font-family: inherit;
   font-size: var(--fs-14);
   font-variant-numeric: tabular-nums;
@@ -203,12 +201,12 @@
 .ds-more-body { display: flex; flex-direction: column; gap: var(--space-2); }
 
 /* What a dataset holds (#261): small tags on one line, the units count, and Fit. */
-.ds-tags { display: flex; flex-wrap: nowrap; gap: 4px; overflow: hidden; }
-.ds-tags .chip { font-size: var(--fs-12); padding: 1px 6px; white-space: nowrap; }
-.section-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-left: 12px; }
-.section-tags .chip { font-size: 12px; padding: 1px 8px; }
-.section-tags .linkish { font-size: 12px; }
-.ds-units { font-size: 13px; color: var(--text-secondary); }
+.ds-tags { display: flex; flex-wrap: nowrap; gap: var(--space-1); overflow: hidden; }
+.ds-tags .chip { font-size: var(--fs-12); padding: 1px var(--space-1-5); white-space: nowrap; }
+.section-tags { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); margin-left: var(--space-3); }
+.section-tags .chip { font-size: var(--fs-12); padding: 1px var(--space-2); }
+.section-tags .linkish { font-size: var(--fs-12); }
+.ds-units { font-size: var(--fs-13); color: var(--text-secondary); }
 /* The breakdown after a dataset's first two facts wraps beneath them, so one
    long summary (interval data) can't stretch the column and push the page
    sideways. */
@@ -216,22 +214,22 @@
 /* The name is what people scan: it keeps room, and a long unbroken one wraps. */
 .ds-lib .lib-table td:first-child, .ds-lib .lib-table th:first-child { min-width: 220px; }
 .ds-lib .ds-row-link { overflow-wrap: anywhere; }
-.ds-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 260px;
+.ds-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: var(--z-dropdown); min-width: 260px;
   display: flex; flex-direction: column; background: var(--bg-surface); border: 1px solid var(--border);
-  border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 4px; text-align: left; }
-.ds-menu button { text-align: left; background: none; border: 0; box-shadow: none; min-height: 0; color: inherit; font-size: 13px; font-weight: 400; padding: 7px 10px; border-radius: 6px; }
+  border-radius: var(--radius-md); box-shadow: var(--shadow-md); padding: var(--space-1); text-align: left; }
+.ds-menu button { text-align: left; background: none; border: 0; box-shadow: none; min-height: 0; color: inherit; font-size: var(--fs-13); font-weight: 400; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); }
 .ds-menu button:hover, .ds-menu button:focus { background: var(--bg-subtle); }
-.ds-menu-h { font-size: var(--fs-12); font-weight: 400; color: var(--text-secondary); opacity: .75; padding: 8px 10px 2px; pointer-events: none; }
-.ds-menu-h + button, .ds-menu-h ~ button:not(.ds-menu-del) { padding-left: 18px; }
-.ds-menu-sep { height: 1px; background: var(--border); margin: 4px 6px; }
-.ds-menu .ds-menu-del { color: var(--danger, #c0392b); }
+.ds-menu-h { font-size: var(--fs-12); font-weight: 400; color: var(--text-secondary); opacity: .75; padding: var(--space-2) var(--space-3) var(--space-0-5); pointer-events: none; }
+.ds-menu-h + button, .ds-menu-h ~ button:not(.ds-menu-del) { padding-left: var(--space-4); }
+.ds-menu-sep { height: 1px; background: var(--border); margin: var(--space-1) var(--space-1-5); }
+.ds-menu .ds-menu-del { color: var(--danger); }
 .ds-units-h { width: 200px; }
 @media (max-width: 640px) {
   .ds-units-h { width: 34%; }
   .section-tags { margin-left: 0; }
-  .ds-units { font-size: 12px; }
+  .ds-units { font-size: var(--fs-12); }
 }
-.ds-tu { font-size: 13px; color: var(--text-secondary); }
+.ds-tu { font-size: var(--fs-13); color: var(--text-secondary); }
 .ds-tu-none { color: var(--text-disabled); }
 
 /* The dataset page's fit action can be a long label ("Fit a non-repairable

@@ -33,14 +33,14 @@ summary line to say what it needs:
 
 - **Each block in this phase**: **Working** (the default), **Standby** (idle
   until the phase needs it, then running; set how fast it ages while idle and
-  its chance of starting on the Explorer's **Models › Missions**), **Guaranteed
+  its chance of starting on a mission's phase on the Explorer's **Models** tab), **Guaranteed
   working** (it runs and ages but can't fail in the phase) or **Not needed**
   (struck through).
 - **Covariate values in this phase**: one for each covariate the diagram's life
   models take (a proportional-hazards, accelerated life or covariate model).
   Leave one blank to use the diagram's value or the model's default, or choose
   **Schedule** for a value that changes during the phase (t counts from the
-  phase's start). These are the same values the Explorer's **Models › Missions** shows
+  phase's start). These are the same values the Explorer's **Models** tab shows
   under each phase.
 - **Working inputs needed** for each voting node: how many of its inputs
   must work in this phase. Leave it blank to use the node's own setting.

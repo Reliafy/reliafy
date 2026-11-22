@@ -292,7 +292,8 @@ def test_one_home_package_and_what_can_join(m):
     with pytest.raises(Invalid, match="already in Lagoon weekly check"):
         m.create_package("Again", position_id=plant["lagoon"], tasks=[plant["weekly"][0]])
     shed_task = m.create_task(other, "Sweep shed", 1, "weeks")["id"]
-    with pytest.raises(Invalid, match="isn't Lagoon or inside it"):
+    # The shed is another asset: a package's tasks are all on one asset.
+    with pytest.raises(Invalid, match="Sweep shed is on Shed, another asset: a package's tasks are all on one asset"):
         m.add_package_task(weekly["id"], shed_task)
     counter = m.add_point(plant["pids"]["Circulation pump"], "Run hours", kind="counter", unit="hours")
     by_use = m.create_task(plant["pids"]["Circulation pump"], "Pump service", 500, "hours",
@@ -735,3 +736,132 @@ def test_task_table_lists_every_task_below_with_its_failure_mode_and_package(m):
     assert len(m.task_table(position_id=plant["lagoon"])["tasks"]) == len(plant["weekly"]) + 10 + 3 + 1
     with pytest.raises(Invalid, match="position_id or location_id"):
         m.task_table()
+
+
+def test_task_table_rolls_up_every_level_below_in_one_read(m):
+    """The Explorer's Maintenance tab: a row shows its own tasks and every task on the positions
+    below it, at any depth, each saying where it sits (twins told apart); a row with no tasks of its
+    own still lists those below; another asset's tasks and retired tasks stay out."""
+    station = m.create_position("Station")["id"]
+    pumps = [m.create_position(f"Pump {i}", parent_id=station)["id"] for i in (1, 2)]
+    motors = [m.create_position("Drive motor", parent_id=p)["id"] for p in pumps]
+    bearing = m.create_position("Bearing", parent_id=motors[0])["id"]
+    walk = m.create_task(station, "Walk round", 1, "weeks")["id"]
+    checks = [m.create_task(mo, "Check the motor", 3, "months")["id"] for mo in motors]
+    grease = m.create_task(bearing, "Grease", 6, "months")["id"]
+    gone = m.create_task(pumps[1], "Old check", 1, "months")["id"]
+    m.retire_task(gone, "replaced")
+    other = m.create_position("Other site")["id"]
+    m.create_task(other, "Not ours", 1, "weeks")
+
+    rows = {r["id"]: r for r in m.task_table(position_id=station)["tasks"]}
+    assert set(rows) == {walk, *checks, grease}
+    assert rows[grease]["subject"]["within"] == "Pump 1 › Drive motor"
+    assert [rows[c]["subject"]["within"] for c in checks] == ["Station › Pump 1", "Station › Pump 2"]
+    # A row with no tasks of its own: everything below it, at any depth.
+    below = m.task_table(position_id=pumps[0])["tasks"]
+    assert {r["id"] for r in below} == {checks[0], grease}
+    assert m.task_table(position_id=pumps[1])["total"] == 1
+    # The shared helper: the node and everything below, cut to the asset opened (?root=).
+    assert m.subtree_ids(station) == {station, *pumps, *motors, bearing}
+    assert m.subtree_ids(pumps[0], within=station) == {pumps[0], motors[0], bearing}
+    with pytest.raises(Invalid, match="isn't inside the asset opened"):
+        m.subtree_ids(other, within=station)
+    with pytest.raises(Invalid, match="isn't inside the asset opened"):
+        m.task_table(position_id=other, within=station)
+    # A place picked with one asset open: only that asset's positions there.
+    site = m.create_location("Yard")["id"]
+    m.update_position(station, location_id=site)
+    m.update_position(other, location_id=site)
+    m.create_task(other, "Other's yard check", 1, "weeks")
+    at = {r["subject"]["id"] for r in m.task_table(location_id=site, within=station)["tasks"]}
+    assert other not in at and station in at
+    assert other in {r["subject"]["id"] for r in m.task_table(location_id=site)["tasks"]}
+
+
+def test_a_levels_forecast_covers_exactly_its_subtree(m):
+    """The Explorer's Maintenance tab: Forecast… on a level runs the forecast for that position and
+    everything below it (subtree_ids), inside the asset opened: nothing above it, beside it or in
+    another asset."""
+    from backend.maintenance import position_forecast as pf
+
+    station = m.create_position("Station")["id"]
+    pumps = [m.create_position(f"Pump {i}", parent_id=station)["id"] for i in (1, 2)]
+    motor = m.create_position("Drive motor", parent_id=pumps[0])["id"]
+    bearing = m.create_position("Bearing", parent_id=motor)["id"]
+    own = {
+        station: m.create_task(station, "Walk round", 1, "months")["id"],
+        pumps[0]: m.create_task(pumps[0], "Align", 3, "months")["id"],
+        pumps[1]: m.create_task(pumps[1], "Align", 3, "months")["id"],
+        motor: m.create_task(motor, "Check the motor", 3, "months")["id"],
+        bearing: m.create_task(bearing, "Grease", 6, "months")["id"],
+    }
+    other = m.create_position("Other site")["id"]
+    m.create_task(other, "Not ours", 1, "months")
+
+    for level in (station, pumps[0], motor, bearing):
+        out = pf.position_forecast(m, level, root=station, period="month", periods=12)
+        inside = m.subtree_ids(level, within=station)
+        assert {p["position"]["id"] for p in out["by_position"]} == inside
+        assert {t["id"] for t in out["tasks"]} == {own[p] for p in inside}
+    with pytest.raises(Invalid):
+        pf.position_forecast(m, other, root=station)
+
+
+# ---- where a package lives: the meeting point of its tasks (Derryn, 22 Nov 2026) ----------
+
+def _mower(m):
+    top = m.create_position("Mower")["id"]
+    engine = m.create_position("Engine", parent_id=top)["id"]
+    plugs = m.create_position("Plugs", parent_id=engine)["id"]
+    deck = m.create_position("Deck", parent_id=top)["id"]
+    return {
+        "top": top, "engine": engine, "plugs": plugs, "deck": deck,
+        "oil": m.create_task(engine, "Change oil", 1, "months")["id"],
+        "plug": m.create_task(plugs, "Check plugs", 1, "months")["id"],
+        "blade": m.create_task(deck, "Sharpen blades", 1, "months")["id"],
+    }
+
+
+def test_a_task_from_a_sibling_branch_joins_and_moves_the_home_up(m):
+    w = _mower(m)
+    pkg = m.create_package("Engine monthly", position_id=w["engine"], every=1, unit="months", tasks=[w["oil"], w["plug"]])
+    assert pkg["subject"]["id"] == w["engine"]
+    assert pkg["asset"]["id"] == w["top"]
+    # The deck isn't inside the engine, but it's on the same asset: it joins, and the package now
+    # lives where its tasks meet, the mower.
+    out = m.add_package_task(pkg["id"], w["blade"])
+    assert out["subject"]["id"] == w["top"]
+    assert out["made_on"]["id"] == w["engine"]
+    assert {t["task_id"] for t in out["tasks"]} == {w["oil"], w["plug"], w["blade"]}
+    # Listed for the deck and for the mower (it holds a task there, and lives there).
+    assert pkg["id"] in [p["id"] for p in m.packages(position_id=w["deck"])["packages"]]
+    # Taken out again, it moves back down; with only the plugs' task left, it lives at the plugs.
+    assert m.remove_package_task(pkg["id"], w["blade"])["subject"]["id"] == w["engine"]
+    assert m.remove_package_task(pkg["id"], w["oil"])["subject"]["id"] == w["plugs"]
+    # A retired task no longer counts towards where it meets.
+    m.add_package_task(pkg["id"], w["blade"])
+    m.retire_task(w["blade"])
+    assert m.package(pkg["id"])["subject"]["id"] == w["plugs"]
+    _same_after_rebuild(m)
+
+
+def test_a_package_made_above_its_tasks_lives_where_they_meet(m):
+    w = _mower(m)
+    pkg = m.create_package("Engine checks", position_id=w["top"], every=1, unit="months", tasks=[w["oil"], w["plug"]])
+    assert pkg["subject"]["id"] == w["engine"]
+    assert pkg["made_on"]["id"] == w["top"]
+    empty = m.create_package("Not yet", position_id=w["deck"], every=1, unit="months")
+    assert empty["subject"]["id"] == w["deck"]
+
+
+def test_a_task_on_another_asset_is_refused_with_the_reason(m):
+    w = _mower(m)
+    other = m.create_position("Second mower")["id"]
+    elsewhere = m.create_task(other, "Wash it", 1, "weeks")["id"]
+    pkg = m.create_package("Engine monthly", position_id=w["engine"], every=1, unit="months", tasks=[w["oil"]])
+    with pytest.raises(Invalid, match="Wash it is on Second mower, another asset: a package's tasks are all on one "
+                                      "asset, and this one's are on Mower. Make a package on Second mower for it."):
+        m.add_package_task(pkg["id"], elsewhere)
+    with pytest.raises(Invalid, match="another asset"):
+        m.create_package("Across", position_id=w["top"], every=1, unit="weeks", tasks=[elsewhere])

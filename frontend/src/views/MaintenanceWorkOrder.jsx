@@ -21,6 +21,9 @@ import { PageTitle } from "../components/usePageTitle.js";
 import { ORDERS_LABEL, ORDERS_PATH } from "../navigation.js";
 import { workOrderPath } from "../maintenanceOrders.js";
 import { reportLink } from "../failureReports.js";
+import { DateInput } from "../components/ui/DateTimeInput.jsx";
+import Loading from "../components/ui/Loading.jsx";
+import { Checkbox, Select } from "../components/ui/Controls.jsx";
 
 const STATUS_LABELS = {
   open: "open", planned: "planned", in_progress: "in progress", waiting: "waiting", closed: "closed", cancelled: "cancelled",
@@ -47,7 +50,7 @@ export default function MaintenanceWorkOrder() {
   useEffect(() => { if (wo) setValues((prev) => mergeValues(readingRows(wo), prev)); }, [wo]);
 
   if (error && !wo) return <div className="app"><LoadFailed header onRetry={() => { setError(null); refresh(); }} error={error} notFound="Work order not found." to={ORDERS_PATH} label="Back to Orders" /></div>;
-  if (!wo) return <div className="app"><div className="card empty">Loading…</div></div>;
+  if (!wo) return <div className="app"><Loading card /></div>;
 
   return (
     <div className="app">
@@ -95,12 +98,12 @@ export default function MaintenanceWorkOrder() {
       )}
       {!["closed", "cancelled"].includes(wo.status) && (
         <section className="card">
-          <div className="maint-row" style={{ marginTop: 0 }}>
-            <label className="maint-row" style={{ marginTop: 0, gap: "0.4rem" }}>Status
-              <select value={wo.status} onChange={async (e) => setWo(await setWorkStatus(wo.id, e.target.value))}>
+          <div className="maint-row mt-0">
+            <label className="maint-row mt-0 gap-1-5">Status
+              <Select value={wo.status} onChange={async (e) => setWo(await setWorkStatus(wo.id, e.target.value))}>
                 <option value="open">Open</option><option value="planned">Planned</option>
                 <option value="in_progress">In progress</option><option value="waiting">Waiting (parts or access)</option>
-              </select>
+              </Select>
             </label>
             <span className="lib-date">{wo.assignee ? `Assigned to ${wo.assignee}` : "Not assigned"}
               {wo.planned_for ? ` · planned for ${fmtDate(wo.planned_for)}` : ""}</span>
@@ -113,15 +116,15 @@ export default function MaintenanceWorkOrder() {
           <div className="maint-head"><h2>Instructions</h2></div>
           {wo.instructions && <p style={{ whiteSpace: "pre-wrap" }}>{wo.instructions}</p>}
           {wo.checklist.map((c, i) => (
-            <label key={i} className="maint-row" style={{ marginTop: "0.25rem", gap: "0.5rem" }}>
-              <input type="checkbox" checked={c.done} disabled={["closed", "cancelled"].includes(wo.status)}
-                     onChange={async (e) => setWo(await checkWorkItem(wo.id, i, e.target.checked))} />
-              <span style={c.done ? { textDecoration: "line-through", color: "var(--text-secondary)" } : null}>
-                {c.position_id ? <Link to={`/asset-register/positions/${c.position_id}`}>{c.text}</Link> : c.text}</span>
-              {c.task_id && !c.step && progressText(wo.readings_by_task?.[c.task_id]) && (
-                <span className="lib-date maint-line-readings">{progressText(wo.readings_by_task[c.task_id])}</span>
-              )}
-            </label>
+            <Checkbox key={i} className="maint-row" checked={c.done} disabled={["closed", "cancelled"].includes(wo.status)}
+                      onChange={async (e) => setWo(await checkWorkItem(wo.id, i, e.target.checked))}
+                      label={<>
+                        <span style={c.done ? { textDecoration: "line-through", color: "var(--text-secondary)" } : null}>
+                          {c.position_id ? <Link to={`/asset-register/positions/${c.position_id}`}>{c.text}</Link> : c.text}</span>
+                        {c.task_id && !c.step && progressText(wo.readings_by_task?.[c.task_id]) && (
+                          <> <span className="lib-date maint-line-readings">{progressText(wo.readings_by_task[c.task_id])}</span></>
+                        )}
+                      </>} />
           ))}
         </section>
       )}
@@ -228,8 +231,8 @@ function EditWorkOrder({ wo, onClose, onDone }) {
       <Field label="Who may do it: trade, licence or competency"><input value={trade} placeholder="e.g. Licensed electrician"
              onChange={(e) => setTrade(e.target.value)} /></Field>
       <Field label="Assigned to"><input value={assignee} placeholder="a name" onChange={(e) => setAssignee(e.target.value)} /></Field>
-      <Field label="Planned for"><input type="date" value={planned} onChange={(e) => setPlanned(e.target.value)} /></Field>
-      <Field label="Due"><input type="date" value={due} onChange={(e) => setDue(e.target.value)} /></Field>
+      <Field label="Planned for"><DateInput value={planned} onChange={(e) => setPlanned(e.target.value)} /></Field>
+      <Field label="Due"><DateInput value={due} onChange={(e) => setDue(e.target.value)} /></Field>
     </FormModal>
   );
 }
@@ -285,7 +288,7 @@ function CostsCard({ wo, onChanged }) {
     <section className="card">
       <div className="maint-head">
         <h2>Labour, parts and costs</h2>
-        <div className="maint-row" style={{ marginTop: 0 }}>
+        <div className="maint-row mt-0">
           <button className="secondary" onClick={() => { setForm("labour"); setF({}); }}>Log labour</button>
           <button className="secondary" onClick={openPart}>Part used</button>
           <button className="secondary" onClick={() => { setForm("cost"); setF({}); }}>Other cost</button>
@@ -303,7 +306,7 @@ function CostsCard({ wo, onChanged }) {
             {form === "part" && <>
               {(choices.listed.length > 0 || choices.others.length > 0) && (
                 <Field label="From the catalogue (optional)">
-                  <select value={f.part_id || ""} onChange={pick}>
+                  <Select value={f.part_id || ""} onChange={pick}>
                     <option value="">No: type it below</option>
                     {choices.listed.length > 0 && (
                       <optgroup label="This position's parts">
@@ -315,7 +318,7 @@ function CostsCard({ wo, onChanged }) {
                         {choices.others.map((pt) => <option key={pt.id} value={pt.id}>{pt.part_number}: {pt.name} ({pt.on_hand} on hand)</option>)}
                       </optgroup>
                     )}
-                  </select>
+                  </Select>
                 </Field>
               )}
               {f.part_id ? (

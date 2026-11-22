@@ -1,4 +1,4 @@
-"""Overhaul every X, replace after N overhauls (RePyability 0.19's overhaul-and-replace policy)."""
+"""Overhaul every X, replace after N overhauls (RePyability 0.20's overhaul-and-replace policy)."""
 
 import math
 
@@ -75,6 +75,33 @@ def test_a_cheaper_plan_of_another_kind_is_said():
     assert out["cheaper"] in ("overhaul_only", "run_to_failure")
     assert any("costs" in w and "less" in w for w in out["warnings"])
     assert "less again" in out["sentence"]
+
+
+def _never_replaced(alpha, beta, cr, co, f, x, periods=4000):
+    """Overhaul every x and never replace, from scratch: the age just after an overhaul settles at
+    f x / (1 - f), so the long-run rate is one settled period's repairs and overhaul over x."""
+    v = f * x / (1 - f)
+    return (cr * (_cif(v + x, alpha, beta) - _cif(v, alpha, beta)) + co) / x
+
+
+def test_overhaul_only_is_exact_never_replacing():
+    """RePyability 0.20 prices "overhaul only" itself (never replace). The app used a stand-in, a
+    replacement after 400 periods at the overhaul's price, which came out a little cheap: in the
+    library example 0.11266 a unit of time at 74.0, where never replacing costs 0.11293 at 73.8
+    (an intentional change, for What's new)."""
+    out = optimal_overhaul_replace(CROW, **COSTS, max_overhauls=4)
+    only = next(c for c in out["comparisons"] if c["id"] == "overhaul_only")
+    assert only["interval"] == pytest.approx(73.7908, abs=1e-3)
+    assert only["cost_rate"] == pytest.approx(0.112932, abs=1e-6)
+    x = np.linspace(60.0, 90.0, 300_001)
+    g = _never_replaced(100.0, 2.5, 1.0, 5.0, 0.6, x)
+    i = int(np.argmin(g))
+    assert only["cost_rate"] == pytest.approx(float(g[i]), rel=1e-7)
+    assert only["interval"] == pytest.approx(float(x[i]), abs=1e-2)
+    # The best overhaul-and-replace rule is unchanged: overhaul every 177.7, replace after 1 overhaul.
+    assert out["best"]["overhauls"] == 1 and out["best"]["interval"] == pytest.approx(177.70, abs=0.01)
+    assert out["best"]["cost_rate"] == pytest.approx(0.117238, abs=1e-6)
+    assert out["cheaper"] == "overhaul_only"
 
 
 def test_no_wear_out_means_repair_on_failure():

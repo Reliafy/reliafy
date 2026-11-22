@@ -9,6 +9,7 @@
 // stock. Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { headMenu } from "./explorer.js";
+import { choose } from "./select.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -223,7 +224,7 @@ test("consumables: a row, a use typed in place out of stock, its additions besid
   const head = await headMenu(page);
   await head.locator(".ovm-menu .ovm-item", { hasText: "Add a consumable…" }).click();
   const dialog = page.getByRole("dialog", { name: "Add a consumable" });
-  await dialog.getByRole("combobox", { name: "Part" }).selectOption({ label: `ACID-${tag} Acid ${tag} (L)` });
+  await choose(dialog.getByRole("combobox", { name: "Part" }), { label: `ACID-${tag} Acid ${tag} (L)` });
   await dialog.getByRole("button", { name: "Add" }).click();
   await expect(page.locator(".tp-row", { hasText: `Acid ${tag}` }).locator(".ms-chip")).toHaveText("Never added");
   await expectHealthy(page, problems, { label: "consumables in the Measurements tab" });
@@ -292,7 +293,8 @@ test.describe("a device in another time zone", () => {
     const at = form.getByLabel("At, UTC time (clear it if not known)");
     const utc = (ms) => new Date(Date.now() + ms).toISOString().slice(11, 16);
     expect([utc(-60000), utc(0)]).toContain(await at.inputValue());
-    await expect(form.getByLabel("Read on")).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);
+    // Day first whatever the browser's language (the shared date field): "22 Nov 2026".
+    await expect(form.getByLabel("Read on")).toHaveValue(/^\d{1,2} [A-Z][a-z]{2} \d{4}$/);
     await expect(form).toContainText("on this workspace's clock (UTC), not this device's");
     await form.getByRole("spinbutton").first().fill("7.4");
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/reading-form-400.png` });

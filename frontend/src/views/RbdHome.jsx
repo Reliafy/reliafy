@@ -180,7 +180,7 @@ export default function RbdHome() {
       {imported && (
         <div className="card">
           <div style={{ display: "flex", alignItems: "baseline", gap: "0.75rem" }}>
-            <h2 style={{ margin: 0 }}>Diagrams in {imported.file}</h2>
+            <h2 className="m-0">Diagrams in {imported.file}</h2>
             <span className="grow" style={{ flex: 1 }} />
             <button className="link" onClick={() => setImported(null)}>Cancel</button>
           </div>
@@ -232,7 +232,7 @@ export default function RbdHome() {
               <div className="lib-name">
                 <RowLink to={pathOf(r.id)}>{itemName(r)}</RowLink>
                 {r.shared_by && <Chip title={`Shared by ${r.shared_by}`}>Shared</Chip>}
-                {r.mission && <Chip tone="accent" title="A mission's own RBD, built on its position (Assets › Explorer › Missions)">Mission</Chip>}
+                {r.mission && <Chip tone="accent" title="A mission's own RBD, built on its position (Assets › Explorer › Models, under the model it is flown on)">Mission</Chip>}
               </div>
               {r.mission && <div className="rim-tquiet lib-mission">{missionRbdLine(r)}</div>}
               {r.depth > 0 && !r.mission && <div className="rim-tquiet lib-mission">Part of {parentName(r)}</div>}

@@ -217,7 +217,7 @@ test("a row's menu: Shift+F10 and the Menu key, the arrows, Esc, the ⋯ button;
   await page.keyboard.press("Shift+F10");
   const menu = rowMenu(page, fnName);
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole("menuitem")).toHaveText(["Add a performance standard…", "Add functional failure", "Open…", "Edit description", "Move to…", "Move up", "Move down", "Focus", "Focus on incomplete rows", "Delete function…"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Add a performance standard…", "Add functional failure", "Open…", "Edit description", "Move to…", "Move up", "Move down", "Focus failure modes", "Focus to a depth", "Focus on incomplete rows", "Delete function…"]);
   await expect(menu.getByRole("menuitem", { name: "Add a performance standard…" })).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await expect(menu.getByRole("menuitem", { name: "Add functional failure" })).toBeFocused();
@@ -334,7 +334,7 @@ test("at 400 px each row shows its ⋯: a tap opens the menu, and adding works",
   await more.click();
   const menu = rowMenu(page, fnName);
   // On a phone the details panel edits the description: no Edit description here.
-  await expect(menu.getByRole("menuitem")).toHaveText(["Add a performance standard…", "Add functional failure", "Open…", "Move to…", "Move up", "Move down", "Focus", "Focus on incomplete rows", "Delete function…"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Add a performance standard…", "Add functional failure", "Open…", "Move to…", "Move up", "Move down", "Focus failure modes", "Focus to a depth", "Focus on incomplete rows", "Delete function…"]);
   const mbox = await menu.boundingBox();
   expect(mbox.x).toBeGreaterThanOrEqual(0);
   expect(mbox.x + mbox.width).toBeLessThanOrEqual(400);
@@ -392,7 +392,7 @@ test("the RCM tab's heading is two slim rows: the way up and the name with the �
   await expect(table(page)).toBeVisible();
   const bar = page.locator(".tt-headslot");
   // The bar: the position (its way up over its name) and two controls, the "…" and Full screen,
-  // both 30 × 30 like the tree pane's « and 8 px apart; nothing else.
+  // both control-md square like the tree pane's « and 8 px apart; nothing else.
   await expect(bar.getByRole("heading", { name: `Rcm motor ${tag}` })).toBeVisible();
   await expect(bar.getByRole("navigation", { name: "Breadcrumb" })).toContainText(`Rcm pump ${tag}`);
   await expect(bar.locator(".tt-actions > *")).toHaveCount(2);
@@ -404,7 +404,8 @@ test("the RCM tab's heading is two slim rows: the way up and the name with the �
     const r = b.getBoundingClientRect();
     return { w: Math.round(r.width), h: Math.round(r.height), left: Math.round(r.left), right: Math.round(r.right) };
   }));
-  expect(boxes.map((b) => [b.w, b.h])).toEqual([[30, 30], [30, 30]]);
+  const md = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--control-md")));
+  expect(boxes.map((b) => [b.w, b.h])).toEqual([[md, md], [md, md]]);
   expect(boxes[1].left - boxes[0].right).toBe(8);
   // The "…": what isn't a row's action (adding is the row menu's), Open the full page last.
   await bar.getByRole("button", { name: "More actions" }).click();

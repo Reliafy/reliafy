@@ -23,11 +23,11 @@ Lost production costs 2,000 an hour. Costs are in whatever currency you use.
 
 ## 1. Plan the maintenance and put the costs on the blocks
 
-On a repairable diagram, press **Maintenance plan** in the toolbar (on a phone,
-**⋯ → Maintenance plan**). A table opens under the diagram, the diagram still in
+On a repairable diagram, open the diagram's settings in the toolbar and switch on
+**Show the maintenance plan**. A table opens under the diagram, the diagram still in
 view, with a row for every block. This is the one place a block's planned work
 is set. It opens on every block; with blocks selected on the canvas, **Show only
-them** narrows it to their rows and **Show all** brings the rest back. Changes apply as you type; save the diagram to keep them.
+them** narrows it to their rows and **Show all** brings the rest back. Changes apply as you type, and the diagram saves them by itself (unless you turned autosave off).
 
 ![The maintenance plan: how much of the time each block runs, its task, interval, time off-line, cost and group](/guides/img/costs-00-plan.png)
 
@@ -170,7 +170,7 @@ then ranks them by what that step gains.
 ![What to improve, ranked by the running cost saved](/guides/img/costs-05-improve.png)
 
 - **Step** sets how far each lever moves: 10%, 25% or 50%.
-- **Measured over**: the **Long run**, or the results' **Window** from new.
+- **Measured over**: the **Long run**, or the Calculator's **Out to** horizon from new.
 - **Rank by**: **Availability**, or **Cost** (the running cost saved per
   unit of time) once the diagram has costs.
 - **Add costs to change…** lets you say what each change would cost you,

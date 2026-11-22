@@ -53,10 +53,10 @@ export const GUIDE_COVERAGE = [
   // (guides/rcm-on-your-asset-tree.md, hidden, is opened from the tab itself and
   // describes it without a link). When the Explorer opens to every account, add:
   //   { feature: "RCM on the asset tree", href: "/asset-register/explorer?tab=rcm" },
-  // Missions (the Explorer's and a product page's Missions tab, ?tab=missions) are on the same
-  // operators-only page: guides/missions-and-phases.md is opened from the tab itself (Show me how)
+  // Missions (rows under their models on the Explorer's and a product page's Models tab; ?tab=missions opens it) are on the same
+  // operators-only page: guides/missions-and-phases.md is opened from the tab itself (Read the guide)
   // and describes it without a link. When the Explorer opens, add:
-  //   { feature: "Missions on the asset tree", href: "/asset-register/explorer?tab=missions" },
+  //   { feature: "Missions on the asset tree", href: "/asset-register/explorer?tab=models" },
   // Sharing, reports and teams.
   { feature: "Reports (reports, saved analyses, shared links)", href: "/reports" },
   { feature: "Teams", href: "/team" },

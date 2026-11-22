@@ -5,7 +5,7 @@ category: "Maintenance strategy"
 prerequisites: "A position (or a product's design) with positions inside it, or an RBD of its own."
 order: 29
 # Reliafy Maintenance is operators-only for now: this guide is linked from the
-# Models › Missions view itself and stays out of the index until Maintenance opens.
+# Explorer's Models tab itself and stays out of the index until Maintenance opens.
 hidden: true
 ---
 
@@ -21,16 +21,34 @@ phase by phase.
 ## Where missions live
 
 Each mission is flown on an RBD of its own, so it belongs to the **position**
-it was added on. Open **Assets → Explorer** (or a product's page), choose
-the **Models** tab and then **Missions**. The tree stays in the first column; under each position
-are its missions, with:
+it was added on. Open **Assets → Explorer** (or a product's page) and choose
+the **Models** tab. It's one tree: under each position are its models, and
+under each model the missions flown on it, then each mission's phases, then
+each phase's covariates and node status rules:
 
-- **Phases or setting**: how many phases, and their names (under a phase, a
-  covariate's value or a block's state in it).
-- **Length**: every phase added up, in the RBD's time unit. Each phase's row
-  under the mission shows that phase's own length.
-- **Completes**: the chance the mission completes, once worked out.
-- **RBD**: the diagram it's flown on.
+- **Position** › **model** (an RBD, or a life or covariate model) ›
+  **mission** › **phase** › **covariates** and **node status rules**.
+
+A mission goes under the model it was started from: the RBD it's a copy of,
+or the life or covariate model it flies as one block (in use or not). A mission
+built from the positions inside, on a position with no RBD of its own, is a
+row of the position itself, after its models.
+
+The columns are the Models tab's own. For a mission's rows:
+
+- **Kind**: Mission, Phase, Covariate or Node status.
+- **Source**: how many phases and their names (a phase: its place, **Phase 2
+  of 3**; a covariate: its value in the phase; a rule: the block's state).
+- **Headline**: the chance the mission completes, once worked out, then its
+  length (every phase added up, in the RBD's time unit). A phase shows the
+  chance of getting through it once started, and its own length.
+- **Used by**: the RBD it's flown on (a covariate: the blocks it feeds).
+
+Over the tree, beside the position you picked, the line counts its models and
+then its missions: its own, the missions on the positions below it at any
+depth, and how many have their chance of completing worked out ("2 missions
+here · 5 on 3 positions below · 4 of 7 worked out"). A closed row in the tree
+says the same in short ("2 models · 5 missions").
 
 Any position with positions inside it, or with a model of its own, can have
 missions, the ones
@@ -39,9 +57,14 @@ above it: a gimbal's own missions are flown on the gimbal's own RBD.
 
 ## Add a mission
 
-Click **Add a mission** in the position's row (or choose it on the position's **⋯** menu),
-type the mission's name in the pane and choose **Add the mission**. Nothing is
-saved until it's named. A position with an RBD
+Choose **Add a mission…** on a model's **⋯** menu (right-click its row): on an
+RBD, the mission is flown on a copy of that RBD; on any life or covariate
+model, in use or not, it's that model as one block. The menu is the same on
+every kind of model, and so are the mission's pane and its answer: only what
+you enter differs. A condition-and-life model can't fly a mission yet. Or choose **Add a mission…** on the
+position's own **⋯** menu (or **Add a mission** in the line over the tree).
+Type the mission's name in the pane and choose **Add the mission**. Nothing is
+saved until it's named. From the position, a position with an RBD
 of its own gives the mission a copy of it, wired as it is there: parallel
 trains, standby and k-out-of-n stay as they are (a repairable RBD's repairs and
 planned work are left out: a mission doesn't repair). Without one, Reliafy
@@ -55,14 +78,48 @@ connections and no redundancy sets), they go in series, and the mission says so
 position and the mission ("Pump station — Summer peak"), and renamed with the mission. A position with nothing
 inside and no RBD is a single block: the position's own model in use. A
 position with nothing inside and no model can't have a mission yet: its row says
-why ("needs a life model or positions inside"). Give it a life model on
-**Models › Life models** first; a condition-and-life model can't be a block, so its row says that instead.
+why ("needs a life model or positions inside"). Give it a life model on the
+**Models** tab first; a condition-and-life model can't be a block, so its menu says that instead.
+
+A covariate model (a proportional-hazards model, an accelerated life model or
+an NSWC-11 record, however it was fitted: one fitted from readings that change
+over time is a covariate model like the rest) is a mission with a profile:
+each phase sets the covariates' values (or a schedule over the phase), so the
+mission is the model run through that profile of conditions over time.
+
+### A mission on a life model with no covariates
+
+On a plain life model (a Weibull, a lognormal, a mixture…) a mission is a
+**length**, in the model's time unit, and the age the item **starts at**:
+
+- **New**: age 0.
+- **Its age now**: the fitted item's age, read each time the mission is worked
+  out, as the Calculator's **As of now** reads it. This is the default where an
+  item is fitted at the position.
+- **An age**: one you give.
+
+The answer is the chance the item lasts the mission from that age: R(age +
+length) ÷ R(age). With it comes the **lower bound** at 90% one-sided (at least
+this chance, at 90% confidence) for a fitted model; a model whose parameters
+were typed in has no bound, and the answer says so. A Weibull with alpha 1,000
+hours and beta 2 lasts a 200-hour mission from new with probability 96.08%, and
+from 500 hours with probability 78.66%.
+
+Phases add nothing to a plain model's mission, so its pane has no phases. Add
+several missions to the same model to compare lengths side by side: each is a
+row under the model with its chance of completing.
+
+### Condition-and-life models
+
+A mission on a condition-and-life (joint) model would be the chance a unit
+lasts the length given its readings so far and how they're expected to go.
+That isn't built yet.
 
 ## The mission tree and its details
 
-Click any row under a position to see its **details** beside the tree (on a
-phone, as a sheet). Double-click it, or press **Enter**, to open the mission
-editor in the table area.
+Click a mission's row, or any row under it, to see its **details** beside the
+tree (on a phone, as a sheet). Double-click it, or press **Enter**, to open the
+mission editor across the table area.
 
 - **A mission**: the chance of completing it, its phases in order with each
   one's length and its chance of getting through, the RBD it flies (**Open in
@@ -184,7 +241,8 @@ that stand by in it, faded.
 ## Calculate
 
 **Calculate** works the mission out, saved or not. The answer comes first: the
-chance the mission completes. Under it, **Reliability through the mission** is
+chance the mission completes (on a plain life model, with its 90% one-sided
+lower bound and the age it started at). Under it, **Reliability through the mission** is
 one curve over the whole mission, phase boundaries marked: the chance the
 mission is still going at each point. Then, for each phase:
 
@@ -202,7 +260,7 @@ the diagram can be drawn, not a real figure. A mission that needs such a block
 says so with its answer. It names the blocks, shows the chance with the
 placeholders and the chance from the blocks with models alone, and never names
 a placeholder the weakest block. The grid marks each one **Placeholder**, and
-**Models › Missions** shows the result with "placeholders" beside it.
+the mission's row on the **Models** tab shows the result with "placeholders" beside it.
 
 You choose what to do with them:
 
@@ -223,7 +281,8 @@ at one stress counts at the next).
 The same is in the API, the CLI and the Claude connector: `analyse
 rbd_mission` works a mission out (or every mission on an RBD) and lists the
 covariates its phases can set; `change rbd_mission` adds, changes and deletes
-one, with a phase's `standby`, `guaranteed` and `not_needed` blocks (and a
+one (a mission on a plain life model starts at its saved starting age;
+`current_state` overrides it), with a phase's `standby`, `guaranteed` and `not_needed` blocks (and a
 standby block's `dormancy` and `start_probability`), and `models`: a block's
 life model for one phase, its age carried in and out. See also [Model a mission in phases](/guides/phased-missions) for the RBD
 builder's own phased mission.

@@ -256,7 +256,7 @@ export default function DatasetPage() {
 
           {split && (
             <div className="card note ds-split-note" role="status">
-              <p style={{ margin: 0 }}>{splitText(split)}</p>
+              <p className="m-0">{splitText(split)}</p>
               <div className="ds-part-actions">
                 <button type="button" onClick={onSplit} disabled={!!busy}>{busy === "split" ? "Splitting…" : "Split it"}</button>
                 <button type="button" className="secondary" onClick={() => setKeepOne(true)} disabled={!!busy}>Keep as one table</button>

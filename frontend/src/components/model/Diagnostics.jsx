@@ -13,7 +13,7 @@ import { CheckCard, ChecksGrid } from "./ModelLayouts.jsx";
 import { getModelValidation, getResiduals } from "../../api.js";
 import { formatNumber } from "../../format.js";
 import { bestFitSentence, compareRows, criterionLabel } from "../../lifeResults.js";
-import { COLORWAY, DATA_INK, dataPoints, fitLine, referenceShape } from "../../plotTheme.js";
+import { COLORWAY, DATA_INK, dataPoints, fitLine, referenceShape, legendBg } from "../../plotTheme.js";
 import { checkRows, checksTone, phDisagreement } from "../../modelChecks.js";
 import { termName } from "../../modelFrame.js";
 import { countsSummary, curveSummary, hazardShape, oddUnits, ppSummary } from "../../modelFrame.js";
@@ -164,7 +164,7 @@ function WarningCard({ result }) {
   if (!warnings.length) return null;
   return (
     <div className="life-reading caveat">
-      {warnings.map((w) => <p key={w} style={{ margin: 0 }}>{w}</p>)}
+      {warnings.map((w) => <p key={w} className="m-0">{w}</p>)}
     </div>
   );
 }
@@ -192,7 +192,7 @@ function CurveOverData({ result, name }) {
       {e ? (
         <Plot fill data={traces} download={`${name || result.distribution} — curve over the data`}
               layout={{ ...SMALL, xaxis: tAxis(result.unit), yaxis: { title: { text: "Reliability, R(t)" }, range: [0, 1.02] },
-                        showlegend: true, legend: { x: 1, xanchor: "right", y: 1, yanchor: "top", bgcolor: "rgba(255,255,255,0.85)" } }} />
+                        showlegend: true, legend: { x: 1, xanchor: "right", y: 1, yanchor: "top", bgcolor: legendBg() } }} />
       ) : noPoints()}
     </CheckCard>
   );

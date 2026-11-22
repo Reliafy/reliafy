@@ -19,6 +19,7 @@ import {
 } from "../calendarReplacement.js";
 import "./CalendarReplacement.css";
 import { useProTags } from "./ProTag.jsx";
+import { DateInput } from "./ui/DateTimeInput.jsx";
 
 const POLL_FIRST_MS = 1500;
 const POLL_MAX_MS = 6000;
@@ -149,7 +150,7 @@ export default function CalendarReplacement({ modelId = null, failure = null, ex
           </label>
           <label className="calc-t">
             <span>Today (time 0)</span>
-            <input type="date" value={today} onChange={(e) => setToday(e.target.value || today0)} />
+            <DateInput value={today} onChange={(e) => setToday(e.target.value || today0)} />
           </label>
         </div>
 
@@ -191,7 +192,7 @@ export default function CalendarReplacement({ modelId = null, failure = null, ex
                   </label>
                   <label className="calc-t">
                     <span>Starting</span>
-                    <input type="date" value={s.start} onChange={(e) => setShut(i, { start: e.target.value })} />
+                    <DateInput value={s.start} onChange={(e) => setShut(i, { start: e.target.value })} />
                   </label>
                 </>
               )}
@@ -260,7 +261,7 @@ export default function CalendarReplacement({ modelId = null, failure = null, ex
       )}
       {needsPro && (
         <div className="card note" role="status">
-          <p style={{ margin: 0 }}>
+          <p className="m-0">
             <b>Sampling is part of Pro.</b> It runs the calendar many times on Reliafy's calculation service. The
             exact methods are free.
           </p>

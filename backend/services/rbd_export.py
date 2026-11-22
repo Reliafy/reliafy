@@ -53,7 +53,7 @@ from backend import units
 from backend.units import unit_in_text
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_VERSIONS = {"surpyval": "0.28", "repyability": "0.19.1"}
+_DEFAULT_VERSIONS = {"surpyval": "0.29", "repyability": "0.20"}
 _REPYABILITY_GIT = "https://github.com/derrynknife/RePyability.git"
 
 # Names the script itself uses at module level; block variables avoid them

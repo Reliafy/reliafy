@@ -32,6 +32,7 @@ import { installPrintFit } from "../printFit.js";
 import { rangeLevelText } from "../levels.js";
 import "./Predictions.css";
 import "./PublicPage.css";
+import Loading from "../components/ui/Loading.jsx";
 
 // Public, read-only view of a shared artifact (/p/:token) — no account
 // needed. Renders the same payloads as the in-app detail pages through the
@@ -93,7 +94,7 @@ function FleetView({ a }) {
         </div>
       )}
       {(a.items || []).length > 0 && (
-        <div className="card" style={{ marginTop: "1rem" }}>
+        <div className="card mt-4">
           <h2>Items</h2>
           <table className="lib-table">
             <thead>
@@ -121,7 +122,7 @@ function FleetView({ a }) {
         </div>
       )}
       {f.status === "ok" && (f.per_period || []).some((v) => v > 0) && (
-        <div className="card" style={{ marginTop: "1rem" }}>
+        <div className="card mt-4">
           <h2>Expected failures per {String(f.period_label || "period").replace(/s$/, "")}</h2>
           <Plot
             data={[{
@@ -380,7 +381,7 @@ export default function PublicArtifact() {
         )}
         {locked && !error && <PasswordGate token={token} onUnlocked={onUnlocked} />}
         {!error && !locked && !data && (
-          <div className="card empty" style={{ margin: "3rem auto", maxWidth: 520 }}>Loading…</div>
+          <div style={{ margin: "3rem auto", maxWidth: 520 }}><Loading card /></div>
         )}
         {data?.collection === "reports" && (
           <div className="app public-app">

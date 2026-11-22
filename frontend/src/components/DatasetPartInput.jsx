@@ -1,10 +1,12 @@
 import { useMemo, useRef, useState } from "react";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 import Modal from "./Modal.jsx";
 import PreviewTable from "./PreviewTable.jsx";
 import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 import { SPREADSHEET_ACCEPT, isSpreadsheetFile, pasteDatasetPart, uploadDatasetPart } from "../api.js";
 import { firstRowIsData, parsePreview } from "../datasetGuess.js";
 import "./Datasets.css";
+import { Checkbox } from "./ui/Controls.jsx";
 
 // One table for a dataset's part (its measurements, or life data for a
 // dataset of readings alone): a file dropped or chosen (CSV or an Excel
@@ -55,12 +57,8 @@ export default function DatasetPartInput({ value, onChange, placeholder, label =
 
   return (
     <div className="ds-part-input">
-      <div className="ds-part-modes" role="tablist" aria-label={`How to give the ${label}`}>
-        <button type="button" role="tab" aria-selected={mode === "file"} className={"tab" + (mode === "file" ? " active" : "")}
-          onClick={() => setMode("file")} disabled={disabled}>File</button>
-        <button type="button" role="tab" aria-selected={mode === "paste"} className={"tab" + (mode === "paste" ? " active" : "")}
-          onClick={() => setMode("paste")} disabled={disabled}>Paste</button>
-      </div>
+      <SegmentedControl size="sm" label={`How to give the ${label}`} value={mode} onChange={setMode}
+                        options={[{ value: "file", label: "File", disabled }, { value: "paste", label: "Paste", disabled }]} />
       {mode === "file" ? (
         !v.file ? (
           <div
@@ -106,10 +104,8 @@ export default function DatasetPartInput({ value, onChange, placeholder, label =
               <button type="button" className="link" onClick={() => set({ headerChoice: false })}>Undo</button>
             </p>
           )}
-          <label className="ds-check">
-            <input type="checkbox" checked={noHeader} disabled={disabled} onChange={(e) => set({ headerChoice: e.target.checked })} />
-            <span>No header row — the first row is data. Columns are named <code>col 1</code>, <code>col 2</code>, …</span>
-          </label>
+          <Checkbox className="ds-check" checked={noHeader} disabled={disabled} onChange={(e) => set({ headerChoice: e.target.checked })}
+                    label={<>No header row — the first row is data. Columns are named <code>col 1</code>, <code>col 2</code>, …</>} />
         </>
       )}
       <input ref={fileRef} type="file" accept={`.csv,text/csv,${SPREADSHEET_ACCEPT}`} hidden
@@ -156,7 +152,7 @@ export function DatasetPartModal({ datasetId, part = "measurements", replacing =
   return (
     <Modal title={replacing ? words.replace : words.title} className="ds-new" onClose={onClose} locked={busy} footer={footer}>
       <div className="fit-step">
-        <p className="hint" style={{ marginTop: 0 }}>{words.hint}</p>
+        <p className="hint mt-0">{words.hint}</p>
         <DatasetPartInput value={value} onChange={setValue} label={words.label} placeholder={words.placeholder} disabled={busy} />
         {error && <div className="error">{error}</div>}
       </div>

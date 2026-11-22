@@ -16,6 +16,8 @@ import {
   asGivenWords, componentIdOf, componentPath, rangeText, recordIdOf, recordPath, sig, sourcePath, unitsMeaning, whyNot,
 } from "../libraryModels.js";
 import "./LibraryPages.css";
+import LoadFailed from "../components/LoadFailed.jsx";
+import Loading from "../components/ui/Loading.jsx";
 
 // The built-in handbooks under Libraries (moved from Models › Library, 13 Nov 2026), three levels (and an NRC/INL source's components:
 // an equipment type in one pooling group, its failure modes together, each with its own page) (Derryn, 9 Nov 2026): the libraries
@@ -239,8 +241,8 @@ export function LibraryComponent() {
       <PageHeader crumbs={crumbsFor(source || { id: sourceId }, true)} title={d?.label || "Component"}
                   meta={d ? `${counted.length} failure modes · ${source?.short_name || sourceId}` : null}
                   primary={d ? <button type="button" onClick={() => setUsing(true)}>Use as a model…</button> : null} />
-      {error && <div className="card error" role="alert">{error}</div>}
-      {!d && !error && <div className="card empty">Loading…</div>}
+      {error && <LoadFailed what="Couldn't load the component." error={error} />}
+      {!d && !error && <Loading card />}
       {d && (
         <div className="lib-record">
           <section className="card">
@@ -449,8 +451,8 @@ export function LibraryRecord() {
       <div className="app">
         <PageHeader crumbs={crumbsFor(source || { id: sourceId })} title="Record not found" />
         <div className="card" role="alert">
-          <p style={{ marginTop: 0 }}>We couldn't find this record. It may have been removed, or the link may be mistyped.</p>
-          <p style={{ marginBottom: 0 }}>
+          <p className="mt-0">We couldn't find this record. It may have been removed, or the link may be mistyped.</p>
+          <p className="mb-0">
             {source && <><Link to={sourcePath(source.id)}>See {source.short_name || source.name}</Link> · </>}
             <Link to={LIBRARY_PATH}>The library</Link> · <Link to="/models">All models</Link>
           </p>
@@ -469,7 +471,7 @@ export function LibraryRecord() {
                     </span>
                   ) : null} />
       {error && <div className="card error" role="alert">{error}</div>}
-      {!rec && !error && <div className="card empty">Loading…</div>}
+      {!rec && !error && <Loading card />}
       {rec && isCovariate(rec) && <CovariateRecord rec={rec} d={d} source={source} />}
       {rec && !isCovariate(rec) && (
         <div className="lib-record">

@@ -1,27 +1,27 @@
 /* Delete… (DeleteTree.jsx): the dialog's list of what goes, and the toast
    with Undo on pages without one of their own (the Explorer's is .rcm-toast). */
-.td-body p { margin: 0 0 8px; }
-.td-list { margin: 0 0 10px; padding-left: 20px; }
-.td-list li { margin: 2px 0; overflow-wrap: anywhere; }
+.td-body p { margin: 0 0 var(--space-2); }
+.td-list { margin: 0 0 var(--space-2); padding-left: var(--space-5); }
+.td-list li { margin: var(--space-0-5) 0; overflow-wrap: anywhere; }
 .undo-toast {
   position: fixed;
-  z-index: 900;
+  z-index: var(--z-toast);
   left: 50%;
   bottom: 20px;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
   width: max-content;
   max-width: min(640px, calc(100vw - 32px));
-  padding: 8px 8px 8px 14px;
-  border-radius: 8px;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-radius: var(--radius-lg);
   background: var(--bg-surface);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
-  font-size: 13.5px;
+  font-size: var(--fs-13);
 }
 .undo-toast.error { border-color: var(--danger); color: var(--danger-text); }
 .undo-toast > span { flex: 1 1 auto; min-width: 0; }
 .undo-toast button { flex: none; }
-.undo-toast-x { background: none; border: 0; color: inherit; padding: 4px 8px; min-height: 32px; cursor: pointer; }
+.undo-toast-x { background: none; border: 0; color: inherit; padding: var(--space-1) var(--space-2); min-height: 32px; cursor: pointer; }

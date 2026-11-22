@@ -76,6 +76,8 @@ from backend.maintenance.captures import PROJECTORS as _CAPTURE_PROJECTORS
 from backend.maintenance import task_costs as _task_costs
 from backend.maintenance.captures import CaptureOps
 from backend.maintenance import restoration as _restoration
+from backend.maintenance import failure_costs as _failure_costs
+from backend.maintenance import visit_costs as _visit_costs
 from backend.maintenance import shutdowns as _shutdowns
 from backend.maintenance import purge as _purge
 
@@ -725,7 +727,8 @@ class HourCadence:
         self.first = int(info.get("first_mark", 1))
         self.counter = m.s.node(m.org, info["counter_id"]) if info.get("counter_id") else None
         self.readings = _readings(m.s, m.org, self.counter, m.tz) if self.counter else []
-        subject = m._package_subject(pkg)
+        # The hours counter's own position (where the package was made): its usage map.
+        subject = m._package_made_on(pkg)
         self.mapped = (m._usage_map(subject["id"], self.counter, self.readings)
                        if subject is not None and self.counter and self.readings else None)
         self._due_from = m._due_from
@@ -3178,7 +3181,8 @@ def _walk_down(top: str, kids: dict) -> set[str]:
 
 
 class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDeleteOps, PositionModelOps,
-                  CaptureOps, AssetSearchOps, _restoration.RestorationOps, _shutdowns.ShutdownOps):
+                  CaptureOps, AssetSearchOps, _restoration.RestorationOps, _shutdowns.ShutdownOps,
+                  _failure_costs.FailureCostOps, _visit_costs.VisitCostOps):
     """One organisation's maintenance graph, acted on by one person."""
 
     def __init__(self, store: GraphStore, org: str, actor: str | None = None, limited: bool = True,
@@ -6342,6 +6346,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             "id": fm["id"], "text": fm["text"], "effects": fm.get("effects") or "",
             "notes": mode_notes(fm.get("notes"), fm.get("decision_notes")),
             "hidden": hidden, "consequence": consequence, "decision": decision,
+            # What one failure costs (failure_costs.py): its own figures, else its class's.
+            "costs": {k: fm.get(k) for k in _failure_costs.FIELDS},
             **({"advice": said} if said else {}),
             **({"needs_review": True} if needs_review and decision else {}),
             # Its tasks whether or not it's decided yet (a task linked before the decision).
@@ -6546,7 +6552,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         can count what's inside it (a position carried by an item counts as a
         top: the asset tree places it through the item's fitment). With
         ``within`` (one asset, as positions_inside reads it): that asset's
-        positions alone, the parents stopping at its edge."""
+        positions alone, the parents stopping at its edge. names: {position id: its
+        name} for every position in parents, so a list can say where each one is
+        (the RCM studies page's "Pumping station › Pump 1")."""
         keep = self.positions_inside(within) if within is not None else None
         index = self._rcm_index()
         out = []
@@ -6571,7 +6579,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 up = part_of.get(pid)
                 parents[pid] = up if up in live else None
                 pid = parents[pid]
-        return {"positions": out, "parents": parents}
+        names = {pid: live[pid]["name"] for pid in parents if pid in live}
+        return {"positions": out, "parents": parents, "names": names}
 
     def rcm_worksheet(self, position_id: str, scope: str = "below", limit: int = 2000) -> dict:
         """A position's RCM, read from the graph: for the position (scope "this")
@@ -6900,6 +6909,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             # A task with no source of its own is a decision's (maintenance failure_modes.decide).
             "source": task.get("source") or ("rcm" if mode else "manual"),
             "reference": task.get("reference", ""), "point_id": task.get("point_id"),
+            # What a visit of its own costs besides the task (in no package; visit_costs.py).
+            "visit_cost": task.get("visit_cost"),
             # The failure modes it prevents (several, since one task may serve many);
             # failure_mode is the first, as older readers expect.
             "failure_mode": {"id": mode[0]["id"], "text": mode[0]["text"]} if mode else None,
@@ -9704,11 +9715,51 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             queue += self._package_layers(pkg["id"])
         return out
 
-    def _package_subject(self, pkg: dict) -> dict | None:
-        """What a package is on: its top package's position or location."""
+    def _package_made_on(self, pkg: dict) -> dict | None:
+        """The position or location a package (its top package) was made on: the edge its
+        create wrote. Its hours counter and a shutdown's outage go by this; where it lives is
+        _package_subject."""
         root = self._package_chain(pkg)[-1]
         found = self.s.out(self.org, root["id"], "PLANNED_FOR") or self.s.out(self.org, root["id"], "PLANNED_AT")
         return found[0] if found else None
+
+    def _package_subject(self, pkg: dict) -> dict | None:
+        """Where a package lives (Derryn, 22 Nov 2026: "at the lowest point in the tree that all
+        the tasks meet"). A package made on a position lives at the deepest position that every
+        live task in it (and its layers) is on or inside, worked out on read, so a task added or
+        taken out moves it; none yet: where it was made. A package on a location stays there.
+        Its tasks are all on one asset (_package_task), so the meeting point is inside it."""
+        made = self._package_made_on(pkg)
+        if made is None or made["label"] != "Position":
+            return made
+        root = self._package_chain(pkg)[-1]
+        memo = self._memo.setdefault("package_home", {})
+        if root["id"] in memo:
+            return memo[root["id"]]
+        common = None
+        for p in self._package_tree(root):
+            for member in p.get("members") or []:
+                task = self.s.node(self.org, member["task_id"], "Task")
+                on = task and not task.get("retired") and _subject(self.s, self.org, task)
+                if not on or on["label"] != "Position":
+                    continue
+                path = [*reversed(self._ancestor_ids(on["id"])), on["id"]]
+                if common is None:
+                    common = path
+                    continue
+                i = 0
+                while i < len(common) and i < len(path) and common[i] == path[i]:
+                    i += 1
+                common = common[:i]
+        home = self.s.node(self.org, common[-1]) if common else made
+        memo[root["id"]] = home or made
+        return memo[root["id"]]
+
+    def _asset_top(self, position_id: str) -> str:
+        """The top of the position tree a position is in: its asset (the tree the Explorer
+        opens on its own)."""
+        up = self._ancestor_ids(position_id)
+        return up[-1] if up else position_id
 
     def _package_status(self, chain: list[dict]) -> str:
         """active, paused (it or a package it's layered on, now) or retired."""
@@ -10147,9 +10198,19 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                           "by operating hours (unit hours) on its position, or leave it on its own.")
         if task.get("include_positions"):
             raise Invalid(f"{task['name']} is a round (a line for each position at its location): it stays on its own.")
-        if not self._in_area(area, subject):
+        if area["label"] == "Position":
+            # Any task on the same asset (Derryn, 22 Nov 2026): the package then lives where its
+            # tasks meet (_package_subject), which moves up when a task from another branch joins.
+            if subject["label"] != "Position" or self._asset_top(subject["id"]) != self._asset_top(area["id"]):
+                there = (self.s.node(self.org, self._asset_top(subject["id"])) or subject) if subject["label"] == "Position" else subject
+                here = self.s.node(self.org, self._asset_top(area["id"])) or area
+                raise Invalid(f"{task['name']} is on {there['name']}, another asset: a package's tasks are all on "
+                              f"one asset, and this one's are on {here['name']}. Make a package on "
+                              f"{there['name']} for it.")
+        elif not self._in_area(area, subject):
             raise Invalid(f"{task['name']} is on {subject['name']}, which isn't {area['name']} or inside it: a "
-                          "package's tasks are on its position or a position inside it, or at its location.")
+                          "package on a location holds the tasks at it (positions located there, or the location "
+                          "itself).")
         home = self._package_index().get(task["id"])
         if home and home["package"]["id"] != joining:
             raise Invalid(f"{task['name']} is already in {home['package']['name']}: a task has one home package. "
@@ -10415,7 +10476,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 self._check_layer_dates(layer, {**pkg, **fields}, layer["name"])
             changes |= {k: v for k, v in fields.items() if v != pkg.get(k)}
             if by_hours:
-                area = self._package_subject(pkg)
+                area = self._package_made_on(pkg)
                 kept = (pkg.get("hours") or {}).get("anchor_reading") if anchor in (None, "") else None
                 hours = self._hours_fields(area, fields["anchor"], anchor_reading if anchor_reading not in (None, "")
                                            else kept)
@@ -10818,6 +10879,11 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                "tolerance": (root.get("tolerance") and {**root["tolerance"],
                                                         "enforced": root["tolerance"]["unit"] == "days"}),
                "trade": pkg.get("trade", ""), "subject": self._subject_brief(subject),
+               # Where it lives is where its tasks meet (subject); the asset they're all on, which
+               # any task can join from; and where it was made (its hours counter's position).
+               "asset": (self._subject_brief(self.s.node(self.org, self._asset_top(subject["id"])))
+                         if subject is not None and subject["label"] == "Position" else None),
+               "made_on": self._subject_brief(self._package_made_on(pkg)),
                "parent": {"id": chain[1]["id"], "name": chain[1]["name"]} if len(chain) > 1 else None,
                "layers": [{"id": x["id"], "name": x["name"]} for x in self._package_layers(pkg["id"])],
                "task_count": len(live), "next_visit": None, "open_work_order": None,
@@ -10904,17 +10970,25 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         opened = [r["open_work_order"] for r in rows if r["open_work_order"] and r["parent"] is None]
         return {"packages": rows, "open_work_orders": len(opened), "late": sum(1 for w in opened if w["late"])}
 
-    def task_table(self, position_id=None, location_id=None, limit: int = 5000) -> dict:
+    def task_table(self, position_id=None, location_id=None, limit: int = 5000, within=None) -> dict:
         """Every live task on a position or location and everything inside it (the
         Explorer's LSA tab: a table to search, sort and package from), one row
         each: where it is, the failure modes it prevents (each with its function ›
         functional failure), its kind (the decision's outcome), interval or trigger,
         trade, next due, its package (if any), whether it can join one (an item's
         task, a task by use and a round can't: ``why_not``), what it needs
-        (``resources``: its LSA record) and its ``instructions``."""
+        (``resources``: its LSA record) and its ``instructions``. Everything inside is the
+        Explorer's roll-up (``subtree_ids``), at any depth; ``within``: the asset opened, so
+        nothing from another asset is listed."""
         scope = self._package_scope(position_id, location_id)
+        if scope is None and within not in (None, ""):
+            # The whole asset opened (the Explorer's Maintenance tab: its tree of tasks).
+            scope = self.s.node(self.org, str(within))
+            if scope is None or scope.get("retired") or scope["label"] not in ("Position", "Location"):
+                raise NotFound(within)
         if scope is None:
-            raise Invalid("Give position_id or location_id.")
+            raise Invalid("Give position_id or location_id (or within, the asset opened).")
+        inside = self.subtree_ids(scope["id"], within)
         index = self._rcm_index()
         modes_of: dict[str, list] = {}
         for mode_id, found in index["tasks_of"].items():
@@ -10929,7 +11003,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             subject = _subject(self.s, self.org, task)
             if subject is None or subject.get("retired") or subject["label"] not in ("Position", "Location"):
                 continue
-            if not self._in_area(scope, subject):
+            if subject["id"] not in inside:
                 continue
             modes = []
             kind = task.get("outcome")
@@ -11020,6 +11094,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         what was done: done)."""
         pkg = self._get(str(package_id or ""), "WorkPackage")
         out = {**self._package_brief(pkg), "notes": pkg.get("notes", ""), "created": pkg.get("created"),
+               "visit_cost": pkg.get("visit_cost"),
                "paused_reason": pkg.get("paused_reason", "") if pkg.get("paused") else "",
                "retired_reason": pkg.get("retired_reason", "") if pkg.get("retired") else ""}
         names = {}
@@ -14145,7 +14220,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                                               "failures": 0})
             if "costs" not in entry:
                 node = self.s.node(self.org, class_id(self.org, name)) or {}
-                entry["costs"] = {k: node.get(k) for k in ("planned_cost", "failure_cost", "availability_target")}
+                entry["costs"] = {k: node.get(k) for k in ("planned_cost", "failure_cost", "availability_target",
+                                                           "downtime_hours", "downtime_rate")}
                 entry["model"] = node.get("model")
                 entry["replacement_cost"] = node.get("replacement_cost")
                 entry["documents"] = self.documents_of(class_id(self.org, name))
@@ -14158,11 +14234,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
     # ---- closing the loop: costs, proposals -------------------------------------------
 
     def set_class_costs(self, position_class: str, planned_cost=None, failure_cost=None,
-                        availability_target=None) -> dict:
+                        availability_target=None, downtime_hours=..., downtime_rate=...) -> dict:
         """What a planned replacement and a failure cost for this class of position,
         and the availability a hidden (protective) function must reach: what the
-        proposed intervals are optimised against."""
+        proposed intervals are optimised against. downtime_hours (a failure's time out
+        of use) and downtime_rate (an hour out of use): failure_costs.py; left out, kept."""
         name = self._class_name(position_class)
+        if downtime_hours is not ... or downtime_rate is not ...:
+            self.set_class_downtime(name, downtime_hours, downtime_rate)
+            if (planned_cost, failure_cost, availability_target) == (None, None, None):
+                return self.position_class(name)
         node = self.s.node(self.org, class_id(self.org, name)) or {}
         out = {}
         for key, value in (("planned_cost", planned_cost), ("failure_cost", failure_cost),
@@ -15133,6 +15214,37 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         for pid, r in rows.items():
             kids.setdefault(r["parent_id"], []).append(pid)
         return _walk_down(root_id, kids)
+
+    def subtree_ids(self, node_id: str, within: str | None = None) -> set[str]:
+        """The Explorer's roll-up: a tree node and everything the tree shows below it, at any
+        depth, as ids. For a position, it and every position nested inside it (one an item
+        carries included); for a place (a location), it, the places inside it and every position
+        there, set or inherited. ``within``: the asset opened (?root=): the node must be inside
+        it, and nothing outside it is given, so another asset's positions never show. One tree
+        read, for any tab that rolls a node's records up (the Maintenance tab's tasks first)."""
+        node = self.s.node(self.org, str(node_id or ""))
+        if node is None or node.get("retired") or node["label"] not in ("Position", "Location"):
+            raise NotFound(node_id)
+        read = self._tree_read()
+        ids = set(self.positions_inside(node["id"], read))
+        if node["label"] == "Location":
+            ids.update(self._location_ids_in(node["id"]))
+        ids.add(node["id"])
+        if within not in (None, ""):
+            asset = self.s.node(self.org, str(within))
+            if asset is None or asset.get("retired") or asset["label"] not in ("Position", "Location"):
+                raise NotFound(within)
+            allowed = set(self.positions_inside(asset["id"], read)) | {asset["id"]}
+            if asset["label"] == "Location":
+                allowed.update(self._location_ids_in(asset["id"]))
+            # A place picked while one asset is open: only that asset's positions there. A position
+            # outside it is refused, unless the tree shows it as a row above the asset's own (a place
+            # opened by Positions shows the positions its positions sit in): then what's inside the
+            # asset below it.
+            if node["label"] == "Position" and node["id"] not in allowed and not ids & allowed:
+                raise Invalid(f"{node.get('name') or node_id} isn't inside the asset opened.")
+            ids &= allowed
+        return ids
 
     def _tree_task_due(self, task: dict, subject_label: str) -> str | None:
         """A task's next due date, as _task_view gives it, without its store reads
@@ -16694,6 +16806,8 @@ PROJECTORS.update(_task_costs.PROJECTORS)
 # its interval is counted, its age limit at a shutdown; and shutdown packages (Nov 2026,
 # restoration.py, shutdowns.py).
 PROJECTORS.update(_restoration.PROJECTORS)
+PROJECTORS.update(_failure_costs.PROJECTORS)
+PROJECTORS.update(_visit_costs.PROJECTORS)
 PROJECTORS.update(_shutdowns.PROJECTORS)
 
 # Records the walkthroughs found wrong (Nov 2026): an inspection's found-failed finding on

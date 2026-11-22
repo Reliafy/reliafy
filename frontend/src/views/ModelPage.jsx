@@ -25,6 +25,8 @@ import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 import { PageTitle } from "../components/usePageTitle.js";
 import LoadFailed from "../components/LoadFailed.jsx";
+import ModelSetsInterval from "../components/ModelSetsInterval.jsx";
+import Loading from "../components/ui/Loading.jsx";
 
 const CRUMBS = [{ label: "Models", to: "/models" }, { label: "Non-repairable", to: "/models/life" }];
 
@@ -126,8 +128,9 @@ export default function ModelPage() {
           </button>
         </>
       )}
-      notice={(error || model?.from_library) && (
+      notice={(
         <>
+          {model && <ModelSetsInterval modelId={model.id} />}
           {model?.from_library && <FromLibrary from={model.from_library} className="mf-notice" />}
           {error && <div className="card error mf-notice" role="alert">{error}</div>}
         </>
@@ -150,7 +153,7 @@ export default function ModelPage() {
       ) : missing ? <ModelNotFound id={id} kind="life" />
         : loadError ? <LoadFailed what="Couldn't open this model." error={loadError} to="/models" label="See all your models"
                                   onRetry={() => setAttempt((n) => n + 1)} />
-        : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
+        : !error && <div className="mf-body mf-single"><Loading /></div>}
       {editModal}
       {editingParams && entered && (
         <ParamsModal

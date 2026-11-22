@@ -73,6 +73,7 @@ export const OPEN_LAYERS = [
   ".ptp-list",
   ".help-drawer",
   ".rbd-menu",
+  ".cf-pop",
   ".ovm-menu:not([hidden]):not(.rbd-valid-pop)",
 ].join(", ");
 
@@ -85,7 +86,8 @@ const TYPING = ["INPUT", "TEXTAREA", "SELECT"];
 // Is the key event someone typing (a field, an editable block name)?
 export function isTyping(e) {
   const el = e?.target;
-  return !!el && (el.isContentEditable || TYPING.includes(el.tagName));
+  // The shared Select's trigger and list stand in for a <select>.
+  return !!el && (el.isContentEditable || TYPING.includes(el.tagName) || !!el.closest?.(".sel-trigger, .sel-menu"));
 }
 
 // Does this key press toggle full screen? F (either case), no modifier, not

@@ -11,6 +11,7 @@ import { PlusIcon, SampleGroups, itemName } from "../components/LibRows.jsx";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import SegmentedControl from "../components/ui/SegmentedControl.jsx";
 import { parseAdd, reportHref } from "../reportComposer.js";
+import Loading from "../components/ui/Loading.jsx";
 
 const ReportComposer = lazy(() => import("../components/ReportComposer.jsx"));
 const ReportPreview = lazy(() => import("../components/ReportPreview.jsx"));
@@ -62,7 +63,7 @@ function YourReports({ rows, error, onRetry, onOpen, onNew, team }) {
   return (
     <Panel id="reports-own" title={team ? `${team}'s reports` : "Your reports"}>
       {error ? <LoadFailed what="Couldn't load your reports." error={error} onRetry={onRetry} /> : rows === null ? (
-        <div className="card empty">Loading…</div>
+        <Loading card />
       ) : rows.length === 0 ? (
         <div className="card empty">
           <p>
@@ -116,7 +117,7 @@ function SavedAnalyses() {
     <Panel id="reports-analyses" title="Saved analyses" all={{ to: "/strategy", label: "Strategy" }}>
       {error ? <LoadFailed what="Couldn't load your saved analyses." error={error} onRetry={() => setAttempt((n) => n + 1)} />
         : rows === null ? (
-        <div className="card empty">Loading…</div>
+        <Loading card />
       ) : rows.length === 0 ? (
         <div className="card empty"><p>No saved analyses yet. Run a <Link to="/strategy">Strategy</Link> tool and save its result.</p></div>
       ) : (
@@ -174,7 +175,7 @@ function SharedLinks({ reports, inTeam }) {
     <Panel id="reports-links" title="Shared links">
       {error ? <LoadFailed what="Couldn't load your shared links." error={error} onRetry={() => setAttempt((n) => n + 1)} />
         : links === null ? (
-        <div className="card empty">Loading…</div>
+        <Loading card />
       ) : links.length === 0 ? (
         <div className="card empty">
           {inTeam ? (
@@ -255,7 +256,7 @@ function OneReport({ reports, openId, editing, add, onBack, onChanged }) {
           </div>
         )}
       </div>
-      <Suspense fallback={<div className="card empty">Loading…</div>}>
+      <Suspense fallback={<Loading card />}>
         {openId && !editing ? (
           <ReportPreview id={openId} />
         ) : (

@@ -3,6 +3,7 @@ import Modal from "./Modal.jsx";
 import { openGuide } from "./HelpButton.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import "./RbdBlockOptions.css";
+import { Select } from "./ui/Controls.jsx";
 
 // The letters after β of the multiple Greek letter model (#84): γ for a group
 // of three, γ and δ for four, …; each the chance a shared failure that takes
@@ -37,7 +38,7 @@ export default function CcfModal({ initial, memberLabels, repairable, onClose, o
   const footer = (
     <>
       <span className="hint">Typical β is 1–20%.</span>
-      <div className="row" style={{ margin: 0 }}>
+      <div className="row m-0">
         <button className="secondary" onClick={onClose}>Cancel</button>
         <button onClick={() => valid && onSubmit({ beta: b, basis, mgl: useMgl ? mglNums : null })} disabled={!valid}>
           {initial?.groupId ? "Update group" : "Create group"}
@@ -48,7 +49,7 @@ export default function CcfModal({ initial, memberLabels, repairable, onClose, o
 
   return (
     <Modal title="Common-cause group" onClose={onClose} footer={footer}>
-      <p className="muted-line" style={{ marginTop: 0 }}>
+      <p className="muted-line mt-0">
         These redundant components share a failure cause:{" "}
         <strong>{memberLabels.join(", ")}</strong>. Give the <em>β-factor</em> —
         the fraction of each one's failures that are common-cause.
@@ -94,10 +95,10 @@ export default function CcfModal({ initial, memberLabels, repairable, onClose, o
       {!repairable && (
         <label className="login-field">
           <span>β splits each component's</span>
-          <select value={basis} onChange={(e) => setBasis(e.target.value)}>
+          <Select value={basis} onChange={(e) => setBasis(e.target.value)}>
             <option value="rate">Failure rate — holds over the whole life (recommended)</option>
             <option value="probability">Failure probability — short missions only (PRA basic events)</option>
-          </select>
+          </Select>
         </label>
       )}
       {!repairable && basis === "probability" && (

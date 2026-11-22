@@ -92,7 +92,7 @@ second unit. On a non-repairable diagram the **Design** tab works this out.
 3. In the table, give each block its **Unit cost**, the **Max copies** to
    consider and how many copies **Must work** (2 for a 2-out-of-3).
    **Redundancy** chooses **Active** copies, **Cold standby** (with the
-   chance the switch-over works) or **Best of both**. Untick a block to
+   chance a spare starts when called, as on a standby block) or **Best of both**. Untick a block to
    leave it as drawn. Tick **Weight** or **Volume** to add those limits.
 4. Press **Find design**.
 
@@ -113,8 +113,9 @@ up, or saving a lot for a small step down.
 longer-lived pump. With **Mix types within a block** ticked, a block's
 copies can be of different types.
 
-Press **Apply to diagram** to draw the design on the canvas. Nothing is
-saved: review it on the Builder tab, then **Save** to keep it, or **Undo**.
+Press **Apply to diagram** to draw the design on the canvas. Review it on the
+Builder tab: a saved diagram keeps it by itself, and **Undo** (`Ctrl+Z`) takes it
+back.
 
 Only single components and parallel blocks of identical units can be given
 copies. The tab lists any other blocks (standby, k-out-of-n, sub-systems)

@@ -5,6 +5,7 @@ import { formatNumber } from "../format.js";
 import { BAND_FILL } from "../plotTheme.js";
 import { lifeBoundText } from "../rbdCalcText.js";
 import ScrollCue from "./ui/ScrollCue.jsx";
+import { Checkbox } from "./ui/Controls.jsx";
 
 // Confidence band on a non-repairable RBD's reliability (#103): the spread of
 // the system reliability, MTTF and B-lives over draws of the fitted blocks'
@@ -29,14 +30,13 @@ export function BandControls({ value, onChange }) {
     <div className="calc-t rbd-band-controls">
       <span>Confidence band</span>
       <div className="rbd-band-row">
-        <label className="rbd-band-toggle" title="Carry the uncertainty in blocks' fitted models through to the system">
-          <input
-            type="checkbox"
-            checked={value.on}
-            onChange={(e) => onChange({ ...value, on: e.target.checked })}
-          />
-          <span>{value.on ? "On" : "Off"}</span>
-        </label>
+        <Checkbox
+          className="rbd-band-toggle"
+          title="Carry the uncertainty in blocks' fitted models through to the system"
+          checked={value.on}
+          onChange={(e) => onChange({ ...value, on: e.target.checked })}
+          label={<span>{value.on ? "On" : "Off"}</span>}
+        />
         <Select
           className="rbd-band-level"
           value={value.level}
@@ -192,7 +192,7 @@ export function BandTargets({ band, unit, onChange }) {
           </button>
         </div>
       )}
-      <p className="muted-line" style={{ margin: 0 }}>
+      <p className="muted-line m-0">
         Every bound and interval comes from the same {band.n_draws?.toLocaleString()} draws of the fitted models, in
         one run. A B-life gets a lower bound (at least this long, {pct(band.level)} sure); a reliability its
         two-sided {pct(band.level)} interval.

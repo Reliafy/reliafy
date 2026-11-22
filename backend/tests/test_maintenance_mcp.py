@@ -118,6 +118,7 @@ def test_one_tool_with_every_areas_actions(env):
     # failure_reports area (Nov 2026) took them to about 7,000 and 5,200; with signals too, 7,400 and 5,500;
     # get.forecast (Nov 2026) took the enum to 5,812 (the maintenance tool is operators' only; the core
     # tools' 8,000 stays as it is); get.spares_year, get.package_parts and parts.count to 6,480 and 5,867.
+    # rcm.optimise (Nov 2026) took the enum to 5,909: trimmed (the args help, the action's name), never raised.
     assert len(t.description) < 7_800 and len(json.dumps(t.input_schema)) < 5_900
     for action, (required, optional, _) in table.items():
         own = mcp_server.ACTION_SCHEMAS[("maintenance", action)]
@@ -1182,7 +1183,7 @@ def test_an_item_class_fleet_over_mcp_and_rest(env):
     assert (fleet["positions"], fleet["scored"], fleet["no_model"]) == (2, 1, 1)
     first, second = fleet["members"]
     assert first["position"]["id"] == ids[0] and first["scored"] and len(first["risk"]) == 3
-    assert second["model"] is None and "risk" not in second and "Models › Life models" in fleet["note"]
+    assert second["model"] is None and "risk" not in second and "Models tab" in fleet["note"]
     assert one["member"]["unit"]["prediction"] and one["member"]["risk"] == pytest.approx(first["risk"])
     assert "get.item_class with fleet" in guide["guide"]
 

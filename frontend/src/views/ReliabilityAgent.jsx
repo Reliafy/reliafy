@@ -11,6 +11,7 @@ import {
 import { useSpreadsheet } from "../components/ExcelSheetPicker.jsx";
 import { renderAgentMarkdown } from "../agentMarkdown.js";
 import { relativeTime } from "../instrument.js";
+import Loading from "../components/ui/Loading.jsx";
 
 // A conversational chat with the Reliability Agent (Anthropic Managed Agents).
 // The agent assesses the task, builds the solution with surpyval/repyability in
@@ -276,19 +277,19 @@ export default function ReliabilityAgent() {
           )}
           <h1>Reliability Agent <span className="agent-poc">POC</span></h1>
           {view === "list" && info?.enabled && (
-            <p className="muted-line" style={{ margin: 0 }}>
+            <p className="muted-line m-0">
               Analyse data, fit models, and build RBDs — each run is saved here to reopen or continue.
             </p>
           )}
           {!info?.enabled && (
-            <p className="muted-line" style={{ margin: 0 }}>
+            <p className="muted-line m-0">
               Not configured yet — set ANTHROPIC_API_KEY on the server to enable.
             </p>
           )}
         </div>
         <div className="row" style={{ margin: 0, gap: "0.6rem", alignItems: "center" }}>
           {credit != null && info?.billing_enabled && (
-            <span className="muted-line" style={{ margin: 0 }}>{credit} credits</span>
+            <span className="muted-line m-0">{credit} credits</span>
           )}
           {view === "chat" && (
             <button className="secondary" onClick={backToList} disabled={busy}>← All chats</button>
@@ -313,7 +314,7 @@ export default function ReliabilityAgent() {
       {view === "list" ? (
         // Landing: every saved run, newest first. Click to reopen/continue.
         sessions === null ? (
-          <div className="card"><p className="muted-line">Loading…</p></div>
+          <Loading card />
         ) : sessions.length === 0 ? (
           <div className="card empty-note">
             <p>No conversations yet.</p>
@@ -351,7 +352,7 @@ export default function ReliabilityAgent() {
             ))}
           </div>
 
-          {error && <div className="card error" style={{ marginTop: "0.6rem" }}>{error}</div>}
+          {error && <div className="card error mt-2">{error}</div>}
 
           <div className="chat-composer">
             <label className="chat-attach" title={file ? file.name : "Attach a CSV or Excel file"}>

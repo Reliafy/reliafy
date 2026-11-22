@@ -1,7 +1,7 @@
 // The Explorer's panel tabs (explorerTabs.js EXPLORER_PANEL_TABS): one flat row ordered by use,
 // the tabs that don't fit folded into a last "⋯ N" tab (the shared Tabs with `overflow`). A tab's
-// inner views (Maintenance: Tasks · What it needs · Packages) switch the body; an old address
-// (?tab=condition) opens its tab and inner view; picking a folded tab from "⋯" swaps it into the
+// inner views (Monitoring: Readings · Life left) switch the body; Maintenance is one table (an old
+// ?tab=lsa or ?mview= address opens it); an old address (?tab=condition) opens its tab and inner view; picking a folded tab from "⋯" swaps it into the
 // row; the keyboard reaches "⋯" and its menu; at 400 px nothing scrolls sideways. The seeded depot
 // conveyor (smoke/seed.js) has a task in a package and measuring points.
 import { test, expect, open, expectHealthy } from "./health.js";
@@ -29,30 +29,28 @@ test("panel tabs: the flat row, inner views, an old address", async ({ page, req
   await expect(tabs.getByRole("tab")).toHaveText(ALL);
   await expect(tabs.getByRole("tab", { name: "Summary" })).toHaveAttribute("aria-selected", "true");
 
-  // Maintenance: the address says ?tab=maintenance, its inner views switch the body.
+  // Maintenance: the address says ?tab=maintenance; one table, no inner views (Derryn, 22 Nov 2026).
   await tabs.getByRole("tab", { name: "Maintenance" }).click();
   await expect(page).toHaveURL(/tab=maintenance/);
-  const views = page.getByRole("radiogroup", { name: "Maintenance: what to show" });
-  await expect(views.getByRole("radio", { name: "Tasks" })).toHaveAttribute("aria-checked", "true");
-  await views.getByRole("radio", { name: "What it needs" }).click();
-  await expect(page).toHaveURL(/tab=lsa/);
-  await expect(tabs.getByRole("tab", { name: "Maintenance" })).toHaveAttribute("aria-selected", "true");
-  await views.getByRole("radio", { name: "Packages" }).click();
-  await expect(page).toHaveURL(/mview=packages/);
-  await expect(page.getByRole("button", { name: "Smoke test weekly round" }).first()).toBeVisible();
+  await expect(page.getByRole("radiogroup", { name: "Maintenance: what to show" })).toHaveCount(0);
+  // Its package is a row of the table (where its tasks meet).
+  await expect(page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: "Smoke test weekly round" }) }).first()).toBeVisible();
   await expectHealthy(page, problems, { root: ".tx" });
-  // Forecast (a position's): the Maintenance tab's ?mview=forecast, the tab row's views switching it.
-  await views.getByRole("radio", { name: "Forecast" }).click();
-  await expect(page).toHaveURL(/tab=maintenance.*mview=forecast|mview=forecast.*tab=maintenance/);
-  await expect(page.getByRole("region", { name: "Forecast" })).toBeVisible();
-  await expect(tabs.getByRole("tab", { name: "Maintenance" })).toHaveAttribute("aria-selected", "true");
+  // The old inner views' addresses open the one table: Packages with a package open, Forecast as Forecast….
+  await open(page, at(id, "&tab=lsa&mview=packages"));
+  await expect(page).toHaveURL(/tab=maintenance/);
+  await expect(page).not.toHaveURL(/mview=/);
+  await expect(bar(page).getByRole("tab", { name: "Maintenance" })).toHaveAttribute("aria-selected", "true");
+  await open(page, at(id, "&tab=maintenance&mview=forecast"));
+  await expect(page).toHaveURL(new RegExp(`forecast=${id}`));
+  await expect(page.locator("section.fc-view").first()).toBeVisible();
 
   // An old address: ?tab=condition is Monitoring › Life left.
   await open(page, at(id, "&tab=condition"));
   await expect(bar(page).getByRole("tab", { name: "Monitoring" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("radiogroup", { name: "Monitoring: what to show" }).getByRole("radio", { name: "Life left" }))
     .toHaveAttribute("aria-checked", "true");
-  // ?tab=missions is Models › Missions.
+  // ?tab=missions (the old Missions view) is the Models tab: missions are rows under their models.
   await open(page, at(id, "&tab=missions"));
   await expect(bar(page).getByRole("tab", { name: "Models" })).toHaveAttribute("aria-selected", "true");
 });
@@ -99,21 +97,13 @@ test("panel tabs at 400 px: the row fits with ⋯, nothing scrolls sideways", as
   const id = await conveyor(request);
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, at(id, "&tab=maintenance"));
-  await page.getByRole("treeitem", { name: new RegExp(`^${escapeRegExp(NAME)}`) }).first().locator(".tp-nm").click();
+  // The Maintenance tab's Tasks view is a tree-table: its rows are the table's.
+  await page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: NAME }) }).first().locator(".tp-nm").click();
   const tabs = page.getByRole("tablist", { name: new RegExp("^What to show for") }).first();
   await expect(tabs.getByRole("tab", { name: "Maintenance" })).toHaveAttribute("aria-selected", "true");
   await expect(tabs.getByRole("tab", { name: /more tabs?:/ })).toBeVisible();
   const sideways = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(sideways).toBeLessThanOrEqual(0);
-  // The inner views sit on one line each.
-  const group = page.getByRole("radiogroup", { name: "Maintenance: what to show" });
-  await expect(group.getByRole("radio")).toHaveCount(5); // Tasks · What it needs · Packages · Forecast · Spares
-  for (const r of await group.getByRole("radio").all()) {
-    await expect(r).toBeVisible();
-    await expect.poll(() => r.evaluate((el) => {
-      const range = document.createRange();
-      range.selectNodeContents(el);
-      return new Set([...range.getClientRects()].map((b) => Math.round(b.top))).size;
-    })).toBe(1);
-  }
+  // Maintenance has no inner views (Monitoring and Models keep theirs).
+  await expect(page.getByRole("radiogroup", { name: "Maintenance: what to show" })).toHaveCount(0);
 });

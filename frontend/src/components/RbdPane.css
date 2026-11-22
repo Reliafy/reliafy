@@ -6,16 +6,16 @@
 .tt-side > .rw-panel.table-pane.rbd-pane { container-type: normal; }
 .rbd-pane { display: flex; flex-direction: column; }
 .rbd-pane > .table-pane-head { flex: none; }
-.rbd-pane .rw-panel-btns { align-items: center; gap: 10px; }
+.rbd-pane .rw-panel-btns { align-items: center; gap: var(--space-2); }
 .rbd-pane-full { font-size: var(--fs-13); font-weight: 600; white-space: nowrap; }
 .rbd-pane-body { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
 .rbd-pane-body > * { flex: none; }
 /* Rebuild from what's inside…, asked over the diagram it would change. */
-.rbd-pane-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 14px;
+.rbd-pane-ask { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--border); background: var(--bg-subtle); font-size: var(--fs-13); }
 .rbd-pane-ask p { margin: 0; flex: 1 1 280px; line-height: 1.45; }
-.rbd-pane-ask-btns { display: flex; gap: 8px; flex: none; }
-.rbd-pane-wait, .rbd-pane-failed { margin: 0; padding: 16px 18px; }
+.rbd-pane-ask-btns { display: flex; gap: var(--space-2); flex: none; }
+.rbd-pane-wait, .rbd-pane-failed { margin: 0; padding: var(--space-4) var(--space-4); }
 .rbd-pane-failed p { margin: 0; color: var(--danger-text); }
 
 /* The editor in the pane: its card's frame dropped (the pane is the frame), a slimmer padding, and
@@ -32,8 +32,10 @@
 .rbd-wrap-embedded .rbd-builder:not(.is-full) .rbd-canvas { min-height: 320px; }
 .rbd-wrap-embedded .rbd-builder:not(.is-full) .rbd-canvas,
 .rbd-wrap-embedded .rbd-builder:not(.is-full) .rbd-canvas .react-flow { border-radius: 0 0 var(--radius-md) var(--radius-md); }
-/* The diagram's name and whether it's saved, in the toolbar (no page title here). */
-.rbd-wrap-embedded .rbd-full-status { max-width: 260px; }
+/* The diagram's name as the pane's title (the pane has no heading row of its own on a wide
+   screen), above the tabs: not squeezed into the toolbar. */
+.rbd-pane-title { margin: 0; padding: var(--space-1) 0 0; font-size: var(--fs-14); line-height: var(--lh-14); font-weight: 600;
+  color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* New RBD (Build from what's inside…): its name, asked once before anything is saved. */
 .rbd-new { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); max-width: 36rem; }

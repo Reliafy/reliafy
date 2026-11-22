@@ -203,7 +203,7 @@ def test_bad_requests_are_refused(m):
     # the tool call is kept apart, for an agent (the MCP side adds it).
     with pytest.raises(Invalid, match="has no fitted life model yet") as refused:
         forecast.class_forecast(m, "Pump")
-    assert "Modelling tab" in str(refused.value) and "maintenance " not in str(refused.value)
+    assert "Models tab" in str(refused.value) and "maintenance " not in str(refused.value)
     assert refused.value.agent == "Fit it with maintenance reliability.fit_class_model."
     _model(m, "Pump")
     with pytest.raises(Invalid):

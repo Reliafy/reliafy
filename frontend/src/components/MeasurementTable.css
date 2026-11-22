@@ -4,22 +4,22 @@
 .ms-chip { cursor: default; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 
 /* The latest value and when, on one line. */
-.mt-latest { display: flex; align-items: baseline; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; }
+.mt-latest { display: flex; align-items: baseline; gap: var(--space-1-5); min-width: 0; overflow: hidden; white-space: nowrap; }
 .mt-latest strong { font-variant-numeric: tabular-nums; }
 .mt-latest .rw-sum { overflow: hidden; text-overflow: ellipsis; }
 
 /* The Record box: type, Enter. Quiet until hovered or focused. */
 .ms-rec { display: flex; flex-direction: column; gap: 1px; width: 100%; min-width: 0; }
 input.ms-rec-input {
-  width: 100%; min-width: 0; padding: 2px 6px; font-size: var(--fs-13); font-variant-numeric: tabular-nums;
+  width: 100%; min-width: 0; padding: var(--space-0-5) var(--space-1-5); font-size: var(--fs-13); font-variant-numeric: tabular-nums;
   border: 1px solid transparent; background: transparent; border-radius: var(--radius-md);
 }
 .tt-meas:hover input.ms-rec-input, input.ms-rec-input:focus { border-color: var(--border); background: var(--bg-surface); }
 input.ms-rec-input::placeholder { color: var(--text-secondary); }
 .ms-rec-said { font-size: var(--fs-12); line-height: var(--lh-12); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ms-rec-said.ok { color: var(--success, #15803d); }
+.ms-rec-said.ok { color: var(--success); }
 .ms-rec-said.bad { color: var(--danger-text); }
-.ms-rec-none { padding-left: 6px; }
+.ms-rec-none { padding-left: var(--space-1-5); }
 /* No hover on a touch screen: the box shows its outline. */
 @media (hover: none) {
   input.ms-rec-input { border-color: var(--border); background: var(--bg-surface); }

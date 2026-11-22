@@ -215,9 +215,11 @@ time** and choose how the rows are laid out:
 Then choose the **Item** column that says which unit each row belongs to.
 Reliafy recognises start and stop columns and turns this on for you when it
 can. A saved dataset laid out like this is tagged **Time-varying covariates**,
-and its page offers **Fit a non-repairable model with covariates that change
-over time**, which opens the fit with these columns already mapped. The Model step then offers the regressions that can follow a changing
-covariate (the PH, AFT, PO and AH families and Cox PH).
+and its page offers **Fit a non-repairable model with covariates (readings
+that change over time)**, which opens the fit with these columns already mapped. The Model step then offers the regressions that can follow a changing
+covariate (the PH, AFT, PO and AH families and Cox PH). What you get is a
+covariate model like any other, fitted from readings that change over time: it
+can drive an RBD block and fly missions as any covariate model does.
 
 The result's **Calculator** takes a **Covariate schedule**: the value from time
 0, then **+ Add a change** for each step. The sample *Pump bearings — Weibull
@@ -244,7 +246,7 @@ its own too (see [model a mission in phases](/guides/phased-missions)).
 
 ## Run it yourself in Python
 
-**Download as Python**, first in the model page's **⋯** menu, gives a script that refits a regression model (or one with covariates that change over time) with
+**Download as Python**, first in the model page's **⋯** menu, gives a script that refits a covariate model (however it was fitted, readings that change over time included) with
 SurPyval from its data and prints the numbers on the page. It's free for everyone who can open the model.
 
 ## Where to go next

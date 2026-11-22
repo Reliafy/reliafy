@@ -4,8 +4,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 0.75rem;
+  gap: var(--space-4);
+  margin-bottom: var(--space-3);
 }
 
 .maint-head h2 {
@@ -14,14 +14,14 @@
 /* A picker in a card's heading (Open work orders: In <location>): a long
    location path shortens the box rather than widening the page on a phone. */
 .maint-head > label { min-width: 0; max-width: 100%; }
-.maint-head > label select { min-width: 0; max-width: 100%; text-overflow: ellipsis; }
+.maint-head > label select, .maint-head > label .sel-trigger { min-width: 0; max-width: 100%; text-overflow: ellipsis; }
 
 .maint-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem;
-  margin-top: 0.75rem;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
 }
 
 .maint-tree,
@@ -32,17 +32,17 @@
 }
 
 .maint-tree ul {
-  padding-left: 1.25rem;
+  padding-left: var(--space-5);
   border-left: 1px solid var(--border);
-  margin-left: 0.4rem;
+  margin-left: var(--space-1-5);
 }
 
 .maint-node {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.6rem;
-  padding: 0.35rem 0;
+  gap: var(--space-2);
+  padding: var(--space-1-5) 0;
 }
 
 .maint-node-name {
@@ -54,9 +54,9 @@
 }
 
 .maint-badge {
-  font-size: 0.8rem;
-  padding: 0.05rem 0.45rem;
-  border-radius: 999px;
+  font-size: var(--fs-13);
+  padding: 0.05rem var(--space-2);
+  border-radius: var(--radius-full);
   background: var(--accent-subtle);
   border: 1px solid var(--accent-border);
 }
@@ -68,34 +68,34 @@
 
 .maint-list {
   margin: 0;
-  padding-left: 1.1rem;
+  padding-left: var(--space-4);
 }
 
 .maint-list li {
-  padding: 0.25rem 0;
+  padding: var(--space-1) 0;
 }
 
 /* A location's positions, one group per system. */
 .maint-group + .maint-group {
-  margin-top: 1rem;
+  margin-top: var(--space-4);
 }
 
 .maint-group h3 {
-  margin: 0 0 0.5rem;
-  font-size: 1rem;
+  margin: 0 0 var(--space-2);
+  font-size: var(--fs-16);
 }
 
 .maint-action {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 0.75rem;
-  margin-bottom: 0.75rem;
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
 }
 
 .maint-photos {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .maint-photos figure {
@@ -126,7 +126,7 @@
 
 .maint-photo-places ul {
   list-style: none;
-  margin: 0.25rem 0 0;
+  margin: var(--space-1) 0 0;
   padding: 0;
 }
 
@@ -134,8 +134,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.25rem 0;
+  gap: var(--space-1-5);
+  padding: var(--space-1) 0;
   overflow-wrap: anywhere;
 }
 
@@ -146,14 +146,14 @@
 .maint-place-modes {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: var(--space-1-5);
 }
 
 .maint-place-hints {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
-  margin-top: 0.25rem;
+  gap: var(--space-1-5);
+  margin-top: var(--space-1);
 }
 
 .maint-place-hints button {
@@ -173,18 +173,18 @@
   background: var(--accent-subtle);
   border: 1px solid var(--accent-border);
   border-radius: var(--radius-lg);
-  padding: 0.75rem;
-  margin-bottom: 0.75rem;
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
 }
 
 .maint-ask p {
-  margin: 0 0 0.5rem;
+  margin: 0 0 var(--space-2);
 }
 
 .maint-plate {
   display: grid;
   grid-template-columns: max-content 1fr;
-  gap: 0.3rem 1rem;
+  gap: var(--space-1) var(--space-4);
   margin: 0;
 }
 
@@ -198,7 +198,7 @@
 
 .maint-proposal {
   border-top: 1px solid var(--border);
-  padding: 0.75rem 0;
+  padding: var(--space-3) 0;
 }
 
 .maint-proposal:first-of-type {
@@ -207,7 +207,7 @@
 }
 
 .maint-proposal p {
-  margin: 0 0 0.4rem;
+  margin: 0 0 var(--space-1-5);
 }
 
 .maint-notes {
@@ -216,7 +216,7 @@
 }
 
 .maint-note-history {
-  margin-top: 0.75rem;
+  margin-top: var(--space-3);
 }
 
 .maint-reading-struck {
@@ -233,8 +233,8 @@
 
 /* A part of a card: the class forecast's positions, spares and budget. */
 .maint-sub {
-  margin: 1.25rem 0 0.5rem;
-  font-size: var(--fs-16, 1rem);
+  margin: var(--space-5) 0 var(--space-2);
+  font-size: var(--fs-16);
 }
 
 /* The chosen class in the list (its page). */
@@ -249,8 +249,8 @@
 
 /* The Classes page's parts: position classes, item classes, then conditions. */
 .maint-section {
-  margin: 1.5rem 0 0.75rem;
-  font-size: var(--fs-18, 1.15rem);
+  margin: var(--space-6) 0 var(--space-3);
+  font-size: var(--fs-20);
 }
 
 /* Conditions: one chip each, set here (solid), inherited (dashed, with where from) or
@@ -268,9 +268,9 @@
   display: inline-flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.15rem 0.5rem;
+  gap: var(--space-0-5) var(--space-2);
   max-width: 100%;
-  padding: 0.3rem 0.65rem;
+  padding: var(--space-1) var(--space-3);
   border: 1px solid var(--accent-border);
   border-radius: var(--radius-md);
   background: var(--accent-subtle);
@@ -295,13 +295,13 @@
 
 .maint-chip-actions {
   display: inline-flex;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .maint-chip-small {
-  padding: 0.05rem 0.45rem;
+  padding: 0.05rem var(--space-2);
   font-size: var(--fs-13);
-  margin-right: 0.35rem;
+  margin-right: var(--space-1-5);
 }
 
 /* Product structure (#435): a part's tree, with a toggle per line that has parts
@@ -325,16 +325,16 @@ button.maint-toggle {
 }
 
 .maint-levels {
-  margin: 0 0 0.5rem;
-  padding-left: 1.1rem;
+  margin: 0 0 var(--space-2);
+  padding-left: var(--space-4);
   display: grid;
-  gap: 0.4rem;
+  gap: var(--space-1-5);
 }
 
 .maint-levels li {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .maint-levels input {
@@ -342,7 +342,7 @@ button.maint-toggle {
   min-width: 0;
   border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
-  padding: 8px 10px;
+  padding: var(--space-2) var(--space-3);
   font: inherit;
   color: var(--text);
   background: var(--bg-canvas);
@@ -361,12 +361,12 @@ button.maint-toggle {
 .maint-fieldset {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: 0.5rem 0.75rem 0.75rem;
+  padding: var(--space-2) var(--space-3) var(--space-3);
   margin: 0;
 }
 
 .maint-fieldset legend {
-  padding: 0 0.3rem;
+  padding: 0 var(--space-1);
   font-weight: 600;
 }
 
@@ -384,8 +384,8 @@ button.maint-toggle {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.4rem;
-  margin-left: 0.25rem;
+  gap: var(--space-1-5);
+  margin-left: var(--space-1);
 }
 
 .maint-pdf-meta {
@@ -419,9 +419,9 @@ button.maint-toggle {
 /* A name or title nearing its length limit, and past it. */
 .maint-length {
   display: block;
-  margin-top: 0.25rem;
+  margin-top: var(--space-1);
   color: var(--text-secondary);
-  font-size: 0.8rem;
+  font-size: var(--fs-13);
 }
 
 .maint-length-over {
@@ -457,8 +457,8 @@ button.maint-toggle {
   .maint-assets tr {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 0.35rem 0.75rem;
-    padding: 0.75rem 0.25rem;
+    gap: var(--space-1-5) var(--space-3);
+    padding: var(--space-3) var(--space-1);
     border-bottom: 1px solid var(--border);
   }
 
@@ -481,7 +481,7 @@ button.maint-toggle {
   .maint-assets td[data-label]::before {
     content: attr(data-label);
     display: block;
-    font-size: 0.75rem;
+    font-size: var(--fs-12);
     color: var(--text-secondary);
   }
 
@@ -499,8 +499,8 @@ button.maint-toggle {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.5rem;
-  margin: 0 0 0.75rem;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
 }
 
 /* A photo thumbnail is a button (keyboard-reachable), drawn as just the image. */
@@ -518,20 +518,20 @@ button.maint-toggle {
 .maint-photo-btn:hover:not(:disabled) { background: none; opacity: 0.9; }
 
 /* Assets' landing: links to the register's other pages (they aren't in the menu). */
-.assets-links { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: -4px 0 12px; font-size: var(--fs-14); }
+.assets-links { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); margin: calc(-1 * var(--space-1)) 0 var(--space-3); font-size: var(--fs-14); }
 .assets-links a { color: var(--accent-text); font-weight: 500; }
 
 /* A work order's Readings and settings: a label (name, then why and the last value) and a value box per point. */
-.wor-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.25rem 0.75rem;
-  padding: 0.4rem 0; border-bottom: 1px solid var(--border, #e9ebee); }
+.wor-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-1) var(--space-3);
+  padding: var(--space-1-5) 0; border-bottom: 1px solid var(--border); }
 .wor-label { display: flex; flex-direction: column; min-width: 0; flex: 1 1 14rem; }
 .wor-name { font-weight: 500; overflow-wrap: anywhere; }
 .wor-detail { overflow-wrap: anywhere; }
 .wor-input { width: 9rem; max-width: 100%; }
-.wor-other { margin-top: 0.5rem; }
-.wor-other summary { cursor: pointer; padding: 0.3rem 0; }
-.wor-taken-head { font-size: 0.95rem; margin: 0.75rem 0 0.25rem; }
-.maint-line-readings { margin-left: 0.5rem; }
+.wor-other { margin-top: var(--space-2); }
+.wor-other summary { cursor: pointer; padding: var(--space-1) 0; }
+.wor-taken-head { font-size: var(--fs-16); margin: var(--space-3) 0 var(--space-1); }
+.maint-line-readings { margin-left: var(--space-2); }
 
 /* The Maintenance page's time-zone line: the sentence, then "Use <zone>" and the
    link to choose another, wrapping on a phone. */
@@ -539,15 +539,15 @@ button.maint-toggle {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.25rem 0.5rem;
+  gap: var(--space-1) var(--space-2);
 }
 
 /* A work package's work order: a line per task, answered Done, a problem or Not done. */
 .pkg-lines { list-style: none; margin: 0; padding: 0; }
-.pkg-line { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.6rem 0; min-width: 0; }
+.pkg-line { display: flex; flex-direction: column; gap: var(--space-1-5); padding: var(--space-2) 0; min-width: 0; }
 .pkg-line + .pkg-line { border-top: 1px solid var(--border-subtle); }
 .pkg-line-name { overflow-wrap: anywhere; }
-.pkg-step { margin-top: 0; gap: 0.5rem; }
+.pkg-step { margin-top: 0; gap: var(--space-2); }
 .pkg-ask { margin-top: 0; flex-wrap: wrap; }
 .pkg-ask input { flex: 1 1 12rem; min-width: 0; }
 .pkg-said { margin: 0; overflow-wrap: anywhere; }
@@ -555,20 +555,21 @@ button.maint-toggle {
 /* Maintenance › Orders and Packages. */
 /* The answer first, above the tabs: "3 open, 1 late by 4 days. …" */
 .maint-answer {
-  margin: 0.25rem 0 0.75rem;
-  font-size: var(--fs-15, 1rem);
+  margin: var(--space-1) 0 var(--space-3);
+  font-size: var(--fs-16);
 }
-.maint-filters { margin-top: 0; margin-bottom: 0.5rem; }
+.maint-filters { margin-top: 0; margin-bottom: var(--space-2); }
 /* The area picker shrinks to the bar (a long location name mustn't widen the page). */
 .maint-filters label { min-width: 0; max-width: 100%; }
-.maint-filters select { min-width: 0; max-width: 100%; text-overflow: ellipsis; }
+.maint-filters select, .maint-filters .sel-trigger { min-width: 0; max-width: 100%; text-overflow: ellipsis; }
+.sel-trigger.kind-filter { max-width: 16rem; }
 @media (max-width: 720px) {
   .maint-filters label { flex: 1 1 100%; }
-  .maint-filters label select { flex: 1 1 auto; width: 0; }
+  .maint-filters label select, .maint-filters label .sel-trigger { flex: 1 1 auto; width: 0; }
 }
 .maint-subhead {
-  margin: 1rem 0 0.4rem;
-  font-size: var(--fs-14, 0.95rem);
+  margin: var(--space-4) 0 var(--space-1-5);
+  font-size: var(--fs-14);
 }
 .maint-nowrap { white-space: nowrap; }
 .maint-head.maint-wrap { flex-wrap: wrap; }
@@ -576,11 +577,11 @@ button.maint-toggle {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 /* A table row that doesn't open anything: spaced like a list's rows (.lib-row). */
 .lib-table tr.maint-plain-row td {
-  padding: 12px 14px;
+  padding: var(--space-3) var(--space-3);
   border-bottom: 1px solid var(--border-subtle);
   font-size: var(--fs-14);
   vertical-align: middle;
@@ -588,7 +589,7 @@ button.maint-toggle {
 .maint-dl {
   display: grid;
   grid-template-columns: max-content 1fr;
-  gap: 0.35rem 1rem;
+  gap: var(--space-1-5) var(--space-4);
   margin: 0;
 }
 .maint-dl dt { color: var(--text-secondary); }
@@ -596,28 +597,28 @@ button.maint-toggle {
 /* A heading row across the list ("Each visit needs"), then its rows as the rest. */
 .maint-dl .maint-dl-head {
   grid-column: 1 / -1;
-  margin-top: 0.6rem;
-  padding-top: 0.6rem;
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
   border-top: 1px solid var(--border-subtle);
   color: var(--text, inherit);
   font-weight: 600;
 }
 
 /* A work package's own page: the content, and Edit in a pane beside it. */
-.pkg-page { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+.pkg-page { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); align-items: start; }
 .pkg-page.is-editing { grid-template-columns: minmax(0, 1fr) minmax(320px, 400px); }
 .pkg-main { min-width: 0; }
 .pkg-main > .card:first-child { margin-top: 0; }
 .pkg-page.is-editing .pkg-edit { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; }
-.pkg-edit-form { padding: 12px 18px 18px; display: flex; flex-direction: column; gap: 4px; }
+.pkg-edit-form { padding: var(--space-3) var(--space-4) var(--space-4); display: flex; flex-direction: column; gap: var(--space-1); }
 .pkg-edit-form textarea { width: 100%; resize: vertical; }
-.pkg-rules { border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 8px 12px; margin: 8px 0; min-width: 0; }
-.pkg-rules legend { font-size: var(--fs-13); color: var(--text-secondary); padding: 0 4px; }
-.pkg-rule { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 6px 0; }
+.pkg-rules { border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); margin: var(--space-2) 0; min-width: 0; }
+.pkg-rules legend { font-size: var(--fs-13); color: var(--text-secondary); padding: 0 var(--space-1); }
+.pkg-rule { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1-5) var(--space-2); padding: var(--space-1-5) 0; }
 .pkg-rule + .pkg-rule { border-top: 1px solid var(--border-subtle); }
 .pkg-rule-name { flex: 1 1 100%; font-size: var(--fs-14); overflow-wrap: anywhere; }
 .pkg-rule-n { width: 5em; }
-.pkg-edit-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.pkg-edit-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
 .pkg-notes { white-space: pre-wrap; }
 @media (max-width: 1100px) {
   .pkg-page.is-editing { grid-template-columns: minmax(0, 1fr) minmax(300px, 340px); }
@@ -626,16 +627,16 @@ button.maint-toggle {
 /* Field reports: one report opened under its row. */
 .field-report {
   display: grid;
-  gap: 10px;
+  gap: var(--space-2);
   max-width: 900px;
 }
 .field-report-panel {
   border-top: 1px solid var(--border);
-  margin-top: 12px;
-  padding-top: 12px;
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
 }
 .field-report-panel h3 {
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
 }
 .field-report-name {
   min-width: 200px;
@@ -652,7 +653,7 @@ tr.field-report-open {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
 }
 .field-report-sound audio {
   max-width: 100%;
@@ -661,18 +662,18 @@ tr.field-report-open {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .field-report-actions .grow {
   flex: 1;
 }
 
 /* A package group's "Raise this visit" in Due soon: beside its name, wrapping on a phone. */
-.maint-group-btn { margin-left: 0.6rem; vertical-align: middle; }
+.maint-group-btn { margin-left: var(--space-2); vertical-align: middle; }
 
 /* A place with no positions yet: the sentence, then its main action under it. */
-.maint-empty-add { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
-.maint-head { flex-wrap: wrap; gap: 8px; }
+.maint-empty-add { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+.maint-head { flex-wrap: wrap; gap: var(--space-2); }
 
 /* Assets' Excel import and export (TreeSheetPane): a card under the header, above the list
    (on a phone it takes the screen, TreeSheetPane.css). */

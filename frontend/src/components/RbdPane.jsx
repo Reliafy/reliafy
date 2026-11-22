@@ -111,7 +111,7 @@ export function NewRbdPane({ position, kids = [], phone = false, headingRef = nu
                className="rbd-pane rbd-pane-new" closeLabel="Close without building">
       <form className="rbd-new" onSubmit={save}>
         <Field label="Name" error={tried ? why : null}
-               help="Saved under this name on Systems › RBDs and on this position's Modelling tab.">
+               help="Saved under this name on Systems › RBDs and on this position's Models tab.">
           <TextInput value={name} maxLength={200} autoFocus disabled={busy} onChange={(e) => setName(e.target.value)} />
         </Field>
         <p className="rbd-new-what">

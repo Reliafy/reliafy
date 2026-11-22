@@ -12,6 +12,7 @@
 // details with its standards list at 1280 and 400 px (for the pull request).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { openColumns, pickPlace } from "./explorer.js";
+import { choose } from "./select.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -55,7 +56,7 @@ test("the function's one text splits into a list on confirm; add, edit, reorder,
   await expect(lines).toHaveCount(3);
   await expect(list.getByRole("textbox", { name: "Line 1" })).toHaveValue("pH 7.2-7.8");
   // The "given …" clause: a condition of the standard before it. Nothing written yet.
-  await list.getByRole("combobox", { name: "Line 3 is" }).selectOption("when");
+  await choose(list.getByRole("combobox", { name: "Line 3 is" }), "when");
   const beforeSplit = await (await request.get(`${M}/functions/${p.fn.id}`)).json();
   expect(beforeSplit.standards).toEqual([]);
   await list.getByRole("button", { name: "Confirm: 2 performance standards" }).click();
@@ -86,7 +87,7 @@ test("the function's one text splits into a list on confirm; add, edit, reorder,
   await stdMenu(page, list, `Calcium hardness 200-400 ppm ${tag}`, "Edit…");
   await list.getByRole("button", { name: "Limit…" }).click();
   await list.getByRole("textbox", { name: "Parameter" }).fill("Calcium hardness");
-  await list.getByRole("combobox", { name: "Comparator" }).selectOption("between");
+  await choose(list.getByRole("combobox", { name: "Comparator" }), "between");
   await list.getByRole("textbox", { name: "Value" }).fill("200-400");
   await list.getByRole("textbox", { name: "Unit" }).fill("ppm");
   await list.getByRole("textbox", { name: "Source" }).fill("E25 manual");

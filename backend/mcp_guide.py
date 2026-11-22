@@ -17,7 +17,7 @@ trunc_left (trunc_left_column), not a flag. trunc_right is the age past which a 
 - Params are lists of {name, value} with SurPyval's names: weibull [alpha (scale), beta (shape)], exponential \
 [failure_rate], normal / lognormal [mu, sigma], gamma [alpha, beta]; in the model's time unit.
 - A dataset keeps its reading: which column is x, c, n, the range (xl/xr), tl, tr, i, m, e (failure mode), s \
-(state during the row) and the covariates Z. change dataset_upload takes x_col, c_col, … z_cols, c_meanings, unit; \
+(state during the row) and the covariates Z. change dataset_upload takes x_col, c_col, … z_cols, c_meanings, unit, one_stream (no i_col: every row is one stream of events, one system; repairable); \
 what isn't named is guessed and the answer's reading says so (source guessed): relay it for the user to check, \
 and fix it with change dataset_update. get kind dataset returns it.
 - Fit and report: analyse fit (inline data, or dataset_id: with no time_column it fits from the dataset's \
@@ -223,7 +223,10 @@ phase, and the blocks driving each phase's failures (drivers, weakest first); a 
 (needs). Worked out by RePyability's PhasedMission: exact (free) without standby, or with standby when every \
 block has a constant failure rate; otherwise simulated, seeded (Pro; code pro_required without it). With \
 current_state ({node: {failed: true} | {age}}, as analyse rbd) it flies from now: each aged block starts at \
-its age, a failed block stays failed, and the notes say "As of now".
+its age, a failed block stays failed, and the notes say "As of now". A mission on a position's life model \
+with no covariates (one block) is a length from a starting age saved on it (new, an age, or "now": the fitted \
+item's age): analyse rbd_mission gives R(age + length) / R(age) with start and lower_bound (90% one-sided, \
+for a fitted model).
 - Condition and life block (non-repairable diagrams only, one component block per unit): model = \
 {saved_model_id: <joint model id>, joint_unit: {id: <running unit id>}} or joint_unit {age, readings: [[age, \
 value], ...], covariates}. The block runs from its unit's age now: at mission time t its reliability is the \

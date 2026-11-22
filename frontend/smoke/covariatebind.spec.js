@@ -6,6 +6,7 @@
 // own value overrides one, and the result changes. Nothing scrolls sideways at 400 px.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { headMenu } from "./explorer.js";
+import { choose } from "./select.js";
 
 const M = "/api/maintenance";
 const BEARING = "Bearing, rolling element (from its load rating)";
@@ -31,7 +32,7 @@ test("covariates: fix some at a position from the library, set the rest in the R
   // Life model › From the data library…: an NSWC-11 covariate model opens Fix covariates in the pane.
   await headPick(page, "Life model", "From the data library…");
   const picker = page.getByRole("dialog", { name: "Pick a library record" });
-  await picker.getByRole("combobox", { name: "Library", exact: true }).selectOption("nswc-11");
+  await choose(picker.getByRole("combobox", { name: "Library", exact: true }), "nswc-11");
   await picker.getByRole("combobox", { name: "Search the data library" }).fill("bearing load rating");
   await picker.getByRole("listbox").getByRole("option", { name: BEARING }).first().click();
   const pane = page.getByRole("region", { name: "Fix covariates" });
@@ -77,12 +78,12 @@ test("covariates: fix some at a position from the library, set the rest in the R
   await bar.getByRole("button", { name: "Covariates…" }).click();
   await dlg.getByRole("button", { name: "+ Add a value" }).click();
   await dlg.getByLabel("Name of value 1").fill("Radial load");
-  await dlg.getByLabel("What value 1 is").selectOption("use");
+  await choose(dlg.getByLabel("What value 1 is"), "use");
   await dlg.getByLabel("Unit of value 1").fill("lbf");
   await dlg.getByLabel("Value 1", { exact: true }).fill("1000");
   await dlg.getByRole("button", { name: "+ Add a value" }).click();
   await dlg.getByLabel("Name of value 2").fill("Operating speed");
-  await dlg.getByLabel("What value 2 is").selectOption("use");
+  await choose(dlg.getByLabel("What value 2 is"), "use");
   await dlg.getByLabel("Unit of value 2").fill("rpm");
   await dlg.getByLabel("Value 2", { exact: true }).fill("1800");
   await expect(dlg).toContainText("Using 1000 from the diagram's Use: Radial load");

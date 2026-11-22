@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import Switch from "../components/ui/Switch.jsx";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   createMaintenanceItem,
@@ -62,6 +63,9 @@ import { NewPartModal } from "../components/PartForms.jsx";
 import { partsInBranch } from "../explorerTabs.js";
 import { countIsOld, countedText } from "../sparesYear.js";
 import { itemTreePath, productPath } from "../products.js";
+import { DateInput } from "../components/ui/DateTimeInput.jsx";
+import Loading from "../components/ui/Loading.jsx";
+import { Select } from "../components/ui/Controls.jsx";
 
 const crumbs = [{ label: "Assets", to: "/asset-register" }];
 
@@ -91,10 +95,10 @@ export function NewItemModal({ locations, locationId = null, onClose, onDone }) 
         <input value={serial} onChange={(e) => setSerial(e.target.value)} placeholder="e.g. SK-0042" />
       </Field>
       <Field label="Where it is">
-        <select value={where} onChange={(e) => setWhere(e.target.value)}>
+        <Select value={where} onChange={(e) => setWhere(e.target.value)}>
           <option value="">Nowhere yet (no home)</option>
           {locations.map((l) => <option key={l.id} value={l.id}>{l.parent ? `${l.parent.name} › ` : ""}{l.name}</option>)}
-        </select>
+        </Select>
       </Field>
     </FormModal>
   );
@@ -130,10 +134,10 @@ export function NewLocationModal({ locations, parentId = null, asset = false, de
       </Field>
       {!asset && (
         <Field label="Inside">
-          <select value={parent} onChange={(e) => setParent(e.target.value)}>
+          <Select value={parent} onChange={(e) => setParent(e.target.value)}>
             <option value="">{designOf ? `None (the top of ${layoutName || "the product"}'s layout)` : "None (top level: an asset)"}</option>
             {locations.map((l) => <option key={l.id} value={l.id}>{l.parent ? `${l.parent.name} › ` : ""}{l.name}</option>)}
-          </select>
+          </Select>
         </Field>
       )}
     </FormModal>
@@ -163,7 +167,7 @@ export function MaintenanceLocation() {
   const canHoldPositions = !!loc && !loc.design_of && !loc.carried_by;
   const addPosition = () => setModal("position");
   if (error && !loc) return <div className="app"><LoadFailed header onRetry={() => { setError(null); refresh(); }} error={error} notFound="Location not found." to={ASSETS_LIST_PATH} label="Go to Assets" /></div>;
-  if (!loc) return <div className="app"><div className="card empty">Loading…</div></div>;
+  if (!loc) return <div className="app"><Loading card /></div>;
   // The header leaves out the open work: it's its own card below, the whole area's
   // (positions, items there now and the place itself), not only the positions'.
   return (
@@ -268,7 +272,7 @@ function OpenWorkHere({ loc }) {
         <h2>Open work here</h2>
         {open?.length > OPEN_HERE && <Link to={openWorkPath(loc.id)} className="lib-date">All {open.length}</Link>}
       </div>
-      {open === null ? <p className="lib-date">Loading…</p> : open.length === 0 ? (
+      {open === null ? <Loading /> : open.length === 0 ? (
         <p className="lib-date">No open work orders here.</p>
       ) : (
         <div className="maint-scroll"><table className="lib-table">
@@ -408,15 +412,13 @@ export function ClassesPanel({ here = [], scopeName = "", all = false, onAll, op
       <div className="tablebar section-tablebar">
         <span className="count">{all ? "Every class in the register" : `Classes used at ${scopeName || "this row"} and inside it`}</span>
         <span className="grow" />
-        <label className="maint-row lib-date td-tab-check" style={{ marginTop: 0, gap: "0.4rem" }}>
-          <input type="checkbox" checked={all} onChange={(e) => onAll?.(e.target.checked)} /> Show all classes
-        </label>
+        <Switch className="td-tab-check" checked={all} onChange={(v) => onAll?.(v)} label="Show all classes" ariaLabel="Show all classes" />
       </div>
       <p className="lib-date">Position classes group like positions by their duty, so their items' lives can be compared and pooled
         into one model. Item classes (optional) say what kind of thing each item is; conditions (optional), what things are exposed to.</p>
-      {error && <div className="card error">{error}</div>}
+      {error && <LoadFailed what="Couldn't load the position classes." error={error} />}
       <h3 className="maint-section">Position classes</h3>
-      {classes === null ? <div className="card empty">Loading…</div> : rows.length === 0 ? (
+      {classes === null ? (!error && <Loading card />) : rows.length === 0 ? (
         <div className="card empty"><p>{all || !classes.length
           ? "No classes yet. Give positions a class (e.g. “Pool pump”) when you create or edit them."
           : `No position inside ${scopeName || "this row"} has a class yet. Give positions a class when you create or edit them, or show all classes.`}</p></div>
@@ -459,9 +461,9 @@ export function ClassesPanel({ here = [], scopeName = "", all = false, onAll, op
                 {data.excluded?.length ? ` · ${data.excluded.length} left out` : ""}</span>}
             </div>
             {data?.note && <p className="lib-date">{data.note}</p>}
-            {data === null ? <p className="lib-date">Loading…</p> : <div className="maint-scroll"><LifeTable rows={data.rows} showPosition unit={data.unit || "days"} /></div>}
+            {data === null ? <Loading /> : <div className="maint-scroll"><LifeTable rows={data.rows} showPosition unit={data.unit || "days"} /></div>}
             {data?.excluded?.length > 0 && (
-              <details className="lib-date" style={{ marginTop: "0.5rem" }}>
+              <details className="lib-date mt-2">
                 <summary>Left out: {data.excluded.length} fitment{data.excluded.length === 1 ? "" : "s"} the readings can’t count</summary>
                 <div className="maint-scroll"><table className="lib-table">
                   <thead><tr><th>Position</th><th>Item</th><th>In</th><th>Why</th></tr></thead>
@@ -492,7 +494,7 @@ export function ClassesPanel({ here = [], scopeName = "", all = false, onAll, op
 // `name`: the class's key (what the reads take); `label`: the class as shown.
 function ClassPanel({ name, label = name, unit = "days", onUnit, onChanged }) {
   const [c, setC] = useState(null);
-  const [costs, setCosts] = useState({ planned_cost: "", failure_cost: "", availability_target: "" });
+  const [costs, setCosts] = useState({ planned_cost: "", failure_cost: "", availability_target: "", downtime_hours: "", downtime_rate: "" });
   const [distribution, setDistribution] = useState("weibull");
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
@@ -503,6 +505,7 @@ function ClassPanel({ name, label = name, unit = "days", onUnit, onChanged }) {
       setCosts({
         planned_cost: d.costs?.planned_cost ?? "", failure_cost: d.costs?.failure_cost ?? "",
         availability_target: d.costs?.availability_target ?? "",
+        downtime_hours: d.costs?.downtime_hours ?? "", downtime_rate: d.costs?.downtime_rate ?? "",
       });
     }).catch((e) => setError(e.message));
   }, [name]);
@@ -517,7 +520,7 @@ function ClassPanel({ name, label = name, unit = "days", onUnit, onChanged }) {
     try { const d = await fitClassModel(name, distribution, unit); setMade(d.proposals.length); load(); onChanged?.(); } catch (e) { setError(e.message); }
     setBusy(null);
   };
-  if (!c) return <section className="card">{error ? <div className="card error">{error}</div> : <p className="lib-date">Loading…</p>}</section>;
+  if (!c) return error ? <LoadFailed what="Couldn't load the position class." error={error} onRetry={load} /> : <section className="card"><Loading /></section>;
   const model = c.model;
   const units = c.life_units || ["days"];
   const unitLabel = (u) => (u === "days" ? "days (calendar)" : `${u} (from counters)`);
@@ -529,8 +532,13 @@ function ClassPanel({ name, label = name, unit = "days", onUnit, onChanged }) {
         <div className="rcm-form">
           <Field label="A planned replacement costs"><input type="number" inputMode="decimal" min="0" step="any" value={costs.planned_cost}
                  onChange={(e) => setCosts({ ...costs, planned_cost: e.target.value })} /></Field>
-          <Field label="A failure costs (repair, downtime, damage)"><input type="number" inputMode="decimal" min="0" step="any" value={costs.failure_cost}
+          <Field label="A failure costs to put right (repair, parts, damage)"><input type="number" inputMode="decimal" min="0" step="any" value={costs.failure_cost}
                  onChange={(e) => setCosts({ ...costs, failure_cost: e.target.value })} /></Field>
+          <Field label="A failure keeps it out of use (hours)" help="The default for its positions' failure modes; a mode's own figure wins.">
+            <input type="number" inputMode="decimal" min="0" step="any" value={costs.downtime_hours}
+                   onChange={(e) => setCosts({ ...costs, downtime_hours: e.target.value })} /></Field>
+          <Field label="An hour out of use costs" optional><input type="number" inputMode="decimal" min="0" step="any" value={costs.downtime_rate}
+                 onChange={(e) => setCosts({ ...costs, downtime_rate: e.target.value })} /></Field>
           <Field label="Hidden functions must be available (e.g. 0.99)"><input type="number" inputMode="decimal" min="0" max="1" step="any"
                  value={costs.availability_target} onChange={(e) => setCosts({ ...costs, availability_target: e.target.value })} /></Field>
         </div>
@@ -539,22 +547,22 @@ function ClassPanel({ name, label = name, unit = "days", onUnit, onChanged }) {
           {units.length > 1 && (
             <label className="lib-date" style={{ display: "inline-flex", gap: "0.4rem", alignItems: "center" }}>
               Count lives in
-              <select value={unit} onChange={(e) => onUnit?.(e.target.value)}>
+              <Select value={unit} onChange={(e) => onUnit?.(e.target.value)}>
                 {[...new Set([...units, unit])].map((u) => <option key={u} value={u}>{unitLabel(u)}</option>)}
-              </select>
+              </Select>
             </label>
           )}
-          <select value={distribution} onChange={(e) => setDistribution(e.target.value)}>
+          <Select value={distribution} onChange={(e) => setDistribution(e.target.value)}>
             <option value="weibull">Weibull</option><option value="best">Best fit</option>
             <option value="lognormal">Lognormal</option><option value="exponential">Exponential</option>
-          </select>
+          </Select>
           <button onClick={fit} disabled={busy === "fit" || c.failures < 2}>
             {busy === "fit" ? "Fitting…" : model ? "Refit the non-repairable model" : "Fit a non-repairable model"}
           </button>
           {c.failures < 2 && <span className="lib-date">Needs at least 2 failures on record ({c.failures} so far).</span>}
         </div>
         {model && (
-          <p className="lib-date" style={{ marginTop: "0.75rem" }}>
+          <p className="lib-date mt-3">
             {model.distribution} fitted {fmtDate(model.fitted_on)} to {model.failures} failures and {model.suspensions} suspensions:{" "}
             {(model.params || []).map((p) => `${p.name} ${Number(p.value).toPrecision(4)}`).join(", ")} ({model.unit || "days"}).{" "}
             <Link to={`/models/m/${model.model_id}`}>Open the model</Link>
@@ -590,7 +598,7 @@ function ReplacementCostCard({ name, label = name, cost, onSaved }) {
         <span className="lib-date">{cost ? costText(cost, fmtDate) : "not set"}</span></div>
       {error && <div className="card error">{error}</div>}
       <p className="lib-date">The default for items in these positions with no replacement cost of their own.</p>
-      <div className="maint-row" style={{ marginTop: 0 }}>
+      <div className="maint-row mt-0">
         <input type="number" inputMode="decimal" min="0" step="any" placeholder="amount" value={f.amount} style={{ width: "8rem" }}
                onChange={(e) => setF({ ...f, amount: e.target.value })} />
         <input placeholder="AUD" maxLength={3} value={f.currency} style={{ width: "5rem" }}
@@ -621,12 +629,12 @@ function EconomicsCard({ name, label = name, modelUnit = "days" }) {
     <section className="card">
       <div className="maint-head"><h2>{label}: what the plan costs</h2></div>
       {error && <div className="card error">{error}</div>}
-      <div className="maint-row" style={{ marginTop: 0 }}>
+      <div className="maint-row mt-0">
         <span className="lib-date">What if every</span>
         <input type="number" inputMode="decimal" min="0" step="any" value={whatIf} style={{ width: "5rem" }} onChange={(e) => setWhatIf(e.target.value)} />
-        <select value={unit} onChange={(e) => setUnit(e.target.value)}>
+        <Select value={unit} onChange={(e) => setUnit(e.target.value)}>
           {[...(byUse ? [modelUnit] : []), "days", "weeks", "months", "years"].map((u) => <option key={u} value={u}>{u}</option>)}
-        </select>
+        </Select>
         <span className="lib-date">over</span>
         <input type="number" inputMode="numeric" min="1" max="100" value={years} style={{ width: "4rem" }} onChange={(e) => setYears(e.target.value)} />
         <span className="lib-date">years at</span>
@@ -636,7 +644,7 @@ function EconomicsCard({ name, label = name, modelUnit = "days" }) {
       </div>
       {data && (
         <>
-          <table className="lib-table" style={{ marginTop: "0.75rem" }}>
+          <table className="lib-table mt-3">
             <thead><tr><th>Plan</th><th>Interval</th><th>Per year</th><th>Net present cost</th></tr></thead>
             <tbody>
               {data.options.map((o) => (
@@ -686,14 +694,14 @@ export function ForecastCard({ name, label = name, show = "all", note = null }) 
     <section className="card" data-testid="class-forecast">
       <div className="maint-head"><h2>{label}: {sparesOnly ? "spares" : "failure forecast"}</h2></div>
       {note && <p className="lib-date">{note}</p>}
-      <div className="maint-row" style={{ marginTop: 0 }}>
+      <div className="maint-row mt-0">
         <span className="lib-date">Next</span>
         <input type="number" inputMode="numeric" min="1" max={most} value={periods} style={{ width: "4.5rem" }}
                aria-label="How many periods" onChange={(e) => setPeriods(e.target.value)} />
-        <select value={period} aria-label="Period"
+        <Select value={period} aria-label="Period"
                 onChange={(e) => { setPeriod(e.target.value); setPeriods({ month: 12, quarter: 4, year: 3 }[e.target.value]); }}>
           {FORECAST_PERIODS.map((p) => <option key={p.id} value={p.id}>{p.label.toLowerCase()}</option>)}
-        </select>
+        </Select>
         <button className="secondary" onClick={load}>Forecast</button>
       </div>
       {error && <div className="card error">{error}</div>}
@@ -864,9 +872,7 @@ export function PartsPanel({ branch, scopeName = "", all = false, onAll, design 
         <SegmentedControl size="sm" label="Show" value={view} onChange={(v) => onShow?.(v)} style={{ flex: "none" }}
                           options={[{ value: "list", label: "List" }, { value: "structure", label: "Structure" }]} />
         <span className="grow" />
-        <label className="maint-row lib-date td-tab-check" style={{ marginTop: 0, gap: "0.4rem" }}>
-          <input type="checkbox" checked={all} onChange={(e) => onAll?.(e.target.checked)} /> Show all parts
-        </label>
+        <Switch className="td-tab-check" checked={all} onChange={(v) => onAll?.(v)} label="Show all parts" ariaLabel="Show all parts" />
       </div>
       <div className="maint-row td-tab-actions">
         <button className="secondary sm" onClick={() => setModal("bom")}>Import a BOM</button>
@@ -875,9 +881,9 @@ export function PartsPanel({ branch, scopeName = "", all = false, onAll, design 
         <span className="grow" />
         <button className="sm" onClick={() => setModal("new")}><PlusIcon /> New part</button>
       </div>
-      {error && <div className="card error">{error}</div>}
+      {error && <LoadFailed what="Couldn't load the parts." error={error} />}
       {!design && all && parts?.length > 0 && !filtered && <SparesCoverCard parts={parts} />}
-      {shown === null ? <div className="card empty">Loading…</div> : shown.length === 0 ? (
+      {shown === null ? (!error && <Loading card />) : shown.length === 0 ? (
         <div className="card empty"><p>{filtered ? "No parts match."
           : parts.length === 0 ? (design ? "No parts yet. Add the parts that go into it, or import a BOM."
             : "No parts yet. Add the spares you keep: anodes, filters, bearings; or import a BOM.")
@@ -964,7 +970,7 @@ function SparesCoverCard({ parts }) {
   useEffect(() => {
     getSparesCover(unlisted).then(setCover).catch((e) => setError(e.message));
   }, [unlisted, parts]);
-  if (error) return <div className="card error">{error}</div>;
+  if (error) return <LoadFailed what="Couldn't load the spares cover." error={error} />;
   if (!cover) return null;
   const bare = cover.without_parts_list || [];
   const line = (v) => (
@@ -978,10 +984,7 @@ function SparesCoverCard({ parts }) {
     <section className="card">
       <div className="maint-head">
         <h2>Spares cover</h2>
-        <label className="maint-row lib-date" style={{ marginTop: 0, gap: "0.4rem" }}>
-          <input type="checkbox" checked={unlisted} onChange={(e) => setUnlisted(e.target.checked)} />
-          Positions with no parts list
-        </label>
+        <Switch checked={unlisted} onChange={setUnlisted} label="Positions with no parts list" />
       </div>
       {cover.no_spare.length > 0 && (
         <>
@@ -1036,10 +1039,10 @@ export function StockModal({ part, locations, onClose, onDone }) {
                  onDone();
                }}>
       <Field label="Location">
-        <select value={loc} onChange={(e) => setLoc(e.target.value)}>
+        <Select value={loc} onChange={(e) => setLoc(e.target.value)}>
           <option value="">{locations.length ? "Choose…" : "Add a location first"}</option>
           {locations.map((l) => <option key={l.id} value={l.id}>{l.parent ? `${l.parent.name} › ` : ""}{l.name}</option>)}
-        </select>
+        </Select>
       </Field>
       <SegmentedControl label="What happened" value={mode} onChange={(v) => { setMode(v); setQty(""); }}
                         options={[{ value: "move", label: "Received or issued" }, { value: "count", label: "Counted" }]} />
@@ -1049,7 +1052,7 @@ export function StockModal({ part, locations, onClose, onDone }) {
             <input type="number" inputMode="decimal" min="0" step="any" value={qty} placeholder="e.g. 2" onChange={(e) => setQty(e.target.value)} />
           </Field>
           <Field label="Counted on">
-            <input type="date" value={on} max={workspaceToday()} onChange={(e) => setOn(e.target.value)} />
+            <DateInput value={on} max={workspaceToday()} onChange={(e) => setOn(e.target.value)} />
           </Field>
           <Field label="Counted by (optional)"><input value={by} maxLength={120} onChange={(e) => setBy(e.target.value)} /></Field>
           <p className="lib-date">
@@ -1060,7 +1063,7 @@ export function StockModal({ part, locations, onClose, onDone }) {
       ) : (
         <>
           <Field label="Received (+) or issued (−)"><input type="number" step="any" value={qty} placeholder="e.g. 3 or -1" onChange={(e) => setQty(e.target.value)} /></Field>
-          <Field label="On (default today)"><input type="date" value={on} max={workspaceToday()} onChange={(e) => setOn(e.target.value)} /></Field>
+          <Field label="On (default today)"><DateInput value={on} max={workspaceToday()} onChange={(e) => setOn(e.target.value)} /></Field>
         </>
       )}
       <Field label="Reorder at (optional)"><input type="number" inputMode="decimal" min="0" step="any" value={reorder} onChange={(e) => setReorder(e.target.value)} /></Field>

@@ -18,6 +18,7 @@ import { useConfirm } from "./ConfirmProvider.jsx";
 import { usePanelMenu } from "../panelMenu.js";
 import {
   DEFAULT_TASK_COLUMNS, DEFAULT_TOLERANCE_DAYS, DEFAULT_VISIT_DAY, TASK_COLUMNS, WEEKDAYS, cadenceFor, cadenceWords, hoursCadenceFor, cellText, countTitle, dayName, daysLate, freeTasks,
+  intervalsText, packageMembers, packageNameFor, visitPlanText,
   kindText, lateText, lsaColumns, taskOnText, lsaCsv, lsaRollup, modeLine, nextSort, packageScope, parseSort, proposalBatch, proposalProblem, proposalRows,
   renameRow, rollupLines, labourYear, labourYearText, searchTasks, sortParam, sortTasks, tickAll, tickState, toggleRow, visitRuleText,
   MAINTENANCE_COLUMNS, costFoot, costWhere, maintenanceOrder, money, tasksHere,
@@ -35,6 +36,10 @@ import "./Outline.css";
 import "../views/Maintenance.css";
 import "./LsaPanel.css";
 import { useWorkManagementOn } from "../ConfigProvider.jsx";
+import { DateInput } from "./ui/DateTimeInput.jsx";
+import LoadFailed from "./LoadFailed.jsx";
+import Loading from "./ui/Loading.jsx";
+import { Checkbox, Radio, Select } from "./ui/Controls.jsx";
 
 // The LSA tab of the Explorer's panel (Assets › Explorer, ?tab=lsa; it was the
 // Packages tab, and ?tab=packages still opens it. Derryn, 8–9 Nov 2026: the
@@ -174,16 +179,16 @@ export function PackageTasks({ scope, where, onBack, onDone }) {
       </p>
       <div className="pk-dialog-row">
         <Field label="Visit day">
-          <select value={weekday} onChange={(e) => setWeekday(e.target.value)}>
+          <Select value={weekday} onChange={(e) => setWeekday(e.target.value)}>
             {WEEKDAYS.map((d) => <option key={d} value={d}>{dayName(d)}</option>)}
-          </select>
+          </Select>
         </Field>
         <Field label="On time up to (days after)">
           <input type="number" min="0" max="366" step="1" inputMode="numeric" value={tolerance} onChange={(e) => setTolerance(e.target.value)} />
         </Field>
       </div>
-      {state.error && <div className="card error">{state.error}</div>}
-      {!data && !state.error && <p className="lib-date">Loading…</p>}
+      {state.error && <LoadFailed what="Couldn't load the proposals." error={state.error} />}
+      {!data && !state.error && <Loading />}
       {data && rows.length === 0 && (
         <p className="lib-date">Nothing to package {where}: every task on the calendar here is in a package already{data.already_in_packages ? ` (${plural(data.already_in_packages, "task")})` : ""}.</p>
       )}
@@ -191,8 +196,8 @@ export function PackageTasks({ scope, where, onBack, onDone }) {
         <ul className="pk-proposal" aria-label="Packages to make">
           {rows.map((r) => (
             <li key={r.ref} className={"pk-prow" + (r.layerOf ? " pk-layer-row" : "")}>
-              <input type="checkbox" checked={r.ticked} aria-label={`Make ${r.name || r.draft.name}`}
-                     onChange={(e) => setRows(toggleRow(rows, r.ref, e.target.checked))} />
+              <Checkbox checked={r.ticked} aria-label={`Make ${r.name || r.draft.name}`}
+                        onChange={(e) => setRows(toggleRow(rows, r.ref, e.target.checked))} />
               <div className="pk-prow-main">
                 <input type="text" className="pk-name-input" value={r.name} aria-label={`Name of ${r.draft.name}`} maxLength={200}
                        onChange={(e) => setRows(renameRow(rows, r.ref, e.target.value))} />
@@ -237,7 +242,11 @@ export function overdueNote(n) {
     "To do them sooner, raise the visit now from the package's page.";
 }
 
-export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) {
+// `Frame`: the form's frame, a dialog (FormModal) on the LSA tab; the Explorer's Maintenance tab
+// gives its table pane's (TaskTreeTable.jsx PaneForm). `named`: start with a name for it from its
+// interval ("50 h service"). The tasks whose interval is a whole multiple of the one chosen go on
+// every Nth visit (packageMembers), and the form says so whenever the intervals differ.
+export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone, Frame = FormModal, named = false }) {
   // Tasks by operating hours make a package by hours (a 50 h service); calendar tasks a calendar one.
   const byHours = useMemo(() => hoursCadenceFor(tasks), [tasks]);
   const mixedKinds = !byHours && tasks.some((t) => t.unit === "hours");
@@ -245,7 +254,7 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) 
   // A new empty package on a position may go by its hour meter too.
   const units = byHours ? ["hours"] : tasks.length || !scope?.position_id ? CALENDAR : [...CALENDAR, "hours"];
   const trades = [...new Set(tasks.map((t) => t.trade).filter(Boolean))];
-  const [name, setName] = useState("");
+  const [name, setName] = useState(() => (named && tasks.length ? packageNameFor(start.every, start.unit) : ""));
   const [timing, setTiming] = useState("fixed");
   // Weekly visits on the visit day; monthly ones on the first of that weekday.
   const [how, setHow] = useState(() => ({
@@ -257,7 +266,7 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) 
   const [tolerance, setTolerance] = useState(String(DEFAULT_TOLERANCE_DAYS));
   const fixed = timing === "fixed";
   const problem = mixedKinds
-    ? "Tasks by operating hours and calendar tasks go in separate packages: tick one kind."
+    ? "Tasks by operating hours and calendar tasks go in separate packages: choose one kind."
     : howOftenProblem(how, { wholeOnly: true });
   const ok = name.trim() && !problem;
   const today = workspaceToday();
@@ -267,21 +276,28 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) 
     const body = {
       ...scope, name: name.trim(), timing, ...cadence, trade: trade.trim(),
       ...(tolerance !== "" && Number(tolerance) > 0 ? { tolerance: Math.round(Number(tolerance)), tolerance_unit: "days" } : {}),
-      ...(tasks.length ? { tasks: byHours && Number(how.every) === byHours.every ? byHours.members : tasks.map((t) => t.id) } : {}),
+      ...(tasks.length ? { tasks: packageMembers(tasks, how.every, how.unit) } : {}),
     };
     const made = await createPackage(body);
     onDone(tasks.length ? `Made ${made.name} with ${plural(tasks.length, "task")}.` : `Made ${made.name}. Add its tasks from its ⋯.`, made.id);
   };
+  const differ = intervalsText(tasks);
+  const plan = problem ? "" : visitPlanText(tasks, how.every, how.unit);
   return (
-    <FormModal title={tasks.length ? `Package ${plural(tasks.length, "task")}` : "Add a package"} submitLabel={tasks.length ? "Make package" : "Add package"}
-               canSubmit={!!ok} onClose={onClose} onSubmit={submit}>
+    <Frame title={tasks.length ? `Package ${plural(tasks.length, "task")}` : "Add a package"} submitLabel={tasks.length ? "Make package" : "Add package"}
+           canSubmit={!!ok} onClose={onClose} onSubmit={submit}>
       <p className="lib-date">
         {tasks.length
-          ? <>A package {where}, done on one visit: {tasks.map(taskOnText).join(", ")}.{byHours
-            ? " By operating hours: the visit goes by the shortest interval, and a task at a whole multiple of it on every Nth visit (a 100 h task on every second 50 h service)."
-            : start.mixed ? " Their intervals differ: the visit goes by the one below, and each task is done on every visit." : ""}</>
+          ? <>A package {where}, done on one visit: {tasks.map(taskOnText).join(", ")}.{byHours && !differ
+            ? " By operating hours: a task at a whole multiple of the interval goes on every Nth visit (a 100 h task on every second 50 h service)." : ""}</>
           : <>A package {where}: the tasks done together on one visit. Add its tasks after.</>}
       </p>
+      {differ && (
+        <p className="lib-date mt-pk-differ" role="note">
+          Their intervals differ: {differ}. The visit goes by the interval below{byHours ? " (the shortest to start with)" : ""}: a task at a whole
+          multiple of it comes on every Nth visit, and any other task on every visit. {plan}
+        </p>
+      )}
       {tasks.some((t) => t.overdue) && (
         <p className="maint-overdue" role="status">
           {overdueNote(tasks.filter((t) => t.overdue).length)}
@@ -289,10 +305,10 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) 
       )}
       <Field label="Name" text={name}><input autoFocus value={name} maxLength={200} onChange={(e) => setName(e.target.value)} placeholder="e.g. Weekly inspection" /></Field>
       <Field label="Dates">
-        <select value={timing} onChange={(e) => setTiming(e.target.value)}>
+        <Select value={timing} onChange={(e) => setTiming(e.target.value)}>
           <option value="fixed">Set dates</option>
           <option value="from_last_visit">Counted from the last visit</option>
-        </select>
+        </Select>
       </Field>
       <fieldset className="mt-how">
         <legend>How often</legend>
@@ -303,7 +319,7 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone }) 
         <Field label="Trade (optional)" text={trade}><input value={trade} maxLength={200} onChange={(e) => setTrade(e.target.value)} placeholder="e.g. Fitter" /></Field>
         <Field label="On time up to (days after)"><input type="number" min="0" step="1" inputMode="numeric" value={tolerance} onChange={(e) => setTolerance(e.target.value)} /></Field>
       </div>
-    </FormModal>
+    </Frame>
   );
 }
 
@@ -316,8 +332,8 @@ export function PauseDialog({ pkg, onClose, onDone }) {
                onSubmit={async () => onDone(await changePackage(pkg.id, "pause", { reason: reason.trim(), until: until || null, full_visit: full }), "Paused.")}>
       <p className="lib-date">While it&apos;s paused it raises no work orders and its tasks aren&apos;t overdue. It comes back by itself on the return date.</p>
       <Field label="Why" text={reason}><input autoFocus value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Plant shut down for overhaul" /></Field>
-      <Field label="Back on (leave blank if not known)"><input type="date" value={until} onChange={(e) => setUntil(e.target.value)} /></Field>
-      <label className="pk-check"><input type="checkbox" checked={full} onChange={(e) => setFull(e.target.checked)} /> The first visit back does everything missed while paused</label>
+      <Field label="Back on (leave blank if not known)"><DateInput value={until} onChange={(e) => setUntil(e.target.value)} /></Field>
+      <Checkbox className="pk-check" checked={full} onChange={(e) => setFull(e.target.checked)} label="The first visit back does everything missed while paused" />
     </FormModal>
   );
 }
@@ -333,14 +349,16 @@ export function RetireDialog({ pkg, onClose, onDone }) {
   );
 }
 
-// Add tasks…: the tasks where the package is (and below) that are in no package.
+// Add tasks…: the tasks on its asset (a location package: at it) that are in no package.
 function AddTasksDialog({ pkg, onClose, onDone }) {
   const [tasks, setTasks] = useState(null);
   const [error, setError] = useState(null);
   const [picked, setPicked] = useState(() => new Set());
   const [rule, setRule] = useState("every");
   const [nth, setNth] = useState("4");
-  const subject = pkg.subject;
+  // A package on a position takes any task on its asset (it then lives where its tasks meet); one
+  // on a location, the tasks at it.
+  const subject = pkg.subject?.kind === "location" ? pkg.subject : pkg.asset || pkg.subject;
   useEffect(() => {
     let live = true;
     const scope = subject?.kind === "location" ? { location_id: subject.id } : { position_id: subject?.id };
@@ -358,27 +376,25 @@ function AddTasksDialog({ pkg, onClose, onDone }) {
   return (
     <FormModal title={`Add tasks to ${pkg.name}`} submitLabel={picked.size ? `Add ${plural(picked.size, "task")}` : "Add tasks"}
                canSubmit={picked.size > 0 && (rule === "every" || Number(nth) >= 2)} onClose={onClose} onSubmit={submit}>
-      {error && <div className="card error">{error}</div>}
-      {!tasks && !error && <p className="lib-date">Loading…</p>}
+      {error && <LoadFailed what="Couldn't load the tasks." error={error} />}
+      {!tasks && !error && <Loading />}
       {tasks && tasks.length === 0 && <p className="lib-date">Every task at {subject?.name || "its position"} and below is in a package already, by use, or an item&apos;s own.</p>}
       {tasks && tasks.length > 0 && (
         <ul className="pk-pick">
           {tasks.map((t) => (
             <li key={t.id}>
-              <label className="pk-check">
-                <input type="checkbox" checked={picked.has(t.id)} onChange={() => flip(t.id)} />
-                <span>{t.name} <span className="lib-date">· {[t.subject?.within, t.subject?.name].filter(Boolean).join(" › ")} · every {t.interval} {t.unit}</span></span>
-              </label>
+              <Checkbox className="pk-check" checked={picked.has(t.id)} onChange={() => flip(t.id)}
+                        label={<>{t.name} <span className="lib-date">· {[t.subject?.within, t.subject?.name].filter(Boolean).join(" › ")} · every {t.interval} {t.unit}</span></>} />
             </li>
           ))}
         </ul>
       )}
       <div className="pk-dialog-row">
         <Field label="On">
-          <select value={rule} onChange={(e) => setRule(e.target.value)}>
+          <Select value={rule} onChange={(e) => setRule(e.target.value)}>
             <option value="every">Every visit</option>
             <option value="nth">Every Nth visit</option>
-          </select>
+          </Select>
         </Field>
         {rule === "nth" && <Field label="N"><input type="number" min="2" max="100" step="1" inputMode="numeric" value={nth} onChange={(e) => setNth(e.target.value)} /></Field>}
       </div>
@@ -408,28 +424,26 @@ function AddToPackageDialog({ scope, tasks, onClose, onDone }) {
   return (
     <FormModal title={`Add ${plural(tasks.length, "task")} to a package`} submitLabel="Add" pendingLabel="Adding…"
                canSubmit={!!pick && (rule === "every" || Number(nth) >= 2)} onClose={onClose} onSubmit={submit}>
-      {error && <div className="card error">{error}</div>}
+      {error && <LoadFailed what="Couldn't load the packages." error={error} />}
       {tasks.some((t) => t.overdue) && <p className="maint-overdue" role="status">{overdueNote(tasks.filter((t) => t.overdue).length)}</p>}
-      {!list && !error && <p className="lib-date">Loading…</p>}
+      {!list && !error && <Loading />}
       {list && list.length === 0 && <p className="lib-date">No packages on this part of the tree yet: use Package selected… to make one.</p>}
       {list && list.length > 0 && (
         <ul className="pk-pick" role="radiogroup" aria-label="Packages">
           {list.map((p) => (
             <li key={p.id}>
-              <label className="pk-check">
-                <input type="radio" name="pk-target" checked={pick === p.id} onChange={() => setPick(p.id)} />
-                <span>{p.parent ? "↳ " : ""}{p.name} <span className="lib-date">· {cadenceWords(p)}{p.trade ? ` · ${p.trade}` : ""} · {plural(p.task_count, "task")}</span></span>
-              </label>
+              <Radio className="pk-check" name="pk-target" checked={pick === p.id} onChange={() => setPick(p.id)}
+                     label={<>{p.parent ? "↳ " : ""}{p.name} <span className="lib-date">· {cadenceWords(p)}{p.trade ? ` · ${p.trade}` : ""} · {plural(p.task_count, "task")}</span></>} />
             </li>
           ))}
         </ul>
       )}
       <div className="pk-dialog-row">
         <Field label="On">
-          <select value={rule} onChange={(e) => setRule(e.target.value)}>
+          <Select value={rule} onChange={(e) => setRule(e.target.value)}>
             <option value="every">Every visit</option>
             <option value="nth">Every Nth visit</option>
-          </select>
+          </Select>
         </Field>
         {rule === "nth" && <Field label="N"><input type="number" min="2" max="100" step="1" inputMode="numeric" value={nth} onChange={(e) => setNth(e.target.value)} /></Field>}
       </div>
@@ -455,8 +469,8 @@ function PackagesHere({ scope, where, onOpen, version }) {
   return (
     <div className="td-tab-page pk-panel rw">
       <p className="lib-date pk-purpose">The work packages {where} and below: tasks done together on one visit{workOrders ? ", each visit one work order" : ""}. To make one, tick tasks in What it needs and package them.</p>
-      {state.error && <div className="card error">Couldn&apos;t load the packages: {state.error}</div>}
-      {!list && !state.error && <div className="card empty">Loading…</div>}
+      {state.error && <LoadFailed what="Couldn't load the packages." error={state.error} />}
+      {!list && !state.error && <Loading card />}
       {list && list.length === 0 && <div className="card empty pk-empty"><p>No packages here yet. Tick the tasks done on the same visit in What it needs, then Package selected….</p></div>}
       {list && list.length > 0 && (
         <div className="maint-scroll">
@@ -482,7 +496,9 @@ function PackagesHere({ scope, where, onOpen, version }) {
 
 // ---- one package --------------------------------------------------------------------------
 
-function PackageView({ id, today, onBack, onOpen, onChanged }) {
+// `at`: where it's shown (the Maintenance tab: the meeting point of its tasks), in place of the
+// position it was made on; `where`: a line saying why it's there.
+export function PackageView({ id, today, onBack = null, onOpen, onChanged, headingRef = null, at = null, where = "" }) {
   const confirm = useConfirm();
   const [state, setState] = useState({ id: null, pkg: null, error: null });
   const [modal, setModal] = useState(null);
@@ -508,9 +524,9 @@ function PackageView({ id, today, onBack, onOpen, onChanged }) {
       setSaid(e.message);
     }
   };
-  const back = <button type="button" className="link pk-back" onClick={onBack}>← All packages here</button>;
-  if (state.error && state.id === id) return <div>{back}<div className="card error">Couldn&apos;t load the package: {state.error}</div></div>;
-  if (!pkg) return <div>{back}<p className="lib-date">Loading…</p></div>;
+  const back = onBack ? <button type="button" className="link pk-back" onClick={onBack}>← All packages here</button> : null;
+  if (state.error && state.id === id) return <div>{back}<LoadFailed what="Couldn't load the package." error={state.error} /></div>;
+  if (!pkg) return <div>{back}<Loading /></div>;
   const live = pkg.status !== "retired";
   const menu = [
     pkg.status === "active" && !pkg.flags?.includes("past_return_date") && { id: "pause", label: "Pause…", onSelect: () => setModal("pause") },
@@ -533,10 +549,11 @@ function PackageView({ id, today, onBack, onOpen, onChanged }) {
       {back}
       <div className="pk-view-head">
         <div>
-          <h3 className="pk-view-name">{pkg.name}</h3>
+          <h3 className="pk-view-name" tabIndex={headingRef ? -1 : undefined} ref={headingRef}>{pkg.name}</h3>
           <p className="lib-date pk-sub">
-            {[cadenceWords(pkg), pkg.parent ? `on ${pkg.parent.name}'s visits` : pkg.subject?.name && `at ${pkg.subject.name}`, pkg.trade, tol].filter(Boolean).join(" · ")}
+            {[cadenceWords(pkg), pkg.parent ? `on ${pkg.parent.name}'s visits` : (at || pkg.subject?.name) && `at ${at || pkg.subject.name}`, pkg.trade, tol].filter(Boolean).join(" · ")}
           </p>
+          {where && <p className="lib-date pk-sub" title="Worked out from where its tasks are: add or take out a task and it moves">{where}</p>}
           <div className="pk-chips"><StatusChips pkg={pkg} today={today} /><WhenCell pkg={pkg} /></div>
         </div>
         {menu.length > 0 && <MoreMenu label={`Actions for ${pkg.name}`} items={menu} />}
@@ -854,10 +871,8 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
                  aria-label="Search the tasks" />
         </label>
         {maint && (
-          <label className="mt-below">
-            <input type="checkbox" checked={below} onChange={(e) => showBelow(e.target.checked)} />
-            Include what&apos;s inside
-          </label>
+          <Checkbox className="mt-below" checked={below} onChange={(e) => showBelow(e.target.checked)}
+                    label="Include what's inside" />
         )}
         {maint && (
           <button type="button" className="secondary sm mt-add" onClick={() => adding.setOpen(row.key)}>
@@ -874,9 +889,9 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
         )}
       </div>
       {said && <p className="lib-date" role="status">{said}</p>}
-      {state.error && <div className="card error">Couldn&apos;t load the tasks: {state.error}</div>}
+      {state.error && <LoadFailed what="Couldn't load the tasks." error={state.error} />}
       {data?.truncated && <p className="lib-date">Showing the first {all.length} of {data.total} tasks: pick a smaller branch to see the rest.</p>}
-      {!shown && !state.error ? <div className="card empty">Loading…</div> : shown && all.length === 0 ? (
+      {!shown && !state.error ? <Loading card /> : shown && all.length === 0 ? (
         <div className="card empty pk-empty">
           <p>{maint ? `No maintenance tasks ${below ? "here or below" : "here"} yet. Add one (from the maker's manual, a regulation or your own practice), or decide the failure modes on the RCM tab: their tasks show here.`
             : design ? "No tasks in the design here or below yet. Decide the failure modes on the RCM tab: their tasks show here, to say what each needs."
@@ -894,7 +909,7 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
             <div className="rw-head" role="row">
               {!plain && (
                 <div className="rw-h pk-tick" role="columnheader" style={{ width: TICK_W }}>
-                  <input type="checkbox" aria-label="Tick every task shown" checked={tick === "all"} disabled={!shown.length}
+                  <Checkbox aria-label="Tick every task shown" checked={tick === "all"} disabled={!shown.length}
                          ref={(el) => { if (el) el.indeterminate = tick === "some"; }}
                          onChange={(e) => setPicked(tickAll(shown.filter((t) => !t.why_not), picked, e.target.checked))} />
                 </div>
@@ -921,7 +936,7 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
                    onClick={(e) => { if (!e.target.closest("button, a, input")) taskOpen.setOpen(t.id); }}>
                 {!plain && (
                   <div className="rw-c pk-tick" role="cell" style={{ width: TICK_W }}>
-                    <input type="checkbox" checked={picked.has(t.id)} disabled={!!t.why_not} onChange={() => flip(t.id)}
+                    <Checkbox checked={picked.has(t.id)} disabled={!!t.why_not} onChange={() => flip(t.id)}
                            aria-label={`Tick ${t.name}`} title={t.why_not ? `Can't join a package: ${t.why_not}` : undefined} />
                   </div>
                 )}

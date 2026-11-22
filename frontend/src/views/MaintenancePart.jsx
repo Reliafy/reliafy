@@ -6,6 +6,7 @@ import LoadFailed from "../components/LoadFailed.jsx";
 import { getMaintenancePart, getPartStructure, getPartWhereUsed, listMaintenanceLocations } from "../api.js";
 import { StockModal } from "./MaintenanceLists.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import { ShowMe } from "../components/SectionPage.jsx";
 import {
   ComponentModal, LevelModal, PositionsFromStructureModal, RollupCard, StructureTree, WhereUsedCard, removeLine,
 } from "../components/MaintenanceStructure.jsx";
@@ -13,6 +14,7 @@ import { positionsPlanSummary, qtyNumber } from "../maintenanceStructure.js";
 import "./Maintenance.css";
 import { PageTitle } from "../components/usePageTitle.js";
 import { partsPath } from "../redirects.js";
+import Loading from "../components/ui/Loading.jsx";
 
 // One catalogue part (#435): its details and indenture level, its structure (the
 // parts it's made of, expand and collapse), the quantities rolled up, and where it's
@@ -34,7 +36,7 @@ export default function MaintenancePart() {
   useEffect(() => { setMade(null); load(); }, [load]);
 
   if (error && !part) return <div className="app"><LoadFailed header onRetry={() => { setError(null); load(); }} error={error} notFound="Part not found." to={partsPath()} label="See all parts and stock" /></div>;
-  if (!part || !structure || !used) return <div className="app"><div className="card empty">Loading…</div></div>;
+  if (!part || !structure || !used) return <div className="app"><Loading card /></div>;
 
   const lines = structure.tree.children || [];
   const remove = async (line) => {
@@ -53,6 +55,7 @@ export default function MaintenancePart() {
         actions={<>
           <button className="secondary" onClick={() => setModal("stock")}>Stock…</button>
           <button className="secondary" onClick={() => setModal("level")}>Indenture level</button>
+          <ShowMe help={{ guide: "superseded-and-obsolete-parts" }} asHelp />
         </>}
         primary={<button onClick={() => setModal({ line: null })}>Add a part to it</button>}
       />
@@ -79,7 +82,7 @@ export default function MaintenancePart() {
       <section className="card">
         <div className="maint-head">
           <h2>Structure</h2>
-          <div className="maint-row" style={{ marginTop: 0 }}>
+          <div className="maint-row mt-0">
             {lines.length > 0 && <button className="secondary" onClick={() => setModal("positions")}>Create positions from it</button>}
             <button className="secondary" onClick={() => setModal({ line: null })}>Add a part</button>
           </div>

@@ -24,6 +24,8 @@ import Card, { CardHeader } from "../components/ui/Card.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, renamePrompt } from "../confirm.js";
+import LoadFailed from "../components/LoadFailed.jsx";
+import Loading from "../components/ui/Loading.jsx";
 
 const TrashIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -97,8 +99,8 @@ export default function TeamSettingsPage() {
   const askText = useAskText();
 
   if (workspace === "personal") return <NoTeam />;
-  if (error && !team) return <div className="app"><div className="card error">{error}</div></div>;
-  if (!team) return <div className="app"><div className="card empty">Loading…</div></div>;
+  if (error && !team) return <div className="app"><LoadFailed what="Couldn't load the team." error={error} header /></div>;
+  if (!team) return <div className="app"><Loading card /></div>;
 
   const isOwner = team.role === "owner";
 
@@ -275,7 +277,7 @@ export default function TeamSettingsPage() {
         </table>
       </div>
 
-      <div className="card" style={{ marginTop: "1rem" }}>
+      <div className="card mt-4">
         <CardHeader
           title="Time zone"
           subtitle="Where the team's workspace is. Today, due dates and overdue follow its calendar for everyone in the team; not set, they follow UTC."
@@ -287,7 +289,7 @@ export default function TeamSettingsPage() {
         />
       </div>
 
-      <div className="card" style={{ marginTop: "1rem" }}>
+      <div className="card mt-4">
         <CardHeader
           title="Currency"
           subtitle="The symbol in front of costs in the team's workspace. It's only a label: nothing is converted."
@@ -316,7 +318,7 @@ export default function TeamSettingsPage() {
             </div>
           }
         >
-          <p className="muted-line" style={{ marginTop: 0 }}>
+          <p className="muted-line mt-0">
             This permanently deletes the team and <b>every artifact in its
             workspace</b> — datasets, models, RBDs, degradation models, tracked
             items, analyses and forecasts — for all members. This can't be

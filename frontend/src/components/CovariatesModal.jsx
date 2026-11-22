@@ -89,7 +89,7 @@ export default function CovariatesModal({
       <span className="hint">
         {blocked ? "Fix the schedule above to apply." : "Constants feed the calculation; schedules are saved with the diagram."}
       </span>
-      <div className="row" style={{ margin: 0 }}>
+      <div className="row m-0">
         <button className="secondary" onClick={onClose}>
           Cancel
         </button>
@@ -102,11 +102,11 @@ export default function CovariatesModal({
 
   return (
     <Modal title="Covariates" onClose={onClose} footer={footer} className="rbd-cov-modal">
-      <p className="hint" style={{ marginTop: 0 }}>
+      <p className="hint mt-0">
         These blocks use covariate models. Set each covariate to a constant value, or a schedule over time.
       </p>
       {repairable && (
-        <p className="hint" style={{ marginTop: 0 }}>
+        <p className="hint mt-0">
           In this repairable diagram a schedule follows the plant&apos;s clock: a repaired or replaced unit carries on
           under the load in force at that time. Blocks on a schedule are simulated (Pro); the preview shows a first
           unit from new.

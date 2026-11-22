@@ -120,16 +120,21 @@ def _refusal(component, **kw):
     return ra._component_message(str(err.value), {"a": "Pump A"})
 
 
+def test_a_task_in_running_hours_on_a_block_with_no_runs_share_runs_all_the_time():
+    # RePyability 0.20 no longer refuses it: with no duty the block runs all the time (a share
+    # of 1), so its running hours are calendar hours, as Reliafy reads a position with no duty.
+    life, rep = sv.Weibull.from_params([1000, 3]), sv.Exponential.from_params([0.1])
+    spec = {"reliability": life, "repairability": rep}
+    RepairableRBD([("s", "a"), ("a", "t")], {"a": {**spec, "inspection": {"interval": 500, "basis": "operating"}}})
+
+
 def test_refusals_say_what_to_do():
-    no_duty = _refusal({"inspection": {"interval": 500, "basis": "operating"}})
-    assert no_duty.startswith("“Pump A”: its proof test is counted in running hours")
-    assert "set Runs in the Maintenance plan, or count the task on the calendar" in no_duty
     shut = _refusal({"duty": 0.5, "preventive": {"policy": "age", "shutdown": "Annual", "basis": "operating"}},
                     shutdowns={"Annual": {"period": 8760, "duration": 10}})
     assert "done at a shutdown" in shut and "count it on the calendar" in shut
     cal = _refusal({"duty": 0.5, "preventive": {"policy": "calendar", "calendar": [100, 200], "basis": "operating"}})
     assert "calendar policy" in cal and "count it on the calendar" in cal
-    for text in (no_duty, shut, cal):
+    for text in (shut, cal):
         assert "operating time" not in text and "basis" not in text
 
 

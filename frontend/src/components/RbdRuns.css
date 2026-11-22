@@ -5,7 +5,7 @@
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 12px;
+  gap: var(--space-1) var(--space-3);
   font-size: var(--fs-13);
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
@@ -20,11 +20,11 @@
   text-decoration: underline;
 }
 .rbd-runs-history {
-  margin: 4px 0 0;
+  margin: var(--space-1) 0 0;
   font-size: var(--fs-13);
 }
 
-.rbd-runs-filter select {
+.rbd-runs-filter select, .rbd-runs-filter .sel-trigger {
   min-height: 36px;
   max-width: 100%;
   font-size: var(--fs-14);
@@ -42,14 +42,9 @@
 .rbd-runs-table td.rbd-runs-pick {
   padding-right: 0;
 }
-.rbd-runs-pick input {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-}
 
 .rbd-runs-note {
-  margin: 8px 0 0;
+  margin: var(--space-2) 0 0;
   color: var(--text-secondary);
   font-size: var(--fs-13);
 }
@@ -59,18 +54,14 @@
 }
 
 .rbd-runs .card + .card {
-  margin-top: 16px;
+  margin-top: var(--space-4);
 }
 
 @media (max-width: 640px) {
   .rbd-runs-ci {
     display: block;
   }
-  .rbd-runs-pick input {
-    width: 22px;
-    height: 22px;
-  }
-  .rbd-runs-filter select {
+  .rbd-runs-filter select, .rbd-runs-filter .sel-trigger {
     min-height: 44px;
     max-width: 60vw;
   }
@@ -78,7 +69,7 @@
 
 /* How long runs are kept: one quiet line under the list. */
 .rbd-runs-kept {
-  margin: 12px 0 0;
+  margin: var(--space-3) 0 0;
   font-size: var(--fs-13);
   color: var(--text-secondary);
 }

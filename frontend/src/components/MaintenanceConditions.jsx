@@ -15,6 +15,9 @@ import {
 } from "../maintenanceConditions.js";
 import { DESCRIPTION_HINT, tooLong } from "../maintenanceText.js";
 import { classesPath } from "../redirects.js";
+import LoadFailed from "./LoadFailed.jsx";
+import Loading from "./ui/Loading.jsx";
+import { Select } from "./ui/Controls.jsx";
 
 // ---- on a location, position or item ----------------------------------------------------------
 
@@ -128,13 +131,13 @@ function ConditionModal({ target, view, entry, onClose, onDone }) {
                }))}>
       {!entry && (
         <Field label="Condition">
-          {register === null ? <span className="lib-date">Loading…</span> : register.length === 0 ? (
+          {register === null ? <Loading inline /> : register.length === 0 ? (
             <span className="lib-date">The register is empty: add conditions on the <Link to={classesPath()}>Classes</Link> page first.</span>
           ) : (
-            <select autoFocus value={conditionId} onChange={(e) => setConditionId(e.target.value)}>
+            <Select autoFocus value={conditionId} onChange={(e) => setConditionId(e.target.value)}>
               <option value="">Choose…</option>
               {options.map((c) => <option key={c.id} value={c.id}>{c.display}{c.unit ? ` (${c.unit})` : ""}</option>)}
-            </select>
+            </Select>
           )}
         </Field>
       )}
@@ -194,7 +197,7 @@ export function ConditionsSection() {
       <section className="card">
         <div className="maint-head">
           <h2>Conditions</h2>
-          <div className="maint-row" style={{ marginTop: 0 }}>
+          <div className="maint-row mt-0">
             <button className="secondary" onClick={() => setModal("import")}>Import</button>
             {!empty && <button className="secondary" onClick={() => download("csv")}>Export CSV</button>}
             {!empty && <button className="secondary" onClick={() => download("json")}>Export JSON</button>}
@@ -202,7 +205,7 @@ export function ConditionsSection() {
           </div>
         </div>
         {error && <div className="card error">{error}</div>}
-        {data === null ? <p className="lib-date">Loading…</p> : empty ? (
+        {data === null ? <Loading /> : empty ? (
           <p className="lib-date">
             Optional. Your own list of what places and equipment are exposed to: Outdoor, Coastal, Seawater, Hazardous
             area › Zone 1, or a value such as Ambient temperature in °C. Set them on locations, positions and items: what's
@@ -259,12 +262,12 @@ function ConditionPanel({ id, data, onChanged, onRetired, onAddChild }) {
     setError(null);
     try { await retireCondition(id); onRetired(); } catch (e) { setError(e.message); }
   };
-  if (!c) return <section className="card">{error ? <div className="card error">{error}</div> : <p className="lib-date">Loading…</p>}</section>;
+  if (!c) return error ? <LoadFailed what="Couldn't load the condition." error={error} onRetry={load} /> : <section className="card"><Loading /></section>;
   return (
     <section className="card">
       <div className="maint-head">
         <h2>{c.display}</h2>
-        <div className="maint-row" style={{ marginTop: 0 }}>
+        <div className="maint-row mt-0">
           <button className="secondary" onClick={() => setModal("edit")}>Edit</button>
           <button className="secondary" onClick={() => setModal("move")}>Move</button>
           <button className="secondary" onClick={onAddChild}>Add a condition inside</button>
@@ -296,10 +299,10 @@ function ConditionPanel({ id, data, onChanged, onRetired, onAddChild }) {
 
 function ConditionPicker({ conditions, value, onChange, emptyLabel = "None", exclude }) {
   return (
-    <select value={value || ""} onChange={(e) => onChange(e.target.value || null)}>
+    <Select value={value || ""} onChange={(e) => onChange(e.target.value || null)}>
       <option value="">{emptyLabel}</option>
       {(conditions || []).filter((c) => !exclude?.has(c.id)).map((c) => <option key={c.id} value={c.id}>{c.display}</option>)}
-    </select>
+    </Select>
   );
 }
 
@@ -307,10 +310,10 @@ function KindFields({ f, setF }) {
   return (
     <>
       <Field label="Kind">
-        <select value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value, unit: e.target.value === "value" ? f.unit : "" })}>
+        <Select value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value, unit: e.target.value === "value" ? f.unit : "" })}>
           <option value="presence">Applies or not (e.g. Outdoor)</option>
           <option value="value">A value (e.g. Ambient temperature)</option>
-        </select>
+        </Select>
       </Field>
       {f.kind === "value" && (
         <Field label="Unit (optional)"><input value={f.unit} placeholder="e.g. °C, %RH, ppt" maxLength={20}

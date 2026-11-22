@@ -27,6 +27,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { mkdir, stat } from "node:fs/promises";
 import { jointFleet } from "../smoke/seed.js";
+import { choose } from "../smoke/select.js";
 
 const BASE = process.env.BASE_URL || "http://localhost:8000";
 const OUT = resolve(dirname(fileURLToPath(import.meta.url)), "../public/guides/img");
@@ -488,6 +489,32 @@ async function seedRcmStudy() {
   if (!res.ok) throw new Error(`rcm tree → ${res.status} ${await res.text()}`);
   return study.id;
 }
+// Plan-check guide: a study whose three fixed-interval oil changes are linked to one saved
+// optimal-replacement analysis (a lognormal life, a planned change $74 and a failure $250): the
+// best age is about 101 hours, so 25 h reads shorter, 100 h supported and 500 h longer.
+async function seedPlanCheck() {
+  const analysis = await api("/strategy/analyses", {
+    name: "Engine oil — best change age", kind: "optimal_replacement",
+    inputs: { distribution_id: "lognormal", params: [4.840310090876535, 0.10595790857024777],
+              planned_cost: 74, unplanned_cost: 250, unit: "hours" },
+  });
+  const study = await api("/rcm/studies", { name: "Haul truck — plan check", system: "Truck 14", description: "" });
+  const mode = (id, text, interval) => ({
+    id, text, effects: "Engine wear; the truck is down until it is repaired.", consequence: "operational",
+    decision: { outcome: "fixed_interval", task: "Change the oil", interval, interval_unit: "hours",
+                evidence: { type: "strategy_analysis", id: analysis.id } },
+  });
+  const res = await fetch(`${BASE}/api/rcm/studies/${study.id}/tree`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ functions: [{ text: "Haul 90 t a load", failures: [{ text: "Engine fails in service", modes: [
+      mode("pc1", "Oil breakdown at the 25 h service", 25),
+      mode("pc2", "Oil breakdown at the 100 h service", 100),
+      mode("pc3", "Oil breakdown at the 500 h service", 500),
+    ] }] }] }),
+  });
+  if (!res.ok) throw new Error(`plan-check tree → ${res.status} ${await res.text()}`);
+  return { studyId: study.id, analysisId: analysis.id };
+}
 async function seedTeam() {
   const team = await api("/teams", { name: "Reliability team" });
   await api(`/teams/${team.id}/members`, { email: "colleague@example.com" });
@@ -514,7 +541,7 @@ async function chooseOption(page, label, option) {
 
 // Open the builder's ⋯ menu and choose an item.
 async function builderMenu(page, item) {
-  await page.getByRole("button", { name: "More diagram settings" }).click();
+  await page.getByRole("button", { name: "More", exact: true }).click();
   await wait(300);
   await page.getByRole("button", { name: item }).click();
 }
@@ -531,17 +558,15 @@ async function arrange(page) {
   await builderMenu(page, /^Auto-arrange$/);
   await wait(1200);
 }
-// Validate on the Builder tab (Calculate is gated on it). After a pass the
-// button becomes the "✓ Valid" status.
+// The check runs by itself a moment after the diagram opens or changes (Calculate is gated on
+// it): wait for its answer, the "✓ Valid" chip.
 async function validate(page) {
-  const btn = page.getByRole("button", { name: /^Validate$/ });
-  if (await btn.count()) await btn.click();
-  await page.locator(".rbd-valid-toggle").waitFor({ timeout: 20000 });
+  await page.locator("button.rbd-valid-toggle").waitFor({ timeout: 20000 });
 }
-// The check itself: validate, then open the status's panel.
+// The check itself: its answer, then the chip's panel.
 async function validateAndShowCheck(page) {
   await validate(page);
-  await page.locator(".rbd-valid-toggle").click();
+  await page.locator("button.rbd-valid-toggle").click();
   await wait(500);
 }
 // Full run: validate, open the Calculator tab, Calculate, wait for the results
@@ -834,6 +859,14 @@ async function main() {
   const fixtureShots = (fx) => [
     // --- RCM study (guides/rcm-study.md): deciding a failure mode, with the sample
     // analysis as evidence ---
+    // --- Check a plan against its evidence (guides/check-a-maintenance-plan-against-evidence.md):
+    // the 25 h change opened, with the interval check's sentence.
+    { file: "plan-check-01-intervals.png", url: `/maintenance/rcm/${fx.planCheck?.studyId}`, settle: 2000,
+      async act(page) {
+        await page.getByRole("treegrid", { name: "RCM worksheet" }).waitFor({ timeout: 20000 }); await wait(400);
+        await page.getByText("Oil breakdown at the 25 h service").first().click(); await wait(1200);
+        await page.locator(".rsw-decision").first().evaluate((el) => el.scrollIntoView({ block: "start" })); await wait(600);
+      } },
     { file: "rcm-study-02-decision.png", url: `/maintenance/rcm/${fx.rcmStudyId}`, settle: 1500,
       async act(page) {
         await page.getByRole("button", { name: "To decide" }).first().click(); await wait(600);
@@ -866,7 +899,7 @@ async function main() {
         const form = page.getByRole("form", { name: "Add a snapshot" });
         await form.getByText(/2,048 samples each/).waitFor({ timeout: 20000 });
         await form.getByLabel(/^Axis names/).fill("X");
-        await form.getByLabel(/^Time taken/).fill("2026-10-30T10:00"); await wait(800);
+        await form.getByLabel("When: day").fill("30/10/2026"); await form.getByLabel("When: time").fill("10:00"); await wait(800);
       } },
     { file: "signals-03-edit-band.png", url: `/asset-register/channels/${fx.signals?.channelId}`, settle: 2500,
       skip: () => (fx.signals ? null : "Reliafy Maintenance is off on this server (MAINTENANCE_ENABLED); the existing image is kept. Re-capture it with ONLY=signals on a server that has it."),
@@ -893,10 +926,26 @@ async function main() {
     // --- Build an RBD (the seeded sample diagram) ---
     { file: "rbd-01-builder.png", url: "/systems/b/sample-rbd-pump-station", settle: 2000, act: arrange },
     { file: "rbd-02-results.png", url: "/systems/b/sample-rbd-pump-station", settle: 1200, act: calculate },
+    // The chance a system lasts from today's ages (guides/rbd-as-it-is-today.md): As of now ticked, the
+    // first block given an age, then calculated.
+    { file: "rbd-today-01-as-of-now.png", url: "/systems/b/sample-rbd-pump-station", settle: 1200,
+      async act(page) {
+        await validate(page);
+        await page.locator(".rbd-tabs .tab", { hasText: /^Calculator$/ }).click();
+        await wait(500);
+        await page.getByLabel(/As of now/).check(); await wait(600);
+        const first = page.locator(".rbd-asof-table tbody tr").first();
+        await choose(first.locator(".sel-trigger"), "age");
+        await first.locator("input[type=number]").fill("3000");
+        await page.getByRole("button", { name: /^Calculate$/ }).click();
+        await page.getByRole("button", { name: /^Recalculate$/ }).waitFor({ timeout: 60000 });
+        await wait(2500);
+        await scrollTo(page.locator(".rbd-asof-panel"), 120);
+      } },
     // Availability guide.
     { file: "availability-01-new.png", url: "/systems/b", settle: 900 },
     { file: "availability-02-system.png", url: `/systems/b/${fx.repairableId}`, settle: 1200,
-      async act(page) { await page.locator(".rbd-mode-select .sel-trigger, .sel-trigger", { hasText: /^Repairable$/ }).first().click(); await wait(700); } },
+      async act(page) { await page.getByRole("button", { name: /^Diagram settings/ }).click(); await wait(700); } },
     { file: "availability-03-add.png", url: `/systems/b/${fx.repairableId}`, settle: 1200,
       async act(page) { await page.getByRole("button", { name: "Add block" }).click(); await wait(600); } },
     { file: "availability-04-models.png", url: `/systems/b/${fx.repairableId}`, settle: 1400,
@@ -957,7 +1006,7 @@ async function main() {
       async act(page) {
         await page.locator(".rbd-tabs .tab", { hasText: /^Calculator$/ }).click(); await wait(600);
         await page.locator(".rbd-network-controls input[type=number]").fill("10");
-        await page.getByText(/stay connected/).first().waitFor({ timeout: 30000 }); await wait(2000);
+        await page.getByText(/stay connected\s+for/).first().waitFor({ timeout: 30000 }); await wait(2000);
       } },
     // --- Targets and design (rbd-targets-and-design) ---
     { file: "targets-01-allocate.png", url: `/systems/b/${fx.design?.train}`, settle: 1600,
@@ -1026,7 +1075,10 @@ async function main() {
     // --- Costs, intervals and what to improve ---
     { file: "costs-00-plan.png", url: `/systems/b/${fx.design?.repairable}`, settle: 1600,
       async act(page) {
-        await page.locator('[data-wt="rbd-plan-chip"]').click();
+        // The Maintenance plan's switch is in the diagram's settings.
+        await page.getByRole("button", { name: /^Diagram settings/ }).click();
+        await page.getByRole("switch", { name: "Show the maintenance plan" }).click();
+        await page.keyboard.press("Escape");
         await page.locator(".rbd-plan-table").waitFor({ timeout: 20000 }); await wait(1000);
         await scrollTo(page.locator(".rbd-plan"), 300);
       } },
@@ -1132,6 +1184,7 @@ async function main() {
       networkId: await seedNetworkRbd(),
       design: await seedDesignRbds(),
       rcmStudyId: await seedRcmStudy(),
+      planCheck: await seedPlanCheck(),
       maintainabilityId: await seedMaintainability(),
       signals: await seedSignals(config),
       teamId: await seedTeam(),
@@ -1159,6 +1212,8 @@ async function main() {
         }).catch(() => {});
       }
       await fetch(`${BASE}/api/rcm/studies/${fx.rcmStudyId}`, { method: "DELETE" }).catch(() => {});
+      await fetch(`${BASE}/api/rcm/studies/${fx.planCheck.studyId}`, { method: "DELETE" }).catch(() => {});
+      await fetch(`${BASE}/api/strategy/analyses/${fx.planCheck.analysisId}`, { method: "DELETE" }).catch(() => {});
       await fetch(`${BASE}/api/teams/${fx.teamId}`, { method: "DELETE" }).catch(() => {});
       for (const id of [fx.loadshare.datasetId, ...fx.joint.datasetIds]) {
         await fetch(`${BASE}/api/datasets/${id}`, { method: "DELETE" }).catch(() => {});

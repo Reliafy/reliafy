@@ -16,6 +16,9 @@ import { useConfirm } from "./ConfirmProvider.jsx";
 import MaintenancePhotos from "./MaintenancePhotos.jsx";
 import { Field, fmtDate } from "./MaintenanceParts.jsx";
 import NewFailureReportModal from "./NewFailureReportModal.jsx";
+import { DateInput } from "./ui/DateTimeInput.jsx";
+import Loading from "./ui/Loading.jsx";
+import { Radio, Select } from "./ui/Controls.jsx";
 
 // One failure report, in the Failure reports tab in place of the list: its
 // stage on the loop (Reported › Investigating › Corrective action › Verifying
@@ -116,10 +119,10 @@ function Investigation({ report, editable, onSave, busy }) {
       </Field>
       <div className="fr-modal-row">
         <Field label="Root cause category">
-          <select value={category} onChange={(e) => setCategory(e.target.value)}>
+          <Select value={category} onChange={(e) => setCategory(e.target.value)}>
             <option value="">Not said yet</option>
             {ROOT_CAUSES.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-          </select>
+          </Select>
         </Field>
         <Field label="Root cause" text={rootCause} max={SHORT_TEXT}>
           <input value={rootCause} placeholder="e.g. Misaligned coupling after the last overhaul" onChange={(e) => setRootCause(e.target.value)} />
@@ -249,14 +252,14 @@ function Actions({ report, editable, today, onAdd, onUpdate, onRaise, busy }) {
               <input value={owner} placeholder="A name" onChange={(e) => setOwner(e.target.value)} />
             </Field>
             <Field label="Due (optional)">
-              <input type="date" value={due} onChange={(e) => setDue(e.target.value)} />
+              <DateInput value={due} onChange={(e) => setDue(e.target.value)} />
             </Field>
             {workOrders && (
               <Field label="Work order (optional)">
-                <select value={woId} onChange={(e) => setWoId(e.target.value)}>
+                <Select value={woId} onChange={(e) => setWoId(e.target.value)}>
                   <option value="">None yet (raise one from the action once added)</option>
                   {wos.map((w) => <option key={w.id} value={w.id}>{woText(w)}</option>)}
-                </select>
+                </Select>
               </Field>
             )}
           </div>
@@ -293,15 +296,13 @@ function Verification({ report, editable, today, onSave, busy }) {
           <fieldset className="fr-radios">
             <legend>Did the corrective action work?</legend>
             {RESULTS.map((r) => (
-              <label key={r.id} className="fr-radio">
-                <input type="radio" name="fr-result" value={r.id} checked={result === r.id} onChange={() => setResult(r.id)} />
-                <span>{r.label}</span>
-              </label>
+              <Radio key={r.id} className="fr-radio" name="fr-result" value={r.id} checked={result === r.id}
+                     onChange={() => setResult(r.id)} label={<span>{r.label}</span>} />
             ))}
           </fieldset>
           <div className="fr-modal-row">
             <Field label="Checked on">
-              <input type="date" value={on} max={today || undefined} onChange={(e) => setOn(e.target.value)} />
+              <DateInput value={on} max={today || undefined} onChange={(e) => setOn(e.target.value)} />
             </Field>
             <Field label="Notes (optional)">
               <input value={notes} placeholder="What was checked, and how" onChange={(e) => setNotes(e.target.value)} />
@@ -358,10 +359,10 @@ function Reject({ report, onReject, busy }) {
         <input value={reason} placeholder="e.g. Not a failure: the trip was a test" onChange={(e) => setReason(e.target.value)} />
       </Field>
       <Field label="A duplicate of (optional)">
-        <select value={duplicateOf} onChange={(e) => setDuplicateOf(e.target.value)}>
+        <Select value={duplicateOf} onChange={(e) => setDuplicateOf(e.target.value)}>
           <option value="">Not a duplicate</option>
           {(others || []).map((r) => <option key={r.id} value={r.id}>{r.label} · {r.title}</option>)}
-        </select>
+        </Select>
       </Field>
       <div className="fr-form-foot">
         <button type="button" className="secondary danger" disabled={busy || !reason.trim()}
@@ -469,7 +470,7 @@ export default function FailureReportDetail({ id, today, viewOnly, onBack, onSta
     return (
       <div className="fr-detail">
         <button type="button" className="secondary sm fr-back" onClick={onBack}>‹ All reports</button>
-        <p className="lib-date">Loading…</p>
+        <Loading />
       </div>
     );
   }

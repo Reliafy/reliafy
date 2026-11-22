@@ -15,6 +15,7 @@ import RbdMixtureBuilder, { isMixture } from "./RbdMixtureBuilder.jsx";
 import RbdRepairQuality from "./RbdRepairQuality.jsx";
 import RbdRepairsReplacement from "./RbdRepairsReplacement.jsx";
 import RbdCapacityFold from "./RbdCapacityFields.jsx";
+import { Checkbox } from "./ui/Controls.jsx";
 
 // "Mean 13.6 h · median 12 h" under a model's inputs, so what the parameters
 // mean is visible as they're typed (#299): SurPyval's mean and median.
@@ -127,7 +128,7 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
           "Enter a mean or parameters, or pick a saved model."
         )}
       </span>
-      <div className="row" style={{ margin: 0 }}>
+      <div className="row m-0">
         <button className="secondary" onClick={onClose}>Cancel</button>
         <button onClick={submit} disabled={!valid}>Save block</button>
       </div>
@@ -213,10 +214,9 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
       {repairable && (
         <section className="rbd-dlg-sec">
           <h3>Repair</h3>
-          <label className="rbd-instant-repair" title="Parts swapped much faster than the timescale you're studying, or no repair-time data: the block still fails and costs, but is never down.">
-            <input type="checkbox" checked={instant} onChange={(e) => setInstant(e.target.checked)} />
-            Repaired instantly <span className="muted">— still fails and costs, never down</span>
-          </label>
+          <Checkbox className="rbd-instant-repair" title="Parts swapped much faster than the timescale you're studying, or no repair-time data: the block still fails and costs, but is never down."
+                    checked={instant} onChange={(e) => setInstant(e.target.checked)}
+                    label={<>Repaired instantly <span className="muted">— still fails and costs, never down</span></>} />
           {!instant && (
             <>
               <ModelPicker

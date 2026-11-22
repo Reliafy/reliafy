@@ -1694,7 +1694,7 @@ def _summary(df: pd.DataFrame, unit: str | None, censor: str | None, tags: list[
 
 _TAG_CACHE: dict[str, dict] = {}
 _READING_KEYS = ("x", "xl", "xr", "c", "n", "tl", "tr", "i", "m", "e", "c_invert", "c_map", "all_failed", "one_stream",
-                 "unit")
+                 "record_end", "unit")
 
 
 def with_reading_covariates(detected: dict, z: list[str]) -> dict:

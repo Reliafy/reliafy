@@ -33,6 +33,9 @@ import "./MaintenanceProducts.css";
 import { tooLong } from "../maintenanceText.js";
 import { PageTitle } from "../components/usePageTitle.js";
 import { itemTreePath, productPath } from "../products.js";
+import { DateInput } from "../components/ui/DateTimeInput.jsx";
+import Loading from "../components/ui/Loading.jsx";
+import { Checkbox } from "../components/ui/Controls.jsx";
 
 const ITEM_DATES = [
   { key: "purchase_date", label: "Bought" },
@@ -68,7 +71,7 @@ export default function MaintenanceItem() {
   };
 
   if (error && !item) return <div className="app"><LoadFailed header onRetry={() => { setError(null); refresh(); }} error={error} notFound="Item not found." to={EXPLORER_PATH} label="Open the Explorer" /></div>;
-  if (!item) return <div className="app"><div className="card empty">Loading…</div></div>;
+  if (!item) return <div className="app"><Loading card /></div>;
 
   const plate = Object.entries(item.nameplate || {});
   const where = itemWhere(item, fmtDate);
@@ -247,7 +250,7 @@ function EditItemModal({ item, onClose, onDone }) {
       <div className="login-field">
         <span>Nameplate fields</span>
         {plate.map((row, i) => (
-          <div key={i} className="maint-row" style={{ marginTop: "0.25rem" }}>
+          <div key={i} className="maint-row mt-1">
             <input placeholder="e.g. Capacity" value={row.k}
                    onChange={(e) => setPlate(plate.map((r, j) => (j === i ? { ...r, k: e.target.value } : r)))} />
             <input placeholder="e.g. 315 L" value={row.v}
@@ -255,7 +258,7 @@ function EditItemModal({ item, onClose, onDone }) {
             <button className="secondary" onClick={() => setPlate(plate.filter((_, j) => j !== i))}>Remove</button>
           </div>
         ))}
-        <button className="secondary" style={{ marginTop: "0.5rem" }} onClick={() => setPlate([...plate, { k: "", v: "" }])}>
+        <button className="secondary mt-2" onClick={() => setPlate([...plate, { k: "", v: "" }])}>
           Add a field
         </button>
       </div>
@@ -305,7 +308,7 @@ function DetailsModal({ item, onClose, onDone }) {
         </div>
       ))}
       <Field label="Replacement cost">
-        <div className="maint-row" style={{ marginTop: 0 }}>
+        <div className="maint-row mt-0">
           <input type="number" inputMode="decimal" min="0" step="any" value={cost.amount} placeholder="amount"
                  onChange={(e) => setCost({ ...cost, amount: e.target.value })} style={{ width: "8rem" }} />
           <input value={cost.currency} placeholder="AUD" maxLength={3} style={{ width: "5rem" }}
@@ -314,22 +317,17 @@ function DetailsModal({ item, onClose, onDone }) {
       </Field>
       <Field label="Cost source (optional)"><input value={cost.source} placeholder="e.g. supplier quote"
              onChange={(e) => setCost({ ...cost, source: e.target.value })} /></Field>
-      <Field label="Price as of"><input type="date" value={cost.as_of} max={today()}
+      <Field label="Price as of"><DateInput value={cost.as_of} max={today()}
              onChange={(e) => setCost({ ...cost, as_of: e.target.value })} /></Field>
-      <Field label="Warranty ends on (blank: no warranty)"><input type="date" value={warranty.ends_on} onChange={setW("ends_on")} /></Field>
+      <Field label="Warranty ends on (blank: no warranty)"><DateInput value={warranty.ends_on} onChange={setW("ends_on")} /></Field>
       {warranty.ends_on && <>
         <Field label="What it covers"><input value={warranty.coverage} placeholder="e.g. parts and labour, compressor 5 years"
                onChange={setW("coverage")} /></Field>
         <Field label="Terms"><textarea rows={2} value={warranty.terms} onChange={setW("terms")} /></Field>
-        <label className="maint-row" style={{ gap: "0.4rem" }}>
-          <input type="checkbox" checked={warranty.registration_required} onChange={setW("registration_required")} />
-          It must be registered
-        </label>
+        <Checkbox checked={warranty.registration_required} onChange={setW("registration_required")} label="It must be registered" />
         {warranty.registration_required && <>
-          <label className="maint-row" style={{ gap: "0.4rem" }}>
-            <input type="checkbox" checked={warranty.registered} onChange={setW("registered")} /> Registered
-          </label>
-          {!warranty.registered && <Field label="Register by"><input type="date" value={warranty.register_by} onChange={setW("register_by")} /></Field>}
+          <Checkbox checked={warranty.registered} onChange={setW("registered")} label="Registered" />
+          {!warranty.registered && <Field label="Register by"><DateInput value={warranty.register_by} onChange={setW("register_by")} /></Field>}
         </>}
       </>}
     </FormModal>
@@ -351,7 +349,7 @@ function MoveModal({ item, onClose, onDone }) {
         {" "}The position must be empty.
       </p>
       <Field label="To position"><PositionPicker positions={positions} value={to} onChange={setTo} emptyLabel="Choose…" /></Field>
-      <Field label="On"><input type="date" value={on} onChange={(e) => setOn(e.target.value)} /></Field>
+      <Field label="On"><DateInput value={on} onChange={(e) => setOn(e.target.value)} /></Field>
     </FormModal>
   );
 }

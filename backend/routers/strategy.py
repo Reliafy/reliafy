@@ -65,7 +65,7 @@ def optimal_replacement_endpoint(
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """Compute the cost-optimal preventive-replacement interval (and the
-    block-replacement alternative; the saving a year with ``use_per_year``). With
+    saving a year with ``use_per_year``). With
     ``position_id`` and a model in running hours, ``calendar`` gives the interval in days at
     the position's duty (else running all the time)."""
     try:

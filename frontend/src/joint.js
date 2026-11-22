@@ -192,6 +192,25 @@ export function fleetAnswer(fleet) {
   return parts.join(" · ");
 }
 
+// Condition monitoring on a node with positions below it (the Explorer aggregates downwards), in one
+// line: how many positions there are, how many have condition monitoring and risk now, and the
+// highest. Risks are never added up: chances of failing don't sum across positions.
+export function belowAnswer(read) {
+  if (!read) return "";
+  const k = (v, one, many = `${one}s`) => `${v.toLocaleString("en-AU")} ${v === 1 ? one : many}`;
+  const parts = [`${k(read.positions, "position")} with condition monitoring here and below`];
+  if (read.scored) {
+    const scored = read.members.filter((m) => m.scored);
+    const col = rankColumn(scored, read.horizons.labels);
+    const top = sortRiskRows(scored, col)[0];
+    parts.push(`${read.scored === read.positions ? "all" : read.scored.toLocaleString("en-AU")} with risk now`);
+    if (top) parts.push(`highest: ${top.position.name || "(no name)"}, ${riskText(top.risk[col])} in the next ${read.horizons.labels[col]}`);
+  } else if (read.positions) {
+    parts.push("no risk now yet");
+  }
+  return parts.join(" · ");
+}
+
 // One position's risk now (the Explorer's Condition monitoring tab on a position, and the member
 // a class's fleet has chosen), from its read (api.js getPositionCondition): what to show.
 // "scored": its summary and charts. Else why there is no risk, in words, never a blank panel:

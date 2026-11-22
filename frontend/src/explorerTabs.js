@@ -13,12 +13,17 @@
 // inside it with what it needs to be done, and how the tasks are packaged into
 // visits, LsaPanel; it was "Packages" until 9 Nov 2026, and ?tab=packages
 // still opens it); Signals for a
-// position or an item (sensor snapshots and their spectra); Modelling for a position (the
-// life models attached to it and to the positions inside it, a design's too); Condition
+// position or an item (sensor snapshots and their spectra); Models for a position (the
+// models attached to it and to the positions inside it, a design's too, with the missions flown
+// on them as rows under each); Condition
 // monitoring for an item class (the tree by Classes: the class's positions with their risk now,
 // ClassFleet; a class's first tab, so the one it opens on; Forecast and Spares beside it) and for a position on an asset, in
 // every arrangement (that position's own risk now, PositionRisk: the same summary and charts a
-// class shows for the member chosen). A tab a kind doesn't have isn't shown (never greyed out).
+// class shows for the member chosen; with positions below it, every position there and below with
+// condition monitoring, its own first) and for a place (its positions', the same table). An item
+// hasn't it: its risk is worked out at the position it's fitted to (its age and readings count from
+// that fitment), and that position's row has the tab. A tab a kind doesn't have isn't shown (never
+// greyed out).
 //
 // A product is a design, not an operated thing: its rows (a design's
 // positions) have no maintenance done to them, so no Measurements, Signals or
@@ -64,7 +69,15 @@ export const EXPLORER_PARTS_CLASSES_TABS = false;
 // that tab (&channel=, signals.js channelPath).
 export const EXPLORER_SIGNALS_TAB = false;
 
-const HIDDEN_WHEN_OFF = { parts: EXPLORER_PARTS_CLASSES_TABS, classes: EXPLORER_PARTS_CLASSES_TABS, signals: EXPLORER_SIGNALS_TAB };
+// Derryn, 22 Nov 2026: "I also don't like the 'sub tabs' on the maintenance tab." The Maintenance
+// tab is one tree-table (explorerTasks.js): the LSA tab's views went into it (a task's What it
+// needs opens from the task; packages are rows at the meeting point of their tasks; the spares for
+// the year and the forecast are Forecast rows under each task and package, and Forecast… on a
+// level). Off, `tabsFor` leaves the LSA out and an old ?tab=lsa address opens Maintenance
+// (maintenanceRedirect turns its ?package=, ?task= and ?mview= into the table's own).
+export const EXPLORER_LSA_TAB = false;
+
+const HIDDEN_WHEN_OFF = { parts: EXPLORER_PARTS_CLASSES_TABS, classes: EXPLORER_PARTS_CLASSES_TABS, signals: EXPLORER_SIGNALS_TAB, lsa: EXPLORER_LSA_TAB };
 const offered = (t) => HIDDEN_WHEN_OFF[t.id] !== false;
 
 export const TABS = [
@@ -75,11 +88,12 @@ export const TABS = [
   { id: "fmea", label: "FME(C)A", title: "The failure modes here as an FMEA worksheet: cause, effects, scores, action priority and criticality", kinds: ["pos", "loc"] },
   // Every maintenance task on the row (Derryn, 12 Nov 2026): from its RCM or added directly here,
   // with how often, its package, when it's next due and what it costs each time (the figure the
-  // RCM reads). "Include what's inside" adds the tasks below. A design's rows have it too: their
+  // RCM reads), and every task on the positions below it at any depth: a tree-table, each level with its
+  // roll-up and Forecast… (Derryn, 22 Nov 2026; explorerTasks.js, drawn by AssetExplorer). A design's rows have it too: their
   // programme (no due dates or packages: those belong to the built items). The LSA tab's table
-  // (LsaPanel, variant "maintenance"); a task opens in the panel beside the tree.
+  // A task opens beside the table; the tab's other views (Forecast) stay in the panel (LsaPanel).
   {
-    id: "maintenance", label: "Maintenance", title: "Every maintenance task here: from the RCM or added directly, how often, when it's next due and what it costs each time",
+    id: "maintenance", label: "Maintenance", title: "Every maintenance task here and below, the packages they're done in, and the forecast of each: how often, when it's next due and what it costs",
     kinds: ["pos", "loc"],
   },
   // A design's positions have it too (designKinds): the reports on the items built from the
@@ -95,21 +109,25 @@ export const TABS = [
     notDesignLoc: true,
   },
   { id: "classes", label: "Classes", title: "The classes used here and inside it, and every class in the register", kinds: ["pos", "loc"] },
-  // The life models on each position (Derryn, 9 Nov 2026): a design's positions carry them too
-  // (a built item inherits its design's), so no `asset`. Drawn as a tree-table (explorerModels.js).
-  { id: "models", label: "Modelling", title: "The life models on this position and the positions inside it: what each says, where it came from and what uses it", kinds: ["pos"] },
-  // The missions flown on each position's RBD (Derryn, 9 Nov 2026: "Products need an RBD tab,
-  // called Missions"; "Missions are RBDs, so they belong to positions"): a design's positions too,
-  // so no `asset`. Drawn as a tree-table (explorerMissions.js); a mission opens in the table area.
-  { id: "missions", label: "Missions", title: "The missions flown on this position's RBD and the positions inside it: each mission's phases and its chance of completing", kinds: ["pos"] },
+  // The models on each position (Derryn, 9 Nov 2026): a design's positions carry them too
+  // (a built item inherits its design's), so no `asset`. One tree-table (Derryn, 22 Nov 2026: "It
+  // just needs to be modelling. A mission is a sub item on the tree to covariate and RBD models"):
+  // position › model › mission › phase › covariates and node status rules (explorerModels.js,
+  // explorerMissions.js nestMissions). It was two views, Life models and Missions, until then;
+  // ?tab=missions opens this one (TAB_ALIASES).
+  { id: "models", label: "Models", title: "The models on this position and the positions inside it, with the missions flown on them: what each says, where it came from and what uses it", kinds: ["pos"] },
   // An item class (a row of the tree by Classes) has this one tab and no Summary: its fleet. A
   // position on an asset has it too, in every arrangement: its own risk now (one id and one label,
   // so the tab stays picked from a class to a position and on to the next). Not a design's
   // positions: nothing is fitted or read there.
   {
     id: "condition", label: "Condition monitoring", title: "Each position of this class with its risk now, highest first",
-    titleBy: { pos: "This position's risk now: its chance of failing soon and its life left, from its item's age and readings" },
-    kinds: ["cls", "pos"], asset: true,
+    titleBy: {
+      pos: "Risk now here and below: each position's chance of failing soon and its life left, from its item's age and readings",
+      loc: "Risk now at this place: each position here with condition monitoring, its chance of failing soon and its life left",
+    },
+    // A place has it too (Derryn, 22 Nov 2026: the Explorer aggregates downwards): its positions'.
+    kinds: ["cls", "pos", "loc"], asset: true,
   },
   // An item class's forecast and spares (the persona review, Nov 2026: neither could be reached
   // from a class). The forecast comes from each position class's fitted life model, counted at
@@ -137,7 +155,34 @@ export const DEFAULT_TAB = "summary";
 
 // Earlier tab ids and the tab they open now (Derryn, 9 Nov 2026: Packages became
 // the LSA tab, packaging included).
-export const TAB_ALIASES = { packages: "lsa" };
+// Missions became rows of the Models tab, under the model each is flown on (22 Nov 2026).
+export const TAB_ALIASES = EXPLORER_LSA_TAB ? { packages: "lsa", missions: "models" } : { packages: "maintenance", lsa: "maintenance", missions: "models" };
+
+// An old address of the Maintenance tab's inner views (?tab=lsa: What it needs, Packages, Spares;
+// ?tab=maintenance&mview=forecast), as the one table opens the same thing: a package open
+// (?package=) is its row's details (?mpkg=), a task's LSA (?task=) the task with What it needs
+// (?mtask=&needs=1), and the forecast or the spares of the row picked its Forecast… (?forecast=).
+// Null: the address is no old one. `tabKey`: "tab" (a product's page: "view").
+export function maintenanceRedirect(params, { tabKey = "tab" } = {}) {
+  const tab = params.get(tabKey);
+  const mview = params.get("mview");
+  if (EXPLORER_LSA_TAB || !(tab === "lsa" || tab === "packages" || (tab === "maintenance" && mview))) return null;
+  const q = new URLSearchParams(params);
+  q.set(tabKey, "maintenance");
+  q.delete("mview");
+  if (q.get("package")) {
+    q.set("mpkg", q.get("package"));
+    q.delete("package");
+  }
+  if (q.get("task")) {
+    q.set("mtask", q.get("task"));
+    q.set("needs", "1");
+    q.delete("task");
+  }
+  q.delete("packaging");
+  if ((mview === "forecast" || mview === "spares") && q.get("sel") && !q.get("forecast") && !q.get("mpkg") && !q.get("mtask")) q.set("forecast", q.get("sel"));
+  return q;
+}
 
 // The tab the address asks for, if it's one (else Summary).
 export function tabParam(value) {
@@ -270,10 +315,10 @@ export function classesInBranch(display, branch) {
 // The panel's tabs as one flat row, ordered by use, the ones that don't fit folded into a last
 // "⋯ N" tab (the shared Tabs with `overflow`):
 //   Summary · Maintenance · Monitoring · RCM · FME(C)A · Models · History
-// Maintenance has inner views Tasks · What it needs (the LSA tab) · Packages · Forecast (a
-// position's, on an asset); Monitoring has Readings (Measurements) · Life left (Condition
-// monitoring: the chance of failing soon and the life left); Models has Life models (the Modelling
-// tab) · Missions. History is the Failure reports; on a product's design it's "Field reports" (the
+// Maintenance is one view (its tasks, packages and forecasts in the tree: no inner views since
+// 22 Nov 2026); Monitoring has Readings (Measurements) · Life left (Condition
+// monitoring: the chance of failing soon and the life left); Models is one view, its missions rows
+// under their models (it had Life models · Missions until 22 Nov 2026). History is the Failure reports; on a product's design it's "Field reports" (the
 // reports on the items built from the product).
 //
 // It's a layer over the tabs above, not a new set of them: every view is one of TABS (plus the
@@ -287,20 +332,10 @@ export const EXPLORER_PANEL_TABS = true;
 export const PANEL_TABS = [
   { id: "summary", label: "Summary", views: [{ id: "summary", tab: "summary" }] },
   {
-    id: "maintenance", label: "Maintenance", title: "The maintenance tasks here, what each needs, and how they're packaged into visits",
+    id: "maintenance", label: "Maintenance", title: "The maintenance tasks here and below, the packages they're done in, and their forecasts",
     designTitle: "The maintenance programme here: its tasks and what each needs",
-    views: [
-      { id: "tasks", label: "Tasks", tab: "maintenance" },
-      { id: "needs", label: "What it needs", tab: "lsa", title: "What each task needs to be done: labour, tools, spares and method" },
-      // Packaging happens on the built items, so a design's rows haven't it (asset).
-      { id: "packages", label: "Packages", tab: "lsa", mview: "packages", asset: true, title: "The work packages here: tasks done together on one visit" },
-      // The forecast for a position and everything inside it (PositionForecast.jsx): a position's
-      // only (kinds), and not a design's (no due dates or fitted items there to forecast from).
-      { id: "forecast", label: "Forecast", tab: "maintenance", mview: "forecast", kinds: ["pos"], asset: true, title: "The work, failures and costs to come here and inside it, by month" },
-      // Spares for the year (SparesYear.jsx): the parts failures and tasks use here and inside it, against
-      // stock and lead time; on a design, the parts the items built from it (or a planned fleet) will use.
-      { id: "spares", label: "Spares", tab: "lsa", mview: "spares", kinds: ["pos", "loc"], title: "Spares for the year: what failures and tasks here will use, what to hold, order and buy" },
-    ],
+    // One view (Derryn, 22 Nov 2026: no sub-tabs): the tree-table of tasks, packages and forecasts.
+    views: [{ id: "tasks", label: "Tasks", tab: "maintenance" }],
   },
   {
     id: "monitoring", label: "Monitoring", title: "Readings at every measuring point, and the life left",
@@ -311,13 +346,8 @@ export const PANEL_TABS = [
   },
   { id: "rcm", label: "RCM", views: [{ id: "rcm", tab: "rcm" }] },
   { id: "fmea", label: "FME(C)A", views: [{ id: "fmea", tab: "fmea" }] },
-  {
-    id: "models", label: "Models", title: "The life models on this position and the positions inside it, and the missions flown on its RBD",
-    views: [
-      { id: "life", label: "Life models", tab: "models" },
-      { id: "missions", label: "Missions", tab: "missions" },
-    ],
-  },
+  // One view (22 Nov 2026): the models, each with the missions flown on it as rows under it.
+  { id: "models", label: "Models", views: [{ id: "models", tab: "models" }] },
   { id: "history", label: "History", designLabel: "Field reports", views: [{ id: "reports", label: "Failure reports", tab: "reports" }] },
 ];
 
@@ -377,6 +407,8 @@ export function viewTarget(row, tabId, viewId = null, { preview = false } = {}) 
 // models"; with the panel tabs off, the old tab's name: "Modelling").
 export function tabPlace(tab) {
   const old = TABS.find((t) => t.id === tab)?.label || tab;
+  // A tab folded into another (the LSA into Maintenance): the one it opens.
+  if (EXPLORER_PANEL_TABS && TAB_ALIASES[tab] && TAB_ALIASES[tab] !== tab) return tabPlace(TAB_ALIASES[tab]);
   if (!EXPLORER_PANEL_TABS) return old;
   for (const p of PANEL_TABS) {
     const v = p.views.find((x) => x.tab === tab && !x.mview);

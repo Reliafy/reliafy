@@ -6,6 +6,8 @@ from __future__ import annotations
 import logging
 import math
 
+from typing import Any
+
 from fastapi import APIRouter, Body, Depends
 from fastapi.responses import JSONResponse
 
@@ -173,6 +175,10 @@ def get_mission(rbd_id: str, mission_id: str, session=Depends(get_session),
         return JSONResponse(status_code=404, content={"detail": "That mission isn't on this RBD (deleted?)."})
     out = rbd_missions.detail(session, ctx.read_owners, graph, mission)
     out["summary"] = rbd_missions.summary(graph, mission, _results(session, rbd_id))
+    if out["summary"].get("simple"):
+        # A plain mission's editor: the fitted item's age now, so it can offer "Its age now".
+        out["age_now"] = age_now_for(ctx.user, ctx.write_owner, ctx.uid, getattr(ctx, "time_zone", None), graph,
+                                     any_start=True)
     return JSONResponse(content={"rbd": _rbd_brief(rbd, ctx), **out})
 
 
@@ -220,12 +226,16 @@ def create_mission(rbd_id: str, name: str | None = Body(default=None), phases: l
 @router.put("/rbds/{rbd_id}/missions/{mission_id}")
 def update_mission(rbd_id: str, mission_id: str, name: str | None = Body(default=None),
                    phases: list | None = Body(default=None), expected_updated_at: str | None = Body(default=None),
+                   start: Any = Body(default="unset"),
                    session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
     """Rename a mission or replace its phases (each with its duration, blocks not needed, vote
-    counts, values and block values). ``expected_updated_at``: refuse if the diagram changed since."""
+    counts, values and block values). ``start``: a mission on a life model with no covariates
+    starts at this age ({"age": t} in the RBD's unit, "now" for the fitted item's age when it's
+    worked out, or "new"). ``expected_updated_at``: refuse if the diagram changed since."""
     from backend.services import rbd_missions
 
-    return _write(session, ctx, rbd_id, lambda g: rbd_missions.save(g, mission_id, name, phases),
+    extra = {} if start == "unset" else {"start": start}
+    return _write(session, ctx, rbd_id, lambda g: rbd_missions.save(g, mission_id, name, phases, **extra),
                   expected_updated_at)
 
 
@@ -257,13 +267,49 @@ def delete_mission(rbd_id: str, mission_id: str, session=Depends(get_session),
     return resp
 
 
+def _age_now(ctx: AccessCtx, graph: dict) -> dict | None:
+    """The fitted item's age now at a plain mission's position (block_age), for a mission started
+    "now"; None for any other mission, or where Maintenance isn't on for the caller."""
+    return age_now_for(ctx.user, ctx.write_owner, ctx.uid, getattr(ctx, "time_zone", None), graph)
+
+
+def age_now_for(user, org: str, actor: str, time_zone, graph: dict, any_start: bool = False) -> dict | None:
+    """As :func:`_age_now`, for any caller (the MCP tools too). ``any_start``: whatever the mission
+    starts at (the editor offers "Its age now" where an item is fitted)."""
+    from backend import config
+    from backend.services import rbd_missions
+
+    start = rbd_missions.start_of(graph) or {}
+    owner = rbd_missions.mission_of(graph)
+    if not ((any_start or start.get("now")) and owner and rbd_missions.simple_block(graph) is not None):
+        return None
+    try:
+        from backend.maintenance.access import allowed
+        from backend.maintenance import rbd_tree_plan
+        from backend.maintenance.service import Maintenance
+        from backend.routers.maintenance import get_store
+
+        if not (config.MAINTENANCE_ENABLED and allowed(user)):
+            return {"reason": "Reliafy Maintenance isn't on for this account, so the item's age can't be read"}
+        m = Maintenance(get_store(), org, actor, time_zone=time_zone)
+        p = m.s.node(m.org, owner["position_id"])
+        if p is None:
+            return {"reason": "its position isn't there any more"}
+        return rbd_tree_plan.block_age(m, p, graph.get("unit") or "")
+    except Exception:  # noqa: BLE001 - said in words, worked out from new
+        logger.exception("Couldn't read a mission's age now")
+        return {"reason": "the item's age couldn't be read"}
+
+
 @router.post("/rbds/{rbd_id}/missions/{mission_id}/calculate")
 def calculate_mission(rbd_id: str, mission_id: str, phases: list | None = Body(default=None, embed=True),
                       current_state: dict | None = Body(default=None, embed=True),
+                      start: Any = Body(default="unset", embed=True),
                       session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
     """The chance of completing the mission, each phase's failure probability and reliability at
     its end, and each phase's weakest block. ``phases``: work out these (unsaved edits) instead of
-    the saved ones. ``current_state``: the blocks' states now (``{node_id: {"failed": true} |
+    the saved ones; ``start``: a plain mission's starting age, unsaved (as PUT takes it: {"age": t}, "now" or "new").
+    ``current_state``: the blocks' states now (``{node_id: {"failed": true} |
     {"age": t}}``, as ``POST /api/rbds/phases`` takes them), so the mission flies from their ages
     ("As of now" in the notes). A phase still missing a value waits; the result says which blocks
     need what. Exact answers are free; a mission only a simulation can work out (blocks on standby
@@ -280,9 +326,17 @@ def calculate_mission(rbd_id: str, mission_id: str, phases: list | None = Body(d
     if mission is None:
         return JSONResponse(status_code=404, content={"detail": "That mission isn't on this RBD (deleted?)."})
     use = mission["phases"] if phases is None else phases
+    saved_start = rbd_missions.start_of(graph)
+    if start != "unset":  # an unsaved starting age (a plain mission's editor): worked out, not kept
+        try:
+            graph, _ = rbd_missions.save(graph, mission_id, start=start)
+        except rbd_missions.MissionError as exc:
+            return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    age_now = _age_now(ctx, graph) if not current_state else None
     try:
         with _simulation(session, ctx):
-            result = rbd_missions.analyze(session, ctx.read_owners, graph, use, current_state=current_state or None)
+            result = rbd_missions.analyze(session, ctx.read_owners, graph, use, current_state=current_state or None,
+                                          age_now=age_now)
     except rbd_standby.SimulationNeedsPro as exc:
         return JSONResponse(status_code=402, content=_pro_payload(exc))
     except AnalysisError as exc:
@@ -296,7 +350,9 @@ def calculate_mission(rbd_id: str, mission_id: str, phases: list | None = Body(d
         same = rbd_phases.parse_phases(use) == saved_phases
     except rbd_phases.PhaseError:
         same = False
+    same = same and rbd_missions.start_of(graph) == saved_start
     if same and not current_state and access_service.can_write(ctx, rbd.owner_id):
+        # A plain mission's result is kept with the age it flew from (its stored start, now included).
         record = rbd_missions.result_record(graph, saved_phases, result)
         session.rbds.update_one({"_id": rbd.id}, {"$set": {f"mission_results.{mission_id}": record}})
     return JSONResponse(content={"mission": {"id": mission["id"], "name": mission["name"]}, **result})

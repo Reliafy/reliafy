@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildDisplay } from "./assetTree.js";
-import { TAB_LEADS, addsFirst, isolateItems, liveKids, lsaLead, moveTargets, showsAddRow, summaryActions, tabMenu, viewOnlyReason, withPin } from "./treeRowMenu.js";
+import { TAB_LEADS, addsFirst, focusNoun, isolateItems, liveKids, lsaLead, moveTargets, showsAddRow, summaryActions, tabMenu, viewOnlyReason, withPin } from "./treeRowMenu.js";
 import { designActions } from "./products.js";
 import { measAddActions } from "./explorerMeasurements.js";
 
@@ -91,18 +91,27 @@ test("Move to…: every position or location but the row itself and what's insid
   assert.deepEqual(moveTargets(null, "x"), []);
 });
 
-test("Isolate: a submenu of levels; just Isolate on a row with nothing inside; nothing where it can't", () => {
+test("Focus: Focus here (every level), then Focus › levels; just Focus here with nothing inside; Clear focus while one is on", () => {
   const items = isolateItems({ key: "a", kids: ["b"] }, { can: true });
-  assert.equal(items.length, 1);
-  assert.equal(items[0].label, "Focus");
-  assert.deepEqual(items[0].items.map((i) => [i.id, i.label]), [
-    ["isolate:1", "With 1 level open"], ["isolate:2", "With 2 levels open"], ["isolate:3", "With 3 levels open"], ["isolate:all", "With everything open"],
+  assert.deepEqual(items.map((i) => [i.id, i.label]), [["isolate:all", "Focus here"], ["isolate", "Focus to a depth"]]);
+  assert.deepEqual(items[1].items.map((i) => [i.id, i.label]), [
+    ["isolate:1", "1 level"], ["isolate:2", "2 levels"], ["isolate:3", "3 levels"],
   ]);
-  assert.deepEqual(isolateItems({ key: "m", kids: [] }, { can: true }), [{ id: "isolate:1", label: "Focus" }]);
+  assert.deepEqual(isolateItems({ key: "m", kids: [] }, { can: true }), [{ id: "isolate:1", label: "Focus here" }]);
   assert.deepEqual(isolateItems({ key: "a", kids: ["b"] }, { can: false }), []);
+  // A focus on: Clear focus after them, on every row (even one that can't be focused itself).
+  assert.deepEqual(isolateItems({ key: "a", kids: ["b"] }, { can: true, focused: true }).map((i) => i.id), ["isolate:all", "isolate", "focus-clear"]);
+  assert.deepEqual(isolateItems({ key: "m", kids: [] }, { can: true, focused: true }).map((i) => i.label), ["Focus here", "Clear focus"]);
+  assert.deepEqual(isolateItems({ key: "h", kids: ["x"] }, { can: false, focused: true }), [{ id: "focus-clear", label: "Clear focus" }]);
+  // A tab with its own table names what it shows.
+  assert.deepEqual(isolateItems({ key: "a", kids: ["b"] }, { can: true, noun: "tasks" }).map((i) => i.label), ["Focus tasks", "Focus to a depth"]);
+  assert.deepEqual(isolateItems({ key: "m", kids: [] }, { can: true, noun: "models" }).map((i) => i.label), ["Focus models"]);
+  assert.equal(focusNoun("maintenance", { tasks: true }), "tasks");
+  assert.equal(focusNoun("maintenance"), "");
+  assert.deepEqual(["rcm", "fmea", "measurements", "models", "missions", "summary"].map((t) => focusNoun(t)), ["failure modes", "failure modes", "measurements", "models", "missions", ""]);
   // Before Delete, with Pin this branch after it.
   const skim = summaryActions({ key: "a", type: "pos", kids: ["b"], ref: {} }, { mode: "positions" });
-  assert.deepEqual(withPin(skim, [...items, { id: "pin" }]).map((i) => i.id), ["tree-new", "report-new", "event-log", "tree-rename", "tree-move", "tree-export", "isolate", "pin", "tree-delete"]);
+  assert.deepEqual(withPin(skim, [...items, { id: "pin" }]).map((i) => i.id), ["tree-new", "report-new", "event-log", "tree-rename", "tree-move", "tree-export", "isolate:all", "isolate", "pin", "tree-delete"]);
 });
 
 test("Add failure report…: positions only (a report sits at a position), greyed when the team is view only", () => {
@@ -130,7 +139,7 @@ test("Log an event…: positions only, greyed when the team is view only", () =>
 test("New position inside is first on the Summary tab only: another tab's adds come first, then a line", () => {
   const d = buildDisplay(DATA, "positions");
   const skim = summaryActions(d.rows.get("skim"), opts("positions"));
-  const pin = [{ id: "isolate:1", label: "Focus" }, { id: "pin", label: "Pin this branch" }];
+  const pin = [{ id: "isolate:1", label: "Focus to a depth" }, { id: "pin", label: "Pin this branch" }];
   // Summary: unchanged (the changes to the tree, Focus and Pin before Delete…).
   assert.equal(skim[0].id, "tree-new");
   assert.deepEqual(ids(tabMenu("summary", skim, { pin })), ["tree-new", "report-new", "event-log", "tree-rename", "tree-move", "tree-export", "isolate:1", "pin", "tree-delete"]);
@@ -150,17 +159,17 @@ test("New position inside is first on the Summary tab only: another tab's adds c
 test("the LSA tab: Package the tasks here… leads a position's and a place's menu (never a design's row)", () => {
   const d = buildDisplay(DATA, "positions");
   const row = d.rows.get("skim");
-  const pin = [{ id: "isolate:1", label: "Focus" }, { id: "pin", label: "Pin this branch" }];
+  const pin = [{ id: "isolate:1", label: "Focus to a depth" }, { id: "pin", label: "Pin this branch" }];
   const lead = lsaLead(row);
   assert.deepEqual(lead, [{ id: "lsa-package", label: "Package the tasks here…" }]);
   const menu = tabMenu("lsa", summaryActions(row, opts("positions")), { lead, pin });
   assert.deepEqual(menu.map((i) => i.label || "---"), [
-    "Package the tasks here…", "---", "New position inside", "Add failure report…", "Log an event…", "Rename…", "Move to…", "Export this branch…", "Focus", "Pin this branch", "Delete…",
+    "Package the tasks here…", "---", "New position inside", "Add failure report…", "Log an event…", "Rename…", "Move to…", "Export this branch…", "Focus to a depth", "Pin this branch", "Delete…",
   ]);
   // A place has packages too.
   const shed = buildDisplay(DATA, "locations").rows.get("shed");
   assert.deepEqual(tabMenu("lsa", summaryActions(shed, opts("locations")), { lead: lsaLead(shed), pin }).map((i) => i.label || "---"),
-    ["Package the tasks here…", "---", "New position here", "New location inside", "Rename…", "Move to…", "Focus", "Pin this branch", "Delete…"]);
+    ["Package the tasks here…", "---", "New position here", "New location inside", "Rename…", "Move to…", "Focus to a depth", "Pin this branch", "Delete…"]);
   // View only: greyed with the reason, like every change.
   const off = lsaLead(row, { viewOnly: "View only: the team's Pro plan has lapsed." })[0];
   assert.equal(off.disabled, true);
@@ -173,26 +182,26 @@ test("the LSA tab: Package the tasks here… leads a position's and a place's me
 
 test("a tab with nothing of its own for a row: the changes to the tree go last, after Focus and Pin", () => {
   const d = buildDisplay(DATA, "positions");
-  const pin = [{ id: "isolate:1", label: "Focus" }, { id: "pin", label: "Pin this branch" }];
+  const pin = [{ id: "isolate:1", label: "Focus to a depth" }, { id: "pin", label: "Pin this branch" }];
   const labels = (items) => items.map((i) => i.label || "---");
   // A design's position on the LSA tab (no failure reports or events in a design).
   const inDesign = designActions(summaryActions(d.rows.get("skim"), opts("positions")), true, { row: d.rows.get("skim") });
   assert.deepEqual(labels(tabMenu("lsa", inDesign, { lead: lsaLead(d.rows.get("skim"), { design: true }), pin })),
-    ["Focus", "Pin this branch", "---", "New position inside", "Rename…", "Move to…", "Delete…"]);
+    ["Focus to a depth", "Pin this branch", "---", "New position inside", "Rename…", "Move to…", "Delete…"]);
   // The product's own row keeps Build an item… first: it isn't a change to the tree.
   const product = { key: "pool", type: "pos", ref: { id: "pool", name: "Quadcopter", design: {} }, kids: ["circ"] };
   assert.deepEqual(labels(tabMenu("lsa", designActions(summaryActions(product, opts("positions")), true, { row: product }), { pin })),
-    ["Build an item…", "Focus", "Pin this branch", "---", "New position inside", "Rename…", "Move to…", "Delete…"]);
+    ["Build an item…", "Focus to a depth", "Pin this branch", "---", "New position inside", "Rename…", "Move to…", "Delete…"]);
   // A place on Failure reports has no report to add (a report sits at a position).
   const shed = summaryActions(buildDisplay(DATA, "locations").rows.get("shed"), opts("locations"));
-  assert.deepEqual(labels(tabMenu("reports", shed, { pin })), ["Focus", "Pin this branch", "---", "New position here", "New location inside", "Rename…", "Move to…", "Delete…"]);
+  assert.deepEqual(labels(tabMenu("reports", shed, { pin })), ["Focus to a depth", "Pin this branch", "---", "New position here", "New location inside", "Rename…", "Move to…", "Delete…"]);
   // Any other plain-tree tab (Parts and stock, Classes, when they're switched on): the same rule.
-  assert.deepEqual(labels(tabMenu("parts", shed, { pin })), ["Focus", "Pin this branch", "---", "New position here", "New location inside", "Rename…", "Move to…", "Delete…"]);
+  assert.deepEqual(labels(tabMenu("parts", shed, { pin })), ["Focus to a depth", "Pin this branch", "---", "New position here", "New location inside", "Rename…", "Move to…", "Delete…"]);
   assert.deepEqual(labels(tabMenu("classes", summaryActions(d.rows.get("skim"), opts("positions")), { pin })),
-    ["Add failure report…", "Log an event…", "Export this branch…", "Focus", "Pin this branch", "---", "New position inside", "Rename…", "Move to…", "Delete…"]);
+    ["Add failure report…", "Log an event…", "Export this branch…", "Focus to a depth", "Pin this branch", "---", "New position inside", "Rename…", "Move to…", "Delete…"]);
   // No line with nothing on one side of it; an item's Rename… goes last as well.
   assert.deepEqual(labels(tabMenu("reports", shed)), ["New position here", "New location inside", "Rename…", "Move to…", "Delete…"]);
-  assert.deepEqual(labels(tabMenu("reports", summaryActions(ITEM_ROW, opts("locations")), { pin })), ["Focus", "Pin this branch", "---", "Rename…"]);
+  assert.deepEqual(labels(tabMenu("reports", summaryActions(ITEM_ROW, opts("locations")), { pin })), ["Focus to a depth", "Pin this branch", "---", "Rename…"]);
 });
 
 test("the tree's last row (+ New position inside …) shows on the Summary tab only", () => {
