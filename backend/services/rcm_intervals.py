@@ -272,7 +272,11 @@ def on_condition_interval(pf_interval=None, pf_unit=None, onset_rate=None, inspe
 
     rclock = _clock_of(hours_per_day, clock)
     conv = None
-    if rclock is not None and running_clock.is_running_hours(pf_unit) and not _answer_in_running_hours(
+    # Running hours meet the calendar only when the answer is wanted on it (asked in a calendar unit, or
+    # the task's interval is in one), or the position has a duty to say how it runs. With no duty and
+    # nothing on the calendar, hours stay hours (running_clock).
+    meets = _calendar_target(unit, current_unit) or (rclock is not None and rclock.basis != "continuous")
+    if rclock is not None and running_clock.is_running_hours(pf_unit) and meets and not _answer_in_running_hours(
             unit, current_unit):
         conv = running_clock.conversion(pf_unit, "days", rclock)
         if conv is None:
@@ -285,7 +289,7 @@ def on_condition_interval(pf_interval=None, pf_unit=None, onset_rate=None, inspe
         act = _number(act_time, "time needed to act", allow_none=True)
         pf_interval, pf_unit = pf * conv["factor"], "days"
         act_time = None if act is None else act * conv["factor"]
-    if rclock is not None and not _answer_in_running_hours(unit, current_unit):
+    if rclock is not None and meets and not _answer_in_running_hours(unit, current_unit):
         current_interval, current_unit = _current_in_days(rclock, current_interval, current_unit)
     out = _on_condition_interval(pf_interval, pf_unit, onset_rate, inspection_cost, found_cost, failure_cost,
                                  detection_probability, unit, current_interval, current_unit, act_time)
@@ -341,6 +345,10 @@ def _on_condition_interval(pf_interval=None, pf_unit=None, onset_rate=None, insp
     half, net = pf_days / 2, pf_days - act_days
     by_net = net < half
     rule_days = net if by_net else half
+    if not unit and pf_key == "hour" and (not current_unit or normalize_unit(current_unit) == "hour"):
+        # A P-F interval in hours, for a task in hours (or none given): the answer stays in hours,
+        # never "every 2 days" for a check by its hour meter.
+        unit = "hours"
     nice = _as_unit(rule_days, unit)
     shown_key = normalize_unit(nice["unit"])
     at = 1.0 - _miss_fixed(pf_days, nice["days"], p)

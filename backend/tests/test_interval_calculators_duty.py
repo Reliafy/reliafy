@@ -30,12 +30,29 @@ def test_a_pf_interval_in_running_hours_is_days_at_the_duty():
     assert on_duty["recommended"] == in_days["recommended"] and on_duty["interval"] == pytest.approx(in_days["interval"])
     assert on_duty["unit_conversion"] == "200 h ≈ 25 days at this position's duty (8 h a day)"
     assert on_duty["summary"].endswith("(200 h ≈ 25 days at this position's duty (8 h a day).)")
-    # No duty on the position: all the time.
-    always = rcm_intervals.on_condition_interval(pf_interval=200, pf_unit="flight hours", clock=rc.CONTINUOUS.to_dict())
+    # No duty on the position: asked on the calendar, all the time (24 h a day).
+    always = rcm_intervals.on_condition_interval(pf_interval=200, pf_unit="flight hours", unit="days",
+                                                 clock=rc.CONTINUOUS.to_dict())
     assert always["unit_conversion"] == "200 h ≈ 8.33 days, assuming it runs all the time (no duty set for this position)"
-    # Stand-alone: as before (calendar hours), nothing said.
+    assert always["recommended"] == {"value": 4, "unit": "days"}
+    # Nothing asked on the calendar and no duty: hours stay hours, never "every 4 days".
+    hours = rcm_intervals.on_condition_interval(pf_interval=200, pf_unit="flight hours", clock=rc.CONTINUOUS.to_dict())
+    assert "unit_conversion" not in hours and hours["recommended"] == {"value": 100, "unit": "flight hours"}
+    # Stand-alone: an hours P-F interval answers in hours too.
     plain = rcm_intervals.on_condition_interval(pf_interval=200, pf_unit="hours")
-    assert "unit_conversion" not in plain and plain["recommended"] == always["recommended"]
+    assert "unit_conversion" not in plain and plain["recommended"] == {"value": 100, "unit": "hours"}
+
+
+def test_a_check_by_the_hour_meter_with_no_duty_stays_in_hours():
+    """The P-F calculator in hours for a task in hours, on a position with no duty: every 63 hours
+    (half of 127 h), not "every 2 days"."""
+    out = rcm_intervals.on_condition_interval(pf_interval=127, pf_unit="hours", current_interval=50,
+                                              current_unit="hours", clock=rc.CONTINUOUS.to_dict())
+    assert out["recommended"] == {"value": 63, "unit": "hours"} and "unit_conversion" not in out
+    assert out["summary"].startswith("Check every 63 hours") and out["current"]["within"] is True
+    stand_alone = rcm_intervals.on_condition_interval(pf_interval=127, pf_unit="hours", current_interval=50,
+                                                      current_unit="hours")
+    assert stand_alone["recommended"] == {"value": 63, "unit": "hours"}
 
 
 def test_the_task_now_in_running_hours_is_compared_at_the_duty():
