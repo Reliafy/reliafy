@@ -17,7 +17,8 @@ import { CutSetTable, ImportanceTable, TreeCanvas } from "../components/RbdFault
 import { topEventAnswer } from "../components/FaultTreeResult.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
-import useMenuDismiss from "../components/useMenuDismiss.js";
+import RowMenu from "../components/RowMenu.jsx";
+import { buildMenu } from "../menuStandard.js";
 import { fitLine } from "../plotTheme.js";
 import { itemName } from "../components/LibRows.jsx";
 import { FAULT_TREES_PATH, FAULT_TREES_TITLE, RBDS_PATH, SYSTEM_MODELS_LABEL } from "../navigation.js";
@@ -39,21 +40,31 @@ const DotsIcon = () => (
 
 const UNTITLED = "Untitled fault tree";
 
-// The row's own menu (its ⋯ button, or a right-click on the row).
-function RowMenu({ open, onOpen, onClose, label, children }) {
-  const ref = useRef(null);
-  useMenuDismiss(open, onClose, ref);
-  return (
-    <div className="ovm ft-row-menu" ref={ref}>
-      <button type="button" className="ghost sm ft-row-dots" aria-haspopup="menu" aria-expanded={open}
-              aria-label={`Actions for ${label}`} title="Actions" onClick={(e) => { e.stopPropagation(); open ? onClose() : onOpen(); }}>
-        <DotsIcon />
-      </button>
-      <div className="ovm-menu" role="menu" hidden={!open} onClick={(e) => { e.stopPropagation(); onClose(); }}>
-        {children}
-      </div>
-    </div>
-  );
+// A row's menu, to the standard (menuStandard.js): Open and Rename… on top, the adds and moves in
+// the middle, Delete… last after a line. Drawn by the shared RowMenu at the pointer (a right-click)
+// or under its ⋯ button; the focus goes back to the button after.
+export function outlineMenu(row) {
+  const { node } = row;
+  const gate = node.type === "gate";
+  const top = !row.parent;
+  return buildMenu({
+    general: { open: { id: "ft-open" }, rename: { id: "ft-rename" } },
+    adds: gate ? [{ id: "ft-add-gate", label: "Add gate" }, { id: "ft-add-event", label: "Add basic event" }] : [],
+    actions: [
+      ...(gate ? ["or", "and", "vote"].filter((g) => g !== node.gate).map((g) => ({ id: `ft-gate-${g}`, label: `Change to ${GATE_LABELS[g]}` })) : []),
+      ...(top ? [] : [
+        { id: "ft-up", label: "Move up", ...(row.index === 0 ? { disabled: true, reason: "It's first under its gate already." } : {}) },
+        { id: "ft-down", label: "Move down", ...(row.last ? { disabled: true, reason: "It's last under its gate already." } : {}) },
+        { id: "ft-indent", label: "Move into the gate above" },
+        { id: "ft-outdent", label: "Move out of this gate" },
+      ]),
+    ],
+    destroy: { id: "ft-delete", kind: "delete", ...(top ? { disabled: true, reason: "The top event is the tree: delete the fault tree from its list instead." } : {}) },
+  });
+}
+
+function OutlineMenu({ at, row, onClose, onChoose }) {
+  return <RowMenu items={outlineMenu(row)} at={at} label={`Actions for ${row.node.label}`} anchorId={`ft-row-${row.key}`} onClose={onClose} onChoose={onChoose} />;
 }
 
 function GateMark({ node }) {
@@ -62,14 +73,28 @@ function GateMark({ node }) {
 }
 
 // One outline row: indent, mark, name, a one-line summary, and its menu.
-function OutlineRow({ row, selected, issue, menuOpen, onSelect, onMenu, onCloseMenu, actions }) {
+function OutlineRow({ row, selected, issue, menuAt, onSelect, onMenu, onCloseMenu, actions }) {
   const { node } = row;
   const gate = node.type === "gate";
+  const dots = useRef(null);
+  const choose = (id) => {
+    if (id === "ft-open") return onSelect();
+    if (id === "ft-rename") return actions.rename(row);
+    if (id === "ft-add-gate") return actions.add(row, "gate");
+    if (id === "ft-add-event") return actions.add(row, "event");
+    if (id.startsWith("ft-gate-")) return actions.gate(row, id.slice(8));
+    if (id === "ft-up" || id === "ft-down") return actions.move(row, id === "ft-up" ? -1 : 1);
+    if (id === "ft-indent") return actions.indent(row);
+    if (id === "ft-outdent") return actions.outdent(row);
+    if (id === "ft-delete") return actions.remove(row);
+    return undefined;
+  };
   return (
     <li
+      id={`ft-row-${row.key}`}
       className={"ft-row" + (selected ? " selected" : "") + (gate ? " gate" : " event")}
       style={{ "--depth": row.depth }}
-      onContextMenu={(e) => { e.preventDefault(); onSelect(); onMenu(); }}
+      onContextMenu={actions.readOnlyRows ? undefined : (e) => { e.preventDefault(); onSelect(); onMenu({ x: e.clientX, y: e.clientY }); }}
     >
       <button type="button" className="ft-row-main" onClick={onSelect} aria-current={selected ? "true" : undefined}>
         {gate ? <GateMark node={node} /> : <span className="ft-mark ft-mark-event" aria-hidden="true" />}
@@ -84,26 +109,21 @@ function OutlineRow({ row, selected, issue, menuOpen, onSelect, onMenu, onCloseM
         {issue && <span className="ft-issue" title={issue}>!</span>}
       </button>
       {!actions.readOnlyRows && (
-        <RowMenu open={menuOpen} onOpen={onMenu} onClose={onCloseMenu} label={node.label}>
-          {gate && <button className="ovm-item" role="menuitem" onClick={() => actions.add(row, "gate")}>Add gate</button>}
-          {gate && <button className="ovm-item" role="menuitem" onClick={() => actions.add(row, "event")}>Add basic event</button>}
-          {gate && ["or", "and", "vote"].filter((g) => g !== node.gate).map((g) => (
-            <button key={g} className="ovm-item" role="menuitem" onClick={() => actions.gate(row, g)}>
-              Change to {GATE_LABELS[g]}
-            </button>
-          ))}
-          <button className="ovm-item" role="menuitem" onClick={() => actions.rename(row)}>Rename</button>
-          {row.parent && (
-            <>
-              <button className="ovm-item" role="menuitem" disabled={row.index === 0} onClick={() => actions.move(row, -1)}>Move up</button>
-              <button className="ovm-item" role="menuitem" disabled={row.last} onClick={() => actions.move(row, 1)}>Move down</button>
-              <button className="ovm-item" role="menuitem" onClick={() => actions.indent(row)}>Move into the gate above</button>
-              <button className="ovm-item" role="menuitem" onClick={() => actions.outdent(row)}>Move out of this gate</button>
-              <button className="ovm-item danger" role="menuitem" onClick={() => actions.remove(row)}>Delete</button>
-            </>
-          )}
-        </RowMenu>
+        <div className="ovm ft-row-menu">
+          <button ref={dots} type="button" className="ghost sm ft-row-dots" aria-haspopup="menu" aria-expanded={!!menuAt}
+                  aria-label={`Actions for ${node.label}`} title="Actions"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (menuAt) return onCloseMenu();
+                    const b = e.currentTarget.getBoundingClientRect();
+                    return onMenu({ x: b.right, y: b.bottom + 4 });
+                  }}>
+            <DotsIcon />
+          </button>
+        </div>
       )}
+      {menuAt && <OutlineMenu at={menuAt} row={row} onChoose={choose}
+                              onClose={() => { onCloseMenu(); dots.current?.focus({ preventScroll: true }); }} />}
     </li>
   );
 }
@@ -514,8 +534,8 @@ export default function FaultTreeEditor() {
           <ul className="ft-rows" role="list">
             {rows.map((row) => (
               <OutlineRow key={row.key} row={row} selected={selRow?.key === row.key} issue={issueOf[row.id]}
-                menuOpen={menuKey === row.key} onSelect={() => setSelected(row.key)}
-                onMenu={() => setMenuKey(row.key)} onCloseMenu={() => setMenuKey(null)} actions={actions} />
+                menuAt={menuKey?.key === row.key ? menuKey.at : null} onSelect={() => setSelected(row.key)}
+                onMenu={(at) => setMenuKey({ key: row.key, at })} onCloseMenu={() => setMenuKey(null)} actions={actions} />
             ))}
           </ul>
         </section>

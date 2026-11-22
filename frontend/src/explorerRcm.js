@@ -384,7 +384,7 @@ export function rowActions(r, { canRename = true, moves = true, viewOnly = null 
       { id: "delete", label: "Delete functional failure…", danger: true },
     ];
   }
-  if (r.type === "cause") return [{ id: "go", label: "Go to it" }, { id: "unlink", label: "Unlink", danger: true }];
+  if (r.type === "cause") return [{ id: "go", label: "Go to it" }, { id: "unlink", label: "Remove the link", danger: true }];
   // The group rows: adding inside them (their details open on the add row).
   if (r.type === "nostd") return [{ id: "add-fail", label: "Add a functional failure…" }];
   if (r.type === "unassigned") return [{ id: "add-mode", label: "Add a failure mode…" }];

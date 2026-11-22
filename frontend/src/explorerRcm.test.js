@@ -347,7 +347,7 @@ test("row menus: a failure offers Link to a cause and Link to an effect; a refer
   // The top's failure too: an effect may be beside it or on the same position.
   assert.deepEqual(labels("px"), ["Add failure mode", "Open…", "Link to a cause…", "Link to an effect…", "Edit description", "Delete functional failure…"]);
   assert.deepEqual(labels("x1"), ["Add failure mode", "Open…", "Link to a cause…", "Link to an effect…", "Edit description", "Delete functional failure…"]);
-  assert.deepEqual(labels(causeKey("px", "x1")), ["Go to it", "Unlink"]);
+  assert.deepEqual(labels(causeKey("px", "x1")), ["Go to it", "Remove the link"]);
   assert.deepEqual(rowActions(d.rows.get(causeKey("px", "x1")), { canRename: false }).map((a) => a.id), ["go", "unlink"]);
   assert.deepEqual(rowActions(d.rows.get("f1")).map((a) => a.id), ["add-std", "add-fail", "open", "rename", "delete"]);
 });

@@ -4,7 +4,6 @@ import { getMaintenancePosition } from "../api.js";
 import Tabs from "./ui/Tabs.jsx";
 import FailureReportsPanel from "./FailureReportsPanel.jsx";
 import SignalsPanel from "./SignalsPanel.jsx";
-import OverflowMenu from "./OverflowMenu.jsx";
 import RowMenu from "./RowMenu.jsx";
 import { ancestorsOf, structuralRow } from "../assetTree.js";
 import {
@@ -243,18 +242,18 @@ export function SlimHeader({
 // The heading's "…": the tab's items (a link for Open the full page), greyed
 // where a row has none (a group), so the heading looks the same on every row.
 export function HeaderMenu({ items }) {
-  // Grouped items (a submenu: `items`, or a separator) open the tree's row menu, two levels.
-  if (items.some((it) => it.items || it.separator)) return <GroupedHeaderMenu items={items} />;
-  return (
-    <OverflowMenu triggerClass="tp-icon-btn" disabled={!items.length} title={items.length ? "More actions" : "Nothing more for this row"}>
-      {items.map((it) => (it.to ? (
-        <Link key={it.id} className="ovm-item" to={it.to}>{it.label}</Link>
-      ) : (
-        <button key={it.id} type="button" className="ovm-item" disabled={!!it.disabled} title={it.title || undefined}
-                onClick={it.onSelect}>{it.label}</button>
-      )))}
-    </OverflowMenu>
-  );
+  // The row menu (RowMenu: arrows, type-to-jump, reasons shown), the same as the row's own: one
+  // renderer for every menu. With nothing for this row (a group), the button stays, greyed.
+  if (!items.length) {
+    return (
+      <button type="button" className="tp-icon-btn ovm-trigger" aria-label="More actions" title="Nothing more for this row" disabled>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+          <circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" />
+        </svg>
+      </button>
+    );
+  }
+  return <GroupedHeaderMenu items={items} />;
 }
 
 // The heading's "…" with groups (the Modelling tab's: Life model ›, RBD ›, Prediction ›): the
@@ -274,7 +273,7 @@ function GroupedHeaderMenu({ items }) {
   // No line at either end (a group with nothing after it on a phone).
   const trim = (list) => list.filter((it, i) => !(it.separator && (i === 0 || i === list.length - 1)));
   const strip = (list) => trim(list).map((it) => (it.separator ? it : {
-    id: it.id, label: it.label, disabled: !!it.disabled, reason: it.disabled ? it.title : undefined,
+    id: it.id, label: it.label, disabled: !!it.disabled, reason: it.disabled ? it.reason || it.title : undefined, danger: it.danger || undefined,
     ...(it.items ? { items: strip(it.items) } : {}),
   }));
   return (

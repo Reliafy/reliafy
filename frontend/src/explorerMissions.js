@@ -444,7 +444,7 @@ export function missionRowActions(r, { viewOnly = null } = {}) {
       { id: "mission-rule-add", label: "Add node status rule…", ...(viewOnly ? off : (r.ref.mission.blocks || []).length ? {}
         : { disabled: true, reason: "The mission's RBD has no blocks yet.", title: "The mission's RBD has no blocks yet." }) },
       { separator: true },
-      { id: "mission-phase-open", label: "Open in the mission editor…" },
+      { id: "mission-phase-open", label: "Open" },
       { id: "mission-phase-earlier", label: "Move earlier", ...(viewOnly ? off : index === 0 ? { disabled: true, reason: first, title: first } : {}) },
       { id: "mission-phase-later", label: "Move later", ...(viewOnly ? off : index >= of - 1 ? { disabled: true, reason: last, title: last } : {}) },
       { id: "mission-phase-delete", label: "Delete…", danger: true, ...off },
@@ -455,18 +455,19 @@ export function missionRowActions(r, { viewOnly = null } = {}) {
   // A plain life model's mission is its length from a starting age: set in the mission editor.
   if (m?.simple && (m.phases || 0) <= 1) {
     return [
-      { id: "mission-open", label: "Set its length and starting age…" },
+      { id: "mission-open", label: "Open" },
+      { id: "mission-length", label: "Set its length and starting age…" },
       { id: "mission-rbd", label: r?.ref?.rbd?.mission_rbd ? "Open its RBD" : "Show the RBD" },
-      { id: "mission-delete", label: "Delete…", ...off },
+      { id: "mission-delete", label: "Delete…", danger: true, ...off },
     ];
   }
   return [
     { id: "mission-phase-add", label: "Add a phase",
       ...(viewOnly ? off : (r?.ref?.mission?.phases || 0) >= MAX_PHASES ? { disabled: true, reason: full, title: full } : {}) },
     { separator: true },
-    { id: "mission-open", label: "Open in the mission editor" },
+    { id: "mission-open", label: "Open" },
     { id: "mission-rbd", label: r?.ref?.rbd?.mission_rbd ? "Open its RBD" : "Show the RBD" },
-    { id: "mission-delete", label: "Delete…", ...off },
+    { id: "mission-delete", label: "Delete…", danger: true, ...off },
   ];
 }
 // A position's menu (one RBD per mission): Add a mission builds the mission an RBD of its own from

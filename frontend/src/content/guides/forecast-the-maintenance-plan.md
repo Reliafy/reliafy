@@ -31,7 +31,7 @@ Each task and each package in the table has a **Forecast** row under it. Open
 it and its lines say when it's next due (a package: its next visit), how many
 times it comes in each month, the labour, the parts and spares it uses and
 what it costs, with the total over the year. The numbers come from the same
-forecast as the level's. **Open the full forecast…** on that row opens the
+forecast as the level's. **Open** in that row's menu opens the full
 forecast for the level the task or package sits at.
 
 The answer comes first, in a sentence:

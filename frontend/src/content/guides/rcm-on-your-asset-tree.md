@@ -91,9 +91,9 @@ To find your way around a big tree:
   in that row's menu.
 - The search box filters the tree and its RCM: descriptions, effects, tasks
   and notes, keeping the rows each match sits inside.
-- **Focus failure modes** in any row's menu (a position, function, performance standard, functional
+- **Focus › Focus failure modes** in any row's menu (a position, function, performance standard, functional
   failure, failure mode or task) closes every other branch of the tree and opens
-  that row at every level below it, or use **Focus to a depth** for **1 level**,
+  that row at every level below it, or pick **1 level**,
   **2 levels** or **3 levels**. On the RCM tab, where a row can go five levels
   deep, **4 levels** and **5 levels** are offered too where the rows
   go that deep: from a position, **4 levels** shows its failure modes'
@@ -202,10 +202,9 @@ shows a small note mark after its name in the table; hover over it to read the
 first line. On a phone the same section is in the Details sheet, and the
 FME(C)A tab's Details show a failure mode's notes the same way.
 
-**Edit description**
-(on a performance standard, **Edit text**) in a row's menu changes the text in the table
-itself. **Delete function…** (or performance standard, functional failure or
-failure mode) in a row's menu, or **Delete this …** at the foot of its Details,
+**Rename…** in a row's menu changes its text (a description, or a performance
+standard's text) in the table itself. **Delete…**, last in a row's menu, or
+**Delete this …** at the foot of its Details,
 deletes the row and everything under it. A function takes its performance
 standards, functional failures and failure modes; a performance standard takes
 the functional failures that breach it; a functional failure takes its failure
@@ -372,7 +371,7 @@ many other failure modes share it.
   above or below it, or on the item fitted there, and asks for the last-done
   reading on the new one (or works it out from the date, marked as an
   estimate); **Save what it counts** keeps it.
-- **Retire the task** at the foot of a task's details (or in its row's menu)
+- **Retire the task** at the foot of a task's details (or **Retire…** last in its row's menu)
   retires a task that serves only this failure mode; **Remove from this
   failure mode** (or **Remove** beside a failure mode under **Serves**) unlinks
   one that serves others too, and it stays with them. Choosing a
@@ -795,7 +794,7 @@ because the ground heaves links two functional failures on the same position.
   decide.
   Add failure modes at the higher level only for causes that belong to that
   position itself.
-- **Unlink** (in the row's menu, or in the failure's Details) takes a link
+- **Remove the link** (last in the row's menu), or **Unlink** in the failure's Details, takes a link
   off. If it was the only explanation of the higher failure, Reliafy asks first.
 - The **Caused by (below)** column in the exported CSV holds the links, written
   as *Position › Functional failure*. Importing a worksheet with that column
