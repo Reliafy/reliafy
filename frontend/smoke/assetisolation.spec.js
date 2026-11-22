@@ -99,7 +99,7 @@ for (const width of [1440, 400]) {
       // A new top position is at this asset's place, and its places are this asset's.
       await page.getByRole("button", { name: `New position at Anthony ${tag}` }).click();
       const add = page.getByRole("dialog").first();
-      const opts = (await add.locator("option").allTextContents()).join("|");
+      const opts = (await optionLabels(add.getByRole("combobox", { name: /^Location/ }))).join("|");
       for (const name of farmNames(tag)) expect(opts.includes(name), `New position: ${name}`).toBe(false);
       expect(opts.includes(`Kitchen ${tag}`)).toBe(true);
       await add.getByRole("button", { name: "Cancel" }).click();

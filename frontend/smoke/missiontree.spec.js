@@ -82,7 +82,7 @@ test("mission tree: details for missions and phases; covariate and node status r
   await expect(rule).toBeVisible({ timeout: 20_000 });
   await rule.locator(".tp-nm").click();
   await expect(side).toContainText("Node status rule");
-  await expect(side.getByLabel("State in this phase")).toHaveValue("guaranteed");
+  await expectChosen(side.getByLabel("State in this phase"), "guaranteed");
   await shot(page, "rule-panel-1440");
 
   // A covariate that changes within the phase (#372): the temperature follows a day/night schedule.

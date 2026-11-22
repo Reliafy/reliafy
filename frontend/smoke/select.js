@@ -2,7 +2,7 @@
 // Playwright's selectOption() can't drive it. choose(trigger, want) opens it
 // and clicks the row, the way selectOption() picks one:
 //   a string     the row with that value, or else that label
-//   { label }    the row with that label
+//   { label }    the row with that label (a RegExp: the first row whose label matches)
 //   { index }    the nth row (headings aren't rows)
 // The trigger carries the chosen value as data-value: expect(trigger).toHaveAttribute("data-value", v).
 import { expect } from "@playwright/test";
@@ -17,6 +17,9 @@ async function openList(trigger) {
 export async function choose(trigger, want) {
   // A native <select> still works, so a spec reads the same before and after its screen moves over.
   if (await trigger.evaluate((el) => el.tagName === "SELECT")) {
+    if (want?.label instanceof RegExp) {
+      want = await trigger.locator("option", { hasText: want.label }).first().getAttribute("value");
+    }
     await trigger.selectOption(want);
     return;
   }
@@ -27,6 +30,8 @@ export async function choose(trigger, want) {
     row = list.locator(`[role="option"][data-value="${v}"]`)
       .or(list.locator('[role="option"]').filter({ has: trigger.page().locator(".sel-option-label").getByText(want, { exact: true }) }))
       .first();
+  } else if (want.label instanceof RegExp) {
+    row = list.locator('[role="option"]').filter({ has: trigger.page().locator(".sel-option-label", { hasText: want.label }) }).first();
   } else if (want.label != null) {
     row = list.locator('[role="option"]').filter({ has: trigger.page().locator(".sel-option-label").getByText(want.label, { exact: true }) }).first();
   } else {
@@ -46,6 +51,6 @@ export async function optionLabels(trigger) {
 
 // The chosen value, native or shared: toHaveValue on a <select>, data-value on the trigger.
 export async function expectChosen(trigger, value) {
-  if (await trigger.evaluate((el) => el.tagName === "SELECT")) await expect(trigger).toHaveValue(value);
+  if (await trigger.evaluate((el) => el.tagName === "SELECT" || el.tagName === "INPUT")) await expect(trigger).toHaveValue(value);
   else await expect(trigger).toHaveAttribute("data-value", value);
 }

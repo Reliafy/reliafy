@@ -118,8 +118,7 @@ test("update a baseline with a position's one failure, and save it as the positi
   const dialog = page.getByRole("region", { name: "Fit a life model" });
   await dialog.getByRole("radio", { name: "With a prior" }).click();
   await choose(dialog.getByRole("combobox", { name: "Prior", exact: true }), "model");
-  const option = await dialog.locator("option", { hasText: "Bearing life — Weibull" }).first().getAttribute("value");
-  await choose(dialog.getByRole("combobox", { name: "Prior model" }), option);
+  await choose(dialog.getByRole("combobox", { name: "Prior model" }), { label: /Bearing life — Weibull/ });
   // A fit with a prior runs on SurPyval's grid: on a shared CI runner it can still be "Working it
   // out…" after an expect's 10 s (release PR #884), so wait for the answer as saveFit does.
   await expect(dialog.getByRole("status")).toContainText("90% one-sided credible bound", { timeout: 60_000 }); // B-life bounds are one-sided (#818)

@@ -70,7 +70,9 @@ const Select = forwardRef(function Select({
   const fromChildren = options == null;
   const all = (fromChildren ? optionsFromChildren(children) : options).map(norm);
   const selected = fromChildren ? nativeSelected(all, value) : all.find((o) => !o._header && o.value === value);
-  const isChosen = (o) => (fromChildren ? o === selected : o.value === value);
+  // Shown but not chosen (value matches no row): picking it still calls onChange.
+  const matched = !!selected && (!fromChildren || selected.value === String(value ?? ""));
+  const isChosen = (o) => matched && o === selected;
   const searchable = searchableProp ?? longList(all);
   const [query, setQuery] = useState("");
   const items = searchable ? filterOptions(all, query) : all;
@@ -123,10 +125,20 @@ const Select = forwardRef(function Select({
   const choose = (o) => {
     if (o._header || o.disabled) return;
     setOpen(false);
+    // Focus back on the trigger, as a native list leaves it.
+    triggerRef.current?.focus({ preventScroll: true });
     if (!isChosen(o)) onChange?.(o.value);
   };
+  // The caller's onBlur fires when focus leaves the control, not when it moves into its own list.
+  const blurOut = (e) => {
+    const to = e.relatedTarget;
+    if (to && (menuRef.current?.contains(to) || triggerRef.current === to)) return;
+    onBlur?.(e);
+  };
 
-  // Close on outside interaction / scroll / resize while open.
+  // Close on a click outside. A scroll or resize elsewhere moves the list with its
+  // trigger (a dialog scrolling, the page settling as it opens); it closes only
+  // once the trigger has gone out of sight.
   useEffect(() => {
     if (!open) return;
     const onDown = (e) => {
@@ -136,7 +148,9 @@ const Select = forwardRef(function Select({
     };
     const onScroll = (e) => {
       if (menuRef.current?.contains(e.target)) return; // scrolling the list is fine
-      setOpen(false);
+      const r = triggerRef.current?.getBoundingClientRect();
+      if (!r || r.bottom < 0 || r.top > window.innerHeight) setOpen(false);
+      else place();
     };
     document.addEventListener("mousedown", onDown);
     window.addEventListener("scroll", onScroll, true);
@@ -146,17 +160,24 @@ const Select = forwardRef(function Select({
       window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", onScroll);
     };
-  }, [open]);
+  }, [open, place]);
 
   // A searchable list takes the typing as soon as it opens.
   useLayoutEffect(() => {
-    if (open && searchable) searchRef.current?.focus();
+    if (open && searchable) searchRef.current?.focus({ preventScroll: true });
   }, [open, searchable]);
 
   // Keep the active row in view as keyboard focus moves.
   useLayoutEffect(() => {
     if (!open || active < 0) return;
-    menuRef.current?.querySelector(`[data-i="${active}"]`)?.scrollIntoView({ block: "nearest" });
+    // Scroll the list only: scrollIntoView would move the page or dialog under it too.
+    const menu = menuRef.current;
+    const row = menu?.querySelector(`[data-i="${active}"]`);
+    if (!row) return;
+    if (row.offsetTop < menu.scrollTop) menu.scrollTop = row.offsetTop;
+    else if (row.offsetTop + row.offsetHeight > menu.scrollTop + menu.clientHeight) {
+      menu.scrollTop = row.offsetTop + row.offsetHeight - menu.clientHeight;
+    }
   }, [open, active]);
 
   const onKeyDown = (e) => {
@@ -175,7 +196,8 @@ const Select = forwardRef(function Select({
       }
       return;
     }
-    if (e.key === "Escape") { e.preventDefault(); setOpen(false); triggerRef.current?.focus(); }
+    // Escape shuts the list only, not the form or dialog around it (as a native list's does).
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setOpen(false); triggerRef.current?.focus(); }
     else if (e.key === "ArrowDown") { e.preventDefault(); setActive((i) => step(i, 1)); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setActive((i) => step(i, -1)); }
     else if (e.key === "Home") { e.preventDefault(); setActive(step(-1, 1)); }
@@ -199,7 +221,7 @@ const Select = forwardRef(function Select({
         className={"sel-trigger" + (open ? " open" : "") + (className ? " " + className : "")}
         onClick={() => (open ? setOpen(false) : openMenu())}
         onKeyDown={onKeyDown}
-        onBlur={onBlur}
+        onBlur={onBlur && blurOut}
         disabled={disabled}
         autoFocus={autoFocus}
         title={title}
@@ -248,6 +270,7 @@ const Select = forwardRef(function Select({
                 setQuery(q);
                 setActive(q.trim() ? bestMatchIndex(filterOptions(all, q), q) : -1);
               }}
+              onBlur={onBlur && blurOut}
               onKeyDown={(e) => {
                 if (e.key === "ArrowDown" && active < 0) { e.preventDefault(); setActive(step(-1, 1)); return; }
                 onKeyDown(e);
@@ -277,6 +300,8 @@ const Select = forwardRef(function Select({
                   (o.disabled ? " disabled" : "")
                 }
                 onMouseEnter={() => setActive(i)}
+                // Keep focus where it is (the trigger or the search box) while a row is clicked.
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => choose(o)}
                 disabled={o.disabled}
               >

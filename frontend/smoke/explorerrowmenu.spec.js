@@ -15,7 +15,7 @@
 // With SMOKE_SHOTS_DIR set, it also saves screenshots there (for the pull request).
 import { test, expect, open, expectHealthy } from "./health.js";
 import { phoneTree } from "./explorer.js";
-import { choose, expectChosen } from "./select.js";
+import { choose, expectChosen, optionLabels } from "./select.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -122,7 +122,7 @@ test("Summary row menu: new inside, rename, move to…, delete, pin; the server'
   await menu.getByRole("menuitem", { name: "Move to…" }).click();
   dialog = page.getByRole("dialog", { name: `Move “Menu circulation ${tag}”` });
   const picker = dialog.getByRole("combobox");
-  const options = await picker.locator("option").allTextContents();
+  const options = await optionLabels(picker);
   expect(options.some((o) => o.includes(`Menu pump ${tag}`))).toBe(false);
   expect(options.some((o) => o.trim() === `Menu circulation ${tag}`)).toBe(false);
   expect(options.some((o) => o.includes(`Menu pool ${tag} (where it is now)`))).toBe(true);

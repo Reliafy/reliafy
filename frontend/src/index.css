@@ -8278,6 +8278,8 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 .sel-trigger:disabled { cursor: not-allowed; color: var(--text-secondary); background: var(--bg-subtle); }
 .sel-label {
+  flex: 1 1 auto;
+  min-width: 0; /* shrinks to an ellipsis instead of widening the trigger past its box */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

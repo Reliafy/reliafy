@@ -97,7 +97,7 @@ test("a failure mode's tasks are rows of the tree; add one, use an existing one,
   await expect(lines(tasks).first()).toContainText(`Weekly pH check ${tag}`);
   await expect(lines(tasks).first()).toContainText("every 1 week");
   const kindChip = tasks.getByRole("combobox", { name: `Kind of “Weekly pH check ${tag}”` });
-  await expect(kindChip).toHaveValue("on_condition");
+  await expectChosen(kindChip, "on_condition");
   await expect(kindChip).toHaveAttribute("title", /^First choice: /);
   await expect(tasks.locator(".rim-cards")).toHaveCount(0);
   await expect(tasks.getByRole("radiogroup", { name: "Which task is worth doing?" }).getByRole("radio", { name: /Task\(s\) worth doing/ }))
