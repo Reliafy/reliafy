@@ -98,7 +98,11 @@ test("attach a library record to a position, then fit with a library prior", asy
   await expect(picker).toBeVisible();
   const search = picker.getByRole("combobox", { name: "Search the data library" });
   await expect(search).toBeFocused();
-  await expect(picker.getByRole("combobox", { name: "Library", exact: true })).toHaveValue("nrc-inl-2020");
+  // The first library with usable records: a library of the user's own (made by another test on this
+  // shared backend) may come before the published ones, so read the list rather than assume one.
+  const { sources } = await (await request.get("/api/library/sources")).json();
+  const first = sources.find((s) => s.basis !== "prediction_model" && (s.kinds?.rate || s.kinds?.life));
+  await expect(picker.getByRole("combobox", { name: "Library", exact: true })).toHaveValue(first.id);
   await picker.getByRole("combobox", { name: "Library", exact: true }).selectOption("");
   const options = picker.getByRole("listbox").getByRole("option");
   await expect(options).not.toHaveCount(0);

@@ -2246,6 +2246,13 @@ select.ctl { padding-right: 30px; }
   border-radius: 50%; background: var(--warning); color: var(--text-on-fill); font-size: 10px; font-weight: 700; line-height: 1;
 }
 
+/* A checkbox with its label (ui/Controls Checkbox): the whole label is the target. */
+.check { display: flex; align-items: flex-start; gap: var(--space-2); min-width: 0; padding: var(--space-1) 0;
+  font-size: var(--fs-14); line-height: var(--lh-14); color: var(--text); cursor: pointer; overflow-wrap: anywhere; }
+.check > input[type="checkbox"] { flex: none; width: var(--icon-md); height: var(--icon-md); margin: 2px 0 0; accent-color: var(--accent); cursor: inherit; }
+.check:has(> input:disabled) { color: var(--text-disabled); cursor: not-allowed; }
+@media (max-width: 720px) { .check { min-height: var(--control-lg); align-items: center; } .check > input[type="checkbox"] { margin-top: 0; } }
+
 /* Controls joined into one: comparator + value + unit, interval + unit. */
 .ctl-group {
   display: flex; align-items: stretch; min-width: 0; max-width: 100%;
