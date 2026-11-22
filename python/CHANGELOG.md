@@ -1,6 +1,29 @@
 # Changelog
 
-## 0.12.2 (unreleased)
+## 0.12.3 (unreleased)
+
+Needs a server on the same release.
+
+- **Degradation models**: `change model_fit_degradation` fits readings that drift to a failure
+  threshold and saves the model, as the app's Degradation fit does: `name`, `dataset_id`,
+  `unit_id_column`, `age_column`, `value_column` and `threshold`, with optional `path` (`best` by
+  AICc, or one by name), `distribution`, `population_method`, `unit`, `measurement_unit`;
+  `dry_run=true` fits and reports without saving. The answer gives the path chosen, each unit's
+  crossing time and B1/B10/B50 with their 90% one-sided lower bounds. Fitting, so Pro.
+  `list models` takes `model_type` `degradation`, and `get model` reads one.
+- **RCM worksheets and task plans from CSV**: `change import_rcm` adds an RCM / FMEA worksheet or
+  a task plan (one row per failure mode) to a maintenance position's RCM from CSV text (`csv`) or
+  an uploaded CSV or .xlsx (`upload_id`), with `mapping`, `sheet`, `header_row` and `dry_run` as
+  `change import_excel` target `rcm` takes them. `reliafy import rcm FILE --position ID
+  [--dry-run]` and `Client.import_rcm` send a file.
+- **Saved replacement analyses**: `change optimal_replacement_save` saves an optimal-replacement
+  analysis (Strategy > Replacement's Save analysis) from `name`, `planned_cost`, `unplanned_cost`
+  and `model_id` or `distribution_id` + `params` (optional `unit`, `use_per_year`, `units`,
+  `position_id`). Its results are worked out afresh on the server, as in the app. Every plan.
+- The REST twins (`POST /api/v1/change/model_fit_degradation`, `/change/import_rcm`,
+  `/change/optimal_replacement_save`) and the CLI (`reliafy change …`) take them too.
+
+## 0.12.2
 
 Needs a server on the same release.
 
