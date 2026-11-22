@@ -117,11 +117,18 @@ export function completesText(m) {
 // gain `msum` (their own: rbds, missions), `mall` (theirs and inside) and `rbds` (their RBD links).
 // `hasModel`: the positions whose model in use can be a mission's one block (GET
 // /position-missions: has_model), so a leaf can have a mission too.
-export function graftMissions(display, links = [], hasModel = [], otherModel = []) {
+export function graftMissions(display, links = [], hasModel = [], otherModel = [], flyable = null) {
   const withModel = new Set(hasModel || []);
+  // `flyable`: the model rows a mission can be flown on (GET /position-missions: flyable): every life
+  // and covariate model, in use or not. Null (an older server): the model in use, as before.
+  const fly = flyable ? new Set(flyable) : null;
   const withOther = new Set(otherModel || []);
   const rows = new Map();
-  for (const [k, r] of display.rows) rows.set(k, { ...r, kids: [...r.kids] });
+  for (const [k, r] of display.rows) {
+    const row = { ...r, kids: [...r.kids] };
+    if (fly && r.ref?.link?.id && r.type === "pmodel") row.flyable = fly.has(r.ref.link.id);
+    rows.set(k, row);
+  }
   const out = { ...display, rows, missions: true };
   for (const r of rows.values()) {
     if (r.type === "pos") {
@@ -146,7 +153,9 @@ export function graftMissions(display, links = [], hasModel = [], otherModel = [
       p.msum.rbds += 1;
       for (const m of link.missions || []) {
         const key = missionKey(link.rbd.id, m.id);
-        const names = m.phase_names || [];
+        // A plain life model's mission (no covariates) is a length from a starting age: its one
+        // phase adds nothing, so it has no phase rows (several phases, as named segments, keep theirs).
+        const names = m.simple && (m.phase_names || []).length <= 1 ? [] : m.phase_names || [];
         const lengths = m.phase_durations || [];
         const kids = names.map((_, i) => phaseKey(link.rbd.id, m.id, i));
         rows.set(key, {
@@ -255,8 +264,8 @@ export function missionHost(rows, link, positionKey) {
 // position's missions grafted (graftMissions) and moved under the model row each is flown on, a
 // level deeper. A position's kids: its models (each with its Strategy and missions), then the
 // missions with no model row, then the positions inside. Roll-ups (msum, mall) stay the position's.
-export function nestMissions(tree, links = [], hasModel = [], otherModel = []) {
-  const out = graftMissions(tree, links, hasModel, otherModel);
+export function nestMissions(tree, links = [], hasModel = [], otherModel = [], flyable = null) {
+  const out = graftMissions(tree, links, hasModel, otherModel, flyable);
   const { rows } = out;
   const deeper = (k) => {
     const r = rows.get(k);
@@ -306,8 +315,8 @@ export function missionsOf(rows, positionKey) {
 }
 
 // A model row's own Add a mission (first in its menu, the tab's add): on an RBD (a copy of it, wired
-// as drawn) or on the position's model in use where it can be the one block (a life distribution or
-// a covariate model: GET /position-missions has_model). [] for a model a mission can't be flown on.
+// as drawn) or on any life or covariate model, in use or not, as the one block (GET
+// /position-missions: flyable). [] for a model a mission can't be flown on (a condition-and-life one).
 export function modelMissionActions(r, position, { viewOnly = null } = {}) {
   const link = r?.ref?.link;
   if (!link || r.ref.strategy || !link.model) return [];
@@ -316,11 +325,16 @@ export function modelMissionActions(r, position, { viewOnly = null } = {}) {
     if (link.model.network) return [];
     return [{ id: "mission-new-on", label: "Add a mission…", title: viewOnly || "A mission on a copy of this RBD: its phases, block states and covariate values", ...off }];
   }
-  if (link.in_use && position?.hasModel) {
-    return [{ id: "mission-new-on", label: "Add a mission…", title: viewOnly || "A mission flown on this model as one block: each phase's length and covariate values", ...off }];
-  }
-  return [];
+  const can = r.flyable != null ? r.flyable : link.in_use && position?.hasModel;
+  if (!can) return [];
+  const plain = !(link.model?.covariates || []).length && !bindingLike(link);
+  return [{ id: "mission-new-on", label: "Add a mission…", ...off,
+    title: viewOnly || (plain ? "A mission flown on this model: its length and the age it starts at"
+      : "A mission flown on this covariate model: each phase's length and covariate values") }];
 }
+
+// A covariate model at a position (NSWC-11, accelerated life, PH): its covariates are set by a phase.
+const bindingLike = (link) => !!link?.source?.binding || ["covariate_record", "alt_model"].includes(link?.model_type);
 
 // Positions inside it to build an RBD from (a leaf has none: its own life model is what it has).
 const hasInside = (r) => (r?.inside != null ? r.inside : (r?.kids || []).some((k) => !/^(MS|L):/.test(String(k))));
@@ -381,8 +395,18 @@ export function headRollupText(r) {
   return parts.join(" · ");
 }
 
+// Where a plain mission starts (its Source cell): "From new", "From 500 hours", "From its age now".
+export function startText(m) {
+  const s = m?.result?.start;
+  const at = m?.start || {};
+  if (at.now) return s?.basis === "now" ? `From its age now (${lengthText(s.age, m.unit)})` : "From its age now";
+  if (at.age != null) return `From ${lengthText(at.age, m.unit)}`;
+  return "From new";
+}
+
 // The phases cell: "3 phases: Take-off, Survey, Landing".
 export function phasesText(m) {
+  if (m?.simple && (m.phases || 0) <= 1) return startText(m);
   const n = m?.phases || 0;
   if (!n) return "No phases yet";
   const names = (m.phase_names || []).join(", ");
@@ -427,6 +451,15 @@ export function missionRowActions(r, { viewOnly = null } = {}) {
     ];
   }
   const full = `A mission has at most ${MAX_PHASES} phases.`;
+  const m = r?.ref?.mission;
+  // A plain life model's mission is its length from a starting age: set in the mission editor.
+  if (m?.simple && (m.phases || 0) <= 1) {
+    return [
+      { id: "mission-open", label: "Set its length and starting age…" },
+      { id: "mission-rbd", label: r?.ref?.rbd?.mission_rbd ? "Open its RBD" : "Show the RBD" },
+      { id: "mission-delete", label: "Delete…", ...off },
+    ];
+  }
   return [
     { id: "mission-phase-add", label: "Add a phase",
       ...(viewOnly ? off : (r?.ref?.mission?.phases || 0) >= MAX_PHASES ? { disabled: true, reason: full, title: full } : {}) },

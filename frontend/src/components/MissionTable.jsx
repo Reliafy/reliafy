@@ -15,17 +15,18 @@ import {
 // reads can be out at once (a mission saved, then its result worked out): the one asked for last
 // is the one shown, whichever answers first.
 export function useTreeMissions({ on, within = null }) {
-  const [state, setState] = useState({ links: null, hasModel: [], otherModel: [], error: null });
+  const [state, setState] = useState({ links: null, hasModel: [], otherModel: [], flyable: null, error: null });
   const asked = useRef(null);
   if (!asked.current) asked.current = latestOnly();
   const load = useCallback(() => {
     const latest = asked.current();
     return listPositionMissions(null, { within })
-      .then((d) => latest() && setState({ links: d.links || [], hasModel: d.has_model || [], otherModel: d.other_model || [], error: null }))
+      .then((d) => latest() && setState({ links: d.links || [], hasModel: d.has_model || [], otherModel: d.other_model || [],
+        flyable: d.flyable || null, error: null }))
       .catch((e) => latest() && setState((s) => ({ ...s, error: e.message })));
   }, [within]);
   useEffect(() => { if (on) load(); }, [on, load]);
-  return { links: state.links, hasModel: state.hasModel, otherModel: state.otherModel, error: state.error, load };
+  return { links: state.links, hasModel: state.hasModel, otherModel: state.otherModel, flyable: state.flyable, error: state.error, load };
 }
 
 // A position's roll-up on the Missions tab, with "Add a mission" a real button wherever one can be
@@ -86,7 +87,7 @@ export function MissionCell({ r, col }) {
       if (placeholderTone(m.result)) {
         return <Chip tone={placeholderTone(m.result)} title={placeholderTitle(m.result)}>{text} · placeholders</Chip>;
       }
-      return <span className="ml-num" title="The chance the mission completes">{text}</span>;
+      return <span className="ml-num" title={boundTitle(m.result)}>{text}</span>;
     }
     case "rbd":
       return <span className="ml-src" title={r.ref.rbd.name}>{r.ref.rbd.name}</span>;
@@ -94,6 +95,11 @@ export function MissionCell({ r, col }) {
       return null;
   }
 }
+
+// A plain mission's row says its bound in the tooltip (the Calculate pane shows it in full).
+const boundTitle = (res) => (res?.lower_bound
+  ? `The chance the mission completes; at least ${pct(res.lower_bound.lower)} (${Math.round(res.lower_bound.confidence * 100)}% one-sided lower bound)`
+  : "The chance the mission completes");
 
 // What a mission row is, in the Kind column: "Mission", "Phase", "Covariate", "Node status".
 export function missionKindText(r) {

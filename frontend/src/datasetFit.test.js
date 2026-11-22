@@ -29,7 +29,7 @@ const startStop = {
 };
 
 test("data with covariates that change over time offers a non-repairable fit", () => {
-  const life = { label: "Fit a non-repairable model with covariates that change over time", to: "/models/new?dataset=sample-ds-pump-load" };
+  const life = { label: "Fit a non-repairable model with covariates (readings that change over time)", to: "/models/new?dataset=sample-ds-pump-load" };
   assert.deepEqual(datasetActions(startStop), { primary: life, secondary: null });
   // From the tag alone (an older profile that called the rows readings).
   const older = { ...startStop, profile: { repeated_units: { column: "pump", kind: "degradation" } } };
@@ -39,7 +39,7 @@ test("data with covariates that change over time offers a non-repairable fit", (
   // Readings in the same table as well: degradation second.
   assert.deepEqual(datasetActions({ ...startStop, tags: [...startStop.tags, "Measurements"] }).secondary,
     { label: "Fit a degradation model", to: "/models/degradation/new?dataset=sample-ds-pump-load" });
-  assert.deepEqual(fitOptions(startStop), [{ label: "Non-repairable model with covariates that change over time", to: "/models/new?dataset=sample-ds-pump-load" }]);
+  assert.deepEqual(fitOptions(startStop), [{ label: "Non-repairable model with covariates (readings that change over time)", to: "/models/new?dataset=sample-ds-pump-load" }]);
   assert.equal(usableFor("life", startStop), true);
 });
 

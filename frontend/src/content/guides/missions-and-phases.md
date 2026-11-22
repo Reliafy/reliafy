@@ -30,8 +30,7 @@ each phase's covariates and node status rules:
   **mission** › **phase** › **covariates** and **node status rules**.
 
 A mission goes under the model it was started from: the RBD it's a copy of,
-or the position's model in use when the mission is that model as one block (a
-life model, or a covariate model whose covariates the phases set). A mission
+or the life or covariate model it flies as one block (in use or not). A mission
 built from the positions inside, on a position with no RBD of its own, is a
 row of the position itself, after its models.
 
@@ -59,8 +58,10 @@ above it: a gimbal's own missions are flown on the gimbal's own RBD.
 ## Add a mission
 
 Choose **Add a mission…** on a model's **⋯** menu (right-click its row): on an
-RBD, the mission is flown on a copy of that RBD; on the position's model in
-use, it's that model as one block. Or choose **Add a mission…** on the
+RBD, the mission is flown on a copy of that RBD; on any life or covariate
+model, in use or not, it's that model as one block. The menu is the same on
+every kind of model, and so are the mission's pane and its answer: only what
+you enter differs. A condition-and-life model can't fly a mission yet. Or choose **Add a mission…** on the
 position's own **⋯** menu (or **Add a mission** in the line over the tree).
 Type the mission's name in the pane and choose **Add the mission**. Nothing is
 saved until it's named. From the position, a position with an RBD
@@ -80,10 +81,39 @@ position with nothing inside and no model can't have a mission yet: its row says
 why ("needs a life model or positions inside"). Give it a life model on the
 **Models** tab first; a condition-and-life model can't be a block, so its menu says that instead.
 
-A covariate model in use (a proportional-hazards model, an accelerated life
-model or an NSWC-11 record) is a mission with a profile: each phase sets the
-covariates' values (or a schedule over the phase), so the mission is the model
-run through that profile of conditions over time.
+A covariate model (a proportional-hazards model, an accelerated life model or
+an NSWC-11 record, however it was fitted: one fitted from readings that change
+over time is a covariate model like the rest) is a mission with a profile:
+each phase sets the covariates' values (or a schedule over the phase), so the
+mission is the model run through that profile of conditions over time.
+
+### A mission on a life model with no covariates
+
+On a plain life model (a Weibull, a lognormal, a mixture…) a mission is a
+**length**, in the model's time unit, and the age the item **starts at**:
+
+- **New**: age 0.
+- **Its age now**: the fitted item's age, read each time the mission is worked
+  out, as the Calculator's **As of now** reads it. This is the default where an
+  item is fitted at the position.
+- **An age**: one you give.
+
+The answer is the chance the item lasts the mission from that age: R(age +
+length) ÷ R(age). With it comes the **lower bound** at 90% one-sided (at least
+this chance, at 90% confidence) for a fitted model; a model whose parameters
+were typed in has no bound, and the answer says so. A Weibull with alpha 1,000
+hours and beta 2 lasts a 200-hour mission from new with probability 96.08%, and
+from 500 hours with probability 78.66%.
+
+Phases add nothing to a plain model's mission, so its pane has no phases. Add
+several missions to the same model to compare lengths side by side: each is a
+row under the model with its chance of completing.
+
+### Condition-and-life models
+
+A mission on a condition-and-life (joint) model would be the chance a unit
+lasts the length given its readings so far and how they're expected to go.
+That isn't built yet.
 
 ## The mission tree and its details
 
@@ -211,7 +241,8 @@ that stand by in it, faded.
 ## Calculate
 
 **Calculate** works the mission out, saved or not. The answer comes first: the
-chance the mission completes. Under it, **Reliability through the mission** is
+chance the mission completes (on a plain life model, with its 90% one-sided
+lower bound and the age it started at). Under it, **Reliability through the mission** is
 one curve over the whole mission, phase boundaries marked: the chance the
 mission is still going at each point. Then, for each phase:
 
@@ -250,7 +281,8 @@ at one stress counts at the next).
 The same is in the API, the CLI and the Claude connector: `analyse
 rbd_mission` works a mission out (or every mission on an RBD) and lists the
 covariates its phases can set; `change rbd_mission` adds, changes and deletes
-one, with a phase's `standby`, `guaranteed` and `not_needed` blocks (and a
+one (a mission on a plain life model starts at its saved starting age;
+`current_state` overrides it), with a phase's `standby`, `guaranteed` and `not_needed` blocks (and a
 standby block's `dormancy` and `start_probability`), and `models`: a block's
 life model for one phase, its age carried in and out. See also [Model a mission in phases](/guides/phased-missions) for the RBD
 builder's own phased mission.

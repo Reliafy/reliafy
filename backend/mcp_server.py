@@ -5628,10 +5628,15 @@ def analyse_rbd_mission(
         raise ToolError(f"“{rbd.name}” has no mission '{mission_id}': it has "
                         f"{', '.join(repr(m['id']) for m in every) or 'none'}.")
     detail = rbd_missions.detail(db, owners, graph, mission)
+    from backend.routers.rbd_missions import age_now_for
+    from backend.services import time_zones
+
+    # A mission on a life model with no covariates, started "now": the fitted item's age now.
+    age_now = None if state else age_now_for(user, user["uid"], user["uid"], time_zones.of_owner(db, user["uid"]), graph)
     try:
         with rbd_standby.simulation("run" if entitled else None):
             result = rbd_phases.agent_summary(rbd_missions.analyze(db, owners, graph, mission["phases"],
-                                                                   current_state=state))
+                                                                   current_state=state, age_now=age_now))
     except rbd_standby.SimulationNeedsPro as exc:
         result = _mission_pro(exc)
     except AnalysisError as exc:

@@ -6,7 +6,7 @@ import { Select, TextInput } from "./ui/Controls.jsx";
 import { CloseIcon, ExpandIcon, ShrinkIcon } from "./icons.jsx";
 import { saveErrorText } from "../confirm.js";
 import {
-  BLOCK_STATES, MAX_PHASES, changedPhases, completesText, covStatus, covValueText, isCovRow, isPhaseRow, isRuleRow, lengthText,
+  BLOCK_STATES, MAX_PHASES, changedPhases, startText, completesText, covStatus, covValueText, isCovRow, isPhaseRow, isRuleRow, lengthText,
   pct, phaseKey, phaseOfText, phaseResult, phaseSettingsText, placeholderTitle, placeholderTone, ruleKey, ruleState, ruleText, covKey,
   withBlockState, withValue, isSchedule,
 } from "../explorerMissions.js";
@@ -79,7 +79,8 @@ export default function MissionSide({ r, phone, expanded, onExpand, onCollapse, 
   const kind = isCovRow(r) ? `Covariate · ${cap(r.ref.cov.role || "use")}` : isRuleRow(r) ? "Node status rule"
     : isPhaseRow(r) ? phaseOfText(r.ref.phase) : "Mission";
   const where = isPhaseRow(r) ? `In ${m.name}` : isCovRow(r) || isRuleRow(r) ? `${r.ref.phase.name} · ${m.name}`
-    : m.phases ? `${m.phases} phase${m.phases === 1 ? "" : "s"} · ${lengthText(m.duration, m.unit)}` : "No phases yet";
+    : plainMission(m) ? (m.phases ? `${lengthText(m.duration, m.unit)} · ${startText(m).toLowerCase()}` : "No length yet")
+      : m.phases ? `${m.phases} phase${m.phases === 1 ? "" : "s"} · ${lengthText(m.duration, m.unit)}` : "No phases yet";
 
   const props = { r, m, rbd, busy, viewOnly, savePhases, atPhase, onAction, onSelect };
   return (
@@ -116,6 +117,9 @@ export default function MissionSide({ r, phone, expanded, onExpand, onCollapse, 
   );
 }
 
+// A plain life model's mission (no covariates): a length from a starting age, no phases to show.
+const plainMission = (m) => !!m?.simple && (m.phases || 0) <= 1;
+
 const cap = (t) => String(t || "").charAt(0).toUpperCase() + String(t || "").slice(1);
 
 // ---- a mission ---------------------------------------------------------------------------------
@@ -127,10 +131,12 @@ function MissionDetails({ r, m, rbd, busy, viewOnly, savePhases, onAction, onSel
   const names = m.phase_names || [];
   const lengths = m.phase_durations || [];
   const trimmed = name.trim();
+  const plain = plainMission(m);
+  const lb = res?.lower_bound;
   return (
     <>
       <section aria-label="The answer" className="msd-answer">
-        {!names.length ? <p className="rim-tquiet">No phases yet: add one to work the mission out.</p>
+        {!names.length ? <p className="rim-tquiet">{plain ? "No length yet: open it in the mission editor to give it one." : "No phases yet: add one to work the mission out."}</p>
           : !res ? <p className="rim-tquiet">Working the mission out…</p>
             : res.reliability == null ? (
               <p><Chip tone="warning">Needs values</Chip> {res.through ? `Worked out to the end of ${res.through.phase} (${pct(res.through.reliability)} still going).` : "A phase still needs covariate values."}</p>
@@ -140,9 +146,11 @@ function MissionDetails({ r, m, rbd, busy, viewOnly, savePhases, onAction, onSel
                 {placeholderTone(res) ? <> <Chip tone={placeholderTone(res)} title={placeholderTitle(res)}>Placeholders</Chip></> : null}
               </p>
             )}
-        {res?.reliability != null && <p className="rim-tquiet">{res.method === "simulated" ? "Simulated" : "Worked out exactly"} from each block&apos;s model at its point values, over {lengthText(m.duration, m.unit)}.</p>}
+        {res?.reliability != null && lb && <p>At least <b>{pct(lb.lower)}</b> ({Math.round(lb.confidence * 100)}% one-sided lower bound).</p>}
+        {res?.reliability != null && <p className="rim-tquiet">{res.method === "simulated" ? "Simulated" : "Worked out exactly"} {plain ? `${startText(m).toLowerCase()}, ` : "from each block's model at its point values, "}over {lengthText(m.duration, m.unit)}.</p>}
       </section>
 
+      {!plain && (
       <section aria-labelledby={`msd-ph-${r.key}`}>
         <h3 className="ml-h" id={`msd-ph-${r.key}`}>Phases, in order</h3>
         {names.length ? (
@@ -172,10 +180,11 @@ function MissionDetails({ r, m, rbd, busy, viewOnly, savePhases, onAction, onSel
                   onClick={() => onAction(r, "mission-phase-add")}>Add a phase</button>
         </div>
       </section>
+      )}
 
       <section aria-labelledby={`msd-rbd-${r.key}`}>
         <h3 className="ml-h" id={`msd-rbd-${r.key}`}>Its RBD</h3>
-        <p className="msd-line">Flies <b>{rbd.name}</b>{rbd.unit ? `, in ${String(rbd.unit).toLowerCase()}` : ""}. Covariates come from the life models in it; node status rules set a block&apos;s state in a phase.</p>
+        <p className="msd-line">Flies <b>{rbd.name}</b>{rbd.unit ? `, in ${String(rbd.unit).toLowerCase()}` : ""}.{plain ? " Its length and the age it starts at are set in the mission editor." : " Covariates come from the life models in it; node status rules set a block's state in a phase."}</p>
         <div className="msd-actions">
           <button type="button" className="secondary sm" onClick={() => onAction(r, "mission-rbd")}>Open in the RBD builder</button>
           <button type="button" className="secondary sm" onClick={() => onAction(r, "mission-open")}>Open in the mission editor</button>

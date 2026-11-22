@@ -4,7 +4,7 @@ import { buildDisplay } from "./assetTree.js";
 import {
   BLOCK_STATES, MAX_PHASES, covKey, ruleKey, isCovRow, isRuleRow, covStatus, ruleText, ruleState, phaseSettingsText, answerText, leaveOut, placeholderTitle, placeholderTone, placeholderWarning, blockState, fadedIn, withBlockState, changedPhases, cleanPhases, completesText, editablePhase, feedsText, graftMissions, isMissionRow,
   isPhaseRow, latestOnly, lengthText, missionKey, missionParam, missionRowActions, movePhase, newPhase, parseMissionParam, phaseCompletes,
-  phaseCovariates, phaseKey, phaseLengthText, phaseLine, phaseNeeds, phaseOfText, phasesText, positionMissionActions, rollupText, typed,
+  phaseCovariates, phaseKey, phaseLengthText, phaseLine, phaseNeeds, phaseOfText, phasesText, positionMissionActions, rollupText, startText, typed,
   withBlockValue, withNewPhase, withoutPhase, withValue,
 } from "./explorerMissions.js";
 
@@ -546,4 +546,36 @@ test("Models tab: + Mission on a model's row, for an RBD and for the model in us
   // A position with models inside still offers Redundancy inside (its kids include model rows).
   assert.ok(positionMissionActions(d.rows.get("drone")).some((a) => a.id === "mission-redundancy"));
   assert.ok(!positionMissionActions(d.rows.get("battery")).some((a) => a.id === "mission-redundancy"));
+});
+
+test("Models tab: Add a mission… on every life and covariate model the server says can fly one, in use or not", () => {
+  // flyable (GET /position-missions): the gimbal's PH model, not in use, and the battery's Weibull.
+  const d = nestMissions(graftModels(buildDisplay(DATA, "positions"), MODEL_LINKS), NESTED_LINKS, ["battery"], [], ["l3", "l4"]);
+  const act = (k, pos) => modelMissionActions(d.rows.get(modelKey(k)), d.rows.get(pos));
+  const [cov] = act("l4", "gimbal");
+  assert.equal(cov.id, "mission-new-on");
+  assert.match(cov.title, /covariate model: each phase's length and covariate values/);
+  const [plain] = act("l3", "battery");
+  assert.match(plain.title, /its length and the age it starts at/);
+  // An RBD row keeps its own; a row the server didn't list (a condition-and-life model, say) has none.
+  assert.deepEqual(act("l1", "drone").map((a) => a.id), ["mission-new-on"]);
+  const none = nestMissions(graftModels(buildDisplay(DATA, "positions"), MODEL_LINKS), NESTED_LINKS, ["battery"], [], []);
+  assert.deepEqual(modelMissionActions(none.rows.get(modelKey("l3")), none.rows.get("battery")), []);
+});
+
+test("a plain life model's mission is a length from a starting age: no phase rows, its start in words", () => {
+  const plain = [{ position_id: "battery", link_id: null, rbd: { id: "r8", name: "Battery — Long", unit: "Hours", mission_rbd: true, built_from: "model", on_link: "l3" },
+    missions: [
+      { id: "mission", name: "Long", simple: true, start: { age: 500 }, phases: 1, phase_names: ["Mission"], phase_durations: [200], duration: 200, unit: "Hours",
+        result: { reliability: 0.7866, lower_bound: { lower: 0.7, confidence: 0.9, side: "lower" }, start: { basis: "age", age: 500 } } },
+    ] },
+  { position_id: "battery", link_id: null, rbd: { id: "r9", name: "Battery — Now", unit: "Hours", mission_rbd: true, built_from: "model", on_link: "l3" },
+    missions: [{ id: "mission", name: "Now", simple: true, start: { now: true }, phases: 0, phase_names: [], duration: 0, unit: "Hours" }] }];
+  const d = nestMissions(graftModels(buildDisplay(DATA, "positions"), MODEL_LINKS), plain, ["battery"], [], ["l3"]);
+  const long = d.rows.get(missionKey("r8", "mission"));
+  assert.equal(long.parent, modelKey("l3"));
+  assert.deepEqual(long.kids, []);
+  assert.equal(phasesText(long.ref.mission), "From 500 hours");
+  assert.equal(phasesText(d.rows.get(missionKey("r9", "mission")).ref.mission), "From its age now");
+  assert.equal(startText({ start: { new: true } }), "From new");
 });

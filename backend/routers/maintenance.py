@@ -1453,9 +1453,11 @@ def position_missions(position_ids: str | None = None, within: str | None = None
         # model, say), so the tab can say why there's no Add a mission there.
         other = sorted({x["position_id"] for x in rows if x.get("in_use") and x.get("model_type") != "rbd"} - set(has))
         return {"links": rbd_missions.position_missions(m, session, ctx.read_owners, ctx.hidden, ids),
-                "has_model": has, "other_model": other}
+                "has_model": has, "other_model": other,
+                "flyable": pm.flyable_links(m, session, ctx.read_owners, ctx.hidden, rows)}
 
-    # has_model: positions whose model in use a mission's one-block RBD can take (a leaf's Add a mission).
+    # has_model: positions whose model in use a mission's one-block RBD can take (a leaf's Add a mission);
+    # flyable: the model rows a mission can be flown on (every life and covariate model, in use or not).
     return _run(read)
 
 
@@ -1466,7 +1468,9 @@ def add_position_mission(position_id: str, body: dict = Body(default={}), sessio
     """A new mission on a position with an RBD of its own (one RBD per mission): built from the
     positions inside (placeholders flagged), or a copy of the position's non-repairable RBD where
     it has nothing inside; saved as "<position> — <mission>". name: the mission's (default
-    "Mission N"); link_id: one of its model rows to fly it on (Add a mission on a model's row). Its phases are then set through /api/rbds/{rbd id}/missions/mission."""
+    "Mission N"); link_id: one of its model rows to fly it on (Add a mission on a model's row: an RBD,
+    or any life or covariate model, in use or not). Its phases (or, on a life model with no
+    covariates, its length and starting age) are then set through /api/rbds/{rbd id}/missions/mission."""
     from backend.maintenance import position_models as pm
     from backend.services import billing as billing_service
 

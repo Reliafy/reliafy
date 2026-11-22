@@ -6,6 +6,7 @@ import MissionBlockGrid from "./MissionBlockGrid.jsx";
 import MissionCurve, { MissionProNote, driversText } from "./MissionCurve.jsx";
 import ResultSummary from "./ui/ResultSummary.jsx";
 import Chip from "./ui/Chip.jsx";
+import ChoiceChips from "./ui/ChoiceChips.jsx";
 import { saveErrorText } from "../confirm.js";
 import { ShowMe } from "./SectionPage.jsx";
 import {
@@ -56,6 +57,9 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
   const [shown, setShown] = useState(null); // the phase key whose RBD is shown
   const [graph, setGraph] = useState(null);
   const [focusOn, setFocusOn] = useState(null); // the phase key whose name takes focus, once
+  // A plain life model's mission (no covariates): its starting age, "new", "now" or "age" (with `age`).
+  const [start, setStart] = useState({ mode: "new", age: "" });
+  const [startDirty, setStartDirty] = useState(false);
 
   const load = () => getMission(rbdId, missionId).then((d) => {
     setDetail(d);
@@ -65,6 +69,9 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
     const at = eds[phase ?? 0] || eds[0];
     setOpen(new Set(at ? [at.key] : []));
     if (phase != null && eds[phase]) setFocusOn(eds[phase].key);
+    const st = d.summary?.start || {};
+    setStart(st.now ? { mode: "now", age: "" } : st.age != null ? { mode: "age", age: String(st.age) } : { mode: "new", age: "" });
+    setStartDirty(false);
     setError(null);
   }, (e) => setError(e));
   useEffect(() => { load(); }, [rbdId, missionId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -84,7 +91,15 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
   const votes = detail?.votes || [];
   const unit = detail?.unit || "";
   const readOnly = !!detail?.rbd?.read_only;
-  const { phases, errors } = useMemo(() => cleanPhases(rows, { blocks, votes }), [rows, blocks, votes]);
+  // A mission on a life model with no covariates is its length from a starting age: with one phase
+  // (or none yet), the phases control adds nothing and is hidden (several, as named segments, stay).
+  const simple = !!detail?.summary?.simple;
+  const lengthOnly = simple && rows.length <= 1;
+  const { phases, errors: phaseErrors } = useMemo(() => cleanPhases(rows, { blocks, votes }), [rows, blocks, votes]);
+  const ageNum = Number(start.age);
+  const startBad = simple && start.mode === "age" && !(String(start.age).trim() !== "" && Number.isFinite(ageNum) && ageNum >= 0);
+  const startBody = !simple ? undefined : start.mode === "now" ? "now" : start.mode === "age" && !startBad ? { age: ageNum } : "new";
+  const errors = startBad ? [...phaseErrors, "Enter the age it starts the mission at: 0 or more."] : phaseErrors;
   const covRows = detail?.covariates || [];
   const byPhase = useMemo(() => rows.map((r) => phaseCovariates(covRows, r)), [rows, covRows]);
   const total = phases.reduce((t, p) => t + (Number.isFinite(p.duration) ? p.duration : 0), 0);
@@ -109,7 +124,7 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
     if (errors.length || !phases.length) return;
     setCalc({ busy: true, error: null, stale: false });
     try {
-      const got = await calculateMission(rbdId, missionId, dirty ? phases : null);
+      const got = await calculateMission(rbdId, missionId, dirty ? phases : null, startDirty ? { start: startBody } : {});
       setResult(got);
       setCalc({ busy: false, error: null, stale: false });
       if (!dirty) onSaved?.(null);
@@ -131,8 +146,10 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
     setSaving(true);
     setSaveError(null);
     try {
-      await updateMission(rbdId, missionId, { name: name.trim() || detail.mission.name, phases, expected_updated_at: detail.rbd.updated_at });
+      await updateMission(rbdId, missionId, { name: name.trim() || detail.mission.name, phases, expected_updated_at: detail.rbd.updated_at,
+        ...(simple ? { start: startBody } : {}) });
       setDirty(false);
+      setStartDirty(false);
       onDirty?.(false);
       const fresh = await getMission(rbdId, missionId);
       setDetail(fresh);
@@ -157,6 +174,17 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
   };
 
   const resultRow = (i) => (result && !calc.stale ? result.phases?.[i] : null);
+  // The one length of a plain mission: its single phase's duration (a new phase when it has none).
+  const setLength = (v) => change((rs) => (rs.length ? rs.map((r, i) => (i === 0 ? { ...r, duration: v } : r))
+    : [{ ...newPhase(0, []), name: "Mission", duration: v }]));
+  const pickStart = (patchStart) => {
+    setStart((st) => ({ ...st, ...patchStart }));
+    setStartDirty(true);
+    setDirty(true);
+    onDirty?.(true);
+    setCalc((c) => ({ ...c, stale: true }));
+  };
+  const fitted = detail?.age_now?.age != null;
   const u = unitWord(unit);
   const title = detail ? `Mission: ${detail.mission.name}` : "Mission";
 
@@ -178,12 +206,55 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
                 <input value={name} maxLength={80} disabled={readOnly}
                        onChange={(e) => { setName(e.target.value); setDirty(true); onDirty?.(true); }} />
               </label>
+              {lengthOnly ? (
+                <p className="rim-tquiet mission-on">
+                  Runs on <b>{detail.rbd.name}</b>{u ? `, in ${u}` : ""}: the chance its item lasts the mission&apos;s length from the age it starts at.{" "}
+                  <ShowMe help={{ guide: "missions-and-phases" }}>Read the guide</ShowMe>
+                </p>
+              ) : (
               <p className="rim-tquiet mission-on">
                 Runs on <b>{detail.rbd.name}</b>{onOpenRbd ? <> (<button type="button" className="link" onClick={onOpenRbd}>open it</button>)</> : null}{u ? `, in ${u}` : ""}: {rows.length} phase{rows.length === 1 ? "" : "s"},{" "}
                 {lengthText(total, unit)} in all. The blocks age through the whole mission (a spare idle on standby only as fast as its setting): wear in one phase stays for the next.{" "}
                 <ShowMe help={{ guide: "missions-and-phases" }}>Read the guide</ShowMe>
               </p>
+              )}
             </div>
+            {simple && (
+              <section className="mission-simple" aria-label="Length and starting age">
+                {lengthOnly && (
+                  <label className="mission-simple-length">
+                    <span>Length</span>
+                    <span className="mission-simple-input">
+                      <input type="number" inputMode="decimal" min="0" step="any" value={rows[0]?.duration ?? ""} placeholder="e.g. 200"
+                             disabled={readOnly} aria-invalid={tried && phaseErrors.length ? "true" : undefined}
+                             onChange={(e) => setLength(e.target.value)} />
+                      {u && <span className="cov-unit">{u}</span>}
+                    </span>
+                  </label>
+                )}
+                <div className="mission-simple-start">
+                  <ChoiceChips label="Starts at" disabled={readOnly} value={start.mode}
+                               onChange={(v) => v && pickStart({ mode: v })}
+                               options={[
+                                 { value: "new", label: "New", title: "The item starts the mission new (age 0)" },
+                                 ...(fitted || start.mode === "now" ? [{ value: "now", label: fitted ? `Its age now (${lengthText(detail.age_now.age, unit)})` : "Its age now",
+                                   title: `The fitted item's age now, read each time it's worked out${detail?.age_now?.note ? `: ${detail.age_now.note}` : ""}` }] : []),
+                                 { value: "age", label: "An age", title: "An age you give, in the model's unit" },
+                               ]} />
+                  {start.mode === "age" && (
+                    <label className="mission-simple-age">
+                      <span className="sr-only">Age it starts at{u ? ` (${u})` : ""}</span>
+                      <input type="number" inputMode="decimal" min="0" step="any" value={start.age} placeholder="Age" disabled={readOnly}
+                             aria-invalid={startBad && tried ? "true" : undefined} onChange={(e) => pickStart({ age: e.target.value })} />
+                      {u && <span className="cov-unit">{u}</span>}
+                    </label>
+                  )}
+                  {start.mode === "now" && !fitted && (
+                    <span className="rim-tquiet">{detail?.age_now?.reason ? `Its age can't be read (${detail.age_now.reason}), so it's worked out from new.` : "Its age can't be read here, so it's worked out from new."}</span>
+                  )}
+                </div>
+              </section>
+            )}
 
             {(detail.series_warning || result?.series_warning) && (
               <section className="mission-ph mission-series" role="note" aria-label="Blocks placed in series">
@@ -194,18 +265,19 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
               </section>
             )}
             <MissionAnswer result={calc.stale ? null : result} busy={calc.busy} error={calc.error} pro={calc.pro}
-                           stale={calc.stale} total={total} unit={unit} name={title} />
+                           stale={calc.stale} total={total} unit={unit} name={title} simple={simple} />
             {!calc.stale && !calc.error && (
               <MissionPlaceholders result={result} readOnly={readOnly} onOpenRbd={onOpenRbd}
                                    onLeaveOut={(ids) => change((rs) => leaveOut(rs, ids))} />
             )}
 
-            <MissionBlockGrid blocks={blocks} phases={rows} readOnly={readOnly} onChange={patch} />
+            {!lengthOnly && <MissionBlockGrid blocks={blocks} phases={rows} readOnly={readOnly} onChange={patch} />}
 
             {detail.problems?.length > 0 && (
               <p className="field-error">{detail.problems.map((p) => `${p.label}: ${p.problem}`).join(" · ")}</p>
             )}
 
+            {!lengthOnly && (
             <ol className="mission-phases" aria-label={`${title}: phases`}>
               {rows.map((row, i) => {
                 const covs = byPhase[i] || [];
@@ -296,14 +368,15 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
                 );
               })}
             </ol>
-            {rows.length === 0 && <p className="rim-tquiet">No phases yet. Add the first: a start-up, steady running, a peak…</p>}
+            )}
+            {rows.length === 0 && !lengthOnly && <p className="rim-tquiet">No phases yet. Add the first: a start-up, steady running, a peak…</p>}
 
             {tried && errors.length > 0 && (
               <ul className="rbd-costs-errors">{errors.map((e) => <li key={e}>{e}</li>)}</ul>
             )}
             {saveError && <p className="field-error" role="alert">{saveError}</p>}
             <div className="mission-foot">
-              {!readOnly && (
+              {!readOnly && !lengthOnly && (
                 <button type="button" className="secondary" disabled={rows.length >= 50}
                         onClick={() => change((rs) => {
                           const p = newPhase(rs.length, rs);
@@ -389,23 +462,29 @@ export function NewMissionPane({ position, taken = [], on = null, phone = false,
 }
 
 // The answer first: the chance the mission completes, in words, then the numbers.
-function MissionAnswer({ result, busy, error, pro, stale, total, unit, name }) {
+function MissionAnswer({ result, busy, error, pro, stale, total, unit, name, simple = false }) {
   if (error && pro) return <MissionProNote message={error} />;
   if (error) return <p className="field-error" role="alert">{error}</p>;
   if (!result) {
-    return <p className="rim-tquiet mission-wait" role="status">{busy ? "Working the mission out…" : stale ? "Changed: Calculate to work it out again." : "Calculate to work out the chance the mission completes."}</p>;
+    return <p className="rim-tquiet mission-wait" role="status">{busy ? "Working the mission out…" : stale ? "Changed: Calculate to work it out again."
+      : simple && !total ? "Give the mission its length, then Calculate." : "Calculate to work out the chance the mission completes."}</p>;
   }
+  const lb = result.lower_bound;
+  const from = result.start ? (result.start.age > 0 ? `starting at ${lengthText(result.start.age, unit)}` : "starting new") : "";
   const waiting = result.reliability == null;
   const risky = result.riskiest;
   const ph = placeholderWarning(result);
   return (
     <>
-    <ResultSummary tone={ph?.mostly && !waiting ? "bad" : waiting || ph ? "caveat" : "neutral"} className="mission-answer" sentence={answerText(result)}
+    <ResultSummary tone={ph?.mostly && !waiting ? "bad" : waiting || ph ? "caveat" : "neutral"} className="mission-answer"
+                   sentence={!waiting && result.start && !ph ? `${from ? `${from.trim().charAt(0).toUpperCase()}${from.trim().slice(1)}, the` : "The"} item lasts the mission's ${lengthText(total, unit)} with probability ${pct(result.reliability)}${lb ? `; at least ${pct(lb.lower)} (${levelPct(lb.confidence)} one-sided lower bound)` : ""}.` : answerText(result)}
                    stats={waiting ? [] : [
                      { label: ph ? "With placeholders" : "Completes", value: pct(result.reliability), hint: ph ? "not a real figure" : undefined },
                      ph ? (ph.without != null ? { label: `Without ${ph.n === 1 ? "it" : "them"}`, value: pct(ph.without), hint: "the blocks with models" } : null)
-                       : { label: "Fails", value: pct(result.unreliability) },
+                       : result.start ? null : { label: "Fails", value: pct(result.unreliability) },
+                     lb ? { label: `Lower bound (${levelPct(lb.confidence)} one-sided)`, value: pct(lb.lower), hint: "at least this chance" } : null,
                      { label: "Mission length", value: lengthText(total, unit) },
+                     result.start ? { label: "Starts at", value: result.start.age > 0 ? lengthText(result.start.age, unit) : "New" } : null,
                      result.interval ? { label: `Range (${levelPct(result.interval.confidence)})`, value: `${pct(result.interval.lower)}–${pct(result.interval.upper)}`, hint: "the simulation's precision" } : null,
                      risky && (result.phases || []).length > 1 ? { label: "Riskiest phase", value: risky.name } : null,
                    ]}>
