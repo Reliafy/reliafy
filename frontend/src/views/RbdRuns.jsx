@@ -11,7 +11,7 @@ import "../components/RbdRuns.css";
 import { RBDS_PATH, SYSTEM_MODELS_LABEL } from "../navigation.js";
 import { RowLink, rowOpen } from "../components/LibRows.jsx";
 import Loading from "../components/ui/Loading.jsx";
-import { Checkbox } from "../components/ui/Controls.jsx";
+import { Checkbox, Select } from "../components/ui/Controls.jsx";
 
 const MAX_COMPARE = 6;
 const PURPOSE = "Availability simulations from the app and your connectors.";
@@ -82,7 +82,7 @@ export default function RbdRuns() {
       <div className="tablebar">
         <label className="rbd-runs-filter">
           <span className="sr-only">Diagram</span>
-          <select value={rbdId} onChange={(e) => {
+          <Select value={rbdId} onChange={(e) => {
             setPicked([]);
             setParams(e.target.value ? { rbd: e.target.value } : {});
           }}>
@@ -91,7 +91,7 @@ export default function RbdRuns() {
               <option key={d.rbd_id} value={d.rbd_id}>{d.name}</option>
             ))}
             {rbdId && !diagram && <option value={rbdId}>This diagram</option>}
-          </select>
+          </Select>
         </label>
         <span className="grow" />
         {data && <span className="count">{runs.length}{data.more ? "+" : ""} run{runs.length === 1 ? "" : "s"}</span>}

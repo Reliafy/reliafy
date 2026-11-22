@@ -21,9 +21,10 @@ import {
   NEW_MISSION, changedPhases, graftMissions, isMissionRow, isPhaseRow, missionKey, missionParam, missionRowActions, movePhase, openForMissions,
   parseMissionParam, phaseKey, positionMissionActions, rollupText as missionRollup, headRollupText as missionHeadRollup, withNewPhase, withoutPhase,
 } from "../explorerMissions.js";
+import TaskOptimisePane from "../components/TaskOptimisePane.jsx";
 import { ForecastPane, PackagePane, TASK_COLUMNS, TASK_TREE_HEAD, TaskCell, TaskSide, taskPhoneRow, useTreeTasks } from "../components/TaskTreeTable.jsx";
 import {
-  TASK_ADD_TO, TASK_CLEAR, TASK_FORECAST, TASK_OPEN, TASK_PACKAGE, anyFilter, commonHolder, facetValues, facetsOf, filterTasks, filterWords, forecastItem,
+  TASK_ADD_TO, TASK_CLEAR, TASK_FORECAST, TASK_OPEN, TASK_OPTIMISE, TASK_PACKAGE, anyFilter, commonHolder, facetValues, facetsOf, filterTasks, filterWords, forecastItem,
   graftTasks, isTaskRow, keepShown, openForTasks, pickTasks, rollupText as taskRollup, shownTasks, taskKey, taskRowActions,
 } from "../explorerTasks.js";
 import CovariateBindPane from "../components/CovariateBindPane.jsx";
@@ -1062,7 +1063,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const paneQuery = paneFromQuery(params);
   const paneAt = modelsOn || missionsOn ? paneQuery
     : (measOn || tab === "summary") && paneQuery?.kind === "plan" ? paneQuery
-      : tasksOn && paneQuery?.kind === "forecast" ? paneQuery : null;
+      : tasksOn && (paneQuery?.kind === "forecast" || paneQuery?.kind === "optimise") ? paneQuery : null;
   const paneRow = paneAt && whole.rows.has(paneAt.id) ? whole.rows.get(paneAt.id) : null;
   const panePosition = paneRow?.type === "pos"
     ? { id: paneRow.key, name: paneRow.ref.name || "(no name)", ...classFields(paneRow.ref) } : null;
@@ -1863,6 +1864,16 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setTimeout(() => detailsHeading.current?.focus({ preventScroll: true }), 0);
   };
   const openForecast = (r) => leavePane().then((ok) => ok && openPane("forecast", { id: r.key, name: r.ref.name || "(no name)" }));
+  // Optimise… on a task (its row's ⋯, or its panel): how often to do it, in the table area beside the
+  // tree (?optimise=<task id>&on=<its position>).
+  const openOptimise = (taskId, positionId) => leavePane().then((ok) => {
+    const at = whole.rows.get(positionId);
+    if (!ok || !at) return;
+    setPkgPane(null);
+    openPane("optimise", { id: positionId, name: at.ref?.name || "(no name)" }, {
+      rbd: taskId, query: (q) => { for (const k of ["mtask", "addtask", "rates"]) q.delete(k); },
+    });
+  });
   // The tasks a task row's menu acts on: the ones picked together when it's one of them, else itself.
   const tasksFor = (r) => (tpicked.has(r.key) && tpicked.size > 1 ? [...tpicked] : [r.key])
     .map((k) => display.rows.get(k)).filter(isTaskRow);
@@ -1965,6 +1976,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       if (id === "maint-add-task") return addTaskAt(r);
       if (id === TASK_OPEN) return openTaskRow(r);
       if (id === TASK_FORECAST) return openForecast(r);
+      if (id === TASK_OPTIMISE) return openOptimise(r.ref.task.id, r.ref.position_id);
       if (id === TASK_PACKAGE) return openPackaging("new", r);
       if (id === TASK_ADD_TO) return openPackaging("add", r);
       if (id === TASK_CLEAR) return setTpicked(new Set());
@@ -2968,6 +2980,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       <TaskSide holder={sideHolder} taskId={taskRow ? taskRow.ref.task.id : null} taskName={taskRow ? taskRow.ref.task.name : ""} rates={ratesOn} phone={phone}
                 expanded={wideDetails} onExpand={expandDetails} onCollapse={collapseDetails}
                 headingRef={detailsHeading} onClose={closeTaskSide}
+                onOptimise={taskRow && !viewOnly ? () => openOptimise(taskRow.ref.task.id, taskRow.ref.position_id) : null}
                 onChanged={() => ptasks.load()}
                 onDone={(text) => {
                   if (text) say(text);
@@ -3059,6 +3072,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                       onChanged={(text) => { say(text); load(); }}
                       onRebuild={builtRbdLink(pmodels.links, panePosition.id) && !viewOnly
                         ? () => askRebuild(panePosition, builtRbdLink(pmodels.links, panePosition.id)) : null} />
+    </div>
+  ) : paneKind === "optimise" && paneAt.optimise ? (
+    <div className="rw tt-side">
+      <TaskOptimisePane key={paneAt.optimise} position={panePosition} phone={phone} headingRef={paneHeading}
+                        task={{ id: paneAt.optimise, name: whole.rows.get(taskKey(paneAt.optimise))?.ref?.task?.name || "" }}
+                        onClose={() => closePane()} onUsed={(text) => { say(text); ptasks.load(); }} />
     </div>
   ) : paneKind === "forecast" ? (
     <div className="rw tt-side">
