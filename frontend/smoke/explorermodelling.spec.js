@@ -471,7 +471,7 @@ test("a position's row menu on the Modelling tab is two levels, and Enter parame
   await open(page, `/asset-register/explorer?arrange=positions&sel=${pump.id}&tab=models`);
   await row(page, pump.id).locator(".tp-nm").click({ button: "right" });
   const menu = page.getByRole("menu", { name: new RegExp(`^Actions for Menu pump ${tag}`) });
-  await expect(menu.locator(":scope > [role='menuitem']")).toHaveText(["Life model", "RBD", "Prediction", "Rename…", "Focus here", "Focus", "Pin this branch"]);
+  await expect(menu.locator(":scope > [role='menuitem']")).toHaveText(["Life model", "RBD", "Prediction", "Rename…", "Focus models", "Focus models", "Pin this branch"]);
   await expect(menu.getByRole("separator")).toHaveCount(1);
   for (const gone of ["New position inside", "Add failure report…", "Log an event…", "Move to…", "Delete…"]) {
     await expect(menu.getByRole("menuitem", { name: gone })).toHaveCount(0);

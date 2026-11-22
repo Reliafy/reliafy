@@ -173,7 +173,7 @@ test("Summary row menu: new inside, rename, move to…, delete, pin; the server'
   await page.getByRole("tab", { name: "RCM" }).click();
   const trow = page.getByRole("row", { name: new RegExp(`^Menu heating ${tag}`) });
   await trow.locator(".tt-tree").click({ button: "right" });
-  await expect(rowMenu(page, `Menu heating ${tag}`).getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Focus here", "Focus", "Focus on incomplete rows", "Show whole tree", "Delete…"]);
+  await expect(rowMenu(page, `Menu heating ${tag}`).getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Focus failure modes", "Focus failure modes", "Focus on incomplete rows", "Show whole tree", "Delete…"]);
   await page.keyboard.press("Escape");
   // The refusals above were made up here (a 422 each): the browser logs them.
   // The menu on the heater picks it, so its Summary asks for its counts below (Here and below); the
