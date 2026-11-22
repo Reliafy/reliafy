@@ -502,12 +502,13 @@ Each decision's **Evidence check** shows one of these:
 
 - **Supported** — the evidence agrees with the decision.
 - **Contradicted** — the evidence points the other way. A run-to-failure
-  decision linked to a wear-out model is the common case. A task set at less
-  than half the interval its calculation supports reads contradicted too,
-  with both intervals.
+  decision linked to a wear-out model is the common case. So is a check set
+  further apart than its P-F interval (or than the longest that meets the
+  target) allows: it can miss failures.
 - **Shorter than its evidence** or **Longer than its evidence** — a
-  fixed-interval task set at less than half, or more than twice, its
-  cost-optimal interval. The line underneath gives both intervals: *set every
+  task set at less than half, or more than twice, the interval its evidence
+  supports (a fixed-interval task's cost-optimal interval, or half a P-F
+  interval for an on-condition check). The line underneath gives both intervals: *set every
   25 hours … the cost-optimal interval its evidence supports, about 101
   hours: done about 4 times as often as the evidence needs*. It's not a
   verdict: a warranty, a shutdown plan or a safety margin can be good
