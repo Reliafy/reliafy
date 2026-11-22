@@ -25,6 +25,7 @@ async function mower(request, tag) {
   expect(res.ok(), await res.text()).toBeTruthy();
   const plug = await post(`${M}/positions/${engine.id}/tasks`, { name: `Check the plugs ${tag}`, interval: 1, unit: "months" });
   const blade = await post(`${M}/positions/${deck.id}/tasks`, { name: `Sharpen the blades ${tag}`, interval: 1, unit: "months" });
+  await post(`${M}/positions/${deck.id}/tasks`, { name: `Clean under the deck ${tag}`, interval: 1, unit: "months" });
   // Both made on the mower's top: the first holds engine and deck tasks, the second the engine's alone.
   const service = await post(`${M}/packages`, { name: `Monthly service ${tag}`, position_id: top.id, every: 1, unit: "months", tasks: [oil.id, blade.id] });
   const engineOnly = await post(`${M}/packages`, { name: `Engine checks ${tag}`, position_id: top.id, every: 1, unit: "months", tasks: [plug.id] });
@@ -95,4 +96,27 @@ test("the Maintenance tree at 400 px: a package and a Forecast row, nothing scro
   await shot(page, "maintenance-tree-400");
   expect(await sideways(page)).toBeLessThanOrEqual(0);
   await expectHealthy(page, problems, { label: "maintenance tree 400" });
+});
+
+test("Add to package… takes a task from another branch of the asset; the package moves up to where its tasks meet", async ({ page, request, problems }) => {
+  const tag = `v${Date.now()}`;
+  const p = await mower(request, tag);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, `/asset-register/explorer?arrange=positions&root=${p.top.id}&sel=${p.top.id}&tab=maintenance`);
+  const eng = page.locator(`[id="tp-MP:${p.engineOnly.id}"]`);
+  await nameRow(page, `Deck ${tag}`).locator(".tp-chev").click();
+  await nameRow(page, `Clean under the deck ${tag}`).locator(".tp-nm").click({ button: "right" });
+  await page.getByRole("menu").getByRole("menuitem", { name: "Add to package…" }).click();
+  const pane = page.locator("section.table-pane");
+  // The engine's package is on the same asset: it can take the deck's task.
+  const pick = pane.getByRole("radio", { name: new RegExp(`Engine checks ${tag}`) });
+  await expect(pick).toBeEnabled();
+  await pick.check();
+  await pane.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(nameRow(page, `Clean under the deck ${tag}`).first().locator(".mt-pkg-link")).toHaveText(`Engine checks ${tag}`);
+  // Its tasks now meet at the mower: the package is a row right under it.
+  await expect(eng).toHaveAttribute("aria-level", "2");
+  const got = await (await request.get(`${M}/packages/${p.engineOnly.id}`)).json();
+  expect(got.subject.id).toBe(p.top.id);
+  await expectHealthy(page, problems, { label: "package moves up" });
 });
