@@ -245,7 +245,7 @@ test("the LSA tab: Package the tasks here… leads a position's menu and opens i
   await expect(addRow).toHaveCount(0);
   let menu = await menuOf(page, `Menu circulation ${tag}`);
   await expect(menu.getByRole("menuitem")).toHaveText(
-    ["Package the tasks here…", "New position inside", "Add failure report…", "Log an event…", "Rename…", "Move to…", "Make this its own asset…", "Export this branch…", "Focus here", "Focus", "Pin this branch", "Delete…"]);
+    ["Package the tasks here…", "New position inside", "Add failure report…", "Log an event…", "Rename…", "Move to…", "Make this its own asset…", "Export this branch…", "Focus here", "Pin this branch", "Delete…"]);
   await expect(menu.getByRole("menuitem", { name: "Package the tasks here…" })).toBeFocused();
   await shot(page, "rowmenu-5-lsa-row-menu-1440");
 

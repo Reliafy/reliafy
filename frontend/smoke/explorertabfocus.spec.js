@@ -69,7 +69,9 @@ test("the tasks tab: Focus here on a mid-level position opens only its branch, e
   const pill = page.locator(".tt-head").getByRole("group", { name: "Focus" });
   await expect(pill).toContainText(`Focused: Focus line A ${tag}`);
   await expect(page.locator(".tt-head").getByRole("group", { name: "Pinned branch" })).toHaveCount(0);
-  expect(page.url()).toBe(url);
+  // The row is picked (?sel=), but nothing is pinned.
+  expect(new URL(page.url()).searchParams.get("pin")).toBeNull();
+  expect(new URL(page.url()).searchParams.get("root")).toBe(new URL(url).searchParams.get("root"));
   await shot(page, "tabfocus-2-focused-1440");
 
   // Clear focus: everything open again, as it was before.

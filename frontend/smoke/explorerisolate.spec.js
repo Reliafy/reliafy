@@ -262,7 +262,9 @@ test("at 400 px: Isolate opens in place in the ⋯ menu; the rest closes; the RC
   await expect(row(page, `Works seal A ${tag}`)).toBeVisible();
   await expect(row(page, `Works line B ${tag}`)).toHaveAttribute("aria-expanded", "false");
   await expect(row(page, `Works pump B ${tag}`)).toHaveCount(0);
-  expect((await page.locator(".tp-scroll").boundingBox()).y).toBe(treeTop);
+  // The one line that moves: "Focused: …" with Clear focus, under the search box.
+  await expect(page.getByRole("group", { name: "Focus" })).toContainText(`Focused: Works line A ${tag}`);
+  expect((await page.locator(".tp-scroll").boundingBox()).y).toBeGreaterThan(treeTop);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
   await shot(page, "v2-6-phone-400px-isolated");
   // The RCM tab: the phone's menus keep the moves (no dragging here).

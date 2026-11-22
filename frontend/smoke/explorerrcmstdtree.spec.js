@@ -198,11 +198,11 @@ test("row menus: add a standard, a failure under it, change a failure's standard
 
   // A standard's menu: Add a functional failure… (it breaches this standard).
   menu = await menuOf(page, fifty);
-  await expect(menu.getByRole("menuitem")).toHaveText(["Add a functional failure…", "Open…", "Edit text", "Move to…", "Focus here", "Focus", "Delete performance standard…"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Add a functional failure…", "Open…", "Edit text", "Move to…", "Focus here", "Delete performance standard…"]);
   await page.keyboard.press("Escape");
   // From the keyboard: Move up / down too.
   menu = await menuOf(page, fifty, { keyboard: true });
-  await expect(menu.getByRole("menuitem")).toHaveText(["Add a functional failure…", "Open…", "Edit text", "Move up", "Move down", "Move to…", "Focus here", "Focus", "Delete performance standard…"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Add a functional failure…", "Open…", "Edit text", "Move up", "Move down", "Move to…", "Focus here", "Delete performance standard…"]);
   await expect(menu.getByRole("menuitem", { name: "Move up" })).toHaveAttribute("aria-disabled", "true"); // the only one
   await menu.getByRole("menuitem", { name: "Add a functional failure…" }).click();
   // The standard's details, on their functional failures' add row (one that breaches it).
@@ -384,7 +384,7 @@ test("at 400 px the standard rows, their menus and the details sheet fit", async
   // The menu: no in-place edit on a phone (the details edit the text); Open… shows them.
   await ca.getByRole("button", { name: /^Actions for / }).click();
   const menu = page.getByRole("menu");
-  await expect(menu.getByRole("menuitem")).toHaveText(["Add a functional failure…", "Open…", "Move up", "Move down", "Move to…", "Focus here", "Focus", "Delete performance standard…"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Add a functional failure…", "Open…", "Move up", "Move down", "Move to…", "Focus here", "Delete performance standard…"]);
   await menu.getByRole("menuitem", { name: "Open…" }).click();
   const dlg = panel(page);
   await expect(dlg).toBeVisible();
