@@ -73,6 +73,7 @@ export const OPEN_LAYERS = [
   ".ptp-list",
   ".help-drawer",
   ".rbd-menu",
+  ".cf-pop",
   ".ovm-menu:not([hidden]):not(.rbd-valid-pop)",
 ].join(", ");
 

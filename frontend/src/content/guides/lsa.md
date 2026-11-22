@@ -33,8 +33,8 @@ visit.
 
 The **Tasks** view of the **Maintenance** tab shows your tasks **in the tree**:
 under each position (or place) hang its own maintenance tasks, one row each,
-with **Interval**, **Next due**, **Cost each time**, **Package**, **From** and
-**Kind** beside them. Every level says how many tasks are on it and below it
+with **Interval**, **Next due**, **Cost each time**, **Trade**, **Packaged**,
+**From** and **Kind** beside them. Every level says how many tasks are on it and below it
 (*2 here · 7 tasks at and below · 1 overdue*), so the top of an asset adds up
 its whole programme; open or close a level with its arrow. Only the asset you
 opened is shown, and retired tasks aren't.
@@ -43,6 +43,37 @@ Click a task to open it beside the table: change how often, its cost or what
 it prevents, and see the repairable RBDs that use it. **Add task…** on a row's
 **More actions (…)** adds one to that position. **Trade rates…** in the
 heading's **…** prices every task's labour.
+
+**Filter a column** with the funnel in its heading: tick the values to keep
+(an interval, a trade, a package, "In no package", a kind). The values listed
+come from the tasks in the part of the tree you have open, each with how many
+tasks have it. Tasks that don't match are hidden, the positions above the ones
+that do stay so the tree still reads, and every level's count follows the
+filter. The tree's heading says **Filtered by …** while one is on; **Clear**
+there turns them all off. On a phone, the **Filter** button under the search
+box holds every column's.
+
+**Package tasks from the tree.** Click a task, then **Shift-click** another to
+pick every task between them, or **Ctrl-click** (**⌘-click** on a Mac) to add
+or take one; each task also has a box to tick. Right-click one of them (or
+press its **⋯**; on a phone, press and hold) and choose:
+
+- **Package…** — a new work package with them, in the table area beside the
+  tree. Its name, interval and unit start from the tasks' (a 50 h service for
+  tasks every 50 operating hours). When their intervals differ it says so: a
+  task at a whole multiple of the interval you choose comes on every Nth visit
+  (a 100 h oil change on every second 50 h service), and any other on every
+  visit.
+- **Add to package…** — one of the packages on this asset, the ones that can
+  take them first. One that can't is greyed and says why (a calendar package
+  can't hold a task counted in operating hours, for example). Each task comes
+  on every visit, or every Nth when its interval is a multiple of the
+  package's; change it if you like.
+
+Tasks already in a package, and rounds or tasks on a meter other than
+operating hours, stay where they are and the pane says so. The **Packaged**
+column then names each task's package; click it to open the package in
+**Packages**.
 
 **Forecast…** on a position's **…** runs the forecast for that level and
 everything inside it (the work, the expected failures and the costs to come,

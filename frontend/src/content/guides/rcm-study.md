@@ -181,6 +181,10 @@ and [set a failure-finding interval](/guides/failure-finding-interval).
 On-condition decisions cite a degradation model; see
 [predict failure from condition measurements](/guides/degradation-modelling).
 
+To check a plan you already run, one interval at a time, against your own
+failure data, see [check a maintenance plan against its
+evidence](/guides/check-a-maintenance-plan-against-evidence).
+
 To work on a study with colleagues, create it in a
 [team workspace](/guides/work-as-a-team). Everyone in the team can open it, and
 the study shows who edited it last.

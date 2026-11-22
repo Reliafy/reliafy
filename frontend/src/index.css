@@ -2233,7 +2233,7 @@ select.ctl { padding-right: 30px; }
 }
 .field-error::before {
   content: "!"; flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; margin-top: 1px;
-  border-radius: 50%; background: var(--danger); color: var(--text-on-fill); font-size: 10px; font-weight: 700; line-height: 1;
+  border-radius: 50%; background: var(--danger); color: var(--text-on-fill); font-size: var(--fs-12); font-weight: 600; line-height: 1;
 }
 
 /* A value that's allowed but probably not what was meant: the same shape as an error, amber. */
@@ -2243,7 +2243,7 @@ select.ctl { padding-right: 30px; }
 }
 .field-warning::before {
   content: "!"; flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; margin-top: 1px;
-  border-radius: 50%; background: var(--warning); color: var(--text-on-fill); font-size: 10px; font-weight: 700; line-height: 1;
+  border-radius: 50%; background: var(--warning); color: var(--text-on-fill); font-size: var(--fs-12); font-weight: 600; line-height: 1;
 }
 
 /* A checkbox with its label (ui/Controls Checkbox): the whole label is the target. */
@@ -5631,10 +5631,10 @@ select:disabled {
 }
 
 .hero-plot { width: 100%; height: auto; display: block; }
-.hp-title { font-size: 9px; font-weight: 500; fill: var(--text-secondary); }
+.hp-title { font-size: var(--fs-12); font-weight: 500; fill: var(--text-secondary); }
 .hp-grid { stroke: var(--border); stroke-width: 1; }
 .hp-axis { stroke: var(--chart-axis); stroke-width: 1.2; }
-.hp-tick { font-size: 9px; font-variant-numeric: tabular-nums; fill: var(--text-secondary); }
+.hp-tick { font-size: var(--fs-12); font-variant-numeric: tabular-nums; fill: var(--text-secondary); }
 .hp-band { fill: var(--accent-subtle); }
 .hp-fit { stroke: var(--accent); stroke-width: 2; }
 .hp-dot { fill: var(--accent); fill-opacity: 0.55; stroke: var(--bg-surface); stroke-width: 1.2; }
@@ -7821,7 +7821,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
    on a wide screen, in place under its item on a phone. The arrow is drawn,
    not text (no alt text: the item's name stays "Focus"). */
 .row-menu .ovm-item.row-menu-parent { display: flex; align-items: center; gap: 12px; }
-.row-menu-sep { height: 1px; margin: 4px 8px; background: var(--border, #e9ebee); }
+.row-menu-sep { height: 1px; margin: 4px 8px; background: var(--border); }
 .row-menu-parent::after { content: "›" / ""; margin-left: auto; color: var(--text-secondary); }
 .row-menu-parent.inline::after { content: "▸" / ""; }
 .row-menu-parent.inline.open::after { content: "▾" / ""; }
@@ -9980,11 +9980,11 @@ input.rbd-rename {
 .joint-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 .joint-check-out { margin-top: 12px; }
 .joint-result > .card, .joint-result > section { margin-bottom: 16px; }
-.joint-answer { border-left: 3px solid var(--accent, #2f6df6); }
-.joint-warn { color: var(--warning, #b45309); }
+.joint-answer { border-left: 3px solid var(--accent); }
+.joint-warn { color: var(--warning); }
 .joint-params .joint-part th { text-align: left; padding-top: 12px; font-weight: 600; }
 .joint-params td.muted { min-width: 220px; }
-.joint-risk tr.is-selected td { background: rgba(47, 109, 246, 0.06); }
+.joint-risk tr.is-selected td { background: var(--accent-wash); }
 .joint-hr { margin: 0; padding-left: 20px; }
 .joint-hr li { margin: 4px 0; }
 .joint-unit { display: flex; flex-direction: column; gap: 12px; }
@@ -10239,8 +10239,7 @@ main.content:focus { outline: none; }
 .rim-restore { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .rim-restore .rw-fhelp { flex-basis: 100%; margin: 0; }
 .rcm-on-tree { margin-bottom: 16px; }
-.rcm-on-tree-list { margin: 8px 0 0; padding-left: 18px; }
-.rcm-on-tree-list li { margin: 4px 0; overflow-wrap: anywhere; }
+.rcm-on-tree-table .lib-name { overflow-wrap: anywhere; }
 
 /* A workbook's sheet chosen in the fit flow's source step, not in a modal. */
 .xl-inline-panel {

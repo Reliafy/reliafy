@@ -89,7 +89,7 @@
   padding: 0 6px;
   border-radius: 11px;
   font-size: var(--fs-12);
-  font-weight: 700;
+  font-weight: 600;
   border: 1px solid var(--border);
   background: var(--bg-subtle);
   color: var(--text);
@@ -106,7 +106,7 @@
   align-items: center;
   justify-content: center;
   font-size: var(--fs-12);
-  font-weight: 700;
+  font-weight: 600;
   color: var(--bg-surface);
   background: var(--warning);
 }

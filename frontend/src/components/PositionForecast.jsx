@@ -4,6 +4,7 @@ import { formatChance } from "../format.js";
 import {
   besidesRoutine, costRangeText, datesText, dayText, everyText, failuresText, hoursText, moneyText, periodLabel, restsOn, sig,
 } from "../positionForecast.js";
+import { ShowMe } from "./SectionPage.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { tabPlace } from "../explorerTabs.js";
 import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
@@ -60,6 +61,7 @@ export default function PositionForecast({ positionId, name, root = null, bar = 
       <div className="pk-bar fc-bar">
         <SegmentedControl size="sm" label="By" value={period} onChange={setPeriod}
                           options={PERIODS.map((p) => ({ value: p.value, label: p.label }))} />
+        <ShowMe help={{ guide: "forecast-the-maintenance-plan" }} asHelp />
         {bar}
       </div>
       {error && <div className="card error">Couldn&apos;t work out the forecast: {error}</div>}
