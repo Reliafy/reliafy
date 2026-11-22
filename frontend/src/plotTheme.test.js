@@ -147,3 +147,15 @@ test("a probability plot's hover reads in the axes' units, not paper coordinates
   assert.equal(probabilityHoverText(undefined, [0.1], "hours"), null);
   assert.equal(probabilityHoverText([1, 2], [0.1], "hours"), null);
 });
+
+test("tokens read at runtime: a colour at an opacity, and the legend's ground", async () => {
+  const { legendBg, token, withAlpha } = await import("./plotTheme.js");
+  assert.equal(withAlpha("#ffffff", 0.85), "rgba(255, 255, 255, 0.85)");
+  assert.equal(withAlpha("#fff", 0.5), "rgba(255, 255, 255, 0.5)");
+  assert.equal(withAlpha("rgb(27, 25, 21)", 0.2), "rgba(27, 25, 21, 0.2)");
+  assert.equal(withAlpha("rgba(27 25 21 / 0.7)", 0.2), "rgba(27, 25, 21, 0.2)");
+  // Outside a browser the fallback stands in (the surface: white).
+  assert.equal(token("--bg-surface", "#ffffff"), "#ffffff");
+  assert.equal(legendBg(), "rgba(255, 255, 255, 0.85)");
+  assert.equal(legendBg(0.8), "rgba(255, 255, 255, 0.8)");
+});

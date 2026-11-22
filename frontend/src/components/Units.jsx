@@ -1,5 +1,5 @@
 import Field, { useField } from "./ui/Field.jsx";
-import { TextInput } from "./ui/Controls.jsx";
+import { Checkbox, TextInput } from "./ui/Controls.jsx";
 import { UNITLESS, UNIT_MISSING, isUnitless, unitSettled } from "../lifeData.js";
 
 // Common units for a model's values, offered by every unit box (a datalist, so
@@ -43,10 +43,8 @@ function UnitControls({ value, onChange, label, listId, autoFocus }) {
           <option value={u} key={u} />
         ))}
       </datalist>
-      <label className="ds-unitless">
-        <input type="checkbox" checked={none} onChange={(e) => onChange(e.target.checked ? UNITLESS : "")} />
-        No unit (just numbers)
-      </label>
+      <Checkbox className="ds-unitless" checked={none} onChange={(e) => onChange(e.target.checked ? UNITLESS : "")}
+                label="No unit (just numbers)" />
     </span>
   );
 }

@@ -18,7 +18,7 @@ import {
 import ChoiceChips from "../components/ui/ChoiceChips.jsx";
 import Field from "../components/ui/Field.jsx";
 import InputGroup, { Addon } from "../components/ui/InputGroup.jsx";
-import { TextInput } from "../components/ui/Controls.jsx";
+import { Checkbox, TextInput } from "../components/ui/Controls.jsx";
 import { emptyReading } from "../datasetReading.js";
 import { useDatasetReading } from "../useDatasetReading.js";
 import ReadingSummary, { ReadingChange } from "../components/ReadingSummary.jsx";
@@ -365,8 +365,8 @@ export default function JointNewPage() {
                   {covs.map((c, i) => (
                     <tr key={c.name}>
                       <td>{c.name}</td>
-                      <td><input type="checkbox" aria-label={`${c.name} changes the risk`} checked={c.risk} onChange={(e) => setCov(i, { risk: e.target.checked })} /></td>
-                      <td><input type="checkbox" aria-label={`${c.name} changes the path`} checked={c.path} onChange={(e) => setCov(i, { path: e.target.checked })} /></td>
+                      <td><Checkbox aria-label={`${c.name} changes the risk`} checked={c.risk} onChange={(e) => setCov(i, { risk: e.target.checked })} /></td>
+                      <td><Checkbox aria-label={`${c.name} changes the path`} checked={c.path} onChange={(e) => setCov(i, { path: e.target.checked })} /></td>
                     </tr>
                   ))}
                 </tbody>

@@ -21,6 +21,7 @@
 .lp-item { display: flex; align-items: baseline; gap: 8px; padding: 6px 12px; font-size: var(--fs-13); cursor: pointer; }
 .lp-item:hover { background: var(--accent-wash); }
 .lp-item input { flex: none; align-self: center; }
+.lp-item > .check-label { display: flex; flex: 1 1 auto; align-items: baseline; gap: var(--space-2); min-width: 0; flex-wrap: inherit; }
 .lp-item.linked { color: var(--text-secondary); cursor: default; }
 .lp-t { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .lp-fn { color: var(--text-secondary); }

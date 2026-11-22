@@ -14,6 +14,7 @@ import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 import {
   bomFormatText, bomImportSummary, bomIsIndented, levelsIn, positionsPlanSummary, qtyNumber, qtyText, treeKeys,
 } from "../maintenanceStructure.js";
+import { Checkbox, Radio } from "./ui/Controls.jsx";
 
 const partLink = (id) => `/asset-register/parts/${id}`;
 
@@ -95,10 +96,7 @@ export function RollupCard({ structure, design = false }) {
     <section className="card">
       <div className="maint-head">
         <h2>Quantities rolled up</h2>
-        <label className="maint-row lib-date" style={{ marginTop: 0, gap: "0.4rem" }}>
-          <input type="checkbox" checked={every} onChange={(e) => setEvery(e.target.checked)} />
-          Every level
-        </label>
+        <Checkbox className="lib-date" checked={every} onChange={(e) => setEvery(e.target.checked)} label="Every level" />
       </div>
       <p className="lib-date">
         How many of each part go into one {structure.part.part_number}, multiplied down the tree (an SRU inside an LRU
@@ -343,11 +341,9 @@ export function ImportBomModal({ onClose, onDone }) {
             <p>{bomImportSummary(preview)}</p>
             {preview.format && <p className="lib-date">Read as: {bomFormatText(preview)}</p>}
             {bomIsIndented(preview) && (
-              <label className="maint-row lib-date" style={{ marginTop: 0, gap: "0.4rem" }}>
-                <input type="checkbox" checked={byDepth} onChange={(e) => nameByDepth(e.target.checked)} />
-                Name each part's indenture level by its depth, from this workspace's list (a part's own indenture
-                level column still wins)
-              </label>
+              <Checkbox className="lib-date" checked={byDepth} onChange={(e) => nameByDepth(e.target.checked)}
+                        label={<>Name each part's indenture level by its depth, from this workspace's list (a part's own indenture
+                          level column still wins)</>} />
             )}
             <p className="lib-date">Columns: {Object.entries(preview.columns).map(([f, c]) => `${FIELD_NAMES[f] || f} = "${c}"`).join("; ")}.</p>
             {preview.errors.length > 0 && (
@@ -392,20 +388,14 @@ export function PositionsFromStructureModal({ structure, onClose, onDone }) {
       </Field>
       <fieldset className="maint-fieldset">
         <legend>Which levels become positions</legend>
-        <label className="maint-row" style={{ marginTop: 0, gap: "0.4rem" }}>
-          <input type="radio" checked={every} onChange={() => { setEvery(true); setPreview(null); }} /> Every part
-        </label>
+        <Radio checked={every} onChange={() => { setEvery(true); setPreview(null); }} label="Every part" />
         {found.length > 0 && (
-          <label className="maint-row" style={{ marginTop: "0.25rem", gap: "0.4rem" }}>
-            <input type="radio" checked={!every} onChange={() => { setEvery(false); setPreview(null); }} /> Only these levels:
-          </label>
+          <Radio checked={!every} onChange={() => { setEvery(false); setPreview(null); }} label="Only these levels:" />
         )}
         {!every && (
           <div className="maint-row" style={{ marginTop: "0.25rem" }}>
             {found.map((l) => (
-              <label key={l} style={{ display: "inline-flex", gap: "0.3rem", alignItems: "center" }}>
-                <input type="checkbox" checked={chosen.has(l)} onChange={() => flip(l)} /> {l}
-              </label>
+              <Checkbox key={l} checked={chosen.has(l)} onChange={() => flip(l)} label={l} />
             ))}
           </div>
         )}

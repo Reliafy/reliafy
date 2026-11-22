@@ -6,6 +6,7 @@ import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 import { SPREADSHEET_ACCEPT, isSpreadsheetFile, pasteDatasetPart, uploadDatasetPart } from "../api.js";
 import { firstRowIsData, parsePreview } from "../datasetGuess.js";
 import "./Datasets.css";
+import { Checkbox } from "./ui/Controls.jsx";
 
 // One table for a dataset's part (its measurements, or life data for a
 // dataset of readings alone): a file dropped or chosen (CSV or an Excel
@@ -103,10 +104,8 @@ export default function DatasetPartInput({ value, onChange, placeholder, label =
               <button type="button" className="link" onClick={() => set({ headerChoice: false })}>Undo</button>
             </p>
           )}
-          <label className="ds-check">
-            <input type="checkbox" checked={noHeader} disabled={disabled} onChange={(e) => set({ headerChoice: e.target.checked })} />
-            <span>No header row — the first row is data. Columns are named <code>col 1</code>, <code>col 2</code>, …</span>
-          </label>
+          <Checkbox className="ds-check" checked={noHeader} disabled={disabled} onChange={(e) => set({ headerChoice: e.target.checked })}
+                    label={<>No header row — the first row is data. Columns are named <code>col 1</code>, <code>col 2</code>, …</>} />
         </>
       )}
       <input ref={fileRef} type="file" accept={`.csv,text/csv,${SPREADSHEET_ACCEPT}`} hidden

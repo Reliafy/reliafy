@@ -34,6 +34,7 @@ import { tooLong } from "../maintenanceText.js";
 import { PageTitle } from "../components/usePageTitle.js";
 import { itemTreePath, productPath } from "../products.js";
 import { DateInput } from "../components/ui/DateTimeInput.jsx";
+import { Checkbox } from "../components/ui/Controls.jsx";
 
 const ITEM_DATES = [
   { key: "purchase_date", label: "Bought" },
@@ -322,14 +323,9 @@ function DetailsModal({ item, onClose, onDone }) {
         <Field label="What it covers"><input value={warranty.coverage} placeholder="e.g. parts and labour, compressor 5 years"
                onChange={setW("coverage")} /></Field>
         <Field label="Terms"><textarea rows={2} value={warranty.terms} onChange={setW("terms")} /></Field>
-        <label className="maint-row" style={{ gap: "0.4rem" }}>
-          <input type="checkbox" checked={warranty.registration_required} onChange={setW("registration_required")} />
-          It must be registered
-        </label>
+        <Checkbox checked={warranty.registration_required} onChange={setW("registration_required")} label="It must be registered" />
         {warranty.registration_required && <>
-          <label className="maint-row" style={{ gap: "0.4rem" }}>
-            <input type="checkbox" checked={warranty.registered} onChange={setW("registered")} /> Registered
-          </label>
+          <Checkbox checked={warranty.registered} onChange={setW("registered")} label="Registered" />
           {!warranty.registered && <Field label="Register by"><DateInput value={warranty.register_by} onChange={setW("register_by")} /></Field>}
         </>}
       </>}

@@ -41,17 +41,20 @@ export function statusChip(status) {
   }
 }
 
-// "95.12%" and "94.80–95.44%": a run's window availability and its interval,
-// to about four significant figures. Above 99.9% the downtime carries the
-// detail: "99.97%" and "down 0.0314% (0.0311–0.0323%)".
+// "95.12%" and "90% two-sided 94.80–95.44%": a run's window availability and its
+// interval, to about four significant figures, the interval naming its level and
+// sides (the app's rule: every bound says so). Above 99.9% the downtime carries
+// the detail: "99.97%" and "down 0.0314% (90% two-sided 0.0311–0.0323%)", the
+// range being the downtime's (1 − the availability's ends).
 export function availabilityText(a) {
   if (!a || a.value == null) return { value: "—", interval: null };
   const both = a.lower != null && a.upper != null;
+  const level = `${Math.round((a.confidence || 0.9) * 100)}% two-sided`;
   if (a.value > HIGH_AVAILABILITY) {
-    const range = both ? ` (${downPct(a.upper).replace("%", "")}–${downPct(a.lower)})` : "";
+    const range = both ? ` (${level} ${downPct(a.upper).replace("%", "")}–${downPct(a.lower)})` : "";
     return { value: availabilityPct(a.value), interval: `down ${downPct(a.value)}${range}` };
   }
-  const interval = both ? `${availabilityPct(a.lower).replace("%", "")}–${availabilityPct(a.upper)}` : null;
+  const interval = both ? `${level} ${availabilityPct(a.lower).replace("%", "")}–${availabilityPct(a.upper)}` : null;
   return { value: availabilityPct(a.value), interval };
 }
 

@@ -6,6 +6,7 @@ import { CONSEQUENCES, defaultFoundBy, itemText } from "../failureReports.js";
 import { useAuth } from "../AuthProvider.jsx";
 import { FailureModePicker, Field, FormModal } from "./MaintenanceParts.jsx";
 import { DateInput } from "./ui/DateTimeInput.jsx";
+import { Radio } from "./ui/Controls.jsx";
 
 // A new failure report at a position (the tree's row menu "Add failure
 // report…", or the Failure reports tab's button), or the same fields on one
@@ -103,11 +104,8 @@ export default function NewFailureReportModal({ positionId, positionName, today,
       <fieldset className="fr-radios">
         <legend>Consequence</legend>
         {CONSEQUENCES.map((c) => (
-          <label key={c.id || "none"} className="fr-radio">
-            <input type="radio" name="fr-consequence" value={c.id} checked={consequence === c.id}
-                   onChange={() => setConsequence(c.id)} />
-            <span>{c.label}</span>
-          </label>
+          <Radio key={c.id || "none"} className="fr-radio" name="fr-consequence" value={c.id} checked={consequence === c.id}
+                 onChange={() => setConsequence(c.id)} label={<span>{c.label}</span>} />
         ))}
       </fieldset>
       <Field label="Failure mode">

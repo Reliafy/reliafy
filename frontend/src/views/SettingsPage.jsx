@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Switch from "../components/ui/Switch.jsx";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthProvider.jsx";
 import { useAppConfig } from "../ConfigProvider.jsx";
@@ -113,8 +114,7 @@ function EmailPreferences() {
     };
   }, []);
 
-  const onToggle = async (e) => {
-    const next = e.target.checked;
+  const onToggle = async (next) => {
     const prev = updates;
     setUpdates(next);
     setError("");
@@ -133,17 +133,14 @@ function EmailPreferences() {
   return (
     <Card style={{ marginTop: "1rem" }}>
       <CardHeader title="Emails" />
-      <label className="set-check">
-        <input
-          type="checkbox"
-          checked={!!updates}
-          onChange={onToggle}
-          disabled={updates === null || saving}
-        />
-        <span>
+      <Switch
+        checked={!!updates}
+        onChange={onToggle}
+        disabled={updates === null || saving}
+        label={<span>
           <b>Product update emails</b> — a short monthly note on what's new, and a couple of getting-started tips when you join.
-        </span>
-      </label>
+        </span>}
+      />
       <p className="muted-line" style={{ marginBottom: 0 }}>
         Emails you trigger yourself, like team invites and shares, aren't affected.
       </p>
