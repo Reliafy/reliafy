@@ -99,3 +99,61 @@ test("isolate incomplete rows: the way to what's unfinished opens, the rest clos
   assert.deepEqual(isolateIncompleteItem(d.rows.get("plant"), { can: true }), [{ id: "isolate-incomplete", label: "Focus on incomplete rows" }]);
   assert.deepEqual(isolateIncompleteItem(d.rows.get("m3"), { can: true }), []);
 });
+
+// ---- Focus here in a tab's tree-table, and Clear focus ---------------------------
+import { focusFrom, focusShown } from "./treeIsolate.js";
+import { filterTasks, graftTasks, taskKey } from "./explorerTasks.js";
+
+const tasks = [
+  { id: "t1", name: "Grease the pump", subject: { id: "pumpA" }, interval: 3, unit: "months", trade: "Fitter" },
+  { id: "t2", name: "Check the seal", subject: { id: "sealA" }, interval: 1, unit: "months", trade: "Fitter" },
+  { id: "t3", name: "Walk the line", subject: { id: "lineB" }, interval: 1, unit: "weeks", trade: "Operator" },
+  { id: "t4", name: "Inspect the seal", subject: { id: "sealB" }, interval: 6, unit: "months", trade: "Fitter" },
+];
+const names = (d, open) => flatten(d, open).list.map((v) => d.rows.get(v.key).ref.name);
+
+test("Focus here on the Maintenance tab: a mid-level position's every task shows, every other branch closed", () => {
+  const d = graftTasks(buildDisplay(DATA, "positions"), tasks);
+  const all = everything(d);
+  // Line A at every level: its pump's and its seal's tasks; line B closed (its task hidden in it), the other plant closed.
+  assert.deepEqual(names(d, isolateOpen(d, all, "lineA", "all")),
+    ["Other plant", "Plant", "Line A", "Pump A", "Grease the pump", "Seal A", "Check the seal", "Line B"]);
+  // 1 level: the pump only, closed (so its task and the seal stay in it).
+  assert.deepEqual(names(d, isolateOpen(d, all, "lineA", 1)), ["Other plant", "Plant", "Line A", "Pump A", "Line B"]);
+});
+
+test("Focus here and the column filters: the filter applies inside what the focus opened", () => {
+  const filtered = filterTasks(tasks, { trade: ["Operator"] });
+  const d = graftTasks(buildDisplay(DATA, "positions"), filtered, { prune: true });
+  // Line A has no Operator task: focused, nothing of its tasks shows. Line B's one task does.
+  const a = names(d, isolateOpen(d, new Set(), "lineA", "all"));
+  assert.ok(!a.includes("Grease the pump") && !a.includes("Check the seal"));
+  const open = isolateOpen(d, new Set(), "lineB", "all");
+  assert.ok(names(d, open).includes("Walk the line"));
+  assert.ok(!names(d, open).includes("Inspect the seal"));
+});
+
+test("the other tree-tables' rows with something inside them can be focused; their leaves can't", () => {
+  const pin = (r) => canPin(r);
+  assert.equal(canIsolate({ type: "mission", kids: ["ph"] }, "positions", pin), true);
+  assert.equal(canIsolate({ type: "phase", kids: ["c"] }, "positions", pin), true);
+  assert.equal(canIsolate({ type: "phase", kids: [] }, "positions", pin), false);
+  assert.equal(canIsolate({ type: "pmodel", kids: ["s"] }, "positions", pin), true);
+  assert.equal(canIsolate({ type: "mtask", kids: [] }, "positions", pin), false);
+  assert.equal(canIsolate({ type: "meas", kids: [] }, "positions", pin), false);
+});
+
+test("Clear focus goes back to what was open before the first focus; a focus off the tree isn't shown", () => {
+  const d = buildDisplay(DATA, "positions");
+  const before = new Set(["plant", "lineB"]);
+  const f1 = focusFrom(null, "lineA", "Line A", before);
+  assert.deepEqual(f1, { key: "lineA", name: "Line A", before });
+  assert.notEqual(f1.before, before); // a copy: later changes to what's open don't touch it
+  // Focusing again moves the focus; Clear focus still goes back to the start.
+  const f2 = focusFrom(f1, "pumpB", "Pump B", isolateOpen(d, before, "lineA", "all"));
+  assert.equal(f2.key, "pumpB");
+  assert.deepEqual([...f2.before].sort(), ["lineB", "plant"]);
+  assert.equal(focusShown(f2, d), f2);
+  assert.equal(focusShown(f2, pinDisplay(d, "lineA")), null); // outside a pinned branch
+  assert.equal(focusShown(null, d), null);
+});
