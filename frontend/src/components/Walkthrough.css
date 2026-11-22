@@ -7,7 +7,7 @@
   border-radius: var(--radius-md);
   /* The ring, and a light dim over the rest of the page. Clicks pass
      through: the page stays usable. */
-  box-shadow: 0 0 0 2px var(--accent), 0 0 0 9999px rgba(20, 23, 28, 0.12);
+  box-shadow: 0 0 0 2px var(--accent), 0 0 0 9999px color-mix(in srgb, var(--scrim) 40%, transparent);
   pointer-events: none;
   transition: top 0.15s ease, left 0.15s ease, width 0.15s ease, height 0.15s ease;
 }
@@ -73,7 +73,7 @@
   }
 }
 
-/* "Show me how": an inline link at the end of a page's meta line or an
+/* "Take the tour" and "Read the guide": an inline link at the end of a page's meta line or an
    empty state's sentence, wrapping with the text. */
 button.link.wt-launch {
   display: inline;

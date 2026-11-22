@@ -11,7 +11,7 @@ import { useConfirm } from "./ConfirmProvider.jsx";
 import { ShowMe } from "./SectionPage.jsx";
 import TablePane from "./TablePane.jsx";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
-import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
+import { Checkbox, Select, TextArea, TextInput } from "./ui/Controls.jsx";
 import { DateInput, TimeInput } from "./ui/DateTimeInput.jsx";
 import { ReadsAs } from "./ui/InputGroup.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
@@ -131,11 +131,9 @@ function KindForm({ form, set, disabled }) {
           <legend className="sr-only">Shift {i + 1}</legend>
           <div className="op-days" role="group" aria-label={`Shift ${i + 1}: days`}>
             {WEEKDAYS.map((d) => (
-              <label key={d} className={"op-daybox" + (s.days.includes(d) ? " on" : "")}>
-                <input type="checkbox" checked={s.days.includes(d)} disabled={disabled}
-                       onChange={(e) => put(i, { days: e.target.checked ? [...s.days, d] : s.days.filter((x) => x !== d) })} />
-                {d.slice(0, 3)}
-              </label>
+              <Checkbox key={d} className={"op-daybox" + (s.days.includes(d) ? " on" : "")} checked={s.days.includes(d)} disabled={disabled}
+                        onChange={(e) => put(i, { days: e.target.checked ? [...s.days, d] : s.days.filter((x) => x !== d) })}
+                        label={d.slice(0, 3)} />
             ))}
           </div>
           <div className="op-row">

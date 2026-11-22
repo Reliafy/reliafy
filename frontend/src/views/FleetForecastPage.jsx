@@ -26,6 +26,7 @@ import FleetItemsImport, { runningUnitsLabel, useRunningUnits } from "../compone
 import { mergeItems, patchSelected, removeSelected } from "../fleetItemsImport.js";
 import { PageTitle } from "../components/usePageTitle.js";
 import Loading from "../components/ui/Loading.jsx";
+import { Checkbox } from "../components/ui/Controls.jsx";
 
 const METHOD_OPTIONS = [
   { value: "renewals", label: "Failures with replacement", hint: "Failed items are replaced and can fail again — spares demand." },
@@ -701,7 +702,7 @@ export default function FleetForecastPage() {
                 <tr>
                   {!readOnly && (
                     <th className="fleet-items-sel">
-                      <input type="checkbox" aria-label="Select all items" checked={allSelected}
+                      <Checkbox aria-label="Select all items" checked={allSelected}
                              ref={(el) => { if (el) el.indeterminate = selected.size > 0 && !allSelected; }}
                              onChange={() => setSelected(allSelected ? new Set() : new Set(items.map((_, i) => i)))} />
                     </th>
@@ -730,7 +731,7 @@ export default function FleetForecastPage() {
                     <tr key={it.id || idx} className={selected.has(idx) ? "selected" : undefined}>
                       {!readOnly && (
                         <td className="fleet-items-sel">
-                          <input type="checkbox" checked={selected.has(idx)} onChange={() => toggle(idx)}
+                          <Checkbox checked={selected.has(idx)} onChange={() => toggle(idx)}
                                  aria-label={`Select ${it.name || "item"}`} />
                         </td>
                       )}

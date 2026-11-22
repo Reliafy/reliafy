@@ -19,7 +19,7 @@
   background: var(--bg-surface);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
-  font-size: 13.5px;
+  font-size: var(--fs-13);
 }
 .undo-toast.error { border-color: var(--danger); color: var(--danger-text); }
 .undo-toast > span { flex: 1 1 auto; min-width: 0; }

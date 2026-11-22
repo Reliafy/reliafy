@@ -3,7 +3,7 @@ import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { PlotCard, PlotPanel } from "./model/ModelLayouts.jsx";
 import LifeAside from "./LifeSummary.jsx";
 import Plot from "./Plot.jsx";
-import { DATA_INK, fitLine } from "../plotTheme.js";
+import { DATA_INK, fitLine, legendBg } from "../plotTheme.js";
 import "./MoreModels.css";
 import { valueAxisTitle } from "../lifeData.js";
 
@@ -46,7 +46,7 @@ export function FlexibleSurvival({ result, split = null, name = null, modelId = 
                 ? { title: { text: "Hazard rate, h(t)" }, rangemode: "tozero" }
                 : { title: { text: "Reliability, R(t)" }, range: [0, 1.02] },
               showlegend: true,
-              legend: { x: 1, xanchor: "right", y: 1, yanchor: "top", bgcolor: "rgba(255,255,255,0.8)" },
+              legend: { x: 1, xanchor: "right", y: 1, yanchor: "top", bgcolor: legendBg(0.8) },
             }}
             download={`${name || result.distribution} — ${hazard ? "hazard rate" : "survival curve"}`}
           />

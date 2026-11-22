@@ -23,7 +23,7 @@ const when = (iso) =>
 function precisionText(p) {
   if (!p || p.half_width == null) return "—";
   const d = pctDigits(p.half_width);
-  const half = `±${(p.half_width * 100).toFixed(d)} points (${Math.round((p.confidence || 0.95) * 100)}% interval)`;
+  const half = `±${(p.half_width * 100).toFixed(d)} points (${Math.round((p.confidence || 0.95) * 100)}% two-sided)`;
   if (p.mode === "fixed") return `${half}, from a fixed number of replications`;
   if (p.mode === "quick") return `${half}, a quick estimate`;
   return p.reached ? `${half}, within the precision target` : `${half}; the target wasn't reached within the time budget`;

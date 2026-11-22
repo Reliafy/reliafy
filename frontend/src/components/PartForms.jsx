@@ -6,6 +6,7 @@ import { ClassPicker } from "./MaintenanceItemClasses.jsx";
 import { PART_ROLES } from "../maintenanceSpares.js";
 import { partsPath } from "../redirects.js";
 import Loading from "./ui/Loading.jsx";
+import { Checkbox } from "./ui/Controls.jsx";
 
 // The parts forms, one copy each wherever they're used (Derryn, 9 Nov 2026: "use the same
 // components so a change in one place appears in the other"): New part (the Parts tab; the
@@ -119,10 +120,8 @@ export function PartEntryModal({ p, entry, onClose, onDone, positions = null }) 
       </Field>
       <Field label="Quantity per job"><input type="number" inputMode="decimal" min="0" step="any" value={f.quantity}
              onChange={set("quantity")} /></Field>
-      <label className="maint-row" style={{ gap: "0.5rem" }}>
-        <input type="checkbox" checked={f.critical} onChange={(e) => setF({ ...f, critical: e.target.checked })} />
-        Critical spare: keep some in stock
-      </label>
+      <Checkbox className="maint-row" checked={f.critical} onChange={(e) => setF({ ...f, critical: e.target.checked })}
+                label="Critical spare: keep some in stock" />
       {f.critical && (
         <Field label="Keep at least (blank: one job's worth)"><input type="number" inputMode="decimal" min="0" step="any"
                value={f.min} onChange={set("min")} /></Field>

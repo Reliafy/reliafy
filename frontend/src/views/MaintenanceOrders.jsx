@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import Switch from "../components/ui/Switch.jsx";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   generateWorkOrders,
@@ -142,10 +143,7 @@ export default function MaintenanceOrders() {
           </div>
 
           {digest !== null && (
-            <label className="maint-row lib-date" style={{ gap: "0.5rem" }}>
-              <input type="checkbox" checked={digest} onChange={(e) => toggleDigest(e.target.checked)} />
-              Email me when new work orders are raised for tasks coming due
-            </label>
+            <Switch checked={digest} onChange={toggleDigest} label="Email me when new work orders are raised for tasks coming due" />
           )}
         </>
       )}

@@ -21,8 +21,11 @@ import {
   NEW_MISSION, changedPhases, graftMissions, isMissionRow, isPhaseRow, missionKey, missionParam, missionRowActions, movePhase, openForMissions,
   parseMissionParam, phaseKey, positionMissionActions, rollupText as missionRollup, headRollupText as missionHeadRollup, withNewPhase, withoutPhase,
 } from "../explorerMissions.js";
-import { ForecastPane, TASK_COLUMNS, TASK_TREE_HEAD, TaskCell, TaskSide, taskPhoneRow, useTreeTasks } from "../components/TaskTreeTable.jsx";
-import { TASK_FORECAST, TASK_OPEN, forecastItem, graftTasks, isTaskRow, openForTasks, rollupText as taskRollup, taskKey, taskRowActions } from "../explorerTasks.js";
+import { ForecastPane, PackagePane, TASK_COLUMNS, TASK_TREE_HEAD, TaskCell, TaskSide, taskPhoneRow, useTreeTasks } from "../components/TaskTreeTable.jsx";
+import {
+  TASK_ADD_TO, TASK_CLEAR, TASK_FORECAST, TASK_OPEN, TASK_PACKAGE, anyFilter, commonHolder, facetValues, facetsOf, filterTasks, filterWords, forecastItem,
+  graftTasks, isTaskRow, keepShown, openForTasks, pickTasks, rollupText as taskRollup, shownTasks, taskKey, taskRowActions,
+} from "../explorerTasks.js";
 import CovariateBindPane from "../components/CovariateBindPane.jsx";
 import RedundancyPane from "../components/RedundancyPane.jsx";
 import StrategyPane from "../components/StrategyPane.jsx";
@@ -517,6 +520,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // failure modes picked to move together, the toast with Undo after a move,
   // the Move to… dialog, and the words said to screen readers.
   const [picked, setPicked] = useState(() => new Set());
+  // The Maintenance tab: its column filters ({facet: [values]}), the task rows picked together
+  // (Shift- and Ctrl/⌘-click, their boxes) and the Package… or Add to package… open in the table area.
+  const [tfilters, setTfilters] = useState({});
+  const [tpicked, setTpicked] = useState(() => new Set());
+  const tanchor = useRef(null);
+  const [pkgPane, setPkgPane] = useState(null);
   // A delete's toast has restore ({kind, id, name}) in place of undo.
   const [toast, setToast] = useState(null); // {text, undo, extra, show, at, busy, restore, stay}
   const [moving, setMoving] = useState(null); // {src} or {taskFrom}: the Move to… dialog
@@ -584,8 +593,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     : measOn && meas.data ? graftMeasurements(base, meas.data, data?.today || new Date().toISOString().slice(0, 10), meas.fittedAt)
       : modelsOn && pmodels.links ? graftModels(base, pmodels.links, strategies)
         : missionsOn && pmissions.links ? graftMissions(base, pmissions.links, pmissions.hasModel, pmissions.otherModel)
-          : tasksOn && ptasks.tasks ? graftTasks(base, ptasks.tasks)
-            : base), [base, rcmOn, fmeaOn, rcm, measOn, meas.data, meas.fittedAt, data?.today, modelsOn, pmodels.links, strategies, missionsOn, pmissions.links, pmissions.hasModel, pmissions.otherModel, tasksOn, ptasks.tasks]);
+          : tasksOn && ptasks.tasks ? graftTasks(base, filterTasks(ptasks.tasks, tfilters), { prune: anyFilter(tfilters) })
+            : base), [base, rcmOn, fmeaOn, rcm, measOn, meas.data, meas.fittedAt, data?.today, modelsOn, pmodels.links, strategies, missionsOn, pmissions.links, pmissions.hasModel, pmissions.otherModel, tasksOn, ptasks.tasks, tfilters]);
   const linkedEvidence = useMemo(() => hasLinkedEvidence(rcm), [rcm]);
   // The modes picked that are still in the tree after a read.
   useEffect(() => {
@@ -630,6 +639,19 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // each function in that order; the tree itself stays as it is.
   const order = useMemo(() => (fmeaOn && fsort ? fmeaOrder(display, fsort) : null), [fmeaOn, fsort, display]);
   const { list, index } = useMemo(() => flatten(display, open, filter, order), [display, open, filter, order]);
+  // The Maintenance tab's column filters offer the values of the tasks on show in the open part of
+  // the tree (Derryn, 22 Nov 2026: "filterable (to what is open in the tree)"), as it is without them.
+  const taskFilterOn = tasksOn && anyFilter(tfilters);
+  const tasksShown = useMemo(() => {
+    if (!tasksOn || !ptasks.tasks) return [];
+    if (!taskFilterOn) return shownTasks(display, list);
+    const all = graftTasks(base, ptasks.tasks);
+    const shown = pinKey && all.rows.has(pinKey) ? pinDisplay(all, pinKey) : all;
+    return shownTasks(shown, flatten(shown, open).list);
+  }, [tasksOn, ptasks.tasks, taskFilterOn, display, list, base, pinKey, open]);
+  // The tasks picked that are still on show (a read, a filter, a branch closed, another tab).
+  useEffect(() => setTpicked((s) => (tasksOn ? keepShown(s, index) : s.size ? new Set() : s)), [index, tasksOn]);
+  useEffect(() => { if (!tasksOn) setPkgPane(null); }, [tasksOn]);
   // The tree column (a wide screen): fitted to the names on show until the user drags it (the
   // review, Nov 2026: at 1600 px names were cut to a few letters). The same width on every tab,
   // so switching tabs moves nothing: worked out from the tree with its RCM in it (read with the
@@ -1824,6 +1846,37 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setTimeout(() => detailsHeading.current?.focus({ preventScroll: true }), 0);
   };
   const openForecast = (r) => leavePane().then((ok) => ok && openPane("forecast", { id: r.key, name: r.ref.name || "(no name)" }));
+  // The tasks a task row's menu acts on: the ones picked together when it's one of them, else itself.
+  const tasksFor = (r) => (tpicked.has(r.key) && tpicked.size > 1 ? [...tpicked] : [r.key])
+    .map((k) => display.rows.get(k)).filter(isTaskRow);
+  // Package… and Add to package…: in the table area, the tree kept beside it (any other pane closes).
+  const openPackaging = async (kind, r) => {
+    if (!(await leavePane())) return;
+    const keys = tasksFor(r).map((x) => x.key);
+    setPanel(false);
+    setPaneSeed(null);
+    setQuery_((q) => { for (const k of [...PANE_PARAMS, "mtask", "addtask", "rates"]) q.delete(k); });
+    setPkgPane({ kind, keys, n: Date.now() });
+    setTimeout(() => paneHeading.current?.focus({ preventScroll: true }), 0);
+  };
+  const closePkgPane = () => {
+    setPkgPane(null);
+    setTimeout(() => document.getElementById(`tp-${focus}`)?.focus({ preventScroll: true }), 0);
+  };
+  // A task's Packaged cell: its package, open in Maintenance › Packages on the row it's on.
+  const openPackageView = (pkg) => {
+    const at = pkg.subject?.id;
+    setRcmFocus(null);
+    setPanel(false);
+    if (at && base?.rows?.has(at)) setSelected((s) => ({ ...s, [mode]: at }));
+    setQuery_((q) => {
+      q.set(tabKey, "lsa");
+      if (EXPLORER_PANEL_TABS) q.set("mview", "packages");
+      q.set("package", pkg.id);
+      if (at) q.set("sel", at);
+      for (const k of ["mtask", "addtask", "rates", "below", "forecast", "task", "packaging", ...PANE_PARAMS]) q.delete(k);
+    });
+  };
   const rowMenu = {
     // The moves a drag does: on a phone, or from the keyboard (no dragging there).
     actions: (r, { keyboard = false } = {}) => {
@@ -1850,7 +1903,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       if (missionsOn && isMissionRow(r)) return missionRowActions(r, { viewOnly });
       // The Maintenance tab: a task's own (Open…); a level's: Add task…, Forecast… (a position on an
       // asset), then Rename…, Focus ›, Pin this branch.
-      if (tasksOn && isTaskRow(r)) return taskRowActions(r);
+      if (tasksOn && isTaskRow(r)) return taskRowActions(r, { tasks: tasksFor(r).map((x) => x.ref.task), canPackage: !designScope && !viewOnly });
       if (tasksOn && (r.type === "pos" || r.type === "loc")) {
         const own = summaryActions(r, { mode, viewOnly }).filter((it) => MODEL_POSITION_ITEMS.includes(it.id));
         return [...maintenanceLead(r, { viewOnly }), ...forecastItem(r, { design: !!designScope }), { separator: true }, ...own, ...isolateItem(r), ...pinItem(r)];
@@ -1895,6 +1948,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       if (id === "maint-add-task") return addTaskAt(r);
       if (id === TASK_OPEN) return openTaskRow(r);
       if (id === TASK_FORECAST) return openForecast(r);
+      if (id === TASK_PACKAGE) return openPackaging("new", r);
+      if (id === TASK_ADD_TO) return openPackaging("add", r);
+      if (id === TASK_CLEAR) return setTpicked(new Set());
       if (id === "pos-here") {
         setNewParent(TOP);
         setNewAt(r.key);
@@ -2077,6 +2133,19 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [paneOpen]);
+  // Esc with Package… or Add to package… open: back to the table (a list or menu over it first).
+  const pkgOpen = !!pkgPane;
+  useEffect(() => {
+    if (!pkgOpen) return undefined;
+    const onKey = (e) => {
+      if (e.key !== "Escape" || e.defaultPrevented || hasOpenLayer(document)) return;
+      setPkgPane(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pkgOpen]);
+  // The Maintenance tab's column filters go with it.
+  useEffect(() => { if (!tasksOn) setTfilters((f) => (Object.keys(f).length ? {} : f)); }, [tasksOn]);
   // Esc with Excel import and export open: back to the row's details (a dialog or menu over it first).
   const sheetOpen = !!sheet;
   useEffect(() => {
@@ -2429,7 +2498,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const prefsW = fmeaOn ? fprefs.widths : rprefs.widths;
   // The details expanded (a wide screen, the details shown): only the tree column beside them.
   // The fit or the prediction open (a wide screen): the same, it in the table's room.
-  const paneWide = !!panePosition && !phone;
+  const paneWide = (!!panePosition || (tasksOn && !!pkgPane)) && !phone;
   const wideDetails = wideOn || paneWide;
   const cols = wideDetails ? [] : shownCols.map((id) => colMap[id]).filter(Boolean);
   const widths = {};
@@ -2488,7 +2557,45 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     total: shownWidth + tcols.reduce((t, c) => t + c.width, 0), expanded: wideDetails,
     tab: "maintenance", what: "maintenance tasks", treeHead: TASK_TREE_HEAD, readOnly: true,
     canEditName: () => false, onEdit: () => {}, onCommit: () => {}, onCancel: () => {}, onGoto: (key) => reveal(key),
-    renderCell: (r, c) => (isTaskRow(r) ? <TaskCell r={r} col={c} /> : null),
+    renderCell: (r, c) => (isTaskRow(r) ? <TaskCell r={r} col={c} onPackage={designScope ? null : openPackageView} /> : null),
+    // Rows picked together (Derryn, 22 Nov 2026: "select multiple rows in the table and right click
+    // and 'package'"): not on a product's design (its tasks are packaged on the built items).
+    multi: designScope || viewOnly ? null : {
+      picked: tpicked, can: isTaskRow,
+      onToggle: (key) => {
+        const o = pickTasks(tpicked, list, display, key, { toggle: true });
+        setTpicked(o.picked);
+        tanchor.current = o.anchor;
+      },
+      onClick: (key, e) => {
+        const o = pickTasks(tpicked, list, display, key, {
+          shift: e.shiftKey, toggle: e.ctrlKey || e.metaKey, anchor: tanchor.current ?? (isTaskRow(focusRow) ? focus : null),
+        });
+        setTpicked(o.picked);
+        tanchor.current = o.anchor;
+      },
+      onMenu: (key) => {
+        if (!isTaskRow(display.rows.get(key)) || tpicked.has(key)) return;
+        setTpicked(new Set([key]));
+        tanchor.current = key;
+      },
+    },
+    // Each column's filter, from the tasks on show in the open part of the tree.
+    filter: {
+      chosen: tfilters,
+      facetsFor: (col) => facetsOf(col).map((f) => ({ id: f.id, label: f.label, values: facetValues(f.id, tasksShown, tfilters) })),
+      facetsAll: () => TASK_COLUMNS.filter((c) => !designScope || (c.id !== "due" && c.id !== "package"))
+        .flatMap((c) => facetsOf(c.id).map((f) => ({ id: f.id, label: facetsOf(c.id).length > 1 ? `${c.label}: ${f.label.toLowerCase()}` : c.label,
+          values: facetValues(f.id, tasksShown, tfilters) }))),
+      onChange: (id, values) => setTfilters((f) => ({ ...f, [id]: values })),
+      onClearCol: (col) => setTfilters((f) => {
+        const n = { ...f };
+        for (const x of facetsOf(col)) delete n[x.id];
+        return n;
+      }),
+      onClear: () => setTfilters({}),
+      words: filterWords(tfilters),
+    },
     onOpen: (key) => openTaskRow(display.rows.get(key)),
     rollupOf: (r, isOpen) => (r.tsum ? taskRollup(r, isOpen) : null),
     phoneRow: (r, isOpen) => taskPhoneRow(r, r.tsum ? taskRollup(r, isOpen) : ""),
@@ -2547,7 +2654,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     fmeaOn && excel && { id: "export-excel", label: "Export Excel", onSelect: () => exportExcel(posRow) },
     !phone && { id: "columns", label: "Columns…", onSelect: () => setColsOpen(true) },
     fmeaOn && { id: "print", label: "Print view", onSelect: () => openPrint(posRow.key) },
-    fmeaOn && { id: "guide", label: "Show me how", onSelect: () => openGuide(HELP_FMEA.guide) },
+    fmeaOn && { id: "guide", label: "Read the guide", onSelect: () => openGuide(HELP_FMEA.guide) },
   ].filter(Boolean) : [];
   const moreButton = () => frame.current?.querySelector(".tt-headslot .ovm-trigger");
   const columns = colsOpen && !phone && (fmeaOn ? (
@@ -2962,6 +3069,21 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       <FitPane key={`${panePosition.id}:${seed?.n || 0}`} {...fitAt} {...paneProps} />
     </div>
   ) : null;
+  // Package… or Add to package… on the tasks picked, in the table area (a phone: the screen).
+  const pkgTasks = pkgPane ? pkgPane.keys.map((k) => whole.rows.get(k)?.ref?.task).filter(Boolean) : [];
+  const pkgSide = tasksOn && pkgPane && pkgTasks.length ? (
+    <div className="rw tt-side">
+      <PackagePane key={pkgPane.n} kind={pkgPane.kind} tasks={pkgTasks} holder={commonHolder(whole, pkgTasks)}
+                   asset={tasksWithin ? whole.rows.get(tasksWithin) : null} display={whole} phone={phone}
+                   headingRef={paneHeading} onClose={closePkgPane}
+                   onDone={(text) => {
+                     say(text);
+                     setPkgPane(null);
+                     setTpicked(new Set());
+                     ptasks.load();
+                   }} />
+    </div>
+  ) : null;
   const mergeKind = assetTree ? mergeSourceKind(data?.scope) : null;
   const mergeSide = mergeKind && params.get("merge") && !tableOn ? (
     <MergeAssetPane key={root} source={{ id: root, name: data.scope.name || "", kind: mergeKind }} data={data} phone={phone}
@@ -2978,7 +3100,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                    onChanged={(text) => { say(text, "ok", { fade: true }); load(); }} />
   ) : null;
   const side = mergeSide && !phone ? mergeSide : sheetSide && !phone ? sheetSide : rcmOn ? rcmSide : measOn ? paneSide || measSide : modelsOn ? paneSide || modelSide
-    : missionsOn ? paneSide || missionSide : tasksOn ? paneSide || taskSide : paneSide || (phone ? null : summary);
+    : missionsOn ? paneSide || missionSide : tasksOn ? pkgSide || paneSide || taskSide : paneSide || (phone ? null : summary);
 
   // The tree's quiet last row: a new position (or location) at the top level.
   // Inside a pinned branch, or one tree on show (a product's structure, an

@@ -24,21 +24,21 @@ import Loading from "./ui/Loading.jsx";
 // A section's own landing page has no label above its title; a child page
 // (Models › Non-repairable) shows its menu entry there, linked.
 
-// "Show me how": the section's walkthrough when it has one (it opens a sample
-// and points at each step), else its how-to guide in the Help drawer.
-// In a section header (``asHelp``) it is the quiet help link that names what
-// it does: "Take the tour" or "Read the guide" (ui/HelpLink); in a sentence
-// (an empty state) it stays an inline text link.
-export function ShowMe({ help, children = "Show me how", asHelp = false }) {
+// A section's help: its walkthrough when it has one (it opens a sample and
+// points at each step), else its how-to guide in the Help drawer. The label
+// names what it does: "Take the tour" or "Read the guide", never "Show me how"
+// (design system, HelpLink). In a section header (``asHelp``) it is the quiet
+// help link (ui/HelpLink); in a sentence (an empty state) an inline text link.
+export function ShowMe({ help, children, asHelp = false }) {
   if (!help) return null;
   if (help.walkthrough && getWalkthrough(help.walkthrough)) {
-    return <ShowMeHow id={help.walkthrough} asHelp={asHelp}>{children}</ShowMeHow>;
+    return <ShowMeHow id={help.walkthrough} asHelp={asHelp}>{children || "Take the tour"}</ShowMeHow>;
   }
   if (!help.guide) return null;
   if (asHelp) return <HelpLink kind="guide" onClick={() => openGuide(help.guide)} />;
   return (
     <button type="button" className="link wt-launch" onClick={() => openGuide(help.guide)}>
-      {children}
+      {children || "Read the guide"}
     </button>
   );
 }

@@ -523,7 +523,7 @@ button.maint-toggle {
 
 /* A work order's Readings and settings: a label (name, then why and the last value) and a value box per point. */
 .wor-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.25rem 0.75rem;
-  padding: 0.4rem 0; border-bottom: 1px solid var(--border, #e9ebee); }
+  padding: 0.4rem 0; border-bottom: 1px solid var(--border); }
 .wor-label { display: flex; flex-direction: column; min-width: 0; flex: 1 1 14rem; }
 .wor-name { font-weight: 500; overflow-wrap: anywhere; }
 .wor-detail { overflow-wrap: anywhere; }

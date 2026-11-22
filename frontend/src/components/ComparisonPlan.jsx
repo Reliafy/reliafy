@@ -11,6 +11,7 @@ import { num } from "../testPlanning.js";
 import PercentField from "./PercentField.jsx";
 import { readPercents } from "../percentForms.js";
 import { unitInText } from "./unitText.js";
+import { Checkbox } from "./ui/Controls.jsx";
 
 const pct = (p) => (p == null ? "—" : `${Math.round(p * 100)}%`);
 
@@ -181,10 +182,8 @@ export default function ComparisonPlan() {
           )}
           {solve !== "power" && <PercentField label="Power" value={power} onChange={setPower} check={pcts.checks.power} />}
           <PercentField label="Confidence" value={confidence} onChange={setConfidence} check={pcts.checks.confidence} />
-          <label className="calc-t tp-check">
-            <span>Only looking for an improvement</span>
-            <input type="checkbox" checked={oneSided} onChange={(e) => setOneSided(e.target.checked)} />
-          </label>
+          <Checkbox className="tp-check" checked={oneSided} onChange={(e) => setOneSided(e.target.checked)}
+                    label="Only looking for an improvement" />
           <ComputeButton loading={loading} onClick={compute} disabled={!pcts.ready} />
         </div>
         <p className="hint">

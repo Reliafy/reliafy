@@ -20,6 +20,7 @@ import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { deleteOrRemoveConfirm } from "../confirm.js";
 import LoadFailed from "../components/LoadFailed.jsx";
 import Loading from "../components/ui/Loading.jsx";
+import { Checkbox } from "../components/ui/Controls.jsx";
 
 // A forecast's row figure: "≈ 40.3 in 12 months", or why there isn't one.
 function expectedCell(f) {
@@ -281,7 +282,7 @@ export default function FleetForecasts() {
         render={(f) => (
           <tr key={f.id} className="lib-row" onClick={rowOpen(navigate, pathOf(f.id))}>
             <td className="fleet-items-sel" onClick={(e) => e.stopPropagation()}>
-              <input type="checkbox" checked={ticked.includes(f.id)} onChange={() => { tick(f.id); setComparing(false); }}
+              <Checkbox checked={ticked.includes(f.id)} onChange={() => { tick(f.id); setComparing(false); }}
                      aria-label={`Compare ${itemName(f)}`} title="Tick 2–4 forecasts to compare them" />
             </td>
             <td>

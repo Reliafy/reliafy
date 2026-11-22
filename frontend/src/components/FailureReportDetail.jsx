@@ -18,6 +18,7 @@ import { Field, fmtDate } from "./MaintenanceParts.jsx";
 import NewFailureReportModal from "./NewFailureReportModal.jsx";
 import { DateInput } from "./ui/DateTimeInput.jsx";
 import Loading from "./ui/Loading.jsx";
+import { Radio } from "./ui/Controls.jsx";
 
 // One failure report, in the Failure reports tab in place of the list: its
 // stage on the loop (Reported › Investigating › Corrective action › Verifying
@@ -295,10 +296,8 @@ function Verification({ report, editable, today, onSave, busy }) {
           <fieldset className="fr-radios">
             <legend>Did the corrective action work?</legend>
             {RESULTS.map((r) => (
-              <label key={r.id} className="fr-radio">
-                <input type="radio" name="fr-result" value={r.id} checked={result === r.id} onChange={() => setResult(r.id)} />
-                <span>{r.label}</span>
-              </label>
+              <Radio key={r.id} className="fr-radio" name="fr-result" value={r.id} checked={result === r.id}
+                     onChange={() => setResult(r.id)} label={<span>{r.label}</span>} />
             ))}
           </fieldset>
           <div className="fr-modal-row">

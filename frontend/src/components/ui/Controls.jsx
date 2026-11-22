@@ -38,12 +38,31 @@ export const Select = forwardRef(function Select({ className, children, ...props
 // for Save (a setting that applies at once is a Switch). The whole label is the target,
 // 16 px box in the accent colour, the label in body text; inside a <Field as="fieldset">
 // a list of them is one group under the field's label.
-//   checked, onChange(event), label (node), disabled, name, className
+// With no label (a row-select box in a table) it renders the box alone (.check-bare):
+// no row padding, named by aria-label, and a 40 px touch target on a phone that doesn't
+// change the row's height.
+//   checked, onChange(event), label (node), disabled, name, className, aria-label,
+//   title and style (on the whole row)
 export const Checkbox = forwardRef(function Checkbox({ label, className, ...props }, ref) {
+  return <Check ref={ref} type="checkbox" label={label} className={className} {...props} />;
+});
+
+// One choice of several, with its label beside it: the same .check row as Checkbox, a
+// native radio (so ← → move within its `name` group). For options that carry long text or
+// a control of their own; short labels are ChoiceChips (a saved value) or a
+// SegmentedControl (a view).
+//   checked, onChange(event), name, value, label (node), disabled, className
+export const Radio = forwardRef(function Radio({ label, className, ...props }, ref) {
+  return <Check ref={ref} type="radio" label={label} className={className} {...props} />;
+});
+
+// title and style go on the label (the whole row).
+const Check = forwardRef(function Check({ type, label, className, title, style, ...props }, ref) {
+  const bare = label == null || label === false;
   return (
-    <label className={cls("check", className)}>
-      <input ref={ref} type="checkbox" {...props} />
-      <span className="check-label">{label}</span>
+    <label className={cls(bare ? "check check-bare" : "check", className)} title={title} style={style}>
+      <input ref={ref} {...props} type={type} />
+      {!bare && <span className="check-label">{label}</span>}
     </label>
   );
 });

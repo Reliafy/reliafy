@@ -29,6 +29,7 @@ import { ErrorNotice } from "../components/StorageCap.jsx";
 import "../components/RbdFaultTree.css";
 import "./FaultTree.css";
 import Loading from "../components/ui/Loading.jsx";
+import { Checkbox } from "../components/ui/Controls.jsx";
 
 const DotsIcon = () => (
   <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
@@ -221,11 +222,9 @@ function NodePanel({ tree, node, unit, onChange, onAdd, readOnly, isTop = false 
       )}
       {source === "none" && <p className="hint">Set its data before analysing: a model, a rate or a probability. A guess is fine if you mark it.</p>}
       {source !== "none" && (
-        <label className="ft-check">
-          <input type="checkbox" checked={!!node.placeholder} disabled={readOnly}
-                 onChange={(e) => onChange(setEventData(tree, node.id, { model: node.model, probability: node.probability, placeholder: e.target.checked }))} />
-          <span>This is a guess (placeholder): flag it on every result until it's replaced</span>
-        </label>
+        <Checkbox className="ft-check" checked={!!node.placeholder} disabled={readOnly}
+                  onChange={(e) => onChange(setEventData(tree, node.id, { model: node.model, probability: node.probability, placeholder: e.target.checked }))}
+                  label="This is a guess (placeholder): flag it on every result until it's replaced" />
       )}
     </div>
   );

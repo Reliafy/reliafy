@@ -24,6 +24,7 @@ import { unitInText } from "./unitText.js";
 import Chip from "./ui/Chip.jsx";
 import ScrollCue from "./ui/ScrollCue.jsx";
 import Loading from "./ui/Loading.jsx";
+import { Checkbox } from "./ui/Controls.jsx";
 
 const FIELDS = [
   { key: "asset", label: "Asset", help: "The block (its label or id) each outage belongs to", req: true },
@@ -551,8 +552,7 @@ function FitPanel({ rbdId, logId, readOnly, onApplyModels }) {
                 {result.components.map((c) => (
                   <tr key={c.node_id}>
                     <td>
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         disabled={!c.life?.model && !c.repair?.model}
                         checked={!!picked[c.node_id]}
                         onChange={(e) => setPicked((p) => ({ ...p, [c.node_id]: e.target.checked }))}
