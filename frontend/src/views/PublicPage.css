@@ -57,7 +57,7 @@
 html.print-layout .public-page {
   width: 186mm;
   min-height: 0;
-  background: #fff;
+  background: var(--neutral-0); /* paper: white in either theme */
 }
 html.print-layout .public-artifact { min-height: 0; padding: var(--space-4) 0 0; }
 html.print-layout .public-app { max-width: none; margin: 0; padding: 0; }
@@ -81,7 +81,7 @@ html.print-layout .public-page .card { box-shadow: none; }
 
   html,
   body,
-  .public-page { background: #fff !important; }
+  .public-page { background: var(--neutral-0) !important; }
   .public-page {
     min-height: 0;
     -webkit-print-color-adjust: exact;

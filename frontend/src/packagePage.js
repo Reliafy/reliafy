@@ -70,6 +70,8 @@ export function initialForm(pkg) {
     toleranceUnit: pkg?.tolerance?.unit || "days",
     trade: pkg?.trade || "",
     notes: pkg?.notes || "",
+    // Each visit's call-out and setup, besides its tasks (backend/maintenance/visit_costs.py).
+    visitCost: pkg?.visit_cost != null ? String(pkg.visit_cost) : "",
     rules: Object.fromEntries((pkg?.tasks || []).map((t) => [t.task_id, ruleOf(t)])),
     // A shutdown (backend/maintenance/shutdowns.py): its visits take the position off-line.
     shutdown: !!pkg?.shutdown,
@@ -105,6 +107,7 @@ export function formProblem(form, pkg) {
   if (how) return how;
   if (!pkg?.parent && form.toleranceUnit === "days" && !whole(form.tolerance, 0, 366)) return "On time within is a whole number of days, 0 to 366.";
   if (!pkg?.parent && form.toleranceUnit === "hours" && !(Number(form.tolerance) >= 0)) return "On time within is a number of hours, 0 or more.";
+  if (form.visitCost !== undefined && form.visitCost !== "" && !(Number(form.visitCost) >= 0)) return "A visit's cost is 0 or more.";
   if (form.shutdown) {
     if (pkg?.parent) return "A layer visits on its top package's dates: make the top package the shutdown.";
     if (!(Number(form.shutHours) > 0)) return "Say how long the shutdown takes the position off-line, in hours.";
@@ -128,6 +131,7 @@ export function editBody(pkg, form) {
   if (form.name.trim() !== start.name) body.name = form.name.trim();
   if (form.trade.trim() !== start.trade) body.trade = form.trade.trim();
   if (form.notes !== start.notes) body.notes = form.notes;
+  if ((form.visitCost ?? "") !== start.visitCost) body.visit_cost = form.visitCost === "" ? null : Number(form.visitCost);
   if (form.timing !== start.timing || JSON.stringify(form.how) !== JSON.stringify(start.how)) {
     body.timing = pkg?.parent ? "fixed" : form.timing;
     // Counted from the last visit: no pattern (the next is the close date plus the interval).

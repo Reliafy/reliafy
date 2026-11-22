@@ -10,6 +10,7 @@ import { openGuide, usePageGuide } from "./HelpButton.jsx";
 import { getWalkthrough } from "../walkthroughs.js";
 import { SampleGroups } from "./LibRows.jsx";
 import { useNavCrumbs } from "../RolesProvider.jsx";
+import Loading from "./ui/Loading.jsx";
 
 // One template for every section's landing page and its children's pages:
 //
@@ -130,7 +131,7 @@ export function SectionList({
   const [type, setType] = useState(initialType || "");
   const [on, setOn] = useState([]);
   if (loadError) return <LoadFailed what={`Couldn't load your ${noun[1]}.`} error={loadError} onRetry={onRetry} />;
-  if (rows === null || rows === undefined) return <div className="card empty">Loading…</div>;
+  if (rows === null || rows === undefined) return <Loading card />;
   if (!rows.length) return <SectionEmpty {...empty} help={help} />;
   const [one, many] = noun;
   const visible = rows.filter((r) =>

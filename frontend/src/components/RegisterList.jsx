@@ -6,6 +6,7 @@ import { RowActions } from "./LibRows.jsx";
 import MoreMenu from "./ui/MoreMenu.jsx";
 import LoadFailed from "./LoadFailed.jsx";
 import "./RegisterList.css";
+import Loading from "./ui/Loading.jsx";
 
 // The landing page of a register: Assets (the places you look after) and
 // Products (what you design and build) share it, so the two look and work the
@@ -48,7 +49,7 @@ export default function RegisterList({
       {loadError ? (
         <LoadFailed what={`Couldn't load your ${many}.`} error={loadError} onRetry={onRetry} />
       ) : rows === null ? (
-        !error && <div className="card empty">Loading…</div>
+        !error && <Loading card />
       ) : all.length === 0 && !after ? (
         <div className="card empty section-empty">
           <h2>{empty.title}</h2>

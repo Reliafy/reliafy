@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Modal from "./Modal.jsx";
+import { Checkbox, Select } from "./ui/Controls.jsx";
 
 // A repairable diagram's repair crews, maintenance groups and safety function
 // (#156, #157). Stored on the graph as
@@ -74,10 +75,9 @@ export default function RbdCrewsModal({ initial = {}, groupNames = [], onClose, 
     <Modal title={section === "safety" ? "Safety function" : "Repair crews and groups"} onClose={onClose} footer={footer}>
       {section === "safety" ? (
         <>
-          <label className="rbd-instant-repair" title="A low-demand safety instrumented function: report the average probability of failure on demand (PFDavg) and the SIL band it falls in.">
-            <input type="checkbox" checked={safety} onChange={(e) => setSafety(e.target.checked)} />
-            This diagram is a safety function <span className="muted">— report PFDavg and its SIL</span>
-          </label>
+          <Checkbox className="rbd-instant-repair" title="A low-demand safety instrumented function: report the average probability of failure on demand (PFDavg) and the SIL band it falls in."
+                    checked={safety} onChange={(e) => setSafety(e.target.checked)}
+                    label={<>This diagram is a safety function <span className="muted">— report PFDavg and its SIL</span></>} />
           {safety && !repairable && (
             <p className="hint">A safety function is analysed as a repairable diagram: this switches the diagram to Repairable.</p>
           )}
@@ -86,9 +86,9 @@ export default function RbdCrewsModal({ initial = {}, groupNames = [], onClose, 
               <div className="param-fields">
                 <label className="param-field rbd-cost-field">
                   <span>Target SIL</span>
-                  <select value={sil} onChange={(e) => setSil(e.target.value)} aria-label="Target SIL">
+                  <Select value={sil} onChange={(e) => setSil(e.target.value)} aria-label="Target SIL">
                     {SILS.map((s) => <option key={s} value={s}>{s ? `SIL ${s}` : "None"}</option>)}
-                  </select>
+                  </Select>
                 </label>
               </div>
               <p className="hint">
@@ -135,8 +135,8 @@ export default function RbdCrewsModal({ initial = {}, groupNames = [], onClose, 
                              aria-label={`Set-up cost of ${g.name}`} onChange={(e) => setGroup(i, { setup: e.target.value })} />
                     </td>
                     <td>
-                      <input type="checkbox" checked={g.down} aria-label={`${g.name} stops with the system`}
-                             onChange={(e) => setGroup(i, { down: e.target.checked })} />
+                      <Checkbox checked={g.down} aria-label={`${g.name} stops with the system`}
+                                onChange={(e) => setGroup(i, { down: e.target.checked })} />
                     </td>
                   </tr>
                 ))}

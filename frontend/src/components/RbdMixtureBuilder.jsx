@@ -5,6 +5,7 @@ import { modelMean, unitAbbr } from "./rbdModelText.js";
 import { formatNumber } from "../format.js";
 import { PARAMS, paramLabel } from "../paramLabels.js";
 import "./RbdBlockOptions.css";
+import { Checkbox } from "./ui/Controls.jsx";
 
 // A life of two failure modes in one population (#318) — early failures and
 // wear-out, say — built in the block dialog: one distribution for both modes,
@@ -105,10 +106,9 @@ export default function RbdMixtureBuilder({ on, onToggle, initial, onChange, uni
 
   return (
     <div className="rbd-mix">
-      <label className="rbd-instant-repair" title="Some units fail early (a weak batch, say) and the rest wear out: two failure modes, each with its own life.">
-        <input type="checkbox" checked={on} onChange={(e) => onToggle(e.target.checked)} />
-        Two failure modes <span className="muted">— a mixture, e.g. early failures and wear-out</span>
-      </label>
+      <Checkbox className="rbd-instant-repair" title="Some units fail early (a weak batch, say) and the rest wear out: two failure modes, each with its own life."
+                checked={on} onChange={(e) => onToggle(e.target.checked)}
+                label={<>Two failure modes <span className="muted">— a mixture, e.g. early failures and wear-out</span></>} />
       {on && (
         <>
           <label className="dist-field" style={{ maxWidth: 280 }}>

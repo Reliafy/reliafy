@@ -173,7 +173,7 @@
   stroke-width: 1.6;
 }
 .ft-symbol text {
-  font-size: 10px;
+  font-size: var(--fs-12);
   font-weight: 600;
   fill: var(--text);
 }

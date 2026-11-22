@@ -29,16 +29,16 @@
   background:
     linear-gradient(to right, var(--bg-surface) 30%, transparent) left center / 32px 100% no-repeat local,
     linear-gradient(to left, var(--bg-surface) 30%, transparent) right center / 32px 100% no-repeat local,
-    radial-gradient(farthest-side at 0 50%, rgb(0 0 0 / 0.16), transparent) left center / 12px 100% no-repeat scroll,
-    radial-gradient(farthest-side at 100% 50%, rgb(0 0 0 / 0.16), transparent) right center / 12px 100% no-repeat scroll;
+    radial-gradient(farthest-side at 0 50%, var(--scroll-shade), transparent) left center / 12px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, var(--scroll-shade), transparent) right center / 12px 100% no-repeat scroll;
 }
 .rbd-plan-table { margin-bottom: 4px; min-width: 860px; }
 .rbd-plan-table th, .rbd-plan-table td { text-align: left; vertical-align: top; padding: 0.4rem 0.45rem; white-space: nowrap; }
 .rbd-plan-table thead th { font-size: var(--fs-13); }
 .rbd-plan-table .rbd-plan-name { display: table-cell; max-width: 14rem; overflow: hidden; text-overflow: ellipsis;
   font-weight: 600; padding-top: 0.7rem; }
-.rbd-plan-table input, .rbd-plan-table select { font-size: var(--fs-13); padding: 4px 6px; min-height: 32px; margin: 0; }
-.rbd-plan-table select { max-width: 12rem; }
+.rbd-plan-table input, .rbd-plan-table select, .rbd-plan-table .sel-trigger { font-size: var(--fs-13); padding: 4px 6px; min-height: 32px; margin: 0; }
+.rbd-plan-table select, .rbd-plan-table .sel-trigger { max-width: 12rem; }
 .rbd-plan-num { width: 5.5rem; }
 .rbd-plan-pct { width: 3.6rem; }
 .rbd-plan-cost { width: 7rem; }
@@ -68,7 +68,7 @@
 @media (max-width: 600px) {
   .rbd-plan { padding: 10px 10px 4px; }
   .rbd-plan-btns { margin-left: 0; }
-  .rbd-plan-table input, .rbd-plan-table select { font-size: var(--fs-16); min-height: 40px; }
+  .rbd-plan-table input, .rbd-plan-table select, .rbd-plan-table .sel-trigger { font-size: var(--fs-16); min-height: 40px; }
   .rbd-plan-table .rbd-plan-every-group > .ctl { min-height: 38px; }
   .rbd-plan-every-group > .rbd-plan-basis { min-width: 10rem; }
   .rbd-plan-more { min-height: 40px; }

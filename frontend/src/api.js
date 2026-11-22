@@ -1,5 +1,6 @@
 // Thin wrappers around the backend endpoints.
 import { loadAuth } from "./firebase.js";
+import { BUILD_HEADER, noteServerBuild } from "./buildCheck.js";
 import { trackEvent } from "./telemetry.js";
 import { mappingFields } from "./lifeData.js";
 import { altFields } from "./altGuess.js";
@@ -62,6 +63,16 @@ function workspaceHeaders() {
     : {};
 }
 
+// Tell the build check which build answered (the server's X-Reliafy-Build header).
+function noted(res) {
+  try {
+    noteServerBuild(res.headers?.get(BUILD_HEADER));
+  } catch {
+    /* never let the check break a request */
+  }
+  return res;
+}
+
 // fetch() with the auth + workspace headers and the same retry/self-heal as
 // every JSON call; resolves to the raw Response (for non-JSON downloads).
 async function authedFetch(url, opts = {}) {
@@ -71,7 +82,7 @@ async function authedFetch(url, opts = {}) {
       ...workspaceHeaders(),
       ...(await authHeaders(forceRefresh)),
     };
-    return fetch(url, { ...opts, headers });
+    return noted(await fetch(url, { ...opts, headers }));
   };
   let res = await send(false);
   // On a 401, the token may have just expired/been revoked — refresh once and
@@ -100,7 +111,7 @@ async function request(url, opts = {}) {
 // headers and no refresh-and-retry on a 401 (which there means "password
 // needed", and on an unlock would spend a second attempt).
 async function publicRequest(url, opts = {}) {
-  return readJson(await fetch(url, opts));
+  return readJson(noted(await fetch(url, opts)));
 }
 
 async function readJson(res) {
@@ -746,15 +757,14 @@ export function getRbd(id) {
   return request(`/api/rbds/${id}`);
 }
 
-export function saveRbd(name, graph, id, expectedUpdatedAt) {
-  return withEvent(
-    request("/api/rbds", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, graph, id: id || null, expected_updated_at: expectedUpdatedAt || null }),
-    }),
-    "rbd_save"
-  );
+// ``auto``: the builder's autosave, which saves after each change: not counted as a save event.
+export function saveRbd(name, graph, id, expectedUpdatedAt, { auto = false } = {}) {
+  const saving = request("/api/rbds", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, graph, id: id || null, expected_updated_at: expectedUpdatedAt || null }),
+  });
+  return auto ? saving : withEvent(saving, "rbd_save");
 }
 
 // Parse another tool's diagram file (BlockSim, Open-PSA, Galileo, RePyability JSON, Excel) into
@@ -2438,6 +2448,20 @@ export function resubscribeEmail(token) {
   return request(emailTokenUrl("resubscribe", token), { method: "POST" });
 }
 
+// How the editors behave for the signed-in user: { autosave: bool } (the RBD builder saves
+// after each change unless it's false).
+export function getEditorPreferences() {
+  return request("/api/me/editor-preferences");
+}
+
+export function setEditorPreferences(prefs) {
+  return request("/api/me/editor-preferences", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(prefs),
+  });
+}
+
 // The signed-in user's email preferences: { updates: bool }.
 export function getEmailPreferences() {
   return request("/api/me/email-preferences");
@@ -2887,6 +2911,10 @@ export function addFailureMode(positionId, body) {
 export function updateFailureMode(id, body) {
   return patchJson(`/api/maintenance/failure-modes/${id}`, body);
 }
+// What one failure of the mode costs: its own figures, its class's and those in force (failure_costs.py).
+export function getFailureModeCosts(id) {
+  return request(`/api/maintenance/failure-modes/${id}/costs`);
+}
 export function mergeFailureMode(id, intoId) {
   return postJson(`/api/maintenance/failure-modes/${id}/merge`, { into_id: intoId });
 }
@@ -3032,6 +3060,24 @@ export function rcmFailureFindingInterval(body) {
 // With taskId, task_cost too: what that task costs each time (typed, or from its LSA).
 export function getFailureModeIntervalInputs(id, taskId = null) {
   return request(`/api/maintenance/failure-modes/${id}/interval-inputs${taskId ? `?task_id=${encodeURIComponent(taskId)}` : ""}`);
+}
+// Optimise… on a task (backend/maintenance/task_optimise.py): how often to do it, for each failure
+// mode it prevents, from that mode's life model. body: failure_mode_id, model_type + model_id, the
+// costs, pf_interval (+ pf_unit, act_time), target_unavailability. Reads only.
+export function optimiseTask(taskId, body = {}) {
+  return postJson(`/api/maintenance/tasks/${encodeURIComponent(taskId)}/optimise`, body);
+}
+// Its "Use every N": the task's interval, the analysis saved as the mode's evidence, a line in its notes.
+export function useTaskOptimise(taskId, body = {}) {
+  return postJson(`/api/maintenance/tasks/${encodeURIComponent(taskId)}/optimise/use`, body);
+}
+// What a task's interval rests on ({rests_on: [{mode, model, analysis, use, moved}]}).
+export function getTaskIntervalBasis(taskId) {
+  return request(`/api/maintenance/tasks/${encodeURIComponent(taskId)}/interval-basis`);
+}
+// The tasks whose interval Optimise rests on each model ({tasks: {model id: [...]}}).
+export function getModelTasks(ids) {
+  return request(`/api/maintenance/model-tasks?model_ids=${encodeURIComponent(ids.join(","))}`);
 }
 // The workspace's hourly rates by trade ({rates: [{trade, rate, tasks}]}): they price each task's labour.
 export function listTradeRates() {

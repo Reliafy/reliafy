@@ -2,6 +2,7 @@ import { useState } from "react";
 import { updateMaintenanceItem, updateMaintenanceLocation, updateMaintenancePosition } from "../api.js";
 import { DESCRIPTION_HINT, tooLong } from "../maintenanceText.js";
 import { Field, FormModal } from "./MaintenanceParts.jsx";
+import { Select } from "./ui/Controls.jsx";
 
 // The dialogs behind the Explorer's row menu on the Summary tab
 // (treeRowMenu.js): rename and move to another place in the tree (Delete… is
@@ -57,12 +58,12 @@ export function MoveModal({ row, targets, parentId, topLabel = null, onClose, on
         {row.type === "pos" ? " Its RCM, tasks, history and what's fitted stay with it." : " The positions and spares there stay with it."}
       </p>
       <Field label={`Inside which ${kind}?`}>
-        <select value={to} onChange={(e) => setTo(e.target.value)}>
+        <Select value={to} onChange={(e) => setTo(e.target.value)}>
           <option value="">{top}</option>
           {targets.map((t) => (
             <option key={t.id} value={t.id}>{"  ".repeat(t.depth)}{t.name}{t.id === parentId ? " (where it is now)" : ""}</option>
           ))}
-        </select>
+        </Select>
       </Field>
     </FormModal>
   );

@@ -17,6 +17,7 @@ import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 import { PageTitle } from "../components/usePageTitle.js";
 import { useRoles } from "../RolesProvider.jsx";
+import Loading from "../components/ui/Loading.jsx";
 
 // A saved condition and life model in the model frame: the answer line, the
 // result's tabs, Share, and the ⋯ menu (Download as Python, rename, delete).
@@ -92,7 +93,7 @@ export default function JointModelPage() {
                            tab={tab} onTab={(t) => setTab(t, "risk")} onPositions={onPositions} />
         </ErrorBoundary>
       ) : missing ? <ModelNotFound id={id} kind="joint" />
-        : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
+        : !error && <div className="mf-body mf-single"><Loading /></div>}
       <PageTitle name={model && itemName(model)} />
     </ModelFrame>
   );

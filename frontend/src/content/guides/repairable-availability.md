@@ -24,11 +24,12 @@ time) or **repairable** (analysed for availability). It's a single choice for
 the whole diagram, because it changes what each block needs and what the results
 mean — you can't mix the two in one diagram.
 
-Open **Modelling → System models → RBDs → New diagram**, and set the menu beside **Unit** in the toolbar to
+Open **Modelling → System models → RBDs → New diagram**, open the diagram's settings in the toolbar (the
+button that reads "Hours · Non-repairable") and set **Kind** to
 *Repairable*. (Non-repairable diagrams give you reliability over time; repairable
 ones give you availability — hover the menu for the reminder.)
 
-![The System selector set to Repairable](/guides/img/availability-02-system.png)
+![The diagram settings, with Kind set to Repairable](/guides/img/availability-02-system.png)
 
 The moment you do, the diagram is in availability mode, and **+ Add block** (or a
 right-click on the canvas) offers the blocks a repairable diagram can solve:
@@ -116,9 +117,10 @@ model (ARA, ARI, G1, generalised renewal), whose repairs make the unit only
 partly as good as new, has no exact long-run answer, so those blocks are
 **Simulated · Pro**.
 
-## Validate, then calculate
+## Check, then calculate
 
-Hit **Validate** at the right of the toolbar. In availability mode this checks
+The check runs by itself after each change: click its answer at the right of the toolbar (**✓ Valid**, or the
+number of problems) for the full list. In availability mode this checks
 the thing that actually blocks the calculation — that every component has *both*
 a non-repairable model and a repair time — and it will name any block that's missing one.
 Once it passes, the button reads **✓ Valid**; click it to see how the figures

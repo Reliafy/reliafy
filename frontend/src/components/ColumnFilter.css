@@ -71,7 +71,7 @@
   cursor: pointer;
 }
 .cf-item:hover { background: var(--accent-wash); }
-.cf-item input { margin: 0; flex: none; }
+.cf-item > .check-label { display: flex; flex: 1 1 auto; align-items: center; gap: var(--space-2); min-width: 0; }
 .cf-lbl { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cf-n { flex: none; color: var(--text-secondary); font-variant-numeric: tabular-nums; font-size: var(--fs-12); }
 .cf-item.zero .cf-lbl, .cf-item.zero .cf-n { color: var(--text-tertiary); }
@@ -117,6 +117,10 @@
   text-decoration: underline;
   cursor: pointer;
 }
+/* A row focused (TreePane `focused`): the same pill, "Focused: <name>" with Clear focus.
+   Beside a pin or a filter in the tree column's header, it gives way first. */
+.tt-h-tree .tt-focused { flex: 0 1 auto; }
+.tt-h-tree .tt-focused + .tt-filtered, .tt-h-tree .tt-pinned + .tt-focused { margin-left: var(--space-1); }
 .tt-filterline { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; padding: var(--space-1) 0; }
 
 /* A row picked with the others (multi-select): its box before the icon. */

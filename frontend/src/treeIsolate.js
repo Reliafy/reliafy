@@ -18,9 +18,14 @@ const RCM_TYPES = new Set(["fn", "std", "nostd", "fail", "mode", "task"]);
 // Can this row be isolated in this arrangement? Every row a branch can be
 // pinned at (canPin: positions, locations, items with something inside), and
 // the RCM tab's rows. Not the pane's own headings.
+// The other tree-tables' own rows (a model with its Strategy row, a mission with
+// its phases, a phase with its covariates and rules) can be focused too, when
+// something is inside them. A leaf of those tabs (a task, a measuring point)
+// has nothing to open: its position's Focus here shows it.
+const TAB_TYPES = new Set(["pmodel", "mission", "phase"]);
 export function canIsolate(row, mode, canPin) {
   if (!row) return false;
-  return canPin(row, mode) || RCM_TYPES.has(row.type);
+  return canPin(row, mode) || RCM_TYPES.has(row.type) || (TAB_TYPES.has(row.type) && row.kids?.length > 0);
 }
 
 export const DEPTHS = [1, 2, 3, "all"];
@@ -60,6 +65,20 @@ export function isolateOpen(display, open, key, depth) {
     }
   }
   return next;
+}
+
+// ---- Clear focus ----------------------------------------------------------------
+// A focus remembers what was open before it (the first focus of a run: focusing
+// again moves the focus, and Clear focus still goes back to the start), so
+// "Clear focus" puts the tree back as it was. `was`: the focus on now, or null.
+// {key, name, before}.
+export function focusFrom(was, key, name, open) {
+  return { key, name, before: was ? was.before : new Set(open || []) };
+}
+// The focus to show: only while its row is in the tree as drawn (a row
+// deleted, or outside a pinned branch, drops it).
+export function focusShown(focus, display) {
+  return focus && display?.rows.has(focus.key) ? focus : null;
 }
 
 // ---- "Focus on incomplete rows" (the RCM tab's rows menu) -------------------------

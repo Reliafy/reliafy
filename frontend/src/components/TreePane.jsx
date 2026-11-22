@@ -61,6 +61,12 @@ import "./RedundancyPane.css";
 // in the same place (the column header; the counts on a phone) when the page
 // un-pinned to show something outside the branch.
 //
+// A row's Focus here / Focus › (treeRowMenu.js isolateItems) closes every
+// other branch and opens that row; nothing is hidden. While it's on
+// (`focused`: {name, onClear}) the tree column's header says "Focused: <name>"
+// in an accent pill with a Clear focus button (on a phone, a line under the
+// search box), and the ⋯ menu offers Clear focus too: what was open before, back.
+//
 // Presentational: the page (AssetExplorer) holds the state.
 
 const LEVELS = [1, 2, 3, 4];
@@ -417,7 +423,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
     style: { top: pinned ? undefined : top, height, width: table && !phone ? table.total : rowW },
     onClick: (e) => {
       if (pressed.current) { pressed.current = false; return; }
-      if (e.target.closest("input, select, a, button.rw-todo-btn, .tt-more, .tp-unpin")) return;
+      if (e.target.closest("input, select, .sel-trigger, .sel-menu, a, button.rw-todo-btn, .tt-more, .tp-unpin")) return;
       // Rows picked together (table.multi): Shift-click a range, Ctrl/⌘-click one more or one
       // fewer; neither opens anything. A plain click picks the row alone and goes on as usual.
       if (multi && !pinned && (e.shiftKey || e.ctrlKey || e.metaKey) && !e.target.closest(".tp-chev")) {
@@ -445,7 +451,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
     // double-click edits it in place), a control or the chevron.
     // A measurement row (the Measurements tab) spreads its details the same way.
     onDoubleClick: table && !phone && table.onOpen && (opensPanel(r) || r.type === "meas" || r.type === "pmodel" || r.type === "mission" || r.type === "phase" || r.type === "mcov" || r.type === "mrule" || r.type === "mtask") ? (e) => {
-      if (e.target.closest("input, select, textarea, a, button, .tp-chev, .rw-c, [contenteditable='true']")) return;
+      if (e.target.closest("input, select, .sel-trigger, .sel-menu, textarea, a, button, .tp-chev, .rw-c, [contenteditable='true']")) return;
       e.preventDefault();
       window.getSelection?.()?.removeAllRanges?.();
       table.onOpen(r.key);
@@ -453,7 +459,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
     // Right-click opens the row's menu (the browser's own stays on a field
     // being edited in it, and on a row with no menu).
     onContextMenu: onMenu ? (e) => {
-      if (e.target.closest("input, textarea, select, [contenteditable='true']")) return;
+      if (e.target.closest("input, textarea, select, .sel-trigger, .sel-menu, [contenteditable='true']")) return;
       e.preventDefault();
       // From the keyboard (the Menu key, Shift+F10) there's no pointer: under the row's name.
       const kb = e.button !== 2 || (!e.clientX && !e.clientY);
@@ -619,7 +625,7 @@ export default function TreePane({
   onToggle, onLevel, onCloseAll, level = null, changed = [], onReset, phone, width, onWidth, collapsed, onCollapse,
   addRow = null, canArrange = true, arrangements = null, menuActions = [], notice, statusText, empty, scrollTo, onEnter, rcmMarks = false, table: tableIn = null,
   head = null, headTabs = null, phoneTabs = null, layoutKey = "", anchorKey = null, side = null, arrangeLocked = null,
-  rowMenu = null, branch = null, branchNote = null, fullScreenKey = false, design = false, titleLevel = 2,
+  rowMenu = null, branch = null, branchNote = null, focused = null, fullScreenKey = false, design = false, titleLevel = 2,
   chipCounts = null, floor = null,
 }) {
   const TitleTag = titleLevel === 1 ? "h1" : "h2";
@@ -684,7 +690,7 @@ export default function TreePane({
     // F is the page's full screen (its own key handler), not a jump to a row.
     if (fullScreenKey && isFullScreenKey(e)) return;
     if (rowMenu && focus != null && itemsFor(focus).length && (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey))
-        && !e.target.closest("input, select, textarea, [contenteditable='true']")) {
+        && !e.target.closest("input, select, .sel-trigger, .sel-menu, textarea, [contenteditable='true']")) {
       e.preventDefault();
       const row = document.getElementById(`tp-${focus}`);
       if (row) openMenu(focus, cornerOf(row), { keyboard: true });
@@ -695,12 +701,12 @@ export default function TreePane({
     const fr = focus != null ? display.rows.get(focus) : null;
     // Space on a row that's picked with others (table.multi) adds it or takes it out.
     if (fr && table?.multi?.can(fr) && e.key === " " && !e.ctrlKey && !e.metaKey && !e.altKey
-        && !e.target.closest("input, select, textarea, button, a, [contenteditable='true']")) {
+        && !e.target.closest("input, select, .sel-trigger, .sel-menu, textarea, button, a, [contenteditable='true']")) {
       e.preventDefault();
       table.multi.onToggle(fr.key);
       return;
     }
-    if (fr?.type === "cause" && rowMenu && !e.ctrlKey && !e.metaKey && !e.altKey && !e.target.closest("input, select, textarea, button, a, [contenteditable='true']")) {
+    if (fr?.type === "cause" && rowMenu && !e.ctrlKey && !e.metaKey && !e.altKey && !e.target.closest("input, select, .sel-trigger, .sel-menu, textarea, button, a, [contenteditable='true']")) {
       const act = e.key === "Enter" || e.key === " " ? "go" : e.key === "Delete" ? "unlink" : null;
       if (act) {
         e.preventDefault();
@@ -884,6 +890,7 @@ export default function TreePane({
       </label>
       <TreeControlsMenu
         pinned={branch ? { name: branch.name, onUnpin: branch.onUnpin } : null}
+        focused={focused}
         levels={{ value: level, onLevel, onCloseAll }}
         // Each Show only filter with the marker it matches in the tree: the
         // markers' key (the "not analysed" one only where it shows).
@@ -916,6 +923,13 @@ export default function TreePane({
       <button type="button" onClick={tfilter.onClear} aria-label="Clear the filters" title="Show every row again">Clear</button>
     </span>
   ) : null;
+  // A row focused: the tree column's header says on what, with Clear focus (what was open before).
+  const focusHead = focused ? (
+    <span className="tt-filtered tt-focused" role="group" aria-label="Focus">
+      <span className="tt-filtered-nm" title={`Focused: ${focused.name}`}>Focused: {focused.name}</span>
+      <button type="button" onClick={focused.onClear} title="Open the tree as it was before the focus">Clear focus</button>
+    </span>
+  ) : null;
   // The two slim rows over the tree (a wide screen, both tabs): the tree's
   // title, counts and ⋯ over the tree column, beside the panel's heading (the
   // way up over the row's name, and its actions); then the search box over the
@@ -938,6 +952,7 @@ export default function TreePane({
       {titleRow}
       {phoneTabs}
       {search}
+      {focusHead && <div className="tt-filterline">{focusHead}</div>}
       {tfilter && (
         <div className="tt-filterline">
           <ColumnFilter wide label="Filter" facets={tfilter.facetsAll()} chosen={tfilter.chosen} onChange={tfilter.onChange} onClear={tfilter.onClear} />
@@ -955,12 +970,13 @@ export default function TreePane({
   const pinRootOf = (key) => (phone && branch && key === branch.key ? branch : undefined);
   const menuProps = (key) => (itemsFor(key).length ? { onMenu: openMenu, menuOpen: rowOpen?.key === key } : {});
   const columnHeads = !phone && (
-    <div className="tt-head" role={wideTable ? "row" : undefined} aria-hidden={wideTable || pinHead ? undefined : "true"}
+    <div className="tt-head" role={wideTable ? "row" : undefined} aria-hidden={wideTable || pinHead || focusHead ? undefined : "true"}
          style={{ width: wideTable ? table.total : width, height: HEAD_H }}>
       <div className="tt-h tt-h-tree" role={wideTable ? "columnheader" : undefined} style={{ width: wideTable ? table.treeW : width }}
-           aria-label={wideTable && pinHead ? table.treeHead || TREE_HEAD : undefined}
-           title={wideTable && !pinHead && !table.treeHead ? TREE_HEAD_TIP : undefined}>
-        {pinHead || (wideTable && filterHead ? null : wideTable ? table.treeHead || TREE_HEAD : treeLabel || title)}
+           aria-label={wideTable && (pinHead || focusHead) ? table.treeHead || TREE_HEAD : undefined}
+           title={wideTable && !pinHead && !focusHead && !table.treeHead ? TREE_HEAD_TIP : undefined}>
+        {pinHead || ((wideTable && filterHead) || focusHead ? null : wideTable ? table.treeHead || TREE_HEAD : treeLabel || title)}
+        {focusHead}
         {wideTable && filterHead}
       </div>
       {wideTable && table.cols.map((c) => {

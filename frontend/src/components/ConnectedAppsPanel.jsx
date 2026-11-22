@@ -8,6 +8,7 @@ import Button from "./ui/Button.jsx";
 import Card, { CardHeader } from "./ui/Card.jsx";
 import ScrollCue from "./ui/ScrollCue.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
+import Loading from "./ui/Loading.jsx";
 
 // No app yet: how to connect Claude, with the MCP address to copy.
 function ConnectClaude() {
@@ -74,7 +75,7 @@ export default function ConnectedAppsPanel() {
         {error && <div className="error" style={{ marginTop: 0 }}>{error}</div>}
         {!mcp && grants?.length > 0 && <McpOnRequest />}
         {grants === null ? (
-          <p className="muted-line">Loading…</p>
+          <Loading />
         ) : grants.length === 0 ? (
           mcp ? <ConnectClaude /> : <McpOnRequest />
         ) : (
