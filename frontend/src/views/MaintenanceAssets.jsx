@@ -92,7 +92,7 @@ export default function MaintenanceAssets() {
       cell: (p) => <CountCell n={p.open_work_orders} to={p.id ? openWorkPath(p.id) : null}
                               label={`${p.open_work_orders} open work order${p.open_work_orders === 1 ? "" : "s"} at ${p.name}`} />,
     },
-    { key: "due", label: `Due in ${horizon} days`, cell: (p) => <Due row={p} /> },
+    { key: "due", label: `Due in ${horizon} days`, cell: (p) => <Due row={p} today={view?.today} /> },
   ].filter(Boolean);
   const notPlaced = rest?.positions > 0 && (
     <tr className="lib-row maint-not-placed" onClick={() => navigate(NOT_PLACED_PATH)}>
@@ -175,8 +175,8 @@ export default function MaintenanceAssets() {
   );
 }
 
-function Due({ row }) {
-  const { text, overdue } = dueText(row, fmtDate);
+function Due({ row, today }) {
+  const { text, overdue } = dueText(row, fmtDate, today);
   return (
     <>
       <span className={row.due ? undefined : "lib-date"}>{text}</span>

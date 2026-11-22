@@ -3,13 +3,14 @@ import { useNavigate, Link } from "react-router-dom";
 import Modal from "../components/Modal.jsx";
 import { RollupBadges } from "../components/RcmStatusBadge.jsx";
 import { listRcmStudies, createRcmStudy, deleteRcmStudy, getWorkspaceRcm } from "../api.js";
-import { rcmRootLine, rcmTreeRoots } from "../rcmTreeRoots.js";
+import { rcmDecidedText, rcmTreeRoots } from "../rcmTreeRoots.js";
 import { explorerPath } from "../assetTree.js";
 import { relativeTime } from "../instrument.js";
 import { SectionHeader, SectionList } from "../components/SectionPage.jsx";
-import { PlusIcon, RowActions, itemName } from "../components/LibRows.jsx";
+import { PlusIcon, RowActions, RowLink, itemName, rowOpen } from "../components/LibRows.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { deleteOrRemoveConfirm } from "../confirm.js";
+import "../components/RegisterList.css";
 
 // The RCM section's landing page, its studies: rollup badge strip per study, create modal, free-plan cap
 // nudge on 402.
@@ -102,14 +103,32 @@ export default function RcmHome() {
           <p className="lib-date">
             RCM done on the asset tree sets the positions&apos; maintenance tasks directly. Open an asset to carry on there.
           </p>
-          <ul className="rcm-on-tree-list">
-            {onTree.map((r) => (
-              <li key={r.id}>
-                <Link to={explorerPath("positions", { sel: r.id, tab: "rcm" })}>{r.name || "Unnamed position"}</Link>
-                <span className="lib-date"> · {rcmRootLine(r)}</span>
-              </li>
-            ))}
-          </ul>
+          <div className="lib maint-scroll">
+            <table className="lib-table reg-table rcm-on-tree-table">
+              <thead>
+                <tr>
+                  <th>Position</th>
+                  <th className="num">Positions with RCM</th>
+                  <th className="num">Failure modes decided</th>
+                </tr>
+              </thead>
+              <tbody>
+                {onTree.map((r) => {
+                  const to = explorerPath("positions", { sel: r.id, tab: "rcm" });
+                  return (
+                    <tr key={r.id} className="lib-row" onClick={rowOpen(navigate, to)}>
+                      <td>
+                        <RowLink to={to} className="lib-name">{r.name || "Unnamed position"}</RowLink>
+                        {r.path && <div className="lib-date reg-sub" title={r.path}>{r.path}</div>}
+                      </td>
+                      <td className="num" data-label="Positions with RCM">{r.positions.toLocaleString("en-AU")}</td>
+                      <td className={"num" + (r.modes ? "" : " lib-date")} data-label="Failure modes decided">{rcmDecidedText(r)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

@@ -71,7 +71,7 @@
   cursor: pointer;
 }
 .cf-item:hover { background: var(--accent-wash); }
-.cf-item input { margin: 0; flex: none; }
+.cf-item > .check-label { display: flex; flex: 1 1 auto; align-items: center; gap: var(--space-2); min-width: 0; }
 .cf-lbl { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cf-n { flex: none; color: var(--text-secondary); font-variant-numeric: tabular-nums; font-size: var(--fs-12); }
 .cf-item.zero .cf-lbl, .cf-item.zero .cf-n { color: var(--text-tertiary); }

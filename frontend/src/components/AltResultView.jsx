@@ -1,6 +1,6 @@
 import { useState } from "react";
 import Plot from "./Plot.jsx";
-import { COLORWAY, GRID, SURFACE } from "../plotTheme.js";
+import { COLORWAY, GRID, SURFACE, legendBg } from "../plotTheme.js";
 import AltCalculator, { initAltCalc } from "./AltCalculator.jsx";
 import NoMaximumNotice from "./NoMaximumNotice.jsx";
 import { ModelTabs } from "./model/ModelFrame.jsx";
@@ -124,7 +124,7 @@ function ProbabilityTab({ results, name }) {
       tickvals: prob.y_ticks?.vals, ticktext: prob.y_ticks?.labels,
     },
     showlegend: true,
-    legend: { x: 0, xanchor: "left", y: 1, yanchor: "top", bgcolor: "rgba(255,255,255,0.85)" },
+    legend: { x: 0, xanchor: "left", y: 1, yanchor: "top", bgcolor: legendBg() },
   };
   const shape = shapeParam(r);
   return (

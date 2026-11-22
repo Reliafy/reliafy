@@ -12,6 +12,7 @@ import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
 import { ciPct } from "../levels.js";
 import { windowText } from "../compareWindow.js";
 import "./Datasets.css";
+import { Checkbox } from "./ui/Controls.jsx";
 
 // Compare groups within one dataset (#175): split by a column, overlay each
 // group's Kaplan–Meier curve, test the difference (log-rank; Gray's test per
@@ -220,11 +221,9 @@ export default function CompareGroups({ dataset, splitBy, onClose }) {
             <StatusMeanings column={censorCol} values={facts[censorCol].values} mapping={status}
                             onChange={(m) => setStatus({ c_invert: !!m.c_invert, c_map: m.c_map || null })} />
           ) : censorCol ? (
-            <label className="map-invert cg-invert">
-              <input type="checkbox" checked={!!status.c_invert}
-                     onChange={(e) => setStatus({ c_invert: e.target.checked, c_map: null })} />
-              <span>1 = failed here (invert it)</span>
-            </label>
+            <Checkbox className="map-invert cg-invert" checked={!!status.c_invert}
+                      onChange={(e) => setStatus({ c_invert: e.target.checked, c_map: null })}
+                      label="1 = failed here (invert it)" />
           ) : null}
           {readAs && (
             <p className="muted-line cg-read-as">

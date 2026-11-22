@@ -18,6 +18,7 @@ import { PageTitle } from "../components/usePageTitle.js";
 import { AddToLibraryDialog } from "../components/LibraryParts.jsx";
 import ProTag from "../components/ProTag.jsx";
 import FromLibrary from "../components/FromLibrary.jsx";
+import Loading from "../components/ui/Loading.jsx";
 
 // A saved repairable (recurrent-event) model in the model frame: the answer
 // line, Share, the ⋯ menu (Download as Python, rename, delete) and the result's tabs, the open one in
@@ -95,7 +96,7 @@ export default function RecurrentModelPage() {
                                datasetId={model.dataset_id || null} tab={tab} onTab={(t) => setTab(t, first)} />
         </ErrorBoundary>
       ) : missing ? <ModelNotFound id={id} kind="recurrent" />
-        : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
+        : !error && <div className="mf-body mf-single"><Loading /></div>}
       {adding && model && (
         <AddToLibraryDialog modelId={model.id} modelName={itemName(model)} collection="recurrent_models" onClose={() => setAdding(false)} />
       )}

@@ -62,11 +62,11 @@
 
 /* The tree pane's small icon buttons (« fold, » unfold), and the panel
    heading's two controls (the "…" menu and Full screen) on every tab: one
-   look, 30 × 30 (36 on a phone). */
+   look, control-md square (control-lg on a phone). */
 .tp button.tp-icon-btn,
 .tt-actions button.tp-icon-btn {
-  min-width: 30px;
-  height: 30px;
+  min-width: var(--control-md);
+  height: var(--control-md);
   padding: 0 7px;
   justify-content: center;
   border: 1px solid var(--border);
@@ -151,7 +151,7 @@
   background: transparent;
   color: var(--text-secondary);
   box-shadow: none;
-  font-size: 13.5px;
+  font-size: var(--fs-13);
   font-weight: 500;
   text-align: left;
   white-space: nowrap;
@@ -221,7 +221,7 @@
   align-items: center;
   gap: 3px;
   padding: 0 8px 0 6px;
-  font-size: 13.5px;
+  font-size: var(--fs-13);
   white-space: nowrap;
   cursor: pointer;
   outline: none;
@@ -259,7 +259,7 @@
 }
 
 .tp-pins-in .tp-row:last-child {
-  box-shadow: 0 3px 6px -2px rgba(20, 23, 28, 0.14);
+  box-shadow: var(--shadow-md);
 }
 
 /* More levels above the first row than there's room to pin: the top one and the
@@ -464,8 +464,8 @@
   }
   .tx.phone .tp button.tp-icon-btn,
   .tx.phone .tt-actions button.tp-icon-btn {
-    min-width: 36px;
-    height: 36px;
+    min-width: var(--control-lg);
+    height: var(--control-lg);
   }
   .td .page-header .head-actions {
     width: 100%;
@@ -958,7 +958,7 @@ button.rw-cklink {
      edge, so a row half under them reads as under, not cut. */
   .tx.phone .tp-pins-in .tp-row:last-child {
     border-bottom-color: var(--border);
-    box-shadow: 0 4px 8px -3px rgba(20, 23, 28, 0.22);
+    box-shadow: var(--shadow-md);
   }
   /* The same height as the Summary tab's tree (the details open as a sheet over it). */
   .tx.phone .tp-table .tp-scroll {
@@ -1026,7 +1026,7 @@ button.rw-cklink {
 .tt-more:hover:not(:disabled), .tt-more.open { background: var(--accent-subtle); color: var(--accent-text); }
 .tp-row:hover .tt-more, .tp-row:focus-visible .tt-more, .tp-row.focus .tt-more,
 .tp-row.menu-open .tt-more { opacity: 1; }
-.tx.phone .tt-more { opacity: 1; width: 36px; height: 36px; }
+.tx.phone .tt-more { opacity: 1; width: var(--control-lg); height: var(--control-lg); }
 @media (hover: none), (max-width: 700px) {
   .tt-more { opacity: 1; }
 }
@@ -1079,7 +1079,7 @@ button.rw-cklink {
   background: var(--accent);
   color: var(--text-on-fill);
   font-size: var(--fs-12);
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1;
   box-shadow: 0 0 0 2px var(--bg-surface);
 }
@@ -1290,7 +1290,7 @@ button.rw-cklink {
   top: 50%;
   transform: translateY(-50%);
   margin-left: 6px;
-  color: var(--text-secondary, #6b7280);
+  color: var(--text-secondary);
   opacity: 0;
   pointer-events: none;
   line-height: 0;
@@ -1322,7 +1322,7 @@ button.rw-cklink {
   padding: 1px 8px;
   border-radius: 10px;
   background: var(--accent);
-  color: #fff;
+  color: var(--text-on-fill);
   font-size: 11.5px;
   font-weight: 600;
   pointer-events: none;
@@ -1356,11 +1356,11 @@ html.rcm-dragging.rcm-nodrop, html.rcm-dragging.rcm-nodrop * { cursor: no-drop !
   padding: 0 5px;
   border-radius: 10px;
   background: var(--accent);
-  color: #fff;
+  color: var(--text-on-fill);
   font-size: 11.5px;
 }
-.rcm-ghost-say { color: var(--text-secondary, #6b7280); }
-.rcm-ghost-plus { font-size: 14px; font-weight: 700; }
+.rcm-ghost-say { color: var(--text-secondary); }
+.rcm-ghost-plus { font-size: var(--fs-14); font-weight: 600; }
 .rcm-ghost.is-no { border-color: var(--danger); }
 .rcm-ghost.is-no .rcm-ghost-say { color: var(--danger-text); }
 .rcm-toast {
@@ -1380,13 +1380,13 @@ html.rcm-dragging.rcm-nodrop, html.rcm-dragging.rcm-nodrop * { cursor: no-drop !
   background: var(--bg-surface);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
-  font-size: 13.5px;
+  font-size: var(--fs-13);
 }
 .rcm-toast.error { border-color: var(--danger); color: var(--danger-text); }
 .rcm-toast > span { flex: 1 1 auto; min-width: 0; }
 .rcm-toast button { flex: none; }
 .rcm-toast-x { background: none; border: 0; color: inherit; padding: 4px 8px; min-height: 32px; cursor: pointer; }
-.rcm-move-say { margin: 4px 0 0; color: var(--text-secondary, #6b7280); }
+.rcm-move-say { margin: 4px 0 0; color: var(--text-secondary); }
 .rcm-move-say.no { color: var(--danger-text); }
 /* The Move to… picker: the tree with the RCM in it, the places it can't go greyed. */
 .rcm-move-tree {

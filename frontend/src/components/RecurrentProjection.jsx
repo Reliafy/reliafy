@@ -4,6 +4,7 @@ import { getRecurrentProjection, runRecurrentProjection } from "../api.js";
 import { unitInText } from "./unitText.js";
 import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
 import { ScrollCard, TablePanel } from "./model/ModelLayouts.jsx";
+import Loading from "./ui/Loading.jsx";
 
 const fmt = (v, d = 4) =>
   v == null || !Number.isFinite(v)
@@ -72,7 +73,7 @@ export default function RecurrentProjection({ modelId, unit: rawUnit }) {
   useEffect(() => { load(null); }, [modelId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!view) {
-    return error ? <div className="error" role="alert">{error}</div> : <p className="muted-line">Loading…</p>;
+    return error ? <div className="error" role="alert">{error}</div> : <Loading />;
   }
 
   const setRow = (idx, key, value) => setRows((rs) => rs.map((r, i) => (i === idx ? { ...r, [key]: value } : r)));

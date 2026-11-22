@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Switch from "./ui/Switch.jsx";
 import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
@@ -19,6 +20,7 @@ import NewChannel from "./SignalChannelForm.jsx";
 import { usePanelMenu } from "../panelMenu.js";
 import { tabPlace } from "../explorerTabs.js";
 import "./SignalsPanel.css";
+import Loading from "./ui/Loading.jsx";
 
 const flag = (key, fallback = false) => {
   try {
@@ -107,7 +109,7 @@ function ChannelList({ target, what, onStored, quiet = false, addAsk = 0 }) {
   useEffect(() => { load(); }, [load]);
 
   if (error) return <p className="sg-note sg-bad" role="alert">Couldn't load the signals: {error}</p>;
-  if (!list) return <p className="sg-note">Loading…</p>;
+  if (!list) return <Loading />;
   const channel = list.find((c) => c.id === picked) || list[0];
 
   return (
@@ -359,7 +361,7 @@ export function ChannelView({ summary, all, onChanged, focusBands = false }) {
   }, [range, axis, hasSpectra, summary.id, xUnit]);
 
   if (error) return <p className="sg-note sg-bad" role="alert">Couldn't load this channel: {error}</p>;
-  if (!ch || !axis) return <p className="sg-note">Loading…</p>;
+  if (!ch || !axis) return <Loading />;
 
   const unit = ch.unit;
   const last = index[index.length - 1];
@@ -510,9 +512,7 @@ export function ChannelView({ summary, all, onChanged, focusBands = false }) {
       <div className="sg-bar">
         <button type="button" className="secondary sm" onClick={() => setAddingSnap(true)} disabled={addingSnap}>Add a snapshot from a file</button>
         {hasFlags && (
-          <label className="sg-check">
-            <input type="checkbox" checked={runOnly} onChange={(e) => toggleRunOnly(e.target.checked)} /> Running only
-          </label>
+          <Switch className="sg-check" checked={runOnly} onChange={toggleRunOnly} label="Running only" />
         )}
       </div>
       {addingSnap && (
@@ -748,8 +748,8 @@ function Player({ times, withSpectrum, head, playing, loop, setLoop, speed, setS
           {SPEEDS.map((s) => <option key={s} value={s}>{s}×</option>)}
         </select>
       </label>
-      <label className="sg-check"><input type="checkbox" checked={loop} onChange={(e) => setLoop(e.target.checked)} /> Loop</label>
-      <label className="sg-check"><input type="checkbox" checked={fade} onChange={(e) => setFade(e.target.checked)} /> Smooth transition (display only)</label>
+      <Switch className="sg-check" checked={loop} onChange={setLoop} label="Loop" />
+      <Switch className="sg-check" checked={fade} onChange={setFade} label="Smooth transition (display only)" />
       {cue && <span className="sg-cue" role="status">↺ Back to the first snapshot</span>}
       <p className="sg-hint sg-full">
         The whole history plays in about {DEFAULT_LOOP_MS / 1000} seconds. Each snapshot is held for as long, in proportion,

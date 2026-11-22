@@ -36,7 +36,7 @@ test("the task panel is built from the shared title, Field, Section and footer",
   assert.match(task, /className="rw-panel-acts mt-acts"/);
   assert.match(task, /className="ghost rw-del"[^\n]*>Retire…</);
   assert.match(task, /<LoadFailed /);
-  assert.match(task, /<PlaceholderRows shape="fields"/);
+  assert.match(task, /<Loading shape="fields"/);
   assert.match(task, /\$\{money\(lsaCost\)\} from its LSA/);
 });
 

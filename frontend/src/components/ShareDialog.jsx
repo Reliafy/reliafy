@@ -10,6 +10,7 @@ import {
 import Chip from "./ui/Chip.jsx";
 import { formatDate } from "../dates.js";
 import { useConfirm } from "./ConfirmProvider.jsx";
+import { Checkbox } from "./ui/Controls.jsx";
 
 
 // Collections with a public read-only renderer at /p/:token.
@@ -242,14 +243,12 @@ export function PublicLinks({ collection, artifactId, onError, openable = false 
             </select>
           </label>
         </div>
-        <label className="pl-check">
-          <input
-            type="checkbox"
-            checked={requirePassword}
-            onChange={(e) => setRequirePassword(e.target.checked)}
-          />
-          Require password
-        </label>
+        <Checkbox
+          className="pl-check"
+          checked={requirePassword}
+          onChange={(e) => setRequirePassword(e.target.checked)}
+          label="Require password"
+        />
         {requirePassword && (
           <label className="login-field">
             <span>Password</span>

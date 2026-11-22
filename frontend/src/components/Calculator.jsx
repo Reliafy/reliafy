@@ -4,7 +4,7 @@ import { withUnit } from "./stressName.js";
 import CiNote from "./CiNote.jsx";
 import { useEffect, useRef, useState } from "react";
 import Plot from "./Plot.jsx";
-import { COLORWAY, bandPair, pointMarker, referenceShape } from "../plotTheme.js";
+import { COLORWAY, bandPair, pointMarker, referenceShape, legendBg } from "../plotTheme.js";
 import { confidenceAt, evaluateAt, lifeAt } from "../api.js";
 import { formatNumber } from "../format.js";
 import { calendarUnit } from "../friendlyTime.js";
@@ -652,7 +652,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
       xanchor: falling ? "right" : "left",
       y: 0.985,
       yanchor: "top",
-      bgcolor: "rgba(255,255,255,0.85)",
+      bgcolor: legendBg(),
     },
     xaxis: {
       title: { text: tAxisLabel },
