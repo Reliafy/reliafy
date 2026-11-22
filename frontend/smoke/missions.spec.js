@@ -1,8 +1,8 @@
 // Missions (Derryn, 9 Nov 2026: "Products need an RBD tab, called Missions"; "Missions are RBDs,
 // so they belong to positions"): a survey drone whose two motor bearings are NSWC-11 covariate
 // models (design fixed at each position, use and environment left open), its RBD built from the
-// tree, and a mission of two phases at different temperatures. The Missions tab lists it under the
-// drone; opening it shows each phase's covariates with the blocks they feed; a value missing makes
+// tree, and a mission of two phases at different temperatures. The Models tab (one tree, Derryn 22
+// Nov 2026) lists it under the drone's RBD, the model it's flown on; opening it shows each phase's covariates with the blocks they feed; a value missing makes
 // that phase wait, then set it and the result comes per phase and for the whole mission. The
 // gimbal inside has its own RBD and its own mission, and doesn't show the drone's. Nothing scrolls
 // sideways at 400 px.
@@ -44,11 +44,17 @@ test("missions: a product's mission by phase, its covariates with the blocks the
   });
 
   await page.setViewportSize({ width: 1440, height: 900 });
+  // The old Missions address opens the Models tab: one view, no Life models / Missions switch.
   await open(page, `/asset-register/explorer?arrange=positions&sel=${drone.id}&tab=missions`);
   await expect(page.getByRole("tab", { name: "Models", exact: true })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("radiogroup", { name: "Models: what to show" }).getByRole("radio", { name: "Missions" })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByRole("radiogroup", { name: "Models: what to show" })).toHaveCount(0);
   const mission = nameRow(page, `Corridor inspection ${tag}`);
   await expect(mission).toBeVisible();
+  // It hangs under the drone's RBD (its model row, opened for the position picked), not the drone.
+  const rbdRow = nameRow(page, built.name).first();
+  await expect(rbdRow).toBeVisible();
+  expect(await mission.getAttribute("aria-level")).toBe(String(Number(await rbdRow.getAttribute("aria-level")) + 1));
+  await expect(mission).toContainText("Mission");
   await expect(mission).toContainText("2 phases: Take-off, Survey");
   // The mission's length is every phase added up; opened, each phase's row shows its own.
   await expect(mission).toContainText("3.2 hours");
@@ -56,12 +62,17 @@ test("missions: a product's mission by phase, its covariates with the blocks the
   const phaseRow = (name) => page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: new RegExp(`^${name}$`) }) });
   await expect(phaseRow("Take-off")).toContainText("0.2 hours");
   await expect(phaseRow("Survey")).toContainText("3 hours");
-  // The gimbal's own mission is under the gimbal; the drone's isn't repeated there.
+  // The gimbal's own mission is under the gimbal's RBD; the drone's isn't repeated there.
   await nameRow(page, `Gimbal ${tag}`).first().locator(".tp-chev").click();
+  await nameRow(page, gimbalRbd.name).first().locator(".tp-chev").click();
   await expect(nameRow(page, `Stabilise ${tag}`)).toBeVisible();
-  // A leaf with a model in use can have a mission too (one block).
-  await expect(nameRow(page, `Front motor bearing ${tag}`)).toContainText("No missions yet · Add a mission");
   await expect(nameRow(page, `Corridor inspection ${tag}`)).toHaveCount(1);
+  // The drone's roll-up counts its models and then its missions.
+  await expect(nameRow(page, `Survey drone ${tag}`).first()).toContainText("2 missions");
+  // + Mission on a model's row: the RBD's menu leads with it.
+  await rbdRow.locator(".tp-nm").click({ button: "right" });
+  await expect(page.getByRole("menuitem").first()).toHaveText(/Add a mission…/);
+  await page.keyboard.press("Escape");
 
   // Open the mission: the table area, phases as rows.
   await mission.locator(".tp-nm").dblclick();
@@ -133,11 +144,11 @@ test("missions: a product's mission by phase, its covariates with the blocks the
 
   // At 400 px: the tab, then the mission on its own screen with Back.
   await page.setViewportSize({ width: 400, height: 860 });
-  await open(page, `/asset-register/explorer?arrange=positions&sel=${drone.id}&tab=missions`);
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${drone.id}&tab=models`);
   await expect(nameRow(page, `Corridor inspection ${tag}`)).toBeVisible();
   await expect.poll(() => sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "missions-tab-400");
-  await open(page, `/asset-register/explorer?arrange=positions&sel=${drone.id}&tab=missions&mission=${built.model_id}:${made.mission.id}&on=${drone.id}`);
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${drone.id}&tab=models&mission=${built.model_id}:${made.mission.id}&on=${drone.id}`);
   await expect(pane).toBeVisible();
   await expect(pane.getByRole("button", { name: "Back to the table" })).toBeVisible();
   await expect(pane.locator(".mission-answer")).toContainText("the mission completes with probability", { timeout: 30_000 });
@@ -167,11 +178,10 @@ test("missions: each mission builds its own RBD; blocks set working, standby or 
   }
 
   await page.setViewportSize({ width: 1440, height: 900 });
-  await open(page, `/asset-register/explorer?arrange=positions&sel=${station.id}&tab=missions`);
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${station.id}&tab=models`);
   const stationRow = nameRow(page, `Pump station ${tag}`).first();
-  await expect(stationRow).toContainText("Add a mission");
   await stationRow.locator(".tp-nm").click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Add a mission", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Add a mission…", exact: true }).click();
   await nameMission(page, "Mission 1");  // named first, nothing saved until then (#833)
   const made = page.waitForResponse((r) => r.url().includes(`${M}/positions/${station.id}/missions`) && r.request().method() === "POST");
   await page.getByRole("region", { name: "New mission" }).getByRole("button", { name: "Add the mission" }).click();
@@ -230,8 +240,9 @@ test("missions: each mission builds its own RBD; blocks set working, standby or 
   await expectHealthy(page, problems, { label: "a mission's own RBD" });
 });
 
-// Every position that can have a mission says so, open or closed; a leaf with a model in use flies
-// a one-block mission; a mission's RBD is labelled with its mission and position in the RBD list.
+// A leaf with a model in use flies a one-block mission (Add a mission… on its model's row, the row it
+// then hangs under); a bare leaf's Add a mission… says why not; a mission's RBD is labelled with its
+// mission and position in the RBD list.
 test("missions: a leaf with a model gets a one-block mission; the RBD list labels mission RBDs", async ({ page, request, problems }) => {
   const tag = `ml${Date.now()}`;
   const frame = await postOk(request, `${M}/positions`, { name: `Airframe ${tag}` });
@@ -240,24 +251,24 @@ test("missions: a leaf with a model gets a one-block mission; the RBD list label
   await postOk(request, `${M}/positions/${arm.id}/models`, { model_id: "sample-model-bearings-weibull" });
 
   await page.setViewportSize({ width: 1440, height: 900 });
-  await open(page, `/asset-register/explorer?arrange=positions&sel=${frame.id}&tab=missions`);
-  await expect(nameRow(page, `Airframe ${tag}`).first()).toContainText("No missions yet · Add a mission");
-  await expect(nameRow(page, `Arm ${tag}`)).toContainText("No missions yet · Add a mission");
-  await expect(nameRow(page, `Bare leaf ${tag}`)).toContainText("No missions yet");
-  await expect(nameRow(page, `Bare leaf ${tag}`)).not.toContainText("Add a mission");
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${frame.id}&tab=models`);
   await shot(page, "missions-rollups-1440");
   // The bare leaf's Add a mission is greyed, with what to do.
   await nameRow(page, `Bare leaf ${tag}`).locator(".tp-nm").click({ button: "right" });
   await expect(page.getByRole("menuitem", { name: /Add a mission/ })).toBeDisabled();
   await page.keyboard.press("Escape");
 
-  // The leaf with a model: a mission of one block.
-  await nameRow(page, `Arm ${tag}`).locator(".tp-nm").click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Add a mission", exact: true }).click();
+  // The leaf with a model: Add a mission… on its model's row, a mission of one block.
+  await nameRow(page, `Arm ${tag}`).locator(".tp-chev").click();
+  const armModel = page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: "Bearing" }) }).first();
+  await armModel.locator(".tp-nm").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Add a mission…", exact: true }).click();
   await nameMission(page, "Mission 1");  // named first (#833)
   const made = page.waitForResponse((r) => r.url().includes(`${M}/positions/${arm.id}/missions`) && r.request().method() === "POST");
   await page.getByRole("region", { name: "New mission" }).getByRole("button", { name: "Add the mission" }).click();
-  const body = await (await made).json();
+  const res = await made;
+  expect(res.request().postDataJSON().link_id).toBeTruthy();
+  const body = await res.json();
   expect(body.built_from).toBe("model");
   const pane = page.getByRole("region", { name: "Mission" });
   await expect(pane).toContainText(`Runs on Arm ${tag} — Mission 1`);
@@ -300,7 +311,7 @@ test("missions: a mission resting on placeholders says so, and can leave them ou
   expect(put.ok(), await put.text()).toBeTruthy();
 
   await page.setViewportSize({ width: 1440, height: 900 });
-  await open(page, `/asset-register/explorer?arrange=positions&sel=${set.id}&tab=missions&mission=${made.rbd.id}:mission&on=${set.id}`);
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${set.id}&tab=models&mission=${made.rbd.id}:mission&on=${set.id}`);
   const pane = page.getByRole("region", { name: "Mission" });
   const answer = pane.locator(".mission-answer");
   // Most of the blocks are placeholders (3 of 5): the answer says most of it rests on invented lives.

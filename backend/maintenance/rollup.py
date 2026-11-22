@@ -65,9 +65,10 @@ def rollup(m, node_id: str, within: str | None = None) -> dict:
             counted.add(mode_id)
             bucket["failure_modes"] += 1
 
-    # Life models and predictions linked to positions (an RBD is a mission's: the Missions view counts those).
+    # Models linked to positions: life models, predictions and RBDs (the Models tab lists all three,
+    # with each RBD's missions under it).
     for link in m.s.nodes(m.org, "ModelLink"):
-        if link.get("removed") or link.get("model_type") == "rbd" or link.get("position_id") not in positions:
+        if link.get("removed") or link.get("position_id") not in positions:
             continue
         side(link["position_id"])["models"] += 1
 

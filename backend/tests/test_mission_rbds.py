@@ -253,7 +253,7 @@ def test_each_mission_builds_an_rbd_of_its_own_and_isn_t_a_model_of_the_position
     assert one["mission"]["id"] == rm.LEGACY_ID and one["mission"]["phases"] == 0
     doc = db.rbds.find_one({"_id": one["rbd"]["id"]})
     # Nothing inside is connected, so the pumps went in series: the mission says so until it's rewired.
-    assert doc["graph"]["mission_of"] == {"position_id": plant, "built_in_series": True}
+    assert doc["graph"]["mission_of"] == {"position_id": plant, "built_in_series": True, "built_from": "tree"}
     assert doc["graph"]["mission_name"] == "Duty run" and "placed in series" in one["series_warning"]
     labels = sorted(n["data"]["label"] for n in doc["graph"]["nodes"] if n["type"] == "component")
     assert labels == ["Pump A", "Pump B"]
@@ -329,7 +329,7 @@ def test_a_mission_starts_from_the_positions_own_rbd_wired_as_it_is(m, db, repai
     assert made["notes"][0].startswith("Started from a copy of Pump station (from the tree), wired as it is")
     graph = db.rbds.find_one({"_id": made["rbd"]["id"]})["graph"]
     # It says which diagram it was copied from, so the RBD list shows it under that one.
-    assert graph["mission_of"] == {"position_id": plant, "from_rbd": src} and not graph.get("repairable") \
+    assert graph["mission_of"] == {"position_id": plant, "from_rbd": src, "built_from": "copy"} and not graph.get("repairable") \
         and "costs" not in graph
     from backend.schema import Rbd
     from backend.services import rbds as rbds_service
@@ -394,13 +394,57 @@ def test_a_leaf_with_a_model_in_use_flies_a_one_block_mission(m, db):
     blocks = [n for n in graph["nodes"] if n["type"] == "component"]
     assert [b["data"]["label"] for b in blocks] == ["Lone pump"]
     assert blocks[0]["data"]["model"].get("modelId") == SAMPLE and not blocks[0]["data"]["model"].get("placeholder")
-    assert graph["mission_of"] == {"position_id": pump}
+    assert graph["mission_of"] == {"position_id": pump, "built_from": "model"}
     # It works out like the model on its own: one block in series.
     g, _ = rm.save(graph, rm.LEGACY_ID, phases=[{"name": "Run", "duration": 100}])
     got = rm.analyze(db, OWNERS, g, g["phases"])
     assert 0 < got["reliability"] < 1
     with pytest.raises(Invalid, match="no model in use"):
         pm.build_mission_rbd(m, db, OWNERS, set(), bare, ORG)
+
+
+def test_a_mission_added_on_a_model_row_is_flown_on_that_model_and_says_so(m, db):
+    """Add a mission… on a model's row (the Explorer's Models tab): on an RBD row, a copy of that
+    RBD; on the model in use, one block. The mission keeps the row it was started on, and the
+    missions read says so, so the tab shows it under that model."""
+    from backend.services import rbds as rbds_service
+
+    plant = _station(m, db)
+    first = pm.build_rbd(m, db, OWNERS, set(), plant)
+    other = rbds_service.save_rbd(db, "Station, as drawn", _parallel(), ORG)
+    second = pm.link_rbd(m, db, OWNERS, set(), plant, other.id)
+    # The station's own RBD would be picked by default (the one built there); the row asked for wins.
+    made = pm.build_mission_rbd(m, db, OWNERS, set(), plant, ORG, "Night", link_id=second["id"])
+    assert made["built_from"] == "copy" and made["notes"][0].startswith("Started from a copy of Station, as drawn")
+    graph = db.rbds.find_one({"_id": made["rbd"]["id"]})["graph"]
+    assert graph["mission_of"] == {"position_id": plant, "from_rbd": other.id, "on_link": second["id"], "built_from": "copy"}
+    row = next(r for r in rm.position_missions(m, db, OWNERS) if r["rbd"] and r["rbd"]["id"] == made["rbd"]["id"])
+    assert (row["rbd"]["from_rbd"], row["rbd"]["on_link"], row["rbd"]["built_from"]) == (other.id, second["id"], "copy")
+    # The default pick is unchanged: the RBD built there.
+    plain = pm.build_mission_rbd(m, db, OWNERS, set(), plant, ORG, "Day")
+    assert db.rbds.find_one({"_id": plain["rbd"]["id"]})["graph"]["mission_of"]["from_rbd"] == first["model_id"]
+    # A leaf's model in use: one block, kept as its row.
+    pump = m.create_position("Lone pump")["id"]
+    life = pm.link_saved(m, db, OWNERS, set(), pump, "model", SAMPLE)
+    one = pm.build_mission_rbd(m, db, OWNERS, set(), pump, ORG, "Duty", link_id=life["id"])
+    assert one["built_from"] == "model"
+    assert db.rbds.find_one({"_id": one["rbd"]["id"]})["graph"]["mission_of"] == {
+        "position_id": pump, "on_link": life["id"], "built_from": "model"}
+    # A row that isn't the position's, or a model not in use: refused, in words.
+    with pytest.raises(Invalid, match="isn't on this position"):
+        pm.build_mission_rbd(m, db, OWNERS, set(), pump, ORG, "Again", link_id=second["id"])
+    # A second model linked becomes the one in use, so the first isn't any more.
+    pm.link_saved(m, db, OWNERS, set(), pump, "model", "sample-model-bearings-lognormal")
+    assert not next(x for x in m.position_models(pump) if x["id"] == life["id"]).get("in_use")
+    with pytest.raises(Invalid, match="model in use"):
+        pm.build_mission_rbd(m, db, OWNERS, set(), pump, ORG, "Spare", link_id=life["id"])
+    # A covariate (PH) model in use flies a one-block mission too: its phases set the covariates.
+    seal = m.create_position("Seal")["id"]
+    ph = pm.link_saved(m, db, OWNERS, set(), seal, "model", "sample-model-seal-weibull-ph")
+    cov = pm.build_mission_rbd(m, db, OWNERS, set(), seal, ORG, "Hot run", link_id=ph["id"])
+    assert cov["built_from"] == "model"
+    [row] = [r for r in rm.position_missions(m, db, OWNERS, position_ids=[seal]) if r["rbd"]]
+    assert row["rbd"]["on_link"] == ph["id"] and row["missions"][0]["covariates"]
 
 
 # ---- over REST --------------------------------------------------------------------------------

@@ -60,12 +60,12 @@ test("every Explorer tab on offer is a place to go, and the hidden ones aren't",
   const features = featureList({ live: liveEntries(ALL), has: ALL });
   const tabs = features.filter((f) => f.tab).map((f) => f.tab);
   assert.deepEqual(tabs, OFFERED_TABS.filter((t) => t.id !== "summary").map((t) => t.id));
-  const missions = features.find((f) => f.tab === "missions");
-  assert.equal(missions.path, "/asset-register/explorer?arrange=positions&tab=missions");
+  const models = features.find((f) => f.tab === "models");
+  assert.equal(models.path, "/asset-register/explorer?arrange=positions&tab=models");
   // On an asset already open, the tab opens there.
-  assert.equal(featureHref(missions, "/asset-register/explorer", "?arrange=positions&root=r1&sel=p1"),
-    "/asset-register/explorer?arrange=positions&root=r1&sel=p1&tab=missions");
-  assert.equal(featureHref(missions, "/home", ""), missions.path);
+  assert.equal(featureHref(models, "/asset-register/explorer", "?arrange=positions&root=r1&sel=p1"),
+    "/asset-register/explorer?arrange=positions&root=r1&sel=p1&tab=models");
+  assert.equal(featureHref(models, "/home", ""), models.path);
   // Every synonym's address is a page or a tab somewhere.
   for (const key of Object.keys(SYNONYMS)) {
     if (key.startsWith("tab:")) continue;
@@ -82,7 +82,8 @@ test("a feature is found by the words people use for it", () => {
   assert.equal(top("FMECA").tab, "fmea");
   assert.equal(top("rcm").tier, 0);
   assert.equal(top("fleet forecast").tier, 0);
-  assert.equal(top("missions").tab, "missions");
+  // Missions are rows of the Models tab (under the model each is flown on), and RBDs carry them.
+  assert.deepEqual(searchFeatures(features, "missions").results.slice(0, 2).map((r) => r.id).sort(), ["/systems/rbds", "tab:models"]);
   assert.equal(top("condition monitoring").tier, 0);
   assert.equal(top("bom import").path, "/products");
   assert.equal(top("api keys").path, "/settings?tab=api");

@@ -16,10 +16,11 @@ import PredictionPane from "../components/PredictionPane.jsx";
 import RbdPane, { NEW_RBD, NewRbdPane } from "../components/RbdPane.jsx";
 import MissionPane, { NewMissionPane } from "../components/MissionPane.jsx";
 import MissionSide, { phaseRowChange } from "../components/MissionSide.jsx";
-import { MISSION_COLUMNS, MISSION_TREE_HEAD, MissionCell, MissionRollup, missionPhoneRow, useTreeMissions } from "../components/MissionTable.jsx";
+import { MissionModelCell, MissionRollup, missionPhoneRow, useTreeMissions } from "../components/MissionTable.jsx";
 import {
-  NEW_MISSION, changedPhases, graftMissions, isMissionRow, isPhaseRow, missionKey, missionParam, missionRowActions, movePhase, openForMissions,
-  parseMissionParam, phaseKey, positionMissionActions, rollupText as missionRollup, headRollupText as missionHeadRollup, withNewPhase, withoutPhase,
+  NEW_MISSION, changedPhases, isMissionRow, isPhaseRow, missionKey, missionParam, missionRowActions, movePhase, openForMissions,
+  parseMissionParam, phaseKey, positionMissionActions, headRollupText as missionHeadRollup, withNewPhase, withoutPhase,
+  nestMissions, missionCountText, missionsOf, modelMissionActions,
 } from "../explorerMissions.js";
 import { ForecastPane, PackagePane, TASK_COLUMNS, TASK_TREE_HEAD, TaskCell, TaskSide, taskPhoneRow, useTreeTasks } from "../components/TaskTreeTable.jsx";
 import {
@@ -245,15 +246,17 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // tree, just like in the RCM table"): each position's measurement rows hang under
   // it, with the table's columns beside them. `tableOn`: either table.
   const measOn = tab === "measurements";
-  // The Modelling tab (Derryn, 9 Nov 2026): the life models on each position hang under it, the same way.
+  // The Models tab (Derryn, 9 Nov 2026): the models on each position hang under it, the same way.
   const modelsOn = tab === "models";
-  // The Missions tab (Derryn, 9 Nov 2026): each position's RBD missions hang under it, the same way.
-  const missionsOn = tab === "missions";
+  // Its missions (Derryn, 22 Nov 2026: "A mission is a sub item on the tree to covariate and RBD
+  // models"): rows under the model each is flown on, in the same tree-table (nestMissions). It was
+  // a view of its own (?tab=missions, which opens this tab now).
+  const missionsOn = modelsOn;
   // The Maintenance tab's Tasks view (Derryn, 22 Nov 2026): each position's tasks hang under it, the
   // same way, with a roll-up at every level and Forecast… on a position (explorerTasks.js). Its
   // other views (What it needs, Packages, Forecast, Spares) stay in the panel.
   const tasksOn = tab === "maintenance" && !params.get("mview");
-  const tableOn = rcmOn || measOn || modelsOn || missionsOn || tasksOn;
+  const tableOn = rcmOn || measOn || modelsOn || tasksOn;
   // RCM (and the FME(C)A) is by position: on its tab the tree is arranged by positions.
   // One tree on show (a product's design, an item's tree) opens by positions; its
   // Locations (?arrange=locations) are its own layout, never what's remembered here.
@@ -576,7 +579,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     return () => { live = false; };
   }, [modelsOn, !!data, strategyTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const strategies = useMemo(() => strategiesByLink(strategyList || []), [strategyList]);
-  // The Missions tab: every position's RBDs and their missions.
+  // The Models tab's missions: every position's RBDs and their missions.
   const pmissions = useTreeMissions({ on: missionsOn && !!data, within: root });
   // The Maintenance tab: every task in the asset opened, in one read (the whole register open: the
   // asset the row picked is in, its top row; never every asset's).
@@ -591,8 +594,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const ptasks = useTreeTasks({ on: tasksOn && !!data, within: tasksWithin, kind: base?.rows?.get(tasksWithin)?.type || (data?.scope?.kind === "place" ? "loc" : "pos") });
   const whole = useMemo(() => (rcmOn && rcm ? (fmeaOn ? graftFmea(base, rcm) : graftRcm(base, rcm))
     : measOn && meas.data ? graftMeasurements(base, meas.data, data?.today || new Date().toISOString().slice(0, 10), meas.fittedAt)
-      : modelsOn && pmodels.links ? graftModels(base, pmodels.links, strategies)
-        : missionsOn && pmissions.links ? graftMissions(base, pmissions.links, pmissions.hasModel, pmissions.otherModel)
+      : modelsOn && pmodels.links ? (pmissions.links ? nestMissions(graftModels(base, pmodels.links, strategies), pmissions.links, pmissions.hasModel, pmissions.otherModel)
+        : graftModels(base, pmodels.links, strategies))
           : tasksOn && ptasks.tasks ? graftTasks(base, filterTasks(ptasks.tasks, tfilters), { prune: anyFilter(tfilters) })
             : base), [base, rcmOn, fmeaOn, rcm, measOn, meas.data, meas.fittedAt, data?.today, modelsOn, pmodels.links, strategies, missionsOn, pmissions.links, pmissions.hasModel, pmissions.otherModel, tasksOn, ptasks.tasks, tfilters]);
   const linkedEvidence = useMemo(() => hasLinkedEvidence(rcm), [rcm]);
@@ -810,7 +813,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     const more = (p?.kids || []).filter((k) => isModelRow(display.rows.get(k)) && (display.rows.get(k)?.kids || []).length);
     if (more.length) setOpenBy((o) => ({ ...o, positions: new Set([...(o.positions || levelSet(whole, 2)), ...more]) }));
   }, [modelsOn, strategyList, pmodels.links, selected.positions]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Opening the Missions tab opens the position picked, so its missions show.
+  // The missions read (the Models tab): the way down to the position picked opens, and so do its
+  // model rows with missions under them, so its missions show.
   const openedMissions = useRef(false);
   useLayoutEffect(() => {
     if (!missionsOn) {
@@ -819,7 +823,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     }
     if (!pmissions.links || openedMissions.current || !display.rows.has(selected.positions)) return;
     openedMissions.current = true;
-    const more = openForMissions(display, selected.positions);
+    const hosts = (display.rows.get(selected.positions)?.kids || [])
+      .filter((k) => isModelRow(display.rows.get(k)) && (display.rows.get(k)?.kids || []).some((c) => isMissionRow(display.rows.get(c))));
+    const more = [...openForMissions(display, selected.positions), ...hosts];
     setOpenBy((o) => ({ ...o, positions: new Set([...(o.positions || levelSet(whole, 2)), ...more]) }));
   }, [missionsOn, pmissions.links, display, whole, selected.positions]);
   // Opening the Maintenance tab opens the position picked, so its tasks show.
@@ -882,7 +888,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setEditing(null);
     // The Maintenance tab's Tasks view is a tree-table too, by positions or by locations alike.
     const toTasks = t === "maintenance" && !view;
-    const toTable = t === "rcm" || t === "fmea" || t === "measurements" || t === "models" || t === "missions" || toTasks;
+    const toTable = t === "rcm" || t === "fmea" || t === "measurements" || t === "models" || toTasks;
     if (!toTable) {
       // Back to Summary: the rows below positions go; the selection is the position they were on.
       setRcmFocus(null);
@@ -1056,7 +1062,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // address), opened and closed.
   // An operating plan opens the same way from the Measurements and Summary tabs (?plan=).
   const paneQuery = paneFromQuery(params);
-  const paneAt = modelsOn || missionsOn ? paneQuery
+  const paneAt = modelsOn ? paneQuery
     : (measOn || tab === "summary") && paneQuery?.kind === "plan" ? paneQuery
       : tasksOn && paneQuery?.kind === "forecast" ? paneQuery : null;
   const paneRow = paneAt && whole.rows.has(paneAt.id) ? whole.rows.get(paneAt.id) : null;
@@ -1595,6 +1601,13 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const modelGroups = (pid, positionClass) => attachGroups({ positionClass: positionClass || "", hasPrediction: !!predictionOf(pid),
     hasLifeModel: !!lifeModelOf(pmodels.links, pid), builtRbd: !!builtRbdLink(pmodels.links, pid), viewOnly,
     hasInside: insideOf(pid).length > 0 });
+  // A position's Add a mission… on the Models tab, after the attach groups (or, where it can't have
+  // one, the same item off, saying why). A model row's menu has its own (modelMissionActions).
+  const missionGroup = (r) => {
+    if (!pmissions.links || r?.type !== "pos") return [];
+    const add = positionMissionActions(r, { viewOnly })[0];
+    return add ? [{ ...add, label: "Add a mission…" }] : [];
+  };
   const attachAt = (pid, id) => {
     const rr = whole.rows.get(pid);
     const position = { id: pid, name: rr?.ref.name || "(no name)", ...classFields(rr?.ref) };
@@ -1750,18 +1763,20 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     }
   };
   // Add a mission: its name asked first, in the table pane (?mission=new); then one RBD per mission,
-  // built from what's inside the position (placeholders flagged) and named after the mission.
-  const addMission = async (positionId) => {
+  // built from what's inside the position (placeholders flagged) and named after the mission. From a
+  // model row's menu (`link`: that row's), it's flown on that model: a copy of the RBD, or the model
+  // in use as its one block.
+  const addMission = async (positionId, link = null) => {
     if (!(await leavePane())) return;
     const pr = whole.rows.get(positionId);
-    openPane("mission", { id: positionId, name: pr?.ref.name || "(no name)" }, { rbd: NEW_MISSION });
+    openPane("mission", { id: positionId, name: pr?.ref.name || "(no name)" }, { rbd: NEW_MISSION, link });
   };
-  const createMission = async (positionId, positionName, name) => {
+  const createMission = async (positionId, positionName, name, link = null) => {
     try {
-      const made = await createPositionMission(positionId, { name });
+      const made = await createPositionMission(positionId, { name, linkId: link?.id || null });
       const ph = made.placeholders?.length ? ` ${made.placeholders.length} block${made.placeholders.length === 1 ? " is a placeholder" : "s are placeholders"}: give ${made.placeholders.length === 1 ? "it a model" : "them models"} in its RBD.` : "";
       const from = made.built_from === "model" ? `one block, ${positionName}'s own model in use`
-        : made.built_from === "copy" ? `a copy of ${positionName}'s RBD, wired as it is there` : `what's inside ${positionName}`;
+        : made.built_from === "copy" ? `a copy of ${link?.model?.name || `${positionName}'s RBD`}, wired as it is there` : `what's inside ${positionName}`;
       const series = made.series_warning ? " Its blocks are in series: check the wiring in its RBD." : "";
       say(`Added ${made.mission.name} with an RBD of its own, built from ${from}.${ph}${series} Now give it its phases.`);
       pmissions.load();
@@ -1806,6 +1821,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (id === "mission-rbd") return openRbd(position, r.ref.rbd.id);
     if (id === "mission-delete") return removeMission(pid, r.ref.rbd.id, r.ref.mission, !!r.ref.rbd.mission_rbd);
     if (id === "mission-new") return addMission(pid);
+    // A model row's own: the mission flown on that model.
+    if (id === "mission-new-on") return addMission(pid, r.ref.link);
     if (id.startsWith("mission-open-rbd:")) return openRbd(position, id.slice(17));
     if (id === "mission-build-rbd") return buildRbd(position);
     if (id === "mission-redundancy") return openRedundancy(position);
@@ -1896,10 +1913,14 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       // The Measurements tab: a measurement row's own (Open, Record…, Edit…, Move…, Retire…);
       // a position's: its adds (a measuring point, a setting, a consumable, a sensor channel), a
       // line, then the Summary menu, with isolating and pinning.
-      if (modelsOn && isModelRow(r)) return modelRowActions(r, { viewOnly });
-      // The Missions tab: a mission's own (Add a phase, Open, Show the RBD, Delete…), a phase's (Open…,
-      // Move earlier / later, Delete…); a position's: add a mission to its RBD (or build one), then
-      // Rename…, Focus ›, Pin this branch.
+      // A model row's own, Add a mission… first where a mission can be flown on it (an RBD, or the
+      // model in use as the one block).
+      if (modelsOn && isModelRow(r)) {
+        const adds = modelMissionActions(r, display.rows.get(r.ref.position_id), { viewOnly });
+        return [...adds, ...(adds.length ? [{ separator: true }] : []), ...modelRowActions(r, { viewOnly })];
+      }
+      // A mission's own (Add a phase, Open, Show the RBD, Delete…), a phase's (Open…, Move earlier /
+      // later, Delete…), a covariate's or a node status rule's, under its model on the Models tab.
       if (missionsOn && isMissionRow(r)) return missionRowActions(r, { viewOnly });
       // The Maintenance tab: a task's own (Open…); a level's: Add task…, Forecast… (a position on an
       // asset), then Rename…, Focus ›, Pin this branch.
@@ -1908,16 +1929,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         const own = summaryActions(r, { mode, viewOnly }).filter((it) => MODEL_POSITION_ITEMS.includes(it.id));
         return [...maintenanceLead(r, { viewOnly }), ...forecastItem(r, { design: !!designScope }), { separator: true }, ...own, ...isolateItem(r), ...pinItem(r)];
       }
-      if (missionsOn && r.type === "pos") {
-        const own = summaryActions(r, { mode, viewOnly }).filter((it) => MODEL_POSITION_ITEMS.includes(it.id));
-        return [...positionMissionActions(display.rows.get(r.key) || r, { viewOnly }), { separator: true }, ...own, ...isolateItem(r), ...pinItem(r)];
-      }
-      // A position's own on the Modelling tab: attach a model (the heading's "…" isn't there on a phone).
+      // A position's own on the Models tab: attach a model (the heading's "…" isn't there on a phone).
       if (modelsOn && r.type === "pos") {
-        // Two levels (Derryn, 9 Nov 2026): Life model ›, RBD ›, Prediction ›, a line, then only the
-        // position items that make sense here (Rename…, Focus ›, Pin this branch).
+        // Two levels (Derryn, 9 Nov 2026): Life model ›, RBD ›, Prediction ›, Mission ›, a line, then
+        // only the position items that make sense here (Rename…, Focus ›, Pin this branch).
         const own = summaryActions(r, { mode, viewOnly }).filter((it) => MODEL_POSITION_ITEMS.includes(it.id));
-        return [...modelGroups(r.key, classKey(r.ref)), { separator: true }, ...own, ...isolateItem(r), ...pinItem(r)];
+        return [...modelGroups(r.key, classKey(r.ref)), ...missionGroup(display.rows.get(r.key) || r), { separator: true }, ...own, ...isolateItem(r), ...pinItem(r)];
       }
       if (measOn || modelsOn) {
         if (isMeasRow(r)) return measRowActions(r);
@@ -2440,8 +2457,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // The line under the tree's title shows only what needs saying: that the
   // RCM didn't load, or how many rows match the filter. No counts otherwise.
   const statusText = !data ? "" : measOn && !filter ? (meas.error ? `The measurements didn't load: ${meas.error}` : "")
-    : modelsOn && !filter ? (pmodels.error ? `The models didn't load: ${pmodels.error}` : "")
-    : missionsOn && !filter ? (pmissions.error ? `The missions didn't load: ${pmissions.error}` : "")
+    : modelsOn && !filter ? (pmodels.error ? `The models didn't load: ${pmodels.error}`
+      : pmissions.error ? `The missions didn't load: ${pmissions.error}` : "")
     : tasksOn && !filter ? (ptasks.error ? `The tasks didn't load: ${ptasks.error}`
       : ptasks.truncated ? `Showing the first ${ptasks.tasks.length.toLocaleString("en-AU")} of ${ptasks.total.toLocaleString("en-AU")} tasks` : "")
     : rcmOn && !filter
@@ -2517,35 +2534,24 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     phoneRow: (r, isOpen) => measPhoneRow(r, r.type === "pos" ? measRollup(r, isOpen) : ""),
     hint: null, drag: null,
   };
-  // The Modelling tab's table: the tree, then Kind, Source, Headline, Mean life (or B10),
-  // Confidence and Used by; a position's roll-up across them.
+  // The Models tab's table: the tree, then Kind, Source, Headline, Mean life (or B10),
+  // Confidence and Used by; a position's roll-up across them. A mission, its phases and their
+  // covariates and node status rules are rows under the model each is flown on, in the same
+  // columns (MissionModelCell).
+  const modellingRollup = (r, isOpen) => [modelRollup(r, isOpen), missionCountText(r, isOpen)].filter(Boolean).join(" · ");
   const lcols = wideDetails ? [] : MODEL_COLUMNS.filter((c) => modelCols.includes(c.id));
   const lwidths = Object.fromEntries(lcols.map((c) => [c.id, c.width]));
   const modelTable = {
     cols: lcols, widths: lwidths, treeW: shownWidth, total: shownWidth + lcols.reduce((t, c) => t + c.width, 0), expanded: wideDetails,
-    tab: "models", what: "life models", treeHead: MODEL_TREE_HEAD, readOnly: true,
+    tab: "models", what: "models and missions", treeHead: MODEL_TREE_HEAD, readOnly: true,
     canEditName: () => false, onEdit: () => {}, onCommit: () => {}, onCancel: () => {}, onGoto: (key) => reveal(key),
-    renderCell: (r, c) => (isModelRow(r) ? <ModelCell r={r} col={c} /> : null),
-    onOpen: (key) => (isModelRow(display.rows.get(key)) ? openModel(key) : undefined),
-    rollupOf: (r, isOpen) => (r.type === "pos" ? modelRollup(r, isOpen) || (r.lall?.n ? "" : classModelHint(r, pmodels.classModels, { short: true })) : null),
-    phoneRow: (r, isOpen) => modelPhoneRow(r, r.type === "pos" ? modelRollup(r, isOpen) : ""),
-    hint: null, drag: null,
-  };
-  // The Missions tab's table: the tree, then Phases, Length, Completes and RBD.
-  const mscols = wideDetails ? [] : MISSION_COLUMNS;
-  const missionTable = {
-    cols: mscols, widths: Object.fromEntries(mscols.map((c) => [c.id, c.width])), treeW: shownWidth,
-    total: shownWidth + mscols.reduce((t, c) => t + c.width, 0), expanded: wideDetails,
-    tab: "missions", what: "missions", treeHead: MISSION_TREE_HEAD, readOnly: true,
-    canEditName: () => false, onEdit: () => {}, onCommit: () => {}, onCancel: () => {}, onGoto: (key) => reveal(key),
-    renderCell: (r, c) => (isMissionRow(r) ? <MissionCell r={r} col={c} /> : null),
+    renderCell: (r, c) => (isModelRow(r) ? <ModelCell r={r} col={c} /> : isMissionRow(r) ? <MissionModelCell r={r} col={c} /> : null),
     onOpen: (key) => {
       const r = display.rows.get(key);
-      return isMissionRow(r) ? openMissionRow(r) : undefined;
+      return isModelRow(r) ? openModel(key) : isMissionRow(r) ? openMissionRow(r) : undefined;
     },
-    rollupOf: (r, isOpen) => (r.type === "pos"
-      ? <MissionRollup text={missionRollup(r, isOpen)} onAdd={viewOnly ? null : () => addMission(r.key, r.ref.name || "(no name)")} /> : null),
-    phoneRow: (r, isOpen) => missionPhoneRow(r, r.type === "pos" ? missionRollup(r, isOpen) : ""),
+    rollupOf: (r, isOpen) => (r.type === "pos" ? modellingRollup(r, isOpen) || (r.lall?.n ? "" : classModelHint(r, pmodels.classModels, { short: true })) : null),
+    phoneRow: (r, isOpen) => (isMissionRow(r) ? missionPhoneRow(r, "") : modelPhoneRow(r, r.type === "pos" ? modellingRollup(r, isOpen) : "")),
     hint: null, drag: null,
   };
   // The Maintenance tab's table: the tree, then Interval, Next due, Cost each time, Package, From and
@@ -2601,7 +2607,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     phoneRow: (r, isOpen) => taskPhoneRow(r, r.tsum ? taskRollup(r, isOpen) : ""),
     hint: null, drag: null,
   };
-  const table = measOn ? measTable : modelsOn ? modelTable : missionsOn ? missionTable : tasksOn ? taskTable : rcmOn ? {
+  const table = measOn ? measTable : modelsOn ? modelTable : tasksOn ? taskTable : rcmOn ? {
     cols, widths, treeW: shownWidth, total: shownWidth + cols.reduce((t, c) => t + widths[c.id], 0), expanded: wideDetails,
     foldInterval: !fmeaOn && !shownCols.includes("interval"),
     intervalW: rprefs.widths.interval ?? COLUMN.interval.width,
@@ -2702,6 +2708,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     ...modelGroups(modelPosition.id, classKey(posRow.ref)).map((g) => ({
       ...g, items: g.items.map((it) => ({ ...it, title: it.reason, onSelect: () => attachAt(modelPosition.id, it.id) })),
     })),
+    ...missionGroup(display.rows.get(posRow.key) || posRow).map((it) => ({
+      ...it, title: it.reason || it.title, onSelect: () => missionAction(display.rows.get(posRow.key) || posRow, it.id) })),
     { separator: true },
     !phone && { id: "l-columns", label: "Columns…", onSelect: () => setColsOpen(true) },
     ...(isModelRow(focusRow) && panel ? tabMenu || [] : []),
@@ -2710,11 +2718,6 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     <ColumnChooser open cols={modelCols} usual={MODEL_USUAL} columns={MODEL_COLUMNS}
                    onCols={(next) => setModelCols(next)} onClose={() => setColsOpen(false)} returnFocus={moreButton} />
   );
-  // The Missions tab's "…": add a mission to the position's RBD (or build one), open the RBD.
-  const missionMenu = missionsOn && posRow?.type === "pos"
-    ? positionMissionActions(display.rows.get(posRow.key) || posRow, { viewOnly }).map((it) => ({
-      ...it, title: it.reason || it.title, onSelect: () => missionAction(display.rows.get(posRow.key) || posRow, it.id) }))
-    : [];
   // The Maintenance tab's "…": Add task…, Forecast… (a position on an asset), Trade rates….
   const taskHolder = tasksOn && posRow && (posRow.type === "pos" || posRow.type === "loc") ? (display.rows.get(posRow.key) || posRow) : null;
   const taskMenu = taskHolder ? [
@@ -2729,20 +2732,19 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                 headingRef={headingRef} fullScreenButton={fullButton} message={msg} heading={heading}
                 meta={ptasks.tasks ? <span className="tt-rollup mt-rollup">{taskRollup(taskHolder, true)}</span> : null}
                 menu={taskMenu} />
-  ) : missionsOn ? posRow && posRow.type === "pos" && (
-    <SlimHeader display={whole} row={posRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
-                headingRef={headingRef} fullScreenButton={fullButton} message={msg} heading={heading}
-                meta={pmissions.links ? (
-                  <span className="tt-rollup mt-rollup">
-                    <MissionRollup text={missionHeadRollup(display.rows.get(posRow.key) || posRow)}
-                                   onAdd={viewOnly ? null : () => addMission(posRow.key, posRow.ref.name || "(no name)")} />
-                  </span>
-                ) : null}
-                menu={missionMenu} />
   ) : modelsOn ? posRow && posRow.type === "pos" && (
     <SlimHeader display={whole} row={posRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
                 headingRef={headingRef} fullScreenButton={fullButton} message={msg} heading={heading}
-                meta={pmodels.links ? <span className="tt-rollup mt-rollup">{modelRollup(posRow, false) || classModelHint(display.rows.get(posRow.key) || posRow, pmodels.classModels) || "No models here yet"}</span> : null}
+                meta={pmodels.links ? (
+                  <span className="tt-rollup mt-rollup">
+                    {modelRollup(posRow, false) || classModelHint(display.rows.get(posRow.key) || posRow, pmodels.classModels) || "No models here yet"}
+                    {/* The missions here and below, and how many are worked out (none: nothing said). */}
+                    {pmissions.links && (display.rows.get(posRow.key)?.mall?.missions || 0) > 0 && (
+                      <>{" · "}<MissionRollup text={missionHeadRollup(display.rows.get(posRow.key))}
+                                              onAdd={viewOnly ? null : () => addMission(posRow.key)} /></>
+                    )}
+                  </span>
+                ) : null}
                 menu={modelMenu} popover={modelColumns} />
   ) : measOn ? posRow && posRow.type === "pos" && (
     <SlimHeader display={whole} row={posRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
@@ -2917,7 +2919,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                  onClose={closeDetails} headingRef={detailsHeading} onMenu={setTabMenu} onAction={modelAction} />
     </div>
   ) : null;
-  // The Missions tab with a mission, phase, covariate or rule row picked: its details beside the
+  // The Models tab with a mission, phase, covariate or rule row picked: its details beside the
   // table (a sheet on a phone).
   const missionRow = missionsOn && panel && isMissionRow(focusRow) ? focusRow : null;
   const missionSide = missionRow ? (
@@ -3000,10 +3002,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   ) : paneKind === "mission" && paneAt.mission === NEW_MISSION ? (
     <div className="rw tt-side">
       <NewMissionPane position={panePosition} phone={phone} headingRef={paneHeading}
-                      taken={(display.rows.get(panePosition.id)?.kids || []).map((k) => display.rows.get(k))
-                        .filter((x) => x?.type === "mission").map((x) => x.ref.mission?.name || "")}
+                      taken={missionsOf(display.rows, panePosition.id).map((x) => x.ref.mission?.name || "")}
+                      on={seed?.link?.model?.name || null}
                       onClose={() => closePane()}
-                      onCreate={(name) => createMission(panePosition.id, panePosition.name, name)} />
+                      onCreate={(name) => createMission(panePosition.id, panePosition.name, name, seed?.link || null)} />
     </div>
   ) : paneKind === "mission" && parseMissionParam(paneAt.mission) ? (
     <div className="rw tt-side">
@@ -3099,8 +3101,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                    readOnly={viewOnly || null} onClose={() => setSheet(null)}
                    onChanged={(text) => { say(text, "ok", { fade: true }); load(); }} />
   ) : null;
-  const side = mergeSide && !phone ? mergeSide : sheetSide && !phone ? sheetSide : rcmOn ? rcmSide : measOn ? paneSide || measSide : modelsOn ? paneSide || modelSide
-    : missionsOn ? paneSide || missionSide : tasksOn ? pkgSide || paneSide || taskSide : paneSide || (phone ? null : summary);
+  const side = mergeSide && !phone ? mergeSide : sheetSide && !phone ? sheetSide : rcmOn ? rcmSide : measOn ? paneSide || measSide : modelsOn ? paneSide || modelSide || missionSide
+    : tasksOn ? pkgSide || paneSide || taskSide : paneSide || (phone ? null : summary);
 
   // The tree's quiet last row: a new position (or location) at the top level.
   // Inside a pinned branch, or one tree on show (a product's structure, an
@@ -3216,15 +3218,14 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         phoneTabs={phoneTabs}
         // The row picked stays where it is on screen when the tab changes, and
         // when the RCM's rows first arrive.
-        layoutKey={`${tab}:${rcmOn && rcm ? "rcm" : measOn && meas.data ? "meas" : modelsOn && pmodels.links ? "models" : missionsOn && pmissions.links ? "missions" : tasksOn && ptasks.tasks ? "tasks" : ""}`}
+        layoutKey={`${tab}:${rcmOn && rcm ? "rcm" : measOn && meas.data ? "meas" : modelsOn && pmodels.links ? "models" : tasksOn && ptasks.tasks ? "tasks" : ""}`}
         anchorKey={selPos}
         branch={pinKey ? {
           key: pinKey, name: whole.rows.get(pinKey).ref.name || "(no name)", path: pinPath(whole, pinKey), onUnpin: () => unpin(),
         } : null}
         branchNote={pinNote}
         arrangeLocked={measOn ? `Measurements hang under their positions, so ${tabPlace("measurements")} shows the positions tree`
-          : modelsOn ? `Models hang under their positions, so ${tabPlace("models")} shows the positions tree`
-          : missionsOn ? `Missions belong to positions, so ${tabPlace("missions")} shows the positions tree`
+          : modelsOn ? `Models and their missions hang under their positions, so ${tabPlace("models")} shows the positions tree`
           : rcmOn ? `${what} is by position, so the ${what} tab shows the positions tree` : null}
       />
       {phone && (mergeSide || sheetSide || (paneSide ? null : summary))}

@@ -534,7 +534,7 @@ user says so, maintenance proposals.accept (or reject, with a note). Never accep
 4. maintenance get.task: why a task is what it is (where it came from, every change, the proposals behind \
 them)."""),
     "modelling": ("Life models on positions: what one means, attaching, how they feed the RCM.", """\
-A life model on a position (the Explorer's Modelling tab) says how that functional location fails over time: a \
+A life model on a position (the Explorer's Models tab) says how that functional location fails over time: a \
 Weibull fitted to its own failure history, its position class's pooled model, or any saved model (non-repairable, \
 repairable, degradation, accelerated life, condition and life). It's a link: the model stays in Models, so a \
 refit or rename there shows here, and one model can sit on many positions. A position of a product's design \

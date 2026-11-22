@@ -1186,7 +1186,7 @@ def link_from_class(m, db, owners, hidden, position_id: str, failure_mode_ids=No
         if not m._class_key(p):
             raise sv.Invalid(f"{p['name']} has no position class: set one, or assign a saved model.")
         raise sv.Invalid(f"The class {cm_label(m, p)} has no fitted life model yet. Fit one from its pooled history: "
-                         "on the Modelling tab, choose Fit a life model.",
+                         "on the Models tab, choose Fit a life model.",
                          agent="Fit it with maintenance reliability.fit_class_model.")
     doc = fetcher(db, owners, hidden)("model", cm["model_id"])
     return m.link_position_model(position_id, "model", cm["model_id"], "class", failure_mode_ids,
@@ -1964,7 +1964,7 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
         m.use_position_model(position_id, link["id"])
     if nested:
         built["notes"].append(f"Placeholders inside sub-systems: {', '.join(nested[:8])}"
-                              f"{' …' if len(nested) > 8 else ''}. Give each a model in Models › Life models and rebuild.")
+                              f"{' …' if len(nested) > 8 else ''}. Give each a model on its Models tab and rebuild.")
     return {**link, "notes": built["notes"], "placeholders": built["placeholders"] + nested, "ask": built["ask"]}
 
 
@@ -1996,8 +1996,8 @@ def new_rbd(m, db, owners, hidden, position_id: str, owner_id: str, repairable: 
         if fields is None:
             fields = {"model": dict(rbd_derive.PLACEHOLDER), "data": {"model_source": "A placeholder: no model in use"}}
             placeholders.append(p["name"])
-            notes.append(f"{p['name']} has no life model in use: a placeholder (flagged) stands in. Give it one in "
-                         "Models › Life models, or set the block's model in the builder.")
+            notes.append(f"{p['name']} has no life model in use: a placeholder (flagged) stands in. Give it one on its "
+                         "Models tab, or set the block's model in the builder.")
         bid = rbd_derive._bid(p["id"])
         nodes.append({"id": bid, "type": "component", "label": p["name"], **fields})
         edges = [{"source": "in", "target": bid}, {"source": bid, "target": "out"}]
@@ -2056,7 +2056,8 @@ def _mission_copy(graph: dict) -> tuple[dict, bool]:
     return out, repairable
 
 
-def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, name: str | None = None) -> dict:
+def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, name: str | None = None,
+                      link_id: str | None = None) -> dict:
     """A new mission on a position, with an RBD of its own (one RBD per mission). It starts from a
     copy of the position's own RBD where it has one (wired as drawn there: parallel trains, standby
     and k-of-n stay as they are; a repairable one loses only its repairs and planned work), else is
@@ -2065,7 +2066,10 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
     mission then says so until its RBD is rewired), else is one block, its own model in use
     (``built_from``: copy, tree or model).
     Saved once as "<position> — <mission>", marked ``mission_of`` the position (not linked as one
-    of its models). {rbd: {id, name}, mission: summary, notes, placeholders}."""
+    of its models). ``link_id``: one of the position's model rows to fly it on (Add a mission on a
+    model's row): an RBD is copied, the model in use is the one block. The mission remembers it
+    (``mission_of.on_link``), so it shows under that model. {rbd: {id, name}, mission: summary,
+    notes, placeholders}."""
     from backend.services import rbd_missions
     from backend.services import rbds as rbds_service
     from backend.services.rbd_graph import GraphError, normalize_graph
@@ -2090,7 +2094,25 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
     kids = [c for c in m.s.inn(m.org, position_id, "PART_OF") if c["label"] == "Position" and not c.get("retired")]
     notes, placeholders, source = [], [], "tree"
     owner = {"position_id": position_id}
-    src = _mission_source_rbd(m, fetcher(db, owners, hidden), position_id)
+    on = None
+    if link_id:
+        on = next((x for x in m.position_models(position_id) if x.get("id") == link_id), None)
+        if on is None:
+            raise sv.Invalid("That model isn't on this position any more: read the models again.")
+        if on.get("model_type") == "rbd":
+            src = fetcher(db, owners, hidden)("rbd", on.get("model_id"))
+            if src is None:
+                raise sv.Invalid("That RBD has gone or isn't shared with you, so a mission can't start from it.")
+            if (src.graph or {}).get("network"):
+                raise sv.Invalid(f"{src.name} is a network, which a mission isn't flown on.")
+        elif not on.get("in_use"):
+            raise sv.Invalid("A mission's one block is the position's model in use: make this model the one in use first.")
+        else:
+            src = None
+            kids = []  # flown on the position's own model: one block, whatever is inside it
+        owner["on_link"] = on["id"]
+    else:
+        src = _mission_source_rbd(m, fetcher(db, owners, hidden), position_id)
     if src is not None:
         graph, was_repairable = _mission_copy(src.graph or {})
         notes = [f"Started from a copy of {src.name}, wired as it is there"
@@ -2107,6 +2129,7 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
         source = "model"
         graph, note = _one_block_graph(m, db, owners, hidden, p)
         notes = [note] if note else []
+    owner["built_from"] = source
     graph = {**graph, "mission_of": owner, "mission_name": name}
     try:
         graph = normalize_graph(graph, resolve_saved_model=lambda mid: fetcher(db, owners, hidden)("model", mid))
@@ -2135,7 +2158,7 @@ def _one_block_graph(m, db, owners, hidden, p: dict) -> tuple[dict, str | None]:
                          "non-repairable, or give the position a life model.")
     if fields is None:
         raise sv.Invalid(note or f"{p['name']} has nothing inside and no model in use to build the mission's RBD "
-                                 "from. Give it a life model in Models › Life models, or add the positions inside it.")
+                                 "from. Give it a life model on its Models tab, or add the positions inside it.")
     bid = rbd_derive._bid(p["id"])
     graph = {"unit": unit, "nodes": [{"id": "in", "type": "input"}, {"id": "out", "type": "output"},
                                      {"id": bid, "type": "component", "label": p["name"], **fields}],
@@ -2153,7 +2176,7 @@ def _one_block_graph(m, db, owners, hidden, p: dict) -> tuple[dict, str | None]:
 def blockable_positions(m, db, owners, hidden, links: list) -> list[str]:
     """Of the positions in ``links`` (model rows, as all_position_models gives them), those whose
     model in use a mission's one-block RBD can take (a life distribution or a covariate model): the
-    Missions tab offers Add a mission on such a leaf."""
+    Models tab offers Add a mission on such a leaf."""
     from backend.maintenance import covariate_positions
 
     fetch = fetcher(db, owners, hidden)

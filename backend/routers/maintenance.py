@@ -1386,7 +1386,7 @@ def add_position_mission(position_id: str, body: dict = Body(default={}), sessio
     """A new mission on a position with an RBD of its own (one RBD per mission): built from the
     positions inside (placeholders flagged), or a copy of the position's non-repairable RBD where
     it has nothing inside; saved as "<position> — <mission>". name: the mission's (default
-    "Mission N"). Its phases are then set through /api/rbds/{rbd id}/missions/mission."""
+    "Mission N"); link_id: one of its model rows to fly it on (Add a mission on a model's row). Its phases are then set through /api/rbds/{rbd id}/missions/mission."""
     from backend.maintenance import position_models as pm
     from backend.services import billing as billing_service
 
@@ -1396,7 +1396,10 @@ def add_position_mission(position_id: str, body: dict = Body(default={}), sessio
         return JSONResponse(status_code=402, content={
             "detail": billing_service.cap_message(session, ctx.uid, "rbds"), "code": "cap", "upgrade": True})
     name = body.get("name") if isinstance(body, dict) else None
-    return _run(pm.build_mission_rbd, m, session, ctx.read_owners, ctx.hidden, position_id, ctx.write_owner, name)
+    # link_id: the position's model row to fly it on (an RBD copied, or its model in use as one block).
+    link_id = body.get("link_id") if isinstance(body, dict) and isinstance(body.get("link_id"), str) else None
+    return _run(pm.build_mission_rbd, m, session, ctx.read_owners, ctx.hidden, position_id, ctx.write_owner, name,
+                link_id)
 
 
 @router.post("/rbd-tree-plan")

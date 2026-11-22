@@ -6,11 +6,10 @@ import {
   placeholderTitle, placeholderTone, ruleText,
 } from "../explorerMissions.js";
 
-// The Explorer's Missions tab is the tree with each position's missions in it
-// (explorerMissions.js), like the Modelling tab: the read of every position's RBD missions, each
-// mission row's cells and its phone line. A mission opens in the table area (MissionPane.jsx).
-
-export { MISSION_COLUMNS, MISSION_TREE_HEAD } from "../explorerMissions.js";
+// The Explorer's Models tab has each position's missions in its tree, as rows under the model each
+// is flown on (explorerMissions.js nestMissions): the read of every position's RBD missions, each
+// mission row's cells in the Models tab's columns and its phone line. A mission opens in the table
+// area (MissionPane.jsx).
 
 // Every position's RBDs and their missions, read when the tab is on (and again on `load`). Two
 // reads can be out at once (a mission saved, then its result worked out): the one asked for last
@@ -94,6 +93,35 @@ export function MissionCell({ r, col }) {
     default:
       return null;
   }
+}
+
+// What a mission row is, in the Kind column: "Mission", "Phase", "Covariate", "Node status".
+export function missionKindText(r) {
+  if (isCovRow(r)) return "Covariate";
+  if (isRuleRow(r)) return "Node status";
+  if (isPhaseRow(r)) return "Phase";
+  return "Mission";
+}
+
+// One cell of a mission, phase, covariate or node status row in the Models tab's columns (one
+// tree-table, Derryn 22 Nov 2026): Kind says which; Source what it's made of (a mission's phases, a
+// phase's place, a covariate's value, a block's state); Headline its numbers (the chance it
+// completes, then its length); Used by the RBD it's flown on (a covariate: the blocks it feeds).
+// The life-model columns (Mean life, B10, Confidence) have nothing for a mission.
+const AS_MISSION = { source: "phases", used: "rbd" };
+export function MissionModelCell({ r, col }) {
+  if (col.id === "kind") return <span className="ml-kind">{missionKindText(r)}</span>;
+  if (col.id === "numbers") {
+    if (isCovRow(r) || isRuleRow(r)) return null;
+    // Not worked out yet (a mission never calculated, a phase with no result): its length alone.
+    const worked = isPhaseRow(r) ? r.ref.result?.waiting || r.ref.result?.completes != null : !!r.ref.mission.result;
+    const chance = worked ? MissionCell({ r, col: { id: "reliability" } }) : null;
+    const length = isPhaseRow(r) ? phaseLengthText(r.ref.phase, r.ref.mission.unit)
+      : r.ref.mission.phases ? lengthText(r.ref.mission.duration, r.ref.mission.unit) : "";
+    if (!chance && !length) return <span className="rw-blank" title="Open it and Calculate">—</span>;
+    return <span className="ml-num">{chance}{chance && length ? " · " : null}{length}</span>;
+  }
+  return AS_MISSION[col.id] ? <MissionCell r={r} col={{ id: AS_MISSION[col.id] }} /> : null;
 }
 
 // A row's second line on a phone.

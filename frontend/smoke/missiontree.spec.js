@@ -34,7 +34,7 @@ test("mission tree: details for missions and phases; covariate and node status r
   expect(put.ok()).toBeTruthy();
 
   await page.setViewportSize({ width: 1440, height: 900 });
-  await open(page, `/asset-register/explorer?arrange=positions&root=${drone.id}&sel=${drone.id}&tab=missions`);
+  await open(page, `/asset-register/explorer?arrange=positions&root=${drone.id}&sel=${drone.id}&tab=models`);
   const mission = nameRow(page, `Inspection ${tag}`);
   await expect(mission).toBeVisible();
   await expect(nameRow(page, `Other asset ${tag}`)).toHaveCount(0);
@@ -120,7 +120,7 @@ test("mission tree: details for missions and phases; covariate and node status r
 
   // 400 px: the tree, then a phase's details as a sheet; nothing scrolls sideways.
   await page.setViewportSize({ width: 400, height: 860 });
-  await open(page, `/asset-register/explorer?arrange=positions&root=${drone.id}&sel=${drone.id}&tab=missions`);
+  await open(page, `/asset-register/explorer?arrange=positions&root=${drone.id}&sel=${drone.id}&tab=models`);
   await nameRow(page, `Inspection ${tag}`).locator(".tp-chev").click();
   await expect.poll(() => sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "mission-tree-400");
