@@ -77,6 +77,13 @@ test("a library record as the prior", async () => {
   assert.ok(!showsTrust("library"));
   assert.match(libraryPriorWords("exponential"), /conjugate/);
   assert.match(libraryPriorWords("weibull"), /prior on the mean life/);
+  // A rate record says the life it implies, so its scale can be checked; a per-demand one what it needs.
+  const rate = { kind: "rate", mean: 3.47e-8, units: "per hour (calendar)", distribution: "gamma(alpha=0.798, beta=23000000.0)" };
+  assert.match(libraryPriorWords("exponential", rate), /3\.47e-8 per hour \(calendar\), is a mean life of about 2\.88e7 hours \(3,290 years\)/);
+  assert.match(libraryPriorWords("exponential", rate), /conjugate/);
+  const demand = { kind: "per_demand", mean: 3.43e-4, units: "per demand", distribution: "beta(alpha=2.48, beta=7220.0)" };
+  assert.match(libraryPriorWords("weibull", demand), /demands a year/);
+  assert.doesNotMatch(libraryPriorWords("exponential", demand), /conjugate/);
 });
 
 test("refusalWords names the distribution as the app does; dataOptions counts positions in the singular", () => {

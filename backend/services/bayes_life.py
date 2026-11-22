@@ -154,6 +154,44 @@ def baseline_from(db, owners, hidden, spec: dict) -> dict:
             "distribution": dist, "unit": spec.get("unit") or "", "params": {n: given[n] for n in names}}
 
 
+def about(value: float, low: float, high: float, positive: bool = True):
+    """"About ``value``, surprised under ``low`` or over ``high``" as a prior whose middle (median)
+    is ``value``, the number the person said. SurPyval's ``prior.around`` puts the middle at the
+    interval's centre (the geometric middle for a positive value), so "about 6,000, between 4,000
+    and 8,000" would sit at 5,657. A normal belief on the value's scale is even about its middle,
+    so the 90% range is taken as wide as the wider side: both surprise values stay inside, and it is
+    never tighter than said. Returns (the prior, (low, high) of its 90% range as built)."""
+    v, lo, hi = float(value), float(low), float(high)
+    if positive:
+        k = max(hi / v, v / lo)
+        built = (v / k, v * k)
+    else:
+        d = max(hi - v, v - lo)
+        built = (v - d, v + d)
+    said = f"about {num(v)} (90% between {num(built[0])} and {num(built[1])})"
+    return sp.prior.NormalOnScale(built[0], built[1], 0.9, said=said, stated=v), built
+
+
+def widened(low: float, high: float, built: tuple[float, float]) -> bool:
+    """Whether the range built (``about``) is wider than the one said, beyond rounding."""
+    return abs(built[0] - low) > 1e-3 * abs(low or 1) or abs(built[1] - high) > 1e-3 * abs(high or 1)
+
+
+def belief_note(base: dict) -> str:
+    """Words for a B10 belief whose range had to be widened to keep the stated B10 its middle."""
+    if base.get("source") != "belief":
+        return ""
+    v, lo, hi = base["belief"]["b10"]
+    _, built = about(v, lo, hi)
+    if not widened(lo, hi, built):
+        return ""
+    u = _unit_word(base.get("unit"))
+    us = f" {u}" if u else ""
+    return (f"The prior's B10 is centred on your {num(v)}{us}. A belief like this is even on a log scale, so its "
+            f"90% range is {num(built[0])} to {num(built[1])}{us}: widened on one side so both your surprise values "
+            "are inside it.")
+
+
 def priors_for(base: dict, trust: str):
     """The prior from the baseline and the trust (TRUST)."""
     if trust not in TRUST:
@@ -163,7 +201,8 @@ def priors_for(base: dict, trust: str):
     if base["source"] == "belief":
         v, lo, hi = base["belief"]["b10"]
         slo, shi = base["belief"]["shape"]
-        return sp.prior.on_quantities(sp.Weibull, B10=sp.prior.around(v, between=(lo, hi)),
+        # Centred on the B10 said, not the middle of the surprise values (``about``).
+        return sp.prior.on_quantities(sp.Weibull, B10=about(v, lo, hi)[0],
                                       beta=sp.prior.between(slo, shi))
     if base.get("live") is not None:
         try:
