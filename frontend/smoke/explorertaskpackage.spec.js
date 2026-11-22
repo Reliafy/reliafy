@@ -52,7 +52,7 @@ test("Maintenance tasks: filter a column, select two, Package…, they show as P
   await expect(page.locator(".tp-row.picked")).toHaveCount(2);
   await nameRow(page, `Grease the bearings ${tag}`).locator(".tp-nm").click({ button: "right" });
   const menu = page.getByRole("menu");
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Package…", "Add to package…", "Clear the selection"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Optimise…", "Package…", "Add to package…", "Clear the selection"]);
   await menu.getByRole("menuitem", { name: "Package…", exact: true }).click();
   const pane = page.locator("section.table-pane");
   await expect(pane).toContainText("2 tasks");
@@ -74,7 +74,8 @@ test("Maintenance tasks: filter a column, select two, Package…, they show as P
   await nameRow(page, `Megger the windings ${tag}`).locator(".tp-nm").click({ button: "right" });
   await page.getByRole("menu").getByRole("menuitem", { name: "Add to package…" }).click();
   await expect(pane.getByRole("radio", { name: /Monthly service/ })).toBeChecked();
-  await expect(pane.getByRole("combobox", { name: /on which visits/ })).toHaveValue("3");
+  // The shared Select (a combobox button, not a native select): its text is the choice.
+  await expect(pane.getByRole("combobox", { name: /on which visits/ })).toHaveText(/Every 3rd visit/);
   await pane.getByRole("button", { name: "Add", exact: true }).click();
   await expect(nameRow(page, `Megger the windings ${tag}`).locator(".mt-pkg-link")).toHaveText("Monthly service");
 

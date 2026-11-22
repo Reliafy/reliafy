@@ -37,6 +37,9 @@ test("a repairable block follows a covariate schedule", async ({ page, request, 
     await dialog.getByRole("button", { name: "Apply" }).click();
     await expect(dialog).toHaveCount(0);
     await expect(page.locator(".rbd-cov-bar")).toContainText("load_pct follows a schedule");
+    // The schedule is part of the diagram, so it autosaves: wait for that before the next
+    // page load (with a save still waiting, leaving asks first and the load is held back).
+    await expect(page.locator(".rbd-save-status")).toContainText("Saved", { timeout: 15_000 });
   }
   await expectHealthy(page, problems, { label: "repairable covariate schedule" });
   await request.delete(`/api/rbds/${id}`);
