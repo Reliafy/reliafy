@@ -78,10 +78,10 @@ test("Maintenance tasks: filter a column, select two, Package…, they show as P
   await pane.getByRole("button", { name: "Add", exact: true }).click();
   await expect(nameRow(page, `Megger the windings ${tag}`).locator(".mt-pkg-link")).toHaveText("Monthly service");
 
-  // The Packaged link opens the package in Maintenance › Packages.
+  // The Packaged link opens the package beside the table, its row (where its tasks meet) picked.
   await nameRow(page, `Check the seal ${tag}`).locator(".mt-pkg-link").click();
-  await expect.poll(() => new URL(page.url()).searchParams.get("mview")).toBe("packages");
-  await expect.poll(() => new URL(page.url()).searchParams.get("package")).not.toBe(null);
+  await expect.poll(() => new URL(page.url()).searchParams.get("mpkg")).not.toBe(null);
+  await expect(page.getByRole("complementary", { name: "Monthly service" })).toBeVisible();
   await expectHealthy(page, problems, { label: "tasks packaging" });
 });
 

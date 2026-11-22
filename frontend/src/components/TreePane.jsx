@@ -170,6 +170,30 @@ export function RowIcon({ r }) {
       </svg>
     );
   }
+  // A work package (tasks done together on one visit): a box; one of its tasks listed under it is
+  // the task's spanner. A Forecast row: rising bars; its lines a quiet dot.
+  if (r.type === "mpkg") {
+    return (
+      <svg className="tp-ic tp-ic-meas" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true">
+        <path d="M2.5 5.2 8 2.5l5.5 2.7v5.6L8 13.5l-5.5-2.7z" strokeWidth="1.3" strokeLinejoin="round" /><path d="M2.5 5.2 8 8l5.5-2.8M8 8v5.5" strokeWidth="1.2" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (r.type === "mpref") return <RowIcon r={{ ...r, type: "mtask" }} />;
+  if (r.type === "mfc") {
+    return (
+      <svg className="tp-ic tp-ic-meas" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true">
+        <path d="M3.5 13V9.5M8 13V6.5M12.5 13V3.5M2 13.5h12" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  if (r.type === "mfcl") {
+    return (
+      <svg className="tp-ic tp-ic-meas" viewBox="0 0 16 16" width="14" height="14" fill="currentColor" stroke="none" aria-hidden="true">
+        <circle cx="8" cy="8" r="1.6" />
+      </svg>
+    );
+  }
   if (r.type === "pmodel") {
     return (
       <svg className="tp-ic tp-ic-meas" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true">
@@ -348,6 +372,8 @@ function TreeBit({ r, v, open, phone, query, rcm, table, pinRoot, onGoto, info =
         {r.ref?.via && <span className="sr-only"> (not at this place)</span>}
       </span>
       {r.type === "cause" && <span className="tp-on" title={causeTip(r)}>on {r.ref.on}</span>}
+      {/* A work package's task, listed under it: where the task is (it shows there too). */}
+      {r.type === "mpref" && r.ref.on && <span className="tp-on" title={`${label(r)} is on ${r.ref.on}`}>on {r.ref.on}</span>}
       {/* In a redundancy set (Redundancy inside… on its parent): "1 of 2", or "Standby set". */}
       {r.type === "pos" && r.ref?.redundancy && (() => {
         const b = redundancyBadge(r.ref.redundancy);
@@ -450,7 +476,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
     // details across the table; not on a data cell (an editable one's own
     // double-click edits it in place), a control or the chevron.
     // A measurement row (the Measurements tab) spreads its details the same way.
-    onDoubleClick: table && !phone && table.onOpen && (opensPanel(r) || r.type === "meas" || r.type === "pmodel" || r.type === "mission" || r.type === "phase" || r.type === "mcov" || r.type === "mrule" || r.type === "mtask") ? (e) => {
+    onDoubleClick: table && !phone && table.onOpen && (opensPanel(r) || r.type === "meas" || r.type === "pmodel" || r.type === "mission" || r.type === "phase" || r.type === "mcov" || r.type === "mrule" || r.type === "mtask" || r.type === "mpkg") ? (e) => {
       if (e.target.closest("input, select, .sel-trigger, .sel-menu, textarea, a, button, .tp-chev, .rw-c, [contenteditable='true']")) return;
       e.preventDefault();
       window.getSelection?.()?.removeAllRanges?.();

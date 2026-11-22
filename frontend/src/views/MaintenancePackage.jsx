@@ -249,7 +249,7 @@ function Tasks({ pkg, workOrders = true }) {
   return (
     <section className="card">
       <div className="maint-head"><h2>Tasks ({tasks.length})</h2></div>
-      {tasks.length === 0 ? <p className="lib-date">No tasks in it yet. Add them from the Explorer&apos;s {tabPlace("lsa")}.</p> : (
+      {tasks.length === 0 ? <p className="lib-date">No tasks in it yet. Add them from the Explorer&apos;s {tabPlace("maintenance")} tab.</p> : (
         <div className="maint-scroll"><table className="lib-table">
           <thead><tr><th>Task</th><th>On</th><th>On which visits</th><th>Interval</th><th>{planWords(workOrders).next}</th><th>Last done</th></tr></thead>
           <tbody>

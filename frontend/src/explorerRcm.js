@@ -309,6 +309,8 @@ export function positionOf(r) {
   if (r.type === "mission" || r.type === "phase" || r.type === "mcov" || r.type === "mrule") return r.ref.position_id;
   // A task row (the Maintenance tab): the position (or place) it's on.
   if (r.type === "mtask") return r.ref.position_id;
+  // A work package (the Maintenance tab), a task listed under it and a Forecast row: where it sits.
+  if (r.type === "mpkg" || r.type === "mpref" || r.type === "mfc" || r.type === "mfcl") return r.ref.position_id;
   return isRcmRow(r) ? r.ref.position_id : null;
 }
 

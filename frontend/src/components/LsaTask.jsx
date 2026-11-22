@@ -74,7 +74,7 @@ const TYPING_PAUSE = 1200;
 // Sections saved together (the Labour section holds the elapsed time too).
 const GROUP = { labour: ["labour", "duration_hours"], duration_hours: ["labour", "duration_hours"] };
 
-export default function LsaTask({ taskId, onBack, onChanged }) {
+export default function LsaTask({ taskId, onBack, onChanged, backLabel = "← All tasks here" }) {
   const location = useLocation();
   const [state, setState] = useState({ id: null, data: null, error: null });
   const [draft, setDraft] = useState(null);
@@ -160,7 +160,7 @@ export default function LsaTask({ taskId, onBack, onChanged }) {
     listMaintenanceParts().then((d) => setParts(d.parts || [])).catch(() => setParts([]));
   };
 
-  const back = <button type="button" className="link pk-back" onClick={onBack}>← All tasks here</button>;
+  const back = onBack ? <button type="button" className="link pk-back" onClick={onBack}>{backLabel}</button> : null;
   if (state.error && state.id === taskId) return <div>{back}<LoadFailed what="Couldn't load the task." error={state.error} /></div>;
   const data = state.id === taskId ? state.data : null;
   if (!data || !draft) return <div>{back}<Loading /></div>;

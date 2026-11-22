@@ -1347,8 +1347,8 @@ function TaskLogistics({ taskId, positionId }) {
               : parts.length ? parts.join(" · ") : "No labour, tools or method set yet."}
           </span>
           {" · "}
-          <Link to={explorerHere(location.pathname, location.search, { sel: positionId, tab: "lsa", task: taskId })}
-                title="How it's done: its instructions, labour, tools, spares and method">Open in LSA</Link>
+          <Link to={explorerHere(location.pathname, location.search, { sel: positionId, tab: "maintenance", mtask: taskId, needs: "1" })}
+                title="How it's done: its instructions, labour, tools, spares and method (its LSA), on the Maintenance tab">What it needs</Link>
         </p>
       </div>
       {/* What it costs each time (Nov 2026): the task's own figure on its position, typed or from
