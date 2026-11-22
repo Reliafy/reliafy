@@ -69,7 +69,7 @@ its strength and its cost.
 
 If you're willing to assume the Weibull shape, each unit can be tested for
 **longer than the requirement**, and one long survivor counts for more than one
-short one (the extended success run, or Weibayes). Choose **Lower bound 1.88
+short one (the extended success run, or Weibayes). Choose **Lower bound 1.96
 (conservative)** for β, set the **Test length per unit** to **2** (× the life),
 and compute:
 
@@ -84,7 +84,7 @@ so.
 
 A zero-failure test sized only for the consumer's risk has a catch: a design
 that is genuinely good can still fail it by bad luck. The result says how
-likely that is for a design exactly at the target (it passes 9.8% of the time),
+likely that is for a design exactly at the target (it passes 8.5% of the time),
 but not for a better one.
 
 Fill in **Design's true reliability** (the reliability you expect the design
@@ -92,12 +92,12 @@ really has at 500 hours, say **97%**) and a **Producer's risk** (the chance you
 accept of failing that good design, say **20%**). The plan now chooses the
 failures allowed as well:
 
-> Test **19 units** for **1,000 hours** each; pass if **≤ 3** fail.
+> Test **18 units** for **1,000 hours** each; pass if **≤ 3** fail.
 >
-> A design at the target still passes 9.7% of the time; one with 97%
-> reliability fails 13.4%.
+> A design at the target still passes 9.6% of the time; one with 97%
+> reliability fails 13.5%.
 
-![The demonstration test plan: 19 units for 1,000 hours, pass if 3 or fewer fail](/guides/img/req-02-plan.png)
+![The demonstration test plan: 18 units for 1,000 hours, pass if 3 or fewer fail](/guides/img/req-02-plan.png)
 
 More units, but a test a good design will pass 87% of the time instead of being
 a gamble.
@@ -113,7 +113,7 @@ true reliability, with the target and the good design marked: the two risks of
 the test, in one picture.
 
 **Save analysis** keeps the plan under **Strategy**, so the
-reasoning behind the test is on record when someone asks why it's 19 units.
+reasoning behind the test is on record when someone asks why it's 18 units.
 
 ## Without a model
 
