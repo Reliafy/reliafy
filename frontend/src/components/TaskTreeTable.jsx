@@ -5,7 +5,7 @@ import TablePane from "./TablePane.jsx";
 import PositionForecast from "./PositionForecast.jsx";
 import MaintenanceTask, { TradeRates } from "./MaintenanceTask.jsx";
 import RbdTaskUses from "./RbdTaskUses.jsx";
-import { CloseIcon } from "./icons.jsx";
+import { CloseIcon, ExpandIcon, ShrinkIcon } from "./icons.jsx";
 import { fmtDate } from "./MaintenanceParts.jsx";
 import { latestOnly } from "../explorerMissions.js";
 import { taskCell } from "../explorerTasks.js";
@@ -68,19 +68,24 @@ export function taskPhoneRow(r, rollup) {
 
 // Beside the table: a task opened (its form, MaintenanceTask.jsx), a new task on a level, or the
 // trade rates. `holder`: the position or place row the task is on (or is being added to).
-export function TaskSide({ holder, taskId = null, rates = false, phone, headingRef, onClose, onDone, onChanged }) {
+export function TaskSide({ holder, taskId = null, rates = false, phone, expanded = false, onExpand, onCollapse, headingRef, onClose, onDone, onChanged }) {
   const title = rates ? "Trade rates" : taskId ? "Maintenance task" : "Add a task";
   return (
-    <aside className={"rw-panel mt-panel" + (phone ? " sheet" : "")} aria-label={title}
+    <aside className={"rw-panel mt-panel" + (phone ? " sheet" : "") + (expanded ? " is-expanded" : "")} aria-label={title}
            onKeyDown={(e) => {
              if (e.key !== "Escape" || e.defaultPrevented || e.target.closest("input, textarea, select")) return;
              e.stopPropagation();
-             onClose();
+             if (expanded && onCollapse) onCollapse(); else onClose();
            }}>
       <div className="rw-panel-top">
         <div className="rw-panel-head">
           <div className="rw-panel-kind">{holder?.ref?.name || ""}</div>
           <div className="rw-panel-btns">
+            {!phone && taskId && onExpand && (expanded ? (
+              <button type="button" className="ghost sm rw-x" onClick={onCollapse} title="Show the table again, with these details beside it (Esc)" aria-label="Back to table"><ShrinkIcon /></button>
+            ) : (
+              <button type="button" className="ghost sm rw-x" onClick={onExpand} title="Show these details across the table, the tree kept beside them" aria-label="Expand the details"><ExpandIcon /></button>
+            ))}
             <button type="button" className="ghost sm rw-x" onClick={onClose} aria-label={`Close ${title.toLowerCase()}`} title="Close (Esc)"><CloseIcon /></button>
           </div>
         </div>
