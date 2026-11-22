@@ -3,6 +3,7 @@ import Select from "./Select.jsx";
 import RefLink from "./RefLink.jsx";
 import { CRITERION_CHOICES, CRITERION_HELP, FRAILTY_FAMILIES, MORE_DESCRIPTIONS, familyApplies,
   pickerGroups } from "../moreModels.js";
+import { Checkbox } from "./ui/Controls.jsx";
 // Short blurbs shown under the dropdown for context (keyed by distribution id).
 const DESCRIPTIONS = {
   best: "Fits every distribution and keeps the winner on the score you choose (AIC unless changed) — let the data decide.",
@@ -238,21 +239,20 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
         </div>
       )}
       {value === "best" && (
-        <label className="fitopts-row fitopts-mixtures" title={mixturesBlocked || OPTION_HELP.include_mixtures}>
-          <input
-            type="checkbox"
-            checked={!!opts.include_mixtures}
-            disabled={!!mixturesBlocked && !opts.include_mixtures}
-            onChange={(e) => setOpt("include_mixtures", e.target.checked)}
-          />
-          <span>
+        <Checkbox
+          className="fitopts-row fitopts-mixtures"
+          title={mixturesBlocked || OPTION_HELP.include_mixtures}
+          checked={!!opts.include_mixtures}
+          disabled={!!mixturesBlocked && !opts.include_mixtures}
+          onChange={(e) => setOpt("include_mixtures", e.target.checked)}
+          label={<span>
             <b>Consider two-mode mixtures</b> — for data holding two failure modes
             (an S-bend on the probability plot). Slower. A mixture wins only if it
             beats the best single distribution on BIC, so it has to earn its extra
             parameters; the single distributions keep their usual ranking.
             {mixturesBlocked && <span className="muted-line"> {mixturesBlocked}</span>}
-          </span>
-        </label>
+          </span>}
+        />
       )}
 
       {isPlain && (
@@ -312,34 +312,31 @@ export default function DistributionStep({ options, value, onChange, fitOpts, on
               )}
               <span className="dist-label">Model adjustments (optional)</span>
               {(selected.offsetable || isMixture) && (
-                <label className="fitopts-row" title={OPTION_HELP.offset}>
-                  <input
-                    type="checkbox"
-                    checked={!!opts.offset}
-                    disabled={isMixture || mixturesOn}
-                    onChange={(e) => setOpt("offset", e.target.checked)}
-                  />
-                  <span><b>Offset (3-parameter)</b> — failure-free period γ</span>
-                </label>
+                <Checkbox
+                  className="fitopts-row"
+                  title={OPTION_HELP.offset}
+                  checked={!!opts.offset}
+                  disabled={isMixture || mixturesOn}
+                  onChange={(e) => setOpt("offset", e.target.checked)}
+                  label={<span><b>Offset (3-parameter)</b> — failure-free period γ</span>}
+                />
               )}
-              <label className="fitopts-row" title={zilfpBlocked || OPTION_HELP.lfp}>
-                <input
-                  type="checkbox"
-                  checked={!!opts.lfp}
-                  disabled={isMixture || mixturesOn || Boolean(zilfpBlocked)}
-                  onChange={(e) => setOpt("lfp", e.target.checked)}
-                />
-                <span><b>Limited failure population</b> — a fraction p never fails</span>
-              </label>
-              <label className="fitopts-row" title={ziBlocked || OPTION_HELP.zi}>
-                <input
-                  type="checkbox"
-                  checked={!!opts.zi}
-                  disabled={isMixture || mixturesOn || Boolean(ziBlocked)}
-                  onChange={(e) => setOpt("zi", e.target.checked)}
-                />
-                <span><b>Zero-inflated</b> — a fraction f₀ failed at t = 0</span>
-              </label>
+              <Checkbox
+                className="fitopts-row"
+                title={zilfpBlocked || OPTION_HELP.lfp}
+                checked={!!opts.lfp}
+                disabled={isMixture || mixturesOn || Boolean(zilfpBlocked)}
+                onChange={(e) => setOpt("lfp", e.target.checked)}
+                label={<span><b>Limited failure population</b> — a fraction p never fails</span>}
+              />
+              <Checkbox
+                className="fitopts-row"
+                title={ziBlocked || OPTION_HELP.zi}
+                checked={!!opts.zi}
+                disabled={isMixture || mixturesOn || Boolean(ziBlocked)}
+                onChange={(e) => setOpt("zi", e.target.checked)}
+                label={<span><b>Zero-inflated</b> — a fraction f₀ failed at t = 0</span>}
+              />
 
               {!isMixture && (selected.params || []).length > 0 && (
                 <div className="fitopts-fixed">

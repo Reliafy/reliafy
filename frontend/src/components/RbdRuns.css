@@ -42,11 +42,6 @@
 .rbd-runs-table td.rbd-runs-pick {
   padding-right: 0;
 }
-.rbd-runs-pick input {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-}
 
 .rbd-runs-note {
   margin: 8px 0 0;
@@ -65,10 +60,6 @@
 @media (max-width: 640px) {
   .rbd-runs-ci {
     display: block;
-  }
-  .rbd-runs-pick input {
-    width: 22px;
-    height: 22px;
   }
   .rbd-runs-filter select, .rbd-runs-filter .sel-trigger {
     min-height: 44px;

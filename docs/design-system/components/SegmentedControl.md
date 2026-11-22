@@ -10,7 +10,7 @@ A row of mutually exclusive options: sans, sentence case, the chosen option tint
 - `fill` — opt-in: the control spans the full width and the segments split it equally (`flex: 1 1 0`), never a short row inside a long outline.
 - `size` — "sm" for the compact size inside cards and toolbars.
 
-Use to switch a VIEW of the same thing (a chart's plot, a scale). For a value that's saved, use `ChoiceChips`; for navigation between panels, `Tabs`.
+Use to switch a VIEW of the same thing (a chart's plot, a scale), or the way in to one step (where a fit's data comes from: Saved data · Paste or type · Upload a file). For a value that's saved, use `ChoiceChips`; for navigation between panels, `Tabs`.
 
 ## Width rule
 

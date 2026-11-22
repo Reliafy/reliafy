@@ -1,5 +1,5 @@
 import Plot from "./Plot.jsx";
-import { GRID, band, dataPoints, fitLine, probabilityHoverText as hoverText } from "../plotTheme.js";
+import { GRID, band, dataPoints, fitLine, probabilityHoverText as hoverText, legendBg } from "../plotTheme.js";
 import { levelPct } from "../levels.js";
 import { valueAxisTitle } from "../lifeData.js";
 
@@ -49,7 +49,7 @@ export default function ProbabilityPlot({ plot, unit, download = null, fill = fa
       xanchor: "left",
       y: 0.985,
       yanchor: "top",
-      bgcolor: "rgba(255,255,255,0.85)",
+      bgcolor: legendBg(),
     },
     xaxis: {
       title: { text: xTitle },

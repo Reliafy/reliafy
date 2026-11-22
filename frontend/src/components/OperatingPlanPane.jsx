@@ -11,11 +11,13 @@ import { useConfirm } from "./ConfirmProvider.jsx";
 import { ShowMe } from "./SectionPage.jsx";
 import TablePane from "./TablePane.jsx";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
-import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
+import { Checkbox, Select, TextArea, TextInput } from "./ui/Controls.jsx";
 import { DateInput, TimeInput } from "./ui/DateTimeInput.jsx";
 import { ReadsAs } from "./ui/InputGroup.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import "./OperatingPlanPane.css";
+import LoadFailed from "./LoadFailed.jsx";
+import Loading from "./ui/Loading.jsx";
 
 // A position's operating plan, in the Explorer's table area beside the tree (?plan=<position id>,
 // from the Measurements tab's row menu and the Summary's "Operating plan" line; no modal): how it
@@ -129,11 +131,9 @@ function KindForm({ form, set, disabled }) {
           <legend className="sr-only">Shift {i + 1}</legend>
           <div className="op-days" role="group" aria-label={`Shift ${i + 1}: days`}>
             {WEEKDAYS.map((d) => (
-              <label key={d} className={"op-daybox" + (s.days.includes(d) ? " on" : "")}>
-                <input type="checkbox" checked={s.days.includes(d)} disabled={disabled}
-                       onChange={(e) => put(i, { days: e.target.checked ? [...s.days, d] : s.days.filter((x) => x !== d) })} />
-                {d.slice(0, 3)}
-              </label>
+              <Checkbox key={d} className={"op-daybox" + (s.days.includes(d) ? " on" : "")} checked={s.days.includes(d)} disabled={disabled}
+                        onChange={(e) => put(i, { days: e.target.checked ? [...s.days, d] : s.days.filter((x) => x !== d) })}
+                        label={d.slice(0, 3)} />
             ))}
           </div>
           <div className="op-row">
@@ -240,8 +240,8 @@ export default function OperatingPlanPane({ position, root = null, phone = false
     <TablePane title="Operating plan" subject={position.name} phone={phone} busy={saving} headingRef={headingRef} onClose={onClose}
                className="op-pane" actions={<ShowMe help={{ guide: "operating-plans-and-how-often" }} asHelp />}>
       <div className="op-body">
-        {error && <div className="card error">Couldn&apos;t load the operating plan: {error.message}</div>}
-        {!data && !error && <p className="lib-date">Loading…</p>}
+        {error && <LoadFailed what="Couldn't load the operating plan." error={error} />}
+        {!data && !error && <Loading />}
         {data && !form && (
           <section className="op-now" aria-label="How it runs now">
             {plan ? (

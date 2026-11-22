@@ -29,8 +29,8 @@
   background:
     linear-gradient(to right, var(--bg-surface) 30%, transparent) left center / 32px 100% no-repeat local,
     linear-gradient(to left, var(--bg-surface) 30%, transparent) right center / 32px 100% no-repeat local,
-    radial-gradient(farthest-side at 0 50%, rgb(0 0 0 / 0.16), transparent) left center / 12px 100% no-repeat scroll,
-    radial-gradient(farthest-side at 100% 50%, rgb(0 0 0 / 0.16), transparent) right center / 12px 100% no-repeat scroll;
+    radial-gradient(farthest-side at 0 50%, var(--scroll-shade), transparent) left center / 12px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, var(--scroll-shade), transparent) right center / 12px 100% no-repeat scroll;
 }
 .rbd-plan-table { margin-bottom: 4px; min-width: 860px; }
 .rbd-plan-table th, .rbd-plan-table td { text-align: left; vertical-align: top; padding: 0.4rem 0.45rem; white-space: nowrap; }

@@ -14,6 +14,7 @@ import { PREDICTIONS_LABEL, PREDICTIONS_PATH, newPredictionPath, predictionAsMod
 import { productPath } from "../products.js";
 import { tabPlace } from "../explorerTabs.js";
 import "./Predictions.css";
+import Loading from "../components/ui/Loading.jsx";
 
 // A saved reliability prediction, read from its stored results (computed
 // when it was saved; Edit computes them again).
@@ -70,7 +71,7 @@ export default function ReliabilityPredictionPage() {
       </div>
     );
   }
-  if (!doc) return <div className="app"><div className="card empty">Loading…</div></div>;
+  if (!doc) return <div className="app"><Loading card /></div>;
 
   const env = doc.results?.environment;
   const product = doc.inputs?.product;

@@ -6,6 +6,7 @@ import {
   readingText, startChoice,
 } from "../taskMeasurement.js";
 import "./TaskMeasurement.css";
+import { Radio } from "./ui/Controls.jsx";
 
 const CALENDAR_UNITS = ["days", "weeks", "months", "years"];
 
@@ -16,23 +17,21 @@ function LastDoneReading({ name, lastDone, unit, estimate, mode, value, disabled
   return (
     <fieldset className="tm-reading">
       <legend>Its reading when it was last done ({fmtDate(lastDone)})</legend>
-      <label className="tm-opt">
-        <input type="radio" name={`${name}-reading`} checked={mode === "estimate"} disabled={disabled}
-               onChange={() => onMode("estimate")} />
-        <span>Work it out from the date{estimate ? `: ${estimate}` : ""} <span className="tm-help">(marked as an estimate)</span></span>
-      </label>
-      <label className="tm-opt tm-enter">
-        <input type="radio" name={`${name}-reading`} checked={mode === "enter"} disabled={disabled}
-               onChange={() => onMode("enter")} />
-        <span>Enter it</span>
-        {mode === "enter" && (
-          <span className="tm-num">
-            <input type="number" className="ctl" inputMode="decimal" step="any" value={value} disabled={disabled} autoFocus
-                   aria-label={`Reading when it was last done, in ${unit}`} onChange={(e) => onValue(e.target.value)} />
-            <span>{unit}</span>
-          </span>
-        )}
-      </label>
+      <Radio className="tm-opt" name={`${name}-reading`} checked={mode === "estimate"} disabled={disabled}
+             onChange={() => onMode("estimate")}
+             label={<>Work it out from the date{estimate ? `: ${estimate}` : ""} <span className="tm-help">(marked as an estimate)</span></>} />
+      <Radio className="tm-opt tm-enter" name={`${name}-reading`} checked={mode === "enter"} disabled={disabled}
+             onChange={() => onMode("enter")}
+             label={<>
+               <span>Enter it</span>
+               {mode === "enter" && (
+                 <span className="tm-num">
+                   <input type="number" className="ctl" inputMode="decimal" step="any" value={value} disabled={disabled} autoFocus
+                          aria-label={`Reading when it was last done, in ${unit}`} onChange={(e) => onValue(e.target.value)} />
+                   <span>{unit}</span>
+                 </span>
+               )}
+             </>} />
     </fieldset>
   );
 }
@@ -138,11 +137,9 @@ function MoveChoice({ view, there, state, many, disabled, onState }) {
           : <>“{view.name}” goes by {view.unit}, and its last-done reading came from a counter it no longer counts.</>}
         {view.last_done && view.last_done_reading != null ? <> Last done {fmtDate(view.last_done)} at {readingText(view.last_done_reading, view.unit)}.</> : null}
       </p>
-      <label className="tm-opt">
-        <input type="radio" name={id} checked={state.mode === "switch"} disabled={disabled || !view.choices.length}
-               onChange={() => set("mode")("switch")} />
-        <span>Count a measurement on {there} instead</span>
-      </label>
+      <Radio className="tm-opt" name={id} checked={state.mode === "switch"} disabled={disabled || !view.choices.length}
+             onChange={() => set("mode")("switch")}
+             label={<>Count a measurement on {there} instead</>} />
       {!view.choices.length && (
         <p className="tm-help tm-sub">{there} has no {view.unit} counter, and nor do the positions above or below it. Add one there first, or choose below.</p>
       )}
@@ -159,14 +156,10 @@ function MoveChoice({ view, there, state, many, disabled, onState }) {
           )}
         </div>
       )}
-      <label className="tm-opt">
-        <input type="radio" name={id} checked={state.mode === "keep"} disabled={disabled} onChange={() => set("mode")("keep")} />
-        <span>{now ? `Keep counting ${pointLabel(now)}` : "Keep it as it is"}</span>
-      </label>
-      <label className="tm-opt">
-        <input type="radio" name={id} checked={state.mode === "calendar"} disabled={disabled} onChange={() => set("mode")("calendar")} />
-        <span>Go by calendar time instead</span>
-      </label>
+      <Radio className="tm-opt" name={id} checked={state.mode === "keep"} disabled={disabled} onChange={() => set("mode")("keep")}
+             label={now ? `Keep counting ${pointLabel(now)}` : "Keep it as it is"} />
+      <Radio className="tm-opt" name={id} checked={state.mode === "calendar"} disabled={disabled} onChange={() => set("mode")("calendar")}
+             label="Go by calendar time instead" />
       {state.mode === "calendar" && (
         <div className="tm-sub tm-num">
           <span>Every</span>

@@ -10,7 +10,7 @@ import { Checkbox, Select as NativeSelect, TextInput } from "./ui/Controls.jsx";
 import Section from "./ui/Section.jsx";
 import Select from "./Select.jsx";
 import LoadFailed from "./LoadFailed.jsx";
-import PlaceholderRows from "./PlaceholderRows.jsx";
+import Loading from "./ui/Loading.jsx";
 import HowOften from "./HowOften.jsx";
 import { formFromTask, howOftenPreview, howOftenProblem, taskAnchor, taskBody } from "../howOften.js";
 import { useConfirm } from "./ConfirmProvider.jsx";
@@ -226,7 +226,7 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
       <div className="mt-form">
         {top(adding ? addTitle : named)}
         <div className="rw-pbody pk-panel mt-pane">
-          <PlaceholderRows shape="fields" rows={4} label={adding ? "Loading…" : "Loading the task…"} />
+          <Loading shape="fields" rows={4} label={adding ? "Loading…" : "Loading the task…"} />
         </div>
       </div>
     );
@@ -432,7 +432,7 @@ export function TradeRates({ onBack = null, onChanged }) {
       <p className="lib-date">An hourly rate for each trade prices the labour in every task&apos;s LSA, and so its cost each time. Leave one blank to leave that trade unpriced.</p>
       {said && <p className="lib-date" role="status">{said}</p>}
       {state.error && <LoadFailed what="Couldn't load the trade rates." error={state.error} onRetry={load} />}
-      {!state.rates && !state.error && <PlaceholderRows shape="fields" rows={3} label="Loading the trade rates…" />}
+      {!state.rates && !state.error && <Loading shape="fields" rows={3} label="Loading the trade rates…" />}
       {state.rates?.length === 0 && <p className="lib-date">No trades yet: they come from the labour in the tasks&apos; LSA.</p>}
       {state.rates?.length > 0 && (
         <ul className="pk-members mt-rate-list">

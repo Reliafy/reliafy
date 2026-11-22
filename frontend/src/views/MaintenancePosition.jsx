@@ -62,6 +62,8 @@ import { partsPath } from "../redirects.js";
 import { classLabel, isDesignClass } from "../positionClass.js";
 import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { DateInput, TimeInput } from "../components/ui/DateTimeInput.jsx";
+import Loading from "../components/ui/Loading.jsx";
+import { Checkbox } from "../components/ui/Controls.jsx";
 
 // One position: what's fitted, its failure modes and tasks (from RCM or added
 // here), its work orders, and the life data its fitments give.
@@ -86,7 +88,7 @@ export default function MaintenancePosition() {
   };
 
   if (error && !p) return <div className="app"><LoadFailed header onRetry={() => { setError(null); refresh(); }} error={error} notFound="Position not found." to="/asset-register" label="See all assets" /></div>;
-  if (!p) return <div className="app"><div className="card empty">Loading…</div></div>;
+  if (!p) return <div className="app"><Loading card /></div>;
 
   return (
     <div className="app">
@@ -682,11 +684,9 @@ function GroupModal({ p, positions, onClose, onDone }) {
       <div className="login-field">
         <span>With</span>
         {positions.map((x) => (
-          <label key={x.id} className="maint-row" style={{ marginTop: 0, gap: "0.4rem" }}>
-            <input type="checkbox" checked={chosen.includes(x.id)}
-                   onChange={(e) => setChosen(e.target.checked ? [...chosen, x.id] : chosen.filter((c) => c !== x.id))} />
-            {"\u00a0\u00a0".repeat(x.depth)}{x.name}
-          </label>
+          <Checkbox key={x.id} checked={chosen.includes(x.id)}
+                    onChange={(e) => setChosen(e.target.checked ? [...chosen, x.id] : chosen.filter((c) => c !== x.id))}
+                    label={<>{"\u00a0\u00a0".repeat(x.depth)}{x.name}</>} />
         ))}
       </div>
       <Field label={`How many of the ${n} are needed`}><input type="number" inputMode="numeric" min="1" max={Math.max(1, n - 1)} value={k}

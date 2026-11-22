@@ -12,6 +12,7 @@ import { ShowMe } from "./SectionPage.jsx";
 import { usePanelMenu } from "../panelMenu.js";
 import "./FailureReports.css";
 import { DateInput } from "./ui/DateTimeInput.jsx";
+import Loading from "./ui/Loading.jsx";
 
 // The Explorer's Failure reports tab: every report at the row picked and
 // below it (a position and everything inside it; a location's positions; the
@@ -220,7 +221,7 @@ export default function FailureReportsPanel({ row, display, today, version, repo
   if (error) {
     body = <p className="lib-date">Couldn't load the failure reports: {error} <button type="button" className="link" onClick={() => fetchList(0)}>Try again</button></p>;
   } else if (!data && loading) {
-    body = <p className="lib-date">Loading…</p>;
+    body = <Loading />;
   } else if (!list.length && !narrowed && design) {
     body = (
       <div className="fr-empty">
