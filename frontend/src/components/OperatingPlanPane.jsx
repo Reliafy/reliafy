@@ -8,6 +8,7 @@ import {
 } from "../operatingPlan.js";
 import { today as workspaceToday } from "./MaintenanceParts.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
+import { ShowMe } from "./SectionPage.jsx";
 import TablePane from "./TablePane.jsx";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
 import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
@@ -237,7 +238,7 @@ export default function OperatingPlanPane({ position, root = null, phone = false
   const own = plan && !data.inherited_from;
   return (
     <TablePane title="Operating plan" subject={position.name} phone={phone} busy={saving} headingRef={headingRef} onClose={onClose}
-               className="op-pane">
+               className="op-pane" actions={<ShowMe help={{ guide: "operating-plans-and-how-often" }} asHelp />}>
       <div className="op-body">
         {error && <div className="card error">Couldn&apos;t load the operating plan: {error.message}</div>}
         {!data && !error && <p className="lib-date">Loading…</p>}
