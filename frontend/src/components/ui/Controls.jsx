@@ -29,3 +29,17 @@ export const Select = forwardRef(function Select({ className, children, ...props
   const field = useField();
   return <select ref={ref} {...props} {...wire(field, props)} className={cls("ctl", className)}>{children}</select>;
 });
+
+// A checkbox with its label beside it (.check in index.css): for a form field that waits
+// for Save (a setting that applies at once is a Switch). The whole label is the target,
+// 16 px box in the accent colour, the label in body text; inside a <Field as="fieldset">
+// a list of them is one group under the field's label.
+//   checked, onChange(event), label (node), disabled, name, className
+export const Checkbox = forwardRef(function Checkbox({ label, className, ...props }, ref) {
+  return (
+    <label className={cls("check", className)}>
+      <input ref={ref} type="checkbox" {...props} />
+      <span className="check-label">{label}</span>
+    </label>
+  );
+});

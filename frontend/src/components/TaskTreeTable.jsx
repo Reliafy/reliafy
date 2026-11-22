@@ -67,37 +67,47 @@ export function taskPhoneRow(r, rollup) {
 }
 
 // Beside the table: a task opened (its form, MaintenanceTask.jsx), a new task on a level, or the
-// trade rates. `holder`: the position or place row the task is on (or is being added to).
-export function TaskSide({ holder, taskId = null, rates = false, phone, expanded = false, onExpand, onCollapse, headingRef, onClose, onDone, onChanged }) {
-  const title = rates ? "Trade rates" : taskId ? "Maintenance task" : "Add a task";
+// trade rates. `holder`: the position or place row the task is on (or is being added to);
+// `taskName`: the opened task's name from its row, the panel's title until the task has loaded.
+// The head (where it is, Expand or Back to table, Close) is the same as the Models and RCM panels';
+// the task's form draws its own title, body and footer under it, so its Save sits in the footer.
+export function TaskSide({ holder, taskId = null, taskName = "", rates = false, phone, expanded = false, onExpand, onCollapse, headingRef, onClose, onDone, onChanged }) {
+  const title = rates ? "Trade rates" : taskId ? (taskName || "Maintenance task") : "Add a task";
+  const head = (
+    <div className="rw-panel-head">
+      <div className="rw-panel-kind">{rates || taskId ? (holder?.ref?.name || "Maintenance task") : "New maintenance task"}</div>
+      <div className="rw-panel-btns">
+        {!phone && taskId && onExpand && (expanded ? (
+          <button type="button" className="ghost sm rw-x" onClick={onCollapse} title="Show the table again, with these details beside it (Esc)" aria-label="Back to table"><ShrinkIcon /></button>
+        ) : (
+          <button type="button" className="ghost sm rw-x" onClick={onExpand} title="Show these details across the table, the tree kept beside them" aria-label="Expand the details"><ExpandIcon /></button>
+        ))}
+        <button type="button" className="ghost sm rw-x" onClick={onClose} aria-label={`Close ${rates ? "trade rates" : taskId ? "the task" : "add a task"}`} title="Close (Esc)"><CloseIcon /></button>
+      </div>
+    </div>
+  );
   return (
-    <aside className={"rw-panel mt-panel" + (phone ? " sheet" : "") + (expanded ? " is-expanded" : "")} aria-label={title}
+    <aside className={"rw-panel mt-panel mt-task-panel" + (phone ? " sheet" : "") + (expanded ? " is-expanded" : "")} aria-label={title}
            onKeyDown={(e) => {
              if (e.key !== "Escape" || e.defaultPrevented || e.target.closest("input, textarea, select")) return;
              e.stopPropagation();
              if (expanded && onCollapse) onCollapse(); else onClose();
            }}>
-      <div className="rw-panel-top">
-        <div className="rw-panel-head">
-          <div className="rw-panel-kind">{holder?.ref?.name || ""}</div>
-          <div className="rw-panel-btns">
-            {!phone && taskId && onExpand && (expanded ? (
-              <button type="button" className="ghost sm rw-x" onClick={onCollapse} title="Show the table again, with these details beside it (Esc)" aria-label="Back to table"><ShrinkIcon /></button>
-            ) : (
-              <button type="button" className="ghost sm rw-x" onClick={onExpand} title="Show these details across the table, the tree kept beside them" aria-label="Expand the details"><ExpandIcon /></button>
-            ))}
-            <button type="button" className="ghost sm rw-x" onClick={onClose} aria-label={`Close ${title.toLowerCase()}`} title="Close (Esc)"><CloseIcon /></button>
+      {rates ? (
+        <>
+          <div className="rw-panel-top">
+            {head}
+            <h2 className="rw-panel-title" tabIndex={-1} ref={headingRef}>{title}</h2>
           </div>
-        </div>
-        <h2 className="rw-panel-title" tabIndex={-1} ref={headingRef}>{title}</h2>
-      </div>
-      <div className="rw-pbody pk-panel">
-        {rates
-          ? <TradeRates onBack={onClose} onChanged={onChanged} />
-          : holder && <MaintenanceTask key={`${holder.key}:${taskId || "new"}`} row={holder} taskId={taskId} onBack={onClose} onDone={onDone} />}
-        {/* The repairable RBDs whose plans read this task. */}
-        {!rates && taskId && <RbdTaskUses taskIds={[taskId]} />}
-      </div>
+          <div className="rw-pbody pk-panel">
+            <TradeRates onChanged={onChanged} />
+          </div>
+        </>
+      ) : holder && (
+        <MaintenanceTask key={`${holder.key}:${taskId || "new"}`} row={holder} taskId={taskId} taskName={taskName}
+                         head={head} headingRef={headingRef} onBack={onClose} onDone={onDone}
+                         uses={taskId ? <RbdTaskUses taskIds={[taskId]} /> : null} />
+      )}
     </aside>
   );
 }

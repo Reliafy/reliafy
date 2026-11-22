@@ -2829,7 +2829,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const taskSide = (taskRow && sideHolder) || (addingAt && sideHolder) || ratesOn ? (
     <div className="rw tt-side">
       {phone && <div className="rw-scrim" onClick={closeTaskSide} aria-hidden="true" />}
-      <TaskSide holder={sideHolder} taskId={taskRow ? taskRow.ref.task.id : null} rates={ratesOn} phone={phone}
+      <TaskSide holder={sideHolder} taskId={taskRow ? taskRow.ref.task.id : null} taskName={taskRow ? taskRow.ref.task.name : ""} rates={ratesOn} phone={phone}
                 expanded={wideDetails} onExpand={expandDetails} onCollapse={collapseDetails}
                 headingRef={detailsHeading} onClose={closeTaskSide}
                 onChanged={() => ptasks.load()}

@@ -4,22 +4,29 @@ import {
   createSubjectTask, getMaintenancePosition, getTaskLsa, linkTaskFailureMode, listTradeRates, retireMaintenanceTask,
   setTradeRate, unlinkTaskFailureMode, updateMaintenanceTask,
 } from "../api.js";
-import { Field, fmtDate, today as workspaceToday, useSendOnce } from "./MaintenanceParts.jsx";
+import { fmtDate, today as workspaceToday, useSendOnce } from "./MaintenanceParts.jsx";
+import Field from "./ui/Field.jsx";
+import { Checkbox, Select as NativeSelect, TextInput } from "./ui/Controls.jsx";
+import Section from "./ui/Section.jsx";
+import Select from "./Select.jsx";
+import LoadFailed from "./LoadFailed.jsx";
+import PlaceholderRows from "./PlaceholderRows.jsx";
 import HowOften from "./HowOften.jsx";
 import { formFromTask, howOftenPreview, howOftenProblem, taskAnchor, taskBody } from "../howOften.js";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { costWhere, fromRcm, fromText, money, SOURCE_WORDS } from "../lsaTab.js";
 import { taskUnits } from "../maintenanceSubjects.js";
-import { AGE_NOTE, tooLong } from "../maintenanceText.js";
+import { AGE_NOTE, lengthNote, tooLong } from "../maintenanceText.js";
 import { explorerHere } from "../products.js";
 import { workspaceCurrency } from "../money.js";
 import TaskTwins from "./TaskTwins.jsx";
 import { restorationBody, restorationForm, restorationProblem, RESTORE_CHOICES } from "../taskRestoration.js";
 
 // A task on the Explorer's Maintenance tab, in the panel beside the tree (never a dialog):
-// "Add task" (?addtask=<the row>) and a task opened from the table (?mtask=<id>), each with
-// a back link to the table. The RCM says what is done: a task's name is the action alone
-// ("Replace the seal"), and how it's done is its LSA (the LSA tab).
+// "Add task" (?addtask=<the row>) and a task opened from the table (?mtask=<id>). It draws the
+// panel's title (the task's name), its body in Sections, and the footer with Save, Cancel and
+// Retire…; TaskSide gives it the panel's head (× and Expand are the way out). The RCM says what
+// is done: a task's name is the action alone ("Replace the seal"), and how it's done is its LSA.
 //
 //   Add task:   name, how often (HowOften: every N unit, a pattern, a second limit), what kind, why it's done (own practice, the maker,
 //               a law or standard, other) and a reference, the failure modes it prevents
@@ -29,11 +36,12 @@ import { restorationBody, restorationForm, restorationProblem, RESTORE_CHOICES }
 //               here, or from its LSA at the trade rates (a trade with no rate gets a box
 //               for one, used by every task). "Retire…" for a task added directly.
 
+// The words of each kind: a short name (so the closed picker fits a phone) and the rest as its hint.
 const KINDS = [
-  ["", "Routine work (lubricate, clean, adjust, inspect)"],
-  ["fixed_interval", "Replace at age (every … since it was last done)"],
-  ["failure_finding", "Check a hidden function (failure-finding)"],
-  ["on_condition", "Check condition"],
+  { value: "", label: "Routine work", hint: "Lubricate, clean, adjust, inspect" },
+  { value: "fixed_interval", label: "Replace at age", hint: "Every … since it was last done" },
+  { value: "failure_finding", label: "Check a hidden function", hint: "Failure-finding" },
+  { value: "on_condition", label: "Check condition" },
 ];
 
 const num = (v) => (v === "" || v == null ? null : Number(v));
@@ -56,13 +64,12 @@ function RateBoxes({ trades, rates, onRates, disabled }) {
   if (!trades.length) return null;
   return (
     <div className="mt-rates" role="group" aria-label="Trade rates">
-      <p className="lib-date">Its labour has no rate for {trades.join(", ")}. An hourly rate prices that trade on every task.</p>
+      <p className="field-help">Its labour has no rate for {trades.join(", ")}. An hourly rate prices that trade on every task.</p>
       {trades.map((t) => (
-        <label key={t} className="lsa-num mt-rate">
-          {t} ({workspaceCurrency()} an hour)
-          <input type="number" min="0" step="any" inputMode="decimal" value={rates[t] ?? ""} disabled={disabled}
-                 aria-label={`Hourly rate for ${t}`} onChange={(e) => onRates({ ...rates, [t]: e.target.value })} />
-        </label>
+        <Field key={t} label={`${t} (${workspaceCurrency()} an hour)`} className="mt-rate">
+          <TextInput type="number" min="0" step="any" inputMode="decimal" value={rates[t] ?? ""} disabled={disabled}
+                     aria-label={`Hourly rate for ${t}`} onChange={(e) => onRates({ ...rates, [t]: e.target.value })} />
+        </Field>
       ))}
     </div>
   );
@@ -75,9 +82,9 @@ function DueBasis({ task }) {
   const lines = (task.limits || []).filter((l) => l.basis && (l.next_due || l.note));
   if (!lines.length) return null;
   return (
-    <div className="lib-date mt-due-basis" role="note">
+    <div className="mt-due-basis" role="note">
       {lines.map((l, i) => (
-        <p key={i} className="mt-note">
+        <p key={i} className="field-help">
           {l.next_due ? (
             <>Due by use {l.due_moment ? `at ${l.due_moment.slice(11)} on ${fmtDate(l.next_due)}` : `on ${fmtDate(l.next_due)}`}
               {l.due_at_reading != null ? ` (at ${l.due_at_reading.toLocaleString("en-GB")} ${l.counter?.unit || ""})` : ""}
@@ -90,13 +97,14 @@ function DueBasis({ task }) {
   );
 }
 
-export default function MaintenanceTask({ row, taskId = null, onBack, onDone }) {
+export default function MaintenanceTask({ row, taskId = null, taskName = "", head = null, headingRef = null, uses = null, onBack, onDone }) {
   const location = useLocation();
   const confirm = useConfirm();
   const adding = !taskId;
   const [loaded, setLoaded] = useState({ key: null, task: null, modes: [], error: null });
   const [f, setF] = useState(() => startFrom(null));
   const [rates, setRates] = useState({});
+  const [attempt, setAttempt] = useState(0); // Try again after a failed load
   const key = `${row.key}:${taskId || "new"}`;
 
   useEffect(() => {
@@ -112,11 +120,11 @@ export default function MaintenanceTask({ row, taskId = null, onBack, onDone }) 
         setF(startFrom(task));
         setRates({});
       } catch (e) {
-        if (live) setLoaded({ key, task: null, modes: [], error: e.message });
+        if (live) setLoaded({ key, task: null, modes: [], error: e });
       }
     })();
     return () => { live = false; };
-  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [key, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const task = loaded.key === key ? loaded.task : null;
   const ready = loaded.key === key && !loaded.error;
@@ -178,19 +186,51 @@ export default function MaintenanceTask({ row, taskId = null, onBack, onDone }) 
     if (ok) onDone(`Retired ${task.name}.`, null);
   };
 
-  const back = <button type="button" className="link pk-back" onClick={onBack} disabled={send.busy}>← All tasks here</button>;
+  // The panel's title: the task's name (as saved), or what's being added; under it, where it's from.
+  const top = (title, sub = null) => (
+    <div className="rw-panel-top">
+      {head}
+      {/* On a page of its own (no panel head, so no ×): the way back to the list. */}
+      {!head && onBack && <button type="button" className="link pk-back" onClick={onBack} disabled={send.busy}>← All tasks here</button>}
+      <h2 className="rw-panel-title" tabIndex={-1} ref={headingRef}>{title}</h2>
+      {sub && <p className="rw-inside">{sub}</p>}
+    </div>
+  );
+  const named = task?.name || taskName || "Maintenance task";
+  const addTitle = `Add a task to ${row.ref?.name || "this row"}`;
   if (twinCheck) {
     return (
-      <div className="pk-view mt-pane">
-        {back}
-        <p className="lib-date" role="status">Saved {twinCheck.name}.</p>
-        <TaskTwins {...twinCheck}
-                   onDone={(said) => onDone(said ? `Saved ${twinCheck.name}. ${said}` : `Saved ${twinCheck.name}.`, twinCheck.taskId)} />
+      <div className="mt-form">
+        {top(twinCheck.name)}
+        <div className="rw-pbody pk-panel mt-pane">
+          <p className="field-help" role="status">Saved {twinCheck.name}.</p>
+          <TaskTwins {...twinCheck}
+                     onDone={(said) => onDone(said ? `Saved ${twinCheck.name}. ${said}` : `Saved ${twinCheck.name}.`, twinCheck.taskId)} />
+        </div>
       </div>
     );
   }
-  if (loaded.key === key && loaded.error) return <div>{back}<div className="card error">Couldn&apos;t load the task: {loaded.error}</div></div>;
-  if (!ready) return <div>{back}<p className="lib-date">Loading…</p></div>;
+  if (loaded.key === key && loaded.error) {
+    return (
+      <div className="mt-form">
+        {top(adding ? addTitle : named)}
+        <div className="rw-pbody pk-panel mt-pane">
+          <LoadFailed what={adding ? "Couldn't load this position's failure modes." : "Couldn't load the task."} error={loaded.error}
+                      onRetry={() => setAttempt((n) => n + 1)} />
+        </div>
+      </div>
+    );
+  }
+  if (!ready) {
+    return (
+      <div className="mt-form">
+        {top(adding ? addTitle : named)}
+        <div className="rw-pbody pk-panel mt-pane">
+          <PlaceholderRows shape="fields" rows={4} label={adding ? "Loading…" : "Loading the task…"} />
+        </div>
+      </div>
+    );
+  }
   const units = taskUnits(subject.kind);
   const modes = loaded.modes;
   // The next three dates it gives: from when it was last done, else from today.
@@ -198,78 +238,100 @@ export default function MaintenanceTask({ row, taskId = null, onBack, onDone }) 
   const shown = howOftenPreview(f.how, { from: task?.last_done || today, after: !!task?.last_done, anchor: taskAnchor(task, today) });
   const lsaPath = task ? explorerHere(location.pathname, location.search, { sel: task.subject?.id, tab: "lsa", task: task.id }) : null;
   const rcmPath = task ? explorerHere(location.pathname, location.search, { sel: task.subject?.id, tab: "rcm" }) : null;
+  const nameNote = lengthNote(f.name, undefined, "say how in its LSA");
+  const lsaCost = task?.cost?.lsa?.amount;
   return (
-    <form className="pk-view mt-pane" aria-label={adding ? "Add a task" : `Task: ${task.name}`}
+    <form className="mt-form" aria-label={adding ? "Add a task" : `Task: ${task.name}`}
           onSubmit={(e) => { e.preventDefault(); send.submit(); }}>
-      {back}
-      <h3 className="pk-view-name">{adding ? `Add a task to ${row.ref?.name || "this row"}` : task.name}</h3>
-      {!adding && <p className="lib-date pk-sub">{fromText({ ...task, modes: task.failure_modes })}</p>}
-      <div className="mt-fields">
-        <Field label="Task: the action only" text={f.name} hint="say how in its LSA">
-          <input autoFocus={adding} value={f.name} onChange={set("name")} placeholder="e.g. Inspect the guard" />
+      {top(adding ? addTitle : task.name, adding ? null : fromText({ ...task, modes: task.failure_modes }))}
+      <div className="rw-pbody pk-panel mt-pane">
+        <Field label="Task: the action only" error={nameNote?.over ? nameNote.text : null}
+               count={nameNote && !nameNote.over ? nameNote.text : null}>
+          <TextInput autoFocus={adding} value={f.name} onChange={set("name")} placeholder="e.g. Inspect the guard" />
         </Field>
-        <fieldset className="mt-how">
-          <legend>How often</legend>
+        <Section title="How often" className="ruled mt-sec">
           <HowOften value={f.how} onChange={setHow} units={units} withAlso disabled={send.busy} problem={howProblem}
                     dates={shown.dates} datesLead={shown.lead} datesAfter={shown.after} datesNote={shown.note} />
           {task && <DueBasis task={task} />}
-        </fieldset>
-        <Field label="What kind of task">
-          <select value={f.outcome} onChange={set("outcome")}>{KINDS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
-        </Field>
-        {f.outcome === "fixed_interval" && <p className="lib-date mt-note">{AGE_NOTE}</p>}
+        </Section>
+        <Section title="What kind of task" className="ruled mt-sec">
+          <Field label="What kind of task" labelHidden>
+            <Select value={f.outcome} onChange={(v) => setF((x) => ({ ...x, outcome: v }))} options={KINDS}
+                    ariaLabel="What kind of task" className="mt-kind" />
+          </Field>
+          {f.outcome === "fixed_interval" && <More summary="How replace at age is counted">{AGE_NOTE}</More>}
+        </Section>
         {f.outcome === "fixed_interval" && (
           <RestorationFields f={f} setF={setF} task={task} problem={restoreProblem} />
         )}
-        {rcm ? (
-          <p className="lib-date mt-note">
-            From the RCM: its failure modes and why it&apos;s done are on the <Link to={rcmPath}>RCM tab</Link>.
-          </p>
-        ) : (
-          <>
-            <Field label="Why it's done (optional)">
-              <select value={f.source} onChange={set("source")}>
-                {Object.entries(SOURCE_WORDS).map(([k, l]) => <option key={k} value={k}>{l[0].toUpperCase() + l.slice(1)}</option>)}
-              </select>
-            </Field>
-            <Field label="Reference (optional)">
-              <input value={f.reference} onChange={set("reference")} placeholder="e.g. Owner's manual §7, AS 1851 table 5" />
-            </Field>
-            {modes.length > 0 && (
-              <fieldset className="mt-modes">
-                <legend>Failure modes it prevents (optional)</legend>
-                {modes.map((m) => (
-                  <label key={m.id} className="mt-mode">
-                    <input type="checkbox" checked={f.modes.has(m.id)} onChange={() => flip(m.id)} /> {m.text}
-                  </label>
-                ))}
-              </fieldset>
-            )}
-          </>
-        )}
-        <Field label={`Cost each time (${workspaceCurrency()}, optional)`}>
-          <input type="number" inputMode="decimal" min="0" step="any" value={f.cost} onChange={set("cost")}
-                 placeholder={task?.cost?.lsa?.amount != null ? `${task.cost.lsa.amount} from its LSA` : "e.g. 180"} />
-        </Field>
-        <p className="lib-date mt-note" role="note">
-          {adding
-            ? "What it costs each time it's done. Leave it blank to work it out from its LSA (labour at trade rates, spares and consumables). The RCM uses this figure when it asks whether the task is worth doing."
-            : <>
+        <Section title="Why it's done" className="ruled mt-sec">
+          {rcm ? (
+            <p className="field-help">
+              From the RCM: its failure modes and why it&apos;s done are on the <Link to={rcmPath}>RCM tab</Link>.
+            </p>
+          ) : (
+            <>
+              <Field label="Reason" optional>
+                <NativeSelect value={f.source} onChange={set("source")}>
+                  {Object.entries(SOURCE_WORDS).map(([k, l]) => <option key={k} value={k}>{l[0].toUpperCase() + l.slice(1)}</option>)}
+                </NativeSelect>
+              </Field>
+              <Field label="Reference" optional>
+                <TextInput value={f.reference} onChange={set("reference")} placeholder="e.g. Owner's manual §7, AS 1851 table 5" />
+              </Field>
+              {modes.length > 0 && (
+                <Field as="fieldset" label="Failure modes it prevents" optional className="mt-modes">
+                  {modes.map((m) => (
+                    <Checkbox key={m.id} checked={f.modes.has(m.id)} onChange={() => flip(m.id)} label={m.text} />
+                  ))}
+                </Field>
+              )}
+            </>
+          )}
+        </Section>
+        <Section title="Cost" className="ruled mt-sec">
+          <Field label={`Cost each time (${workspaceCurrency()})`} optional
+                 help={adding ? "Leave it blank to work it out from its LSA." : null}>
+            <TextInput type="number" inputMode="decimal" min="0" step="any" value={f.cost} onChange={set("cost")}
+                       placeholder={lsaCost != null ? `${money(lsaCost)} from its LSA` : "e.g. 180"} />
+          </Field>
+          {adding ? (
+            <More summary="How the cost is used">
+              What it costs each time it&apos;s done. Left blank, it&apos;s worked out from its LSA (labour at trade rates, spares and
+              consumables). The RCM uses this figure when it asks whether the task is worth doing.
+            </More>
+          ) : (
+            <p className="field-help" role="note">
               <strong>{task.cost?.amount != null ? `${money(task.cost.amount)} each time. ` : ""}</strong>
               {costWhere(task.cost)}{" "}
-              {f.cost !== "" && task.cost?.lsa?.amount != null ? `Clear the box to use its LSA's ${money(task.cost.lsa.amount)}. ` : ""}
+              {f.cost !== "" && lsaCost != null ? `Clear the box to use its LSA's ${money(lsaCost)}. ` : ""}
               The RCM uses this figure. <Link to={lsaPath}>What it needs (LSA)</Link>
-            </>}
-        </p>
-        {!adding && f.cost === "" && <RateBoxes trades={missing} rates={rates} onRates={setRates} disabled={send.busy} />}
+            </p>
+          )}
+          {!adding && f.cost === "" && <RateBoxes trades={missing} rates={rates} onRates={setRates} disabled={send.busy} />}
+        </Section>
+        {uses}
+        {send.error && <p className="field-error" role="alert">{send.error}</p>}
       </div>
-      {send.error && <p className="field-error" role="alert">{send.error}</p>}
-      <div className="mt-actions">
-        <button type="submit" disabled={!can || send.busy}>{send.busy ? "Saving…" : adding ? "Add task" : "Save"}</button>
-        <button type="button" className="secondary" onClick={onBack} disabled={send.busy}>Cancel</button>
-        {!adding && !rcm && <button type="button" className="link mt-retire" onClick={retire} disabled={send.busy}>Retire…</button>}
+      {/* The shared footer: Save and Cancel; Retire… as red text at the right (it asks first). */}
+      <div className="rw-panel-acts mt-acts">
+        <span className="mt-acts-main">
+          <button type="submit" disabled={!can || send.busy}>{send.busy ? "Saving…" : adding ? "Add task" : "Save"}</button>
+          <button type="button" className="secondary" onClick={onBack} disabled={send.busy}>Cancel</button>
+        </span>
+        {!adding && !rcm && <button type="button" className="ghost rw-del" onClick={(e) => { if (e.detail < 2) retire(); }} disabled={send.busy}>Retire…</button>}
       </div>
     </form>
+  );
+}
+
+// Long guidance folded under one short line (progressive disclosure): the line says what's inside.
+function More({ summary, children }) {
+  return (
+    <details className="mt-more">
+      <summary>{summary}</summary>
+      <p className="field-help">{children}</p>
+    </details>
   );
 }
 
@@ -277,78 +339,75 @@ export default function MaintenanceTask({ row, taskId = null, onBack, onDone }) 
 // every Nth task a full replacement), whether its interval counts running hours, and its age limit
 // at a shutdown. A repairable RBD built on the position reads these (its Maintenance plan).
 function RestorationFields({ f, setF, task, problem }) {
-  const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
+  const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
   const r = task?.restoration;
   const calendar = ["days", "weeks", "months", "years"].includes(f.unit);
   return (
-    <fieldset className="mt-restore">
-      <legend>What it leaves the item as</legend>
+    <Section title="What it leaves the item as" className="ruled mt-sec mt-restore">
       <Field label="After the task">
-        <select value={f.restoreKind} onChange={set("restoreKind")}>
+        <NativeSelect value={f.restoreKind} onChange={set("restoreKind")}>
           {RESTORE_CHOICES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
+        </NativeSelect>
       </Field>
       {f.restoreKind !== "as_new" && (
-        <div className="maint-row mt-restore-row">
+        <div className="mt-restore-row">
           <Field label="Restores (% of the age)">
-            <input type="number" inputMode="decimal" min="0" max="100" step="any" value={f.restores} onChange={set("restores")}
-                   placeholder="e.g. 70" />
+            <TextInput type="number" inputMode="decimal" min="0" max="100" step="any" value={f.restores} onChange={set("restores")}
+                       placeholder="e.g. 70" />
           </Field>
-          <Field label="Every Nth task is a full replacement (optional)">
-            <input type="number" inputMode="numeric" min="2" max="100" step="1" value={f.replaceEvery} onChange={set("replaceEvery")}
-                   placeholder="e.g. 3" />
+          <Field label="Every Nth task is a full replacement" optional>
+            <TextInput type="number" inputMode="numeric" min="2" max="100" step="1" value={f.replaceEvery} onChange={set("replaceEvery")}
+                       placeholder="e.g. 3" />
           </Field>
           {f.replaceEvery !== "" && (
-            <Field label={`Replacement cost (${workspaceCurrency()}, optional)`}>
-              <input type="number" inputMode="decimal" min="0" step="any" value={f.replacementCost} onChange={set("replacementCost")} />
+            <Field label={`Replacement cost (${workspaceCurrency()})`} optional>
+              <TextInput type="number" inputMode="decimal" min="0" step="any" value={f.replacementCost} onChange={set("replacementCost")} />
             </Field>
           )}
         </div>
       )}
-      <p className="lib-date mt-note" role="note">
+      <p className="field-help" role="note">
         {f.restoreKind === "as_new"
           ? "The item is as good as new after each task (replaced, or fully overhauled)."
           : `An overhaul that takes away ${f.restores || "X"}% of ${f.restoreKind === "kijima1" ? "the age gained since the last task" : "its whole age"}: 100% is as good as new, 0% as old as before.`}
         {f.replaceEvery !== "" && f.replacementCost === "" ? " With no replacement cost, a replacement is charged nothing until you set one." : ""}
       </p>
       {r?.source === "decision" && (
-        <p className="lib-date mt-note" role="note">
+        <p className="field-help" role="note">
           Its failure modes&apos; decisions set this for themselves ({r.by_mode.map((x) => `${x.text}: ${x.words}`).join("; ")}).
           {r.conflict ? " They disagree: an RBD takes the least restoring." : ""} Saving here sets it for every failure mode it serves.
         </p>
       )}
       {calendar && (
-        <>
-          <label className="mt-mode">
-            <input type="checkbox" checked={f.runningHours} onChange={set("runningHours")} /> Counted in running hours
-          </label>
-          <p className="lib-date mt-note">
+        <div className="mt-check">
+          <Checkbox checked={f.runningHours} onChange={(e) => setF((x) => ({ ...x, runningHours: e.target.checked }))}
+                    label="Counted in running hours" />
+          <More summary="What this changes">
             Every {f.interval || "N"} {f.unit} of running, not of the calendar. An RBD turns it into calendar time through the
             block&apos;s Runs %; its due dates here stay on the calendar.
-          </p>
-        </>
+          </More>
+        </div>
       )}
-      <div className="maint-row mt-restore-row">
-        <Field label="At a shutdown, only if older than (optional)">
-          <input type="number" inputMode="decimal" min="0" step="any" value={f.olderThan} onChange={set("olderThan")} placeholder="—" />
+      <div className="mt-restore-row">
+        <Field label="Only if older than" optional help="At a shutdown: it's replaced only once it's that old.">
+          <TextInput type="number" inputMode="decimal" min="0" step="any" value={f.olderThan} onChange={set("olderThan")} placeholder="—" />
         </Field>
-        <Field label="Unit">
-          <select value={f.olderUnit} onChange={set("olderUnit")}>{["days", "weeks", "months", "years"].map((u) => <option key={u} value={u}>{u}</option>)}</select>
+        <Field label="Unit" className="mt-unit">
+          <NativeSelect value={f.olderUnit} onChange={set("olderUnit")}>{["days", "weeks", "months", "years"].map((u) => <option key={u} value={u}>{u}</option>)}</NativeSelect>
         </Field>
       </div>
-      <p className="lib-date mt-note">Used when its work package is a shutdown: the item is replaced at a shut only once it&apos;s that old.</p>
       {problem && <p className="field-error" role="alert">{problem}</p>}
-    </fieldset>
+    </Section>
   );
 }
 
 // Every trade's hourly rate, in the panel beside the tree (?rates=1 on the Maintenance tab):
 // the rates set, and the trades the tasks' labour uses with none yet. Each saves when it's left.
-export function TradeRates({ onBack, onChanged }) {
+export function TradeRates({ onBack = null, onChanged }) {
   const [state, setState] = useState({ rates: null, error: null });
   const [draft, setDraft] = useState({});
   const [said, setSaid] = useState(null);
-  const load = () => listTradeRates().then((d) => setState({ rates: d.rates, error: null }), (e) => setState({ rates: null, error: e.message }));
+  const load = () => listTradeRates().then((d) => setState({ rates: d.rates, error: null }), (e) => setState({ rates: null, error: e }));
   useEffect(() => { load(); }, []);
   const save = async (r) => {
     const v = draft[r.trade];
@@ -364,12 +423,16 @@ export function TradeRates({ onBack, onChanged }) {
   };
   return (
     <div className="pk-view mt-pane" role="region" aria-label="Trade rates">
-      <button type="button" className="link pk-back" onClick={onBack}>← All tasks here</button>
-      <h3 className="pk-view-name">Trade rates</h3>
+      {onBack && (
+        <>
+          <button type="button" className="link pk-back" onClick={onBack}>← All tasks here</button>
+          <h3 className="pk-view-name">Trade rates</h3>
+        </>
+      )}
       <p className="lib-date">An hourly rate for each trade prices the labour in every task&apos;s LSA, and so its cost each time. Leave one blank to leave that trade unpriced.</p>
       {said && <p className="lib-date" role="status">{said}</p>}
-      {state.error && <div className="card error">{state.error}</div>}
-      {!state.rates && !state.error && <p className="lib-date">Loading…</p>}
+      {state.error && <LoadFailed what="Couldn't load the trade rates." error={state.error} onRetry={load} />}
+      {!state.rates && !state.error && <PlaceholderRows shape="fields" rows={3} label="Loading the trade rates…" />}
       {state.rates?.length === 0 && <p className="lib-date">No trades yet: they come from the labour in the tasks&apos; LSA.</p>}
       {state.rates?.length > 0 && (
         <ul className="pk-members mt-rate-list">
