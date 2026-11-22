@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
-import { bandPair, fitLine } from "../plotTheme.js";
+import { bandPair, fitLine, legendBg } from "../plotTheme.js";
 import { altBounds, cancelRbdJob, evaluateAlt, getRbdJob } from "../api.js";
 import { CANCELLED_TEXT } from "../jobCancel.js";
 import { unitInText } from "./unitText.js";
@@ -203,7 +203,7 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
     xaxis: { title: { text: unit ? `Time (${unit})` : "Time" } },
     yaxis: { title: { text: FUNCS.find((f) => f.id === active)?.y || "" } },
     showlegend: !!showBand,
-    legend: { x: 1, xanchor: "right", y: 1, yanchor: "top", bgcolor: "rgba(255,255,255,0.85)" },
+    legend: { x: 1, xanchor: "right", y: 1, yanchor: "top", bgcolor: legendBg() },
   }), [active, unit, showBand]);
 
   const m = res?.metrics || {};
