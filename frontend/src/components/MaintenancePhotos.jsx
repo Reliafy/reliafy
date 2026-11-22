@@ -22,7 +22,7 @@ import Modal from "./Modal.jsx";
 import { Field, FormModal, flatten, fmtDate } from "./MaintenanceParts.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { EXPLORER_PATH } from "../navigation.js";
-import { Checkbox, Radio } from "./ui/Controls.jsx";
+import { Checkbox, Radio, Select } from "./ui/Controls.jsx";
 
 // What the picker can choose from, loaded once per kind when it's first asked for.
 const LOADERS = {
@@ -100,15 +100,15 @@ function PhotoPlaceModal({ photo, here, hereLabel, related, onClose, onDone }) {
         </div>
       )}
       <Field label="Kind">
-        <select value={kind} onChange={(e) => { setKind(e.target.value); setTo(""); }}>
+        <Select value={kind} onChange={(e) => { setKind(e.target.value); setTo(""); }}>
           {PLACE_KINDS.map((k) => <option key={k} value={k}>{placeKindWord(k).replace(/^./, (c) => c.toUpperCase())}</option>)}
-        </select>
+        </Select>
       </Field>
       <Field label={word.replace(/^./, (c) => c.toUpperCase())}>
-        <select value={to} onChange={(e) => setTo(e.target.value)} aria-label={`Which ${word}`}>
+        <Select value={to} onChange={(e) => setTo(e.target.value)} aria-label={`Which ${word}`}>
           <option value="">{loading ? "Loading…" : options.length ? "Choose…" : `No ${word}s yet`}</option>
           {options.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
-        </select>
+        </Select>
       </Field>
       {within && (
         <Checkbox className="maint-place-any" checked={anyAsset} onChange={(e) => { setAnyAsset(e.target.checked); setTo(""); }}
@@ -173,7 +173,7 @@ export default function MaintenancePhotos({ title = "Photos", targetId, targetNa
   useEffect(() => {
     if (!open || placing) return undefined;
     const onKey = (e) => {
-      if (e.target.closest?.("input, textarea, select")) return;
+      if (e.target.closest?.("input, textarea, select, .sel-trigger, .sel-menu")) return;
       const next = photoStep(openIndex, photos.length, e.key);
       if (next != null) { e.preventDefault(); setOpen(photos[next]); }
     };

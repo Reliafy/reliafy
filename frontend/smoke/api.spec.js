@@ -23,6 +23,11 @@ const SIGNED_IN = [
   // The interval calculators on an RCM task card.
   ["POST", "/api/maintenance/rcm/interval/on-condition"],
   ["POST", "/api/maintenance/rcm/interval/failure-finding"],
+  // Optimise… on a task: the answer, its Use, what a task rests on and what a model sets.
+  ["POST", "/api/maintenance/tasks/none/optimise"],
+  ["POST", "/api/maintenance/tasks/none/optimise/use"],
+  ["GET", "/api/maintenance/tasks/none/interval-basis"],
+  ["GET", "/api/maintenance/model-tasks?model_ids=none"],
   // Life models on positions (the Explorer's Modelling tab).
   ["GET", "/api/maintenance/position-models"],
   // Trade rates: they price each task's labour (its cost each time; Nov 2026).

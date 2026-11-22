@@ -76,6 +76,7 @@ import { applyTreePlan, treeGraph, treeKey, treePositionPath, treeRow } from "..
 import { getRbdTreePlan } from "../api.js";
 import { useRoles } from "../RolesProvider.jsx";
 import Loading from "./ui/Loading.jsx";
+import { Select as FormSelect } from "./ui/Controls.jsx";
 
 // The "Outage history" tab (an observed-history import and charts) loads on
 // first open, so the builder's own bundle doesn't carry it.
@@ -752,7 +753,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
       if (e.key !== "c" && e.key !== "C") return;
       if (e.metaKey || e.ctrlKey || e.altKey || !ownsKey(e)) return;
       const el = e.target;
-      if (el?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el?.tagName)) return;
+      if (el?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el?.tagName) || el?.closest?.(".sel-trigger, .sel-menu")) return;
       e.preventDefault();
       connectSelected();
     };
@@ -1389,7 +1390,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     const onKey = (e) => {
       if (e.key !== "F2" || !ownsKey(e)) return;
       const el = e.target;
-      if (el?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el?.tagName)) return;
+      if (el?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el?.tagName) || el?.closest?.(".sel-trigger, .sel-menu")) return;
       const chosen = liveRef.current.nodes.filter((n) => n.selected && n.type !== "input" && n.type !== "output");
       // One block selected, or of several the one clicked last.
       const last = clickOrder.current.ids[clickOrder.current.ids.length - 1];
@@ -1803,11 +1804,11 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
             </label>
             <label>
               <span>System</span>
-              <select value={repairable ? "repairable" : network ? "network" : "non"} onChange={(e) => setMode(e.target.value)}>
+              <FormSelect value={repairable ? "repairable" : network ? "network" : "non"} onChange={(e) => setMode(e.target.value)}>
                 <option value="non">Non-repairable</option>
                 <option value="repairable">Repairable</option>
                 <option value="network">Network</option>
-              </select>
+              </FormSelect>
             </label>
           </div>
           <button className="ovm-item" onClick={autoLayout}>Auto-arrange</button>

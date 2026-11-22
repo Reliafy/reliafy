@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { addPackageTask, getTaskTable, listPackages } from "../api.js";
 import Chip from "./ui/Chip.jsx";
+import Select from "./Select.jsx";
 import TablePane from "./TablePane.jsx";
 import PositionForecast from "./PositionForecast.jsx";
 import MaintenanceTask, { TradeRates } from "./MaintenanceTask.jsx";
@@ -81,7 +82,7 @@ export function taskPhoneRow(r, rollup) {
 // `taskName`: the opened task's name from its row, the panel's title until the task has loaded.
 // The head (where it is, Expand or Back to table, Close) is the same as the Models and RCM panels';
 // the task's form draws its own title, body and footer under it, so its Save sits in the footer.
-export function TaskSide({ holder, taskId = null, taskName = "", rates = false, phone, expanded = false, onExpand, onCollapse, headingRef, onClose, onDone, onChanged }) {
+export function TaskSide({ holder, taskId = null, taskName = "", rates = false, phone, expanded = false, onExpand, onCollapse, headingRef, onClose, onDone, onChanged, onOptimise = null }) {
   const title = rates ? "Trade rates" : taskId ? (taskName || "Maintenance task") : "Add a task";
   const head = (
     <div className="rw-panel-head">
@@ -115,7 +116,7 @@ export function TaskSide({ holder, taskId = null, taskName = "", rates = false, 
         </>
       ) : holder && (
         <MaintenanceTask key={`${holder.key}:${taskId || "new"}`} row={holder} taskId={taskId} taskName={taskName}
-                         head={head} headingRef={headingRef} onBack={onClose} onDone={onDone}
+                         head={head} headingRef={headingRef} onBack={onClose} onDone={onDone} onOptimise={taskId ? onOptimise : null}
                          uses={taskId ? <RbdTaskUses taskIds={[taskId]} /> : null} />
       )}
     </aside>
@@ -256,11 +257,10 @@ function AddToPackage({ asset, tasks, display, onClose, onDone }) {
           {tasks.map((t) => (
             <label key={t.id} className="mt-pk-rule">
               <span>{t.name} <span className="lib-date">· {taskCell(t, "interval").text || "no interval"}</span></span>
-              <select value={rules[t.id] || 1} onChange={(e) => setRules((r) => ({ ...r, [t.id]: Number(e.target.value) }))}
-                      aria-label={`${t.name}: on which visits`}>
-                {[...new Set([...RULES, rules[t.id] || 1])].sort((a, b) => a - b)
-                  .map((n) => <option key={n} value={n}>{n === 1 ? "Every visit" : `Every ${ordinal(n)} visit`}</option>)}
-              </select>
+              <Select value={String(rules[t.id] || 1)} onChange={(v) => setRules((r) => ({ ...r, [t.id]: Number(v) }))}
+                      ariaLabel={`${t.name}: on which visits`}
+                      options={[...new Set([...RULES, rules[t.id] || 1])].sort((a, b) => a - b)
+                        .map((n) => ({ value: String(n), label: n === 1 ? "Every visit" : `Every ${ordinal(n)} visit` }))} />
             </label>
           ))}
         </fieldset>

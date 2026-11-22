@@ -389,3 +389,9 @@ nothing is linked yet). The interval calculators on a task card start from the
 decision's evidence, else from the position's model: a Weibull for a
 replacement interval, a failure rate for failure finding, a degradation model
 for the P-F interval.
+
+A task's **Optimise…** (on the Maintenance tab) works its interval out from
+the model of the failure mode it prevents. Once used, the model's row says
+*Sets the interval of* that task, linked to its Optimise, in **Used by**; when
+the model is refitted it says so, and the task can be re-optimised. The RCM
+tab's guide says how, under *Optimise a task from its model*.

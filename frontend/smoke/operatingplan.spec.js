@@ -3,6 +3,7 @@
 // kept inside the asset opened (a plan above ?root= is never used). Also the shared "How often"
 // control on a task: a pattern and its next dates.
 import { test, expect, open, expectHealthy } from "./health.js";
+import { choose } from "./select.js";
 
 const M = "/api/maintenance";
 
@@ -57,8 +58,8 @@ test("how often: a task on the first Saturday shows its next dates", async ({ pa
   const t = await (await request.post(`${M}/positions/${pos.id}/tasks`, { data: { name: "Grease", interval: 1, unit: "months" } })).json();
   await open(page, `/asset-register/explorer?arrange=positions&root=${pos.id}&sel=${pos.id}&tab=maintenance&mtask=${t.id}`);
   const how = page.getByRole("group", { name: "How often" });
-  await how.getByLabel("Which day").selectOption("nth:1");
-  await how.getByLabel("Day of the week").selectOption("Saturday");
+  await choose(how.getByLabel("Which day"), "nth:1");
+  await choose(how.getByLabel("Day of the week"), "Saturday");
   await expect(how.getByText(/^Next: Sat /)).toBeVisible();
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("the first Saturday of every month").first()).toBeVisible();

@@ -976,10 +976,10 @@ export function KindChip({ mode, task, kind, ops = null, can = false, onSaid = n
   };
   return (
     <>
-      <select className="rim-kindchip" aria-label={`Kind of “${task.name || task.text}”`} title={tip} value={kind} disabled={busy}
+      <Select className="rim-kindchip" aria-label={`Kind of “${task.name || task.text}”`} title={tip} value={kind} disabled={busy}
               onChange={(e) => change(e.target.value)}>
         {kinds.map((k) => <option key={k} value={k}>{OUTCOME_LABEL[k] || k}</option>)}
-      </select>
+      </Select>
       {failed && <span className="field-error" role="alert"> {failed}</span>}
     </>
   );

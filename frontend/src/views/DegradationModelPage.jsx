@@ -8,6 +8,7 @@ import { deleteDegradationModel, downloadModelPython, getDegradationModel, renam
 import DownloadPythonItem from "../components/model/DownloadPythonItem.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import ModelFrame from "../components/model/ModelFrame.jsx";
+import ModelSetsInterval from "../components/ModelSetsInterval.jsx";
 import useTabParam from "../components/model/useTabParam.js";
 import { degradationAnswer } from "../degradationFrame.js";
 import { itemName } from "../components/LibRows.jsx";
@@ -80,7 +81,12 @@ export default function DegradationModelPage() {
           </button>
         </>
       )}
-      notice={error && <div className="card error mf-notice" role="alert">{error}</div>}
+      notice={(
+        <>
+          {model && <ModelSetsInterval modelId={model.id} />}
+          {error && <div className="card error mf-notice" role="alert">{error}</div>}
+        </>
+      )}
     >
       {model ? (
         // A model this page can't draw shows a card here, not the whole-app error page.
