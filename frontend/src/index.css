@@ -2270,8 +2270,8 @@ select.ctl { padding-right: 30px; }
 .ctl-group > .ctl:first-child { border-radius: var(--radius-md) 0 0 var(--radius-md); }
 .ctl-group > .ctl:last-child { border-radius: 0 var(--radius-md) var(--radius-md) 0; }
 .ctl-group > * + * { border-left: 1px solid var(--border); }
-.ctl-group > select.ctl { flex: 0 1 auto; min-width: 5.5rem; }
-.ctl-group > .ctl:not(select) { min-width: 3.5rem; }
+.ctl-group > :is(select, .sel-trigger).ctl { flex: 0 1 auto; min-width: 5.5rem; }
+.ctl-group > .ctl:not(select, .sel-trigger) { min-width: 3.5rem; }
 .ctl-group > .ctl-unit { flex: 0 1 4.5rem; background-color: var(--bg-subtle); color: var(--text); }
 /* DateTimeInput.jsx: a date as "22 Nov 2026" and a time as "16:00", whatever the browser's language. */
 .ctl-group.dti { display: inline-flex; width: fit-content; position: relative; }
@@ -8250,21 +8250,24 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   gap: 8px;
   font-family: inherit;
   font-size: var(--fs-13);
+  line-height: var(--lh-13);
   color: var(--text);
   background: var(--bg-surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
-  padding: 7px 10px;
+  min-height: var(--control-md);
+  padding: 5px 9px 5px var(--space-3);
   cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s;
   text-align: left;
   min-width: 0;
+  max-width: 100%;
   box-shadow: none;
 }
-.sel-trigger:hover:not(.sel-embedded) {
-  border-color: var(--accent);
-  background: var(--accent-wash);
-}
+/* In a form (ui/Controls' Select): the text size of the inputs beside it. */
+.sel-trigger.ctl-sel { font-size: var(--fs-14); line-height: var(--lh-14); }
+.sel-trigger:hover:not(.sel-embedded):not(:disabled) { border-color: var(--border-control-hover); }
+.sel-trigger[aria-invalid="true"] { border-color: var(--danger); background-color: var(--danger-bg); }
 .sel-trigger.open,
 .sel-trigger:focus-visible {
   outline: none;
@@ -8347,6 +8350,10 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 .sel-check { display: inline-flex; color: var(--accent-text); flex-shrink: 0; }
 .sel-check svg { width: 13px; height: 13px; }
+/* A finger-sized row on a phone (control-lg); the search box's 16px text comes from the touch block. */
+@media (max-width: 720px) {
+  .sel-option { min-height: var(--control-lg); }
+}
 
 /* Embedded variant: fused into a bordered parent (column mapper fields). */
 .sel-trigger.sel-embedded {

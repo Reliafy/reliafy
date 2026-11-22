@@ -4,6 +4,7 @@
 // set in a covariate's details and a rule added on a phase are the same settings the RBD builder's
 // Phased mission… shows. Desktop and 400 px, nothing scrolling sideways.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
+import { choose, expectChosen } from "./select.js";
 
 const M = "/api/maintenance";
 const BEARING = "nswc-11:bearing-rolling-load-rating";
@@ -74,8 +75,8 @@ test("mission tree: details for missions and phases; covariate and node status r
   // A node status rule, by hand on the phase: the rear bearing guaranteed working in the survey.
   await exact(page, "Survey").locator(".tp-nm").click({ button: "right" });
   await page.getByRole("menuitem", { name: "Add node status rule…" }).click();
-  await side.getByLabel("Block").selectOption({ label: `Rear bearing ${tag}` });
-  await side.getByLabel("State in this phase").selectOption("guaranteed");
+  await choose(side.getByLabel("Block"), { label: `Rear bearing ${tag}` });
+  await choose(side.getByLabel("State in this phase"), "guaranteed");
   await side.getByRole("button", { name: "Add the rule" }).click();
   const rule = page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: `Rear bearing ${tag}` }) }).filter({ hasText: "Guaranteed working" });
   await expect(rule).toBeVisible({ timeout: 20_000 });
@@ -111,7 +112,7 @@ test("mission tree: details for missions and phases; covariate and node status r
   await page.getByRole("button", { name: /^Phased mission/ }).click();
   const modal = page.locator(".rbd-phases-modal");
   await modal.locator(".rbd-phase-needs summary").nth(1).click();
-  await expect(modal.getByRole("combobox", { name: `Rear bearing ${tag} in Survey` })).toHaveValue("guaranteed");
+  await expectChosen(modal.getByRole("combobox", { name: `Rear bearing ${tag} in Survey` }), "guaranteed");
   await expect(modal.locator(".rbd-phase").nth(1).getByLabel(/^Operating speed/)).toHaveValue("1800", { timeout: 15_000 });
   await expect(modal.locator(".rbd-phase").nth(1).getByLabel(/^Bearing operating temperature.* as an expression in t/))
     .toHaveValue("60 if t % 24 < 16 else 30");

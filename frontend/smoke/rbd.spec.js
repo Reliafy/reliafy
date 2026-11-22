@@ -3,6 +3,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { test, expect, open, expectHealthy } from "./health.js";
+import { choose } from "./select.js";
 
 const fixture = (name) => fileURLToPath(new URL(`fixtures/${name}`, import.meta.url));
 
@@ -305,8 +306,8 @@ test("the maintenance plan edits planned work and duty in place", async ({ page,
   await page.locator('[data-wt="rbd-plan-chip"]').click();
   const plan = page.getByRole("region", { name: "Maintenance plan" });
   await expect(plan).toBeVisible();
-  await plan.getByLabel("Component 1: task").selectOption("age");
-  await plan.getByLabel("Component 1: counted in").selectOption("operating");
+  await choose(plan.getByLabel("Component 1: task"), "age");
+  await choose(plan.getByLabel("Component 1: counted in"), "operating");
   await plan.getByLabel("Component 1: every").fill("500");
   // Runs blank is "all the time" since #829: running time is calendar time, nothing to fix.
   await expect(plan.locator(".rbd-plan-problem")).toHaveCount(0);
@@ -315,7 +316,7 @@ test("the maintenance plan edits planned work and duty in place", async ({ page,
   await expect(plan).toContainText("= 2,000 h on the calendar at Runs 25%");
   await expect(page.locator(".rbd-chip", { hasText: "25%" })).toBeVisible();
   // A proof test takes running hours too (#365): the unit stays with the interval.
-  await plan.getByLabel("Component 1: task").selectOption("test");
+  await choose(plan.getByLabel("Component 1: task"), "test");
   await expect(plan.getByLabel("Component 1: counted in")).toHaveValue("operating");
   await expect(plan).toContainText("= 2,000 h on the calendar at Runs 25%");
   await expect(page.locator(".rbd-chip", { hasText: "running" })).toBeVisible();

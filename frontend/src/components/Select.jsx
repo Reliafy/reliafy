@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { portalHost } from "../fullScreen.js";
 import { bestMatchIndex, filterOptions } from "../selectSearch.js";
+import { longList, nativeSelected, optionsFromChildren } from "../selectOptions.js";
+import { useField } from "./ui/Field.jsx";
 
 // Fully-styled dropdown replacing native <select> (whose popup list can't be
 // themed). A trigger button opens a portal-rendered listbox positioned under
@@ -15,6 +17,12 @@ import { bestMatchIndex, filterOptions } from "../selectSearch.js";
 // saved models, a tree of positions): typing narrows it to the rows holding every
 // word typed (in the label or the hint). Typing on the closed trigger opens it
 // with that letter already in the box.
+//
+// Instead of `options`, the rows may be written as <option>/<optgroup> children,
+// as for a native <select>: values are then strings, and with no match the
+// first row that isn't disabled shows (what a browser does). More than about
+// 15 rows and the list is searchable unless `searchable={false}`.
+// Inside a <Field> the trigger takes the field's id, help and error wiring.
 //
 // `options` entries may also be plain strings. `className` variants:
 //   sel-embedded — borderless, for selects fused inside a bordered parent
@@ -36,19 +44,34 @@ const norm = (o) =>
     ? (o.heading != null ? { ...o, _header: true } : o)
     : { value: o, label: String(o) };
 
-export default function Select({
+const Select = forwardRef(function Select({
   value,
   onChange,
-  options = [],
+  options,
+  children,
   placeholder = "Select…",
   disabled = false,
   className = "",
   title,
   ariaLabel,
-  searchable = false,
-}) {
-  const all = options.map(norm);
-  const selected = all.find((o) => !o._header && o.value === value);
+  "aria-label": ariaLabelAttr,
+  searchable: searchableProp,
+  id,
+  autoFocus,
+  onKeyDown: ownKeyDown,
+  onBlur,
+  "aria-describedby": describedBy,
+  "aria-invalid": invalid,
+  "aria-labelledby": labelledBy,
+}, ref) {
+  const field = useField();
+  const listId = useId();
+  // Written as <option> children: string values, matched the way a browser does.
+  const fromChildren = options == null;
+  const all = (fromChildren ? optionsFromChildren(children) : options).map(norm);
+  const selected = fromChildren ? nativeSelected(all, value) : all.find((o) => !o._header && o.value === value);
+  const isChosen = (o) => (fromChildren ? o === selected : o.value === value);
+  const searchable = searchableProp ?? longList(all);
   const [query, setQuery] = useState("");
   const items = searchable ? filterOptions(all, query) : all;
   const searchRef = useRef(null);
@@ -67,6 +90,11 @@ export default function Select({
   const [active, setActive] = useState(-1);
   const [pos, setPos] = useState(null); // { left, top, bottom, minWidth, up }
   const triggerRef = useRef(null);
+  const setTrigger = useCallback((el) => {
+    triggerRef.current = el;
+    if (typeof ref === "function") ref(el);
+    else if (ref) ref.current = el;
+  }, [ref]);
   const menuRef = useRef(null);
 
   const place = useCallback(() => {
@@ -88,14 +116,14 @@ export default function Select({
     if (disabled) return;
     place();
     setQuery(seed);
-    setActive(all.findIndex((o) => o.value === value));
+    setActive(all.findIndex((o) => !o._header && isChosen(o)));
     setOpen(true);
   };
 
   const choose = (o) => {
     if (o._header || o.disabled) return;
     setOpen(false);
-    if (o.value !== value) onChange(o.value);
+    if (!isChosen(o)) onChange?.(o.value);
   };
 
   // Close on outside interaction / scroll / resize while open.
@@ -134,6 +162,9 @@ export default function Select({
   const onKeyDown = (e) => {
     if (disabled) return;
     if (!open) {
+      // The caller's keys (an in-cell editor's Escape) come first while the list is shut.
+      ownKeyDown?.(e);
+      if (e.defaultPrevented) return;
       if (["Enter", " ", "ArrowDown", "ArrowUp"].includes(e.key)) {
         e.preventDefault();
         openMenu();
@@ -163,15 +194,24 @@ export default function Select({
     <>
       <button
         type="button"
-        ref={triggerRef}
+        ref={setTrigger}
+        id={id || field?.id}
         className={"sel-trigger" + (open ? " open" : "") + (className ? " " + className : "")}
         onClick={() => (open ? setOpen(false) : openMenu())}
         onKeyDown={onKeyDown}
+        onBlur={onBlur}
         disabled={disabled}
+        autoFocus={autoFocus}
         title={title}
-        aria-label={ariaLabel}
+        aria-label={ariaLabel ?? ariaLabelAttr}
+        aria-labelledby={labelledBy}
+        aria-describedby={describedBy || field?.describedBy}
+        aria-invalid={invalid ?? (field?.invalid ? "true" : undefined)}
+        data-value={selected ? String(selected.value) : ""}
         role="combobox"
         aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        aria-activedescendant={open && active >= 0 ? `${listId}-${active}` : undefined}
         aria-haspopup="listbox"
       >
         <span className={"sel-label" + (selected ? "" : " placeholder")}>
@@ -182,6 +222,7 @@ export default function Select({
       {open && pos && createPortal(
         <div
           ref={menuRef}
+          id={listId}
           className="sel-menu"
           role="listbox"
           style={{
@@ -199,6 +240,8 @@ export default function Select({
               value={query}
               placeholder="Find…"
               aria-label="Find in the list"
+              aria-controls={listId}
+              aria-activedescendant={active >= 0 ? `${listId}-${active}` : undefined}
               onChange={(e) => {
                 // Highlight the row Enter will take: the closest match.
                 const q = e.target.value;
@@ -222,11 +265,14 @@ export default function Select({
                 type="button"
                 key={String(o.value) + i}
                 data-i={i}
+                id={`${listId}-${i}`}
                 role="option"
-                aria-selected={o.value === value}
+                tabIndex={-1}
+                aria-selected={isChosen(o)}
+                data-value={String(o.value)}
                 className={
                   "sel-option" +
-                  (o.value === value ? " selected" : "") +
+                  (isChosen(o) ? " selected" : "") +
                   (i === active ? " active" : "") +
                   (o.disabled ? " disabled" : "")
                 }
@@ -238,7 +284,7 @@ export default function Select({
                   <span className="sel-option-label">{o.label}</span>
                   {o.hint && <span className="sel-option-hint">{o.hint}</span>}
                 </span>
-                {o.value === value && <span className="sel-check"><Check /></span>}
+                {isChosen(o) && <span className="sel-check"><Check /></span>}
               </button>
             )
           )}
@@ -247,4 +293,6 @@ export default function Select({
       )}
     </>
   );
-}
+});
+
+export default Select;

@@ -9,6 +9,7 @@
 // stock. Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { headMenu } from "./explorer.js";
+import { choose } from "./select.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -223,7 +224,7 @@ test("consumables: a row, a use typed in place out of stock, its additions besid
   const head = await headMenu(page);
   await head.locator(".ovm-menu .ovm-item", { hasText: "Add a consumable…" }).click();
   const dialog = page.getByRole("dialog", { name: "Add a consumable" });
-  await dialog.getByRole("combobox", { name: "Part" }).selectOption({ label: `ACID-${tag} Acid ${tag} (L)` });
+  await choose(dialog.getByRole("combobox", { name: "Part" }), { label: `ACID-${tag} Acid ${tag} (L)` });
   await dialog.getByRole("button", { name: "Add" }).click();
   await expect(page.locator(".tp-row", { hasText: `Acid ${tag}` }).locator(".ms-chip")).toHaveText("Never added");
   await expectHealthy(page, problems, { label: "consumables in the Measurements tab" });

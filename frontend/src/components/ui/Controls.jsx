@@ -2,6 +2,7 @@ import { forwardRef } from "react";
 import { useField } from "./Field.jsx";
 import useAutoGrow from "./useAutoGrow.js";
 import { DateInput, TimeInput } from "./DateTimeInput.jsx";
+import SharedSelect from "../Select.jsx";
 
 // The app's text controls (#UI): one look for every input, textarea and
 // select (.ctl in index.css): white, a 1 px line, 34 px tall, 14 px text
@@ -29,9 +30,15 @@ export const TextArea = forwardRef(function TextArea({ className, rows = 1, valu
   return <textarea ref={grow} rows={rows} value={value} {...props} {...wire(field, props)} className={cls("ctl ctl-area", className)} />;
 });
 
-export const Select = forwardRef(function Select({ className, children, ...props }, ref) {
-  const field = useField();
-  return <select ref={ref} {...props} {...wire(field, props)} className={cls("ctl", className)}>{children}</select>;
+// A form's drop-down: the shared Select (components/Select.jsx) written like a
+// native <select>, with <option> children and an onChange that gets
+// { target: { value, name } }, so form code reads the same as for TextInput.
+export const Select = forwardRef(function Select({ className, onChange, name, ...props }, ref) {
+  const change = onChange && ((value) => {
+    const target = { value, name };
+    onChange({ target, currentTarget: target });
+  });
+  return <SharedSelect ref={ref} {...props} onChange={change} className={cls("ctl ctl-sel", className)} />;
 });
 
 // A checkbox with its label beside it (.check in index.css): for a form field that waits
