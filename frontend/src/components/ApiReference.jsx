@@ -172,6 +172,7 @@ rf.spec()      # the OpenAPI spec`}</Code>
       <Code>{`rf.upload_dataset("bearings.xlsx", name="Bearings")     # CSV or .xlsx, as a dataset
 rf.import_rbd("plant.xml")                              # BlockSim, Open-PSA, Galileo, RePyability, the Excel template
 rf.import_excel("fmea.xlsx", target="rcm", position_id="…")  # dataset, rcm (onto a position) or rbd
+rf.import_rcm("fmea.csv", position_id="…", dry_run=True)  # an RCM worksheet or task plan, CSV or .xlsx
 rf.add_photo("nameplate.jpg", target_id="…")            # Reliafy Maintenance users
 rf.add_document("manual.pdf", target_id="…")             # a PDF on an item or position (at most 20 MB)
 
@@ -1037,6 +1038,7 @@ reliafy push model.json                        # {distribution, params | data, n
 reliafy upload bearings.xlsx --name Bearings   # CSV or .xlsx as a dataset
 reliafy import rbd plant.xml                   # BlockSim, Open-PSA, Galileo, RePyability, Excel
 reliafy import excel fmea.xlsx --target rcm --position POSITION_ID
+reliafy import rcm fmea.csv --position POSITION_ID --dry-run    # CSV or .xlsx, previewed
 reliafy ingest usage meters.csv --fleet FLEET_ID
 reliafy ingest measurements readings.csv --fleet TRACKED_FLEET_ID
 reliafy ingest lives new_failures.csv --dataset DATASET_ID
@@ -1109,6 +1111,7 @@ const MCP_TOOLS = [
     ["model_fit", "The same fit as analyse fit, saved as a model; with demand_batches, a per-demand model. Pro."],
     ["model_save", "Save a model from a distribution and parameters your agent fitted itself — e.g. locally with SurPyval."],
     ["model_fit_alt", "Fit and save an accelerated life test model — failure times at several stress levels and a life-stress relationship, inspection data and delayed entry included. Pro."],
+    ["model_fit_degradation", "Fit and save a degradation model: readings that drift to a failure threshold (wear, crack length), each unit’s crossing time and the life they imply, with B-lives and their 90% one-sided lower bounds; dry_run reports without saving. Pro."],
     ["model_fit_recurrent", "Fit and save a repairable model (recurrent events): Crow-AMSAA and the other minimal-repair models, proportional intensity, or imperfect repair (Kijima I/II, ARA, ARI, G1). Pro."],
     ["model_update / model_delete", "Rename or annotate your own models, or delete one (never shared samples; not one a fleet forecast runs on)."],
     ["dataset_upload", "Save CSV text, or a CSV or Excel file sent with change upload_create."],
@@ -1122,6 +1125,8 @@ const MCP_TOOLS = [
     ["upload_send_part", "For an agent that can’t reach the upload URL at all: the file in base64 parts through the MCP connection, into the same upload. For files up to a few hundred KB; not counted against the Free allowance."],
     ["import_rbd", "Import diagrams from ReliaSoft BlockSim, Open-PSA XML, Galileo DFT, RePyability JSON or Reliafy’s Excel RBD template, with notes on anything approximated; preview first to check the structure. as_fault_tree saves an Open-PSA or Galileo file as fault trees instead."],
     ["import_excel", "A sheet as a dataset, an FMEA / RCM worksheet onto a maintenance position’s RCM (give its position_id), or the RBD template as a diagram (as a copy of an existing one, unless you ask to replace it)."],
+    ["import_rcm", "An RCM / FMEA worksheet or a task plan (one row per failure mode), as CSV text or an uploaded CSV or .xlsx, onto a maintenance position’s RCM; preview first. Only adds."],
+    ["optimal_replacement_save", "Save an optimal-replacement analysis, as Strategy’s Save analysis does: the results are worked out again from the inputs and kept under Strategy."],
     ["share_link", "Publish one of your own items — a model, dataset, diagram, strategy analysis or fleet — optionally password-protected (a passphrase shown once, for you to send separately) and expiring."],
     ["share_report", "Several of your items on one print-ready page, with a title, an author line, an introduction and a note per item."],
     ["share_revoke", "End a link at once."],

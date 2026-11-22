@@ -345,8 +345,8 @@ in the function's notes (Markdown is fine; a function's notes take up to 25,000 
 the old argument for it, still accepted: it's added to the notes under a "Working" line. Reads keep \
 standard_basis / has_basis as the notes, for older callers.
 - A functional failure caused by others: maintenance failure_modes.link_cause (functional_failure_id: the effect; cause_id: another functional failure on the same tree, usually on a position inside it, but one beside it (the pool's 'no free chlorine' from the chlorinator next to it) or on the same position counts too; the same link whichever end you start from), unlink_cause to take it off (both undo in a maintenance apply batch). Refused: a failure causing itself, a loop, another tree. A failure explained by its causes needs no failure modes of its own: it's covered once every linked failure is (their modes decided, or explained further on), and its position counts as analysed then. get kind rcm gives each functional failure causes, effects (each with its position), covered and explained_below. Deleting or retiring the cause, or moving either end to another tree, drops the link and says so.
-- An FMEA / RCM worksheet the user has (Excel or CSV, one row per failure mode): change upload_create (purpose excel), \
-then change import_excel target=rcm position_id=… dry_run=true: a preview (counts, functions, errors, warnings and \
+- An FMEA / RCM worksheet or task plan the user has (Excel or CSV, one row per failure mode): change import_rcm \
+position_id=… with csv (the text) or an upload_id (change upload_create, purpose excel), first with dry_run=true: a preview (counts, functions, errors, warnings and \
 unmapped_values: consequence or decision words it didn't recognise). Fix those with mapping {consequence_map, \
 outcome_map} (the column mapping guessed from the header stays unless mapping.mapping is given) and preview again; \
 show the user, then the same call with dry_run false. It only adds (same-text functions and functional failures \
