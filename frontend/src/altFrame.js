@@ -71,20 +71,67 @@ const withUnit = (v, unit) => `${formatNumber(v)}${unit ? ` ${unitInText(unit)}`
 
 // Boltzmann's constant in eV per kelvin.
 export const BOLTZMANN_EV = 8.617333262e-5;
-// The thermal models whose coefficient ``a`` is the activation energy over
-// Boltzmann's constant (life ∝ exp(a / T), T in kelvin).
-const EA_MODELS = new Set(["arrhenius", "power_exponential"]);
 
-// The activation energy Ea = a·k of a thermal fit, in eV, with its interval
-// where the fit has one: { value, ci } or null for any other life model.
-export function activationEnergy(results) {
-  if (!EA_MODELS.has(results?.life_model_id)) return null;
+// The activation energy of a thermal fit, in eV, with its two-sided interval:
+// { value, ci, level } or null. SurPyval's own (activation_energy(): Arrhenius
+// and Eyring), from the use-stress answer ``ev`` or the fit; SurPyval gives
+// none for the temperature–nonthermal model, whose ``a`` is still Ea / k
+// (life ∝ exp(a / T), T in kelvin), so that one is a × k here.
+export function activationEnergy(results, ev = null) {
+  const own = ev?.activation_energy || results?.activation_energy;
+  if (own && Number.isFinite(Number(own.value))) {
+    const ci = Array.isArray(own.ci) && own.ci.length === 2 && own.ci.every((x) => Number.isFinite(Number(x)))
+      ? own.ci.map(Number) : null;
+    return { value: Number(own.value), ci, level: Number.isFinite(own.level) ? own.level : null };
+  }
+  if (results?.life_model_id !== "power_exponential") return null;
   const a = (results.coefficients || []).find((c) => c.name === "a");
   const v = Number(a?.value);
   if (!Number.isFinite(v)) return null;
   const ci = Array.isArray(a.ci) && a.ci.length === 2 && a.ci.every((x) => Number.isFinite(Number(x)))
     ? a.ci.map((x) => Number(x) * BOLTZMANN_EV) : null;
-  return { value: v * BOLTZMANN_EV, ci };
+  return { value: v * BOLTZMANN_EV, ci, level: null };
+}
+
+// The mean life (MTTF) at the use stress from the use-stress answer, with its
+// two-sided interval (SurPyval's mean_cb): { value, ci, level } or null where
+// there is none (an infinite mean is never shown).
+export function meanAtUse(ev) {
+  const m = ev?.mean_life;
+  if (!m || !Number.isFinite(Number(m.value))) return null;
+  const ci = Array.isArray(m.ci) && m.ci.length === 2 && m.ci.every((x) => Number.isFinite(Number(x)))
+    ? m.ci.map(Number) : null;
+  return { value: Number(m.value), ci, level: Number.isFinite(m.level) ? m.level : 0.9 };
+}
+
+// The lives the life-stress chart can show: the median and B10 come with a
+// one-sided lower bound; the characteristic life (the life the model is
+// fitted in) with a two-sided band.
+export const CHART_LIVES = [
+  { value: "b50", label: "Median" },
+  { value: "b10", label: "B10" },
+  { value: "eta", label: "Characteristic" },
+];
+
+// The life-stress line (from the use-stress answer) and the tested levels'
+// marks for the life chosen: ``line`` { stress, life, lower, upper?, level,
+// bound } and ``points`` [{ stress (the row), life }]. ``eta`` keeps the
+// line as it is (its two-sided band). Null where the answer has no such line.
+export function lifeLineFor(along, which, testedLives = null) {
+  if (!along?.stress?.length) return null;
+  if (which === "eta") return { line: along, points: null };
+  const q = along.quantiles?.[which];
+  if (!q || !Array.isArray(q.life)) return null;
+  const keep = q.life.map((v, i) => Number.isFinite(v) && v > 0 && i < along.stress.length);
+  const pick = (arr) => (arr || []).filter((_, i) => keep[i]);
+  const line = {
+    stress: pick(along.stress), life: pick(q.life),
+    lower: pick(q.lower).map((v) => (Number.isFinite(v) && v > 0 ? v : null)),
+    level: along.quantiles.level ?? 0.9, bound: "lower",
+  };
+  const points = (testedLives || []).map((t) => ({ stress: t.stress, life: t[which] }))
+    .filter((t) => Number.isFinite(t.life));
+  return { line, points };
 }
 
 // "β 0.78 (90% two-sided 0.63–0.96)".
@@ -268,22 +315,46 @@ export function pWords(p) {
 
 const TONE = { ok: "good", warn: "caveat", fail: "bad" };
 
-// "Is the shape the same at every stress?" — the likelihood-ratio test of
-// one shape against a shape for each level.
+// "Is the failure mechanism the same at every stress?" — SurPyval's
+// likelihood-ratio test of one shape at every tested level against a shape
+// for each (common_shape_test(), chi-squared on k − 1 degrees of freedom).
+// The test and what it means, never a verdict word: ``words`` is the line
+// under the question, ``detail`` the statistic, each level's shape and any
+// level left out. A p-value under 0.05 is flagged to check (tone "caveat").
+export const SHAPE_ALPHA = 0.05;
 export function shapeCheck(diag, results) {
   const r = results || {};
-  if (r.distribution_id === "exponential" || (diag && diag.shape === null)) {
+  if (r.distribution_id === "exponential" || (diag && diag.common_shape === null)) {
     return { tone: null, words: "Nothing to test: an exponential has no shape, only a constant failure rate at each stress." };
   }
-  const s = diag?.shape;
+  const s = diag?.common_shape;
   if (!s) return null;
   if (!s.computed) return { tone: null, words: `Can't tell: ${s.detail}.` };
   const p = pWords(s.p);
-  if (s.verdict === "ok") return { tone: "good", words: `Yes: no sign the shape changes from level to level (${p}).` };
-  if (s.verdict === "warn") return { tone: "caveat", words: `Perhaps not: the shape may differ between levels (${p}).` };
+  const sym = shapeParam(r)?.symbol || s.parameter || "shape";
+  const differ = Number.isFinite(s.p) && s.p < SHAPE_ALPHA;
+  const words = differ
+    ? `The shapes differ (${p}): one ${sym} doesn't fit every tested stress, which can mean a different failure mechanism at some of them. Extrapolation is unreliable.`
+    : `The shapes are consistent (${p}): one ${sym} fits every tested stress, so extrapolating to the use stress rests on that.`;
+  const ss = r.stresses || [];
+  const parts = [];
+  if (Number.isFinite(s.statistic) && Number.isFinite(s.df)) {
+    parts.push(`Likelihood-ratio statistic ${formatNumber(s.statistic, { sig: 3 })} on ${s.df} degree${s.df === 1 ? "" : "s"} of freedom (χ²)`);
+  }
+  const shapes = (s.shapes || []).filter((x) => Number.isFinite(x.shape));
+  if (shapes.length) {
+    const each = shapes.map((x) => `${formatNumber(x.shape, { sig: 3 })} at ${levelWords(x.stress, ss)}`).join(", ");
+    parts.push(`each level's own ${sym} ${each}${Number.isFinite(s.common_shape) ? `; one ${sym} for all ${formatNumber(s.common_shape, { sig: 3 })}` : ""}`);
+  }
+  const left = (s.left_out || []).map((x) => `${levelWords(x.stress, ss)} (${x.failures} failure${x.failures === 1 ? "" : "s"})`);
+  const leftOut = left.length
+    ? `Left out of the test: ${left.join(", ")}. A level needs two failures for a shape of its own.`
+    : null;
   return {
-    tone: "bad",
-    words: `No: the shape changes between levels (${p}). That can mean a different failure mode at some stresses: check the failures there.`,
+    tone: differ ? "caveat" : null,
+    words,
+    detail: parts.length ? `${parts.join("; ")}.` : null,
+    leftOut,
   };
 }
 

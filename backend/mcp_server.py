@@ -3020,6 +3020,12 @@ def alt_use_level(
         "bounds_methods": out.get("bounds_methods"),
         **_alt_stress_units(results),
     }
+    # The mean life (MTTF) at the use stress with its 90% two-sided Wald interval (SurPyval's mean_cb).
+    if (out.get("mean_life") or {}).get("ci"):
+        answer["mean_life_interval"] = {"lower": out["mean_life"]["ci"][0], "upper": out["mean_life"]["ci"][1],
+                                        "level": out["mean_life"]["level"], "bound": "two-sided"}
+    if out.get("activation_energy"):
+        answer["activation_energy_ev"] = out["activation_energy"]
     if out.get("no_finite_maximum"):
         answer["no_finite_maximum"] = out["no_finite_maximum"]
     if bounds_method == "wald":
