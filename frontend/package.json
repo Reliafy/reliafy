@@ -11,7 +11,8 @@
     "capture:guides": "node scripts/capture-guides.mjs",
     "smoke": "node scripts/smoke.mjs",
     "tokens": "node scripts/build-tokens.mjs",
-    "lint:js": "eslint --quiet src"
+    "lint:js": "eslint --quiet src",
+    "lint:css": "node scripts/lint-css.mjs"
   },
   "dependencies": {
     "cytoscape": "^3.34.3",
@@ -30,6 +31,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "eslint": "9.39.4",
     "playwright": "1.62.0",
+    "stylelint": "^16.26.1",
     "vite": "^5.4.11"
   }
 }
