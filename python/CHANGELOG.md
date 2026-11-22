@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.12.6 (unreleased)
+
+Needs a server on the same release.
+
+- **What a failure costs**: `maintenance failure_modes.update` takes `failure_cost`, `downtime_hours`
+  and `downtime_rate` (`clear` unsets them), and `maintenance reliability.set_class_costs` takes
+  `downtime_hours` and `downtime_rate`: each figure is the failure mode's own, else its class's.
+  `reliafy maintenance failure_modes.update --failure-mode-id … --failure-cost 900 --downtime-hours 4`.
+- **The forecast's cost split**: `maintenance get.forecast` rows and totals carry `labour_cost`,
+  `materials_cost`, `other_planned_cost`, `unplanned_cost`, `downtime_hours`, `downtime_cost` and
+  `total_cost`, with `cost_basis`, and `prompts` lists what to enter (failure modes with no failure
+  cost, checks with no P-F interval, tasks with no modelled effect).
+
 ## 0.12.5 (unreleased)
 
 Needs a server on the same release.

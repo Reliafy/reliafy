@@ -76,6 +76,7 @@ from backend.maintenance.captures import PROJECTORS as _CAPTURE_PROJECTORS
 from backend.maintenance import task_costs as _task_costs
 from backend.maintenance.captures import CaptureOps
 from backend.maintenance import restoration as _restoration
+from backend.maintenance import failure_costs as _failure_costs
 from backend.maintenance import shutdowns as _shutdowns
 from backend.maintenance import purge as _purge
 
@@ -3178,7 +3179,8 @@ def _walk_down(top: str, kids: dict) -> set[str]:
 
 
 class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDeleteOps, PositionModelOps,
-                  CaptureOps, AssetSearchOps, _restoration.RestorationOps, _shutdowns.ShutdownOps):
+                  CaptureOps, AssetSearchOps, _restoration.RestorationOps, _shutdowns.ShutdownOps,
+                  _failure_costs.FailureCostOps):
     """One organisation's maintenance graph, acted on by one person."""
 
     def __init__(self, store: GraphStore, org: str, actor: str | None = None, limited: bool = True,
@@ -6342,6 +6344,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             "id": fm["id"], "text": fm["text"], "effects": fm.get("effects") or "",
             "notes": mode_notes(fm.get("notes"), fm.get("decision_notes")),
             "hidden": hidden, "consequence": consequence, "decision": decision,
+            # What one failure costs (failure_costs.py): its own figures, else its class's.
+            "costs": {k: fm.get(k) for k in _failure_costs.FIELDS},
             **({"advice": said} if said else {}),
             **({"needs_review": True} if needs_review and decision else {}),
             # Its tasks whether or not it's decided yet (a task linked before the decision).
@@ -14156,7 +14160,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                                               "failures": 0})
             if "costs" not in entry:
                 node = self.s.node(self.org, class_id(self.org, name)) or {}
-                entry["costs"] = {k: node.get(k) for k in ("planned_cost", "failure_cost", "availability_target")}
+                entry["costs"] = {k: node.get(k) for k in ("planned_cost", "failure_cost", "availability_target",
+                                                           "downtime_hours", "downtime_rate")}
                 entry["model"] = node.get("model")
                 entry["replacement_cost"] = node.get("replacement_cost")
                 entry["documents"] = self.documents_of(class_id(self.org, name))
@@ -14169,11 +14174,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
     # ---- closing the loop: costs, proposals -------------------------------------------
 
     def set_class_costs(self, position_class: str, planned_cost=None, failure_cost=None,
-                        availability_target=None) -> dict:
+                        availability_target=None, downtime_hours=..., downtime_rate=...) -> dict:
         """What a planned replacement and a failure cost for this class of position,
         and the availability a hidden (protective) function must reach: what the
-        proposed intervals are optimised against."""
+        proposed intervals are optimised against. downtime_hours (a failure's time out
+        of use) and downtime_rate (an hour out of use): failure_costs.py; left out, kept."""
         name = self._class_name(position_class)
+        if downtime_hours is not ... or downtime_rate is not ...:
+            self.set_class_downtime(name, downtime_hours, downtime_rate)
+            if (planned_cost, failure_cost, availability_target) == (None, None, None):
+                return self.position_class(name)
         node = self.s.node(self.org, class_id(self.org, name)) or {}
         out = {}
         for key, value in (("planned_cost", planned_cost), ("failure_cost", failure_cost),
@@ -16736,6 +16746,7 @@ PROJECTORS.update(_task_costs.PROJECTORS)
 # its interval is counted, its age limit at a shutdown; and shutdown packages (Nov 2026,
 # restoration.py, shutdowns.py).
 PROJECTORS.update(_restoration.PROJECTORS)
+PROJECTORS.update(_failure_costs.PROJECTORS)
 PROJECTORS.update(_shutdowns.PROJECTORS)
 
 # Records the walkthroughs found wrong (Nov 2026): an inspection's found-failed finding on

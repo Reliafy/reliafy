@@ -240,19 +240,12 @@ def _task_rows(m: Maintenance, pos: dict, hours_map, start: date, end: date) -> 
 
 # ---- failures from the life models on positions -----------------------------------------------
 
-def _cost_per_failure(m: Maintenance, pos: dict) -> tuple[float | None, str]:
-    """What a failure here costs: the position class's failure cost, else its replacement cost."""
-    key = m._class_key(pos)
-    name = m._class_label(key)
-    if not key:
-        return None, "no failure cost set (give the position a class with a failure cost)"
-    node = m.s.node(m.org, svc.class_id(m.org, key)) or {}
-    if node.get("failure_cost") is not None:
-        return float(node["failure_cost"]), f"the {name} class's failure cost"
-    rc = (node.get("replacement_cost") or {}).get("amount")
-    if rc is not None:
-        return float(rc), f"the {name} class's replacement cost"
-    return None, f"no failure cost set on the {name} class"
+def _cost_per_failure(m: Maintenance, pos: dict, mode_ids=None) -> tuple[float | None, str, dict]:
+    """What a failure here costs, all in (repair plus downtime at its cost an hour), by the one rule
+    (failure_costs.py: each figure the failure mode's own, else the position class's; a life for
+    several modes the costliest): (per failure or None, where it comes from in words, the figures)."""
+    c = m.failure_consequence(pos, mode_ids)
+    return c["per_failure"], c["text"], c
 
 
 def _lives_on(m: Maintenance, pos: dict) -> tuple[list[tuple[dict, list | None]], list[dict]]:
@@ -370,15 +363,24 @@ def _task_effects(m: Maintenance, fetch, pos: dict, mode_ids, life_unit: str, us
         if svc._on_event_only(task) or not task.get("interval"):
             continue
         if outcome == "fixed_interval":
+            from backend.maintenance import restoration as rs
+
             r = (task.get("restorations") or {}).get(x["mode"]["id"]) or task.get("restoration")
+            assumed = False
+            if r is None:
+                r = rs.default_for(task)
+                assumed = r is not None
             if r and r.get("kind") != "as_new":
                 q = float(r.get("q") or 0.0)
                 if q >= 1 - 1e-9:
-                    not_credited.append({"task": brief, "reason": "it restores none of the item's age, so the "
-                                                                  "failures are as they would be without it"})
+                    why = ("it restores none of the item's age" + (" (assumed from its name: say what it leaves the "
+                                                                    "item as if it does more)" if assumed else "")
+                           + ", so the failures are as they would be without it")
+                    not_credited.append({"task": brief, "reason": why, "fix": "effect"})
                 else:
                     not_credited.append({"task": brief, "reason": "a partial restoration isn't counted in the "
-                                                                  "forecast yet: its failures are as without it"})
+                                                                  "forecast yet: its failures are as without it",
+                                         "fix": "effect"})
                 continue
             every = _in_life_unit(task["interval"], task["unit"], life_unit)
             if every is None:
@@ -390,7 +392,8 @@ def _task_effects(m: Maintenance, fetch, pos: dict, mode_ids, life_unit: str, us
             pf = _pf_of(fetch, x["evidence"])
             if pf is None:
                 not_credited.append({"task": brief, "reason": "no P-F interval linked (a saved P-F calculation as "
-                                                              "its evidence), so the check isn't counted"})
+                                                              "its evidence), so the check isn't counted",
+                                     "fix": "pf", "mode": {"id": x["mode"]["id"], "text": x["mode"].get("text") or ""}})
                 continue
             tau = _in_life_unit(task["interval"], task["unit"], life_unit)
             pf_life = _in_life_unit(pf[0], pf[1], life_unit)
@@ -404,6 +407,12 @@ def _task_effects(m: Maintenance, fetch, pos: dict, mode_ids, life_unit: str, us
             credited.append({"task": brief, "effect": (
                 f"a check every {_num(tau, 4):g} {life_unit} against a P-F interval of {_num(pf_life, 4):g} "
                 f"{life_unit} finds {found:.0%} of warnings in time")})
+        elif outcome == "failure_finding":
+            not_credited.append({"task": brief, "reason": "a failure-finding test: it finds hidden failures, which "
+                                                          "this forecast doesn't count yet"})
+        else:
+            not_credited.append({"task": brief, "reason": "it has no modelled effect on failures (not a replacement "
+                                                          "or a check in its RCM decision)", "fix": "effect"})
     every = since = None
     if renew:
         every, task = min(renew, key=lambda r: r[0])
@@ -541,7 +550,7 @@ def _model_forecast(m: Maintenance, fetch, pos: dict, hours_map, start: date, en
                                           "are laid on dates for now" if counter else
                                           f"this life is in {what}: no {what} counter here, and only lives in "
                                           "operating hours or calendar time are laid on dates for now")}
-    cost, cost_basis = _cost_per_failure(m, pos)
+    cost, cost_basis, consequence = _cost_per_failure(m, pos, mode_ids)
     end = end_excl - timedelta(days=1)
     effects = _task_effects(m, fetch, pos, mode_ids, unit, usage, hours_map, start, end)
     policy = {}
@@ -567,13 +576,17 @@ def _model_forecast(m: Maintenance, fetch, pos: dict, hours_map, start: date, en
         **brief, "position": {"id": pos["id"], "name": pos.get("name", "")},
         "distribution": label, "unit": unit, "age": _num(age), "placeholder": placeholder,
         "cost_per_failure": cost, "cost_basis": cost_basis,
+        "failure_cost_each": consequence["failure_cost"], "downtime_hours_each": consequence["downtime_hours"],
+        "downtime_rate": consequence["downtime_rate"],
+        "expected_downtime_hours": _num(total["expected_failures"] * consequence["downtime_hours"])
+        if consequence["downtime_hours"] else None,
         "expected_failures": _num(total["expected_failures"]),
         "probability": _num(total["probability"], 3) if total.get("probability") is not None else None,
         "failures_range": [total.get("failures_low"), total.get("failures_high")],
         "expected_cost": _money(total.get("expected_cost")),
         "cost_range": [_money(total.get("cost_low")), _money(total.get("cost_high"))],
         "rests_on": f"{label} life ({quality}), {age_text}; {hours_text[0].lower() + hours_text[1:]}"
-                    + (f"; each failure at {cost_basis}" if cost is not None else f"; {cost_basis}")
+                    + (f"; each failure costs {cost_basis}" if cost is not None else f"; {cost_basis}")
                     + (f"; with the maintenance: {tasks_words}" if tasks_words else "; run to failure")
                     + "".join(f"; not counted: {x['task']['name']} ({x['reason']})" for x in effects["not_credited"]),
         "tasks_counted": effects["credited"], "tasks_not_counted": effects["not_credited"],
@@ -616,6 +629,118 @@ def _sum_range(rows: list[dict]) -> tuple[float, float, float, float]:
             float(np.quantile(cost, 0.05, method="inverted_cdf")), float(np.quantile(cost, 0.95, method="inverted_cdf")))
 
 
+# ---- planned cost by kind, and what's missing --------------------------------------------------
+
+def _split_each(view: dict) -> tuple[float, float]:
+    """One doing of a task, its cost by kind: (labour, parts and consumables), from its LSA lines
+    (labour at the trade rates; spares at their unit cost; consumables). A typed cost is what's
+    charged: the LSA's parts are taken from it first, then its labour; what the LSA doesn't price is
+    the rest of the planned cost ("other")."""
+    cost = view.get("cost") or {}
+    lsa = cost.get("lsa") or {}
+    lab = float(lsa.get("labour_cost") or 0.0)
+    mat = float(lsa.get("materials_cost") or 0.0)
+    amount = cost.get("amount")
+    if amount is None:
+        return 0.0, 0.0
+    if cost.get("source") == "typed":
+        mat = min(mat, float(amount))
+        lab = min(lab, float(amount) - mat)
+    return lab, mat
+
+
+def _planned_split(planned, lab, mat) -> dict:
+    planned, lab, mat = float(planned), float(lab), float(mat)
+    return {"labour_cost": _money(lab), "materials_cost": _money(mat),
+            "other_planned_cost": _money(max(0.0, planned - lab - mat))}
+
+
+def _cost_basis_words(t: dict, unpriced: list[dict]) -> dict:
+    """What each cost rests on, in words, for the screen and the tool."""
+    planned = ("Planned: each task's cost each time × the times it falls due. Labour is its LSA's labour at the "
+               "trade rates, parts and consumables its LSA's lines; a typed cost the LSA doesn't explain is "
+               "\"other\".")
+    unplanned = ("Unplanned: expected failures × what a failure costs (its repair, plus its downtime × the cost of "
+                 "an hour down), each figure the failure mode's own, else its position class's.")
+    if unpriced:
+        names = ", ".join(sorted({f"{r['position']['name']}: {r['name']}" for r in unpriced}))
+        unplanned += f" Not costed (no failure cost set): {names}."
+    return {"planned": planned, "unplanned": unplanned}
+
+
+def _explorer_link(position_id: str, root, tab: str, sel: str | None = None, **extra) -> str:
+    from urllib.parse import urlencode
+
+    q = {"arrange": "positions", **({"root": root} if root else {}), "sel": sel or position_id, "tab": tab, **extra}
+    return "/asset-register/explorer?" + urlencode(q)
+
+
+def _prompts(m: Maintenance, fetch, tree, tasks_out: list[dict], models: list[dict], root) -> dict:
+    """What to enter for the forecast to count more (plan step 1, Nov 2026), each with a link to
+    where it's entered: tasks with no modelled effect on failures, failure modes with no failure
+    cost, and on-condition checks with no P-F interval."""
+    counted_ids: set = set()
+    why: dict = {}
+    for r in models:
+        for c in r.get("tasks_counted") or []:
+            counted_ids.add(c["task"]["id"])
+        for c in r.get("tasks_not_counted") or []:
+            why.setdefault(c["task"]["id"], c)
+    lives_for: set = set()
+    for r in models:
+        if r.get("failure_modes"):
+            lives_for.update(x["id"] for x in r["failure_modes"])
+        else:
+            lives_for.update(fm["id"] for fm in m._modes_on(r["position"]["id"]))
+    no_effect, seen = [], set()
+    for t in tasks_out:
+        if t["id"] in counted_ids or t["id"] in seen:
+            continue
+        seen.add(t["id"])
+        serves = [fm for fm in m.s.out(m.org, t["id"], "MITIGATES") if not fm.get("retired")]
+        if t["id"] in why:
+            reason = why[t["id"]]["reason"]
+        elif not serves:
+            reason = "it serves no failure mode, so no failure here changes with it"
+        elif not any(fm["id"] in lives_for for fm in serves):
+            reason = "its failure modes have no life model in this forecast"
+        else:
+            reason = "it has no modelled effect on failures"
+        link_tab, extra = ("models", {}) if reason.startswith("its failure modes have no life") else (
+            "maintenance", {"mtask": t["id"]})
+        no_effect.append({"task": {"id": t["id"], "name": t["name"]}, "position": t["position"], "reason": reason,
+                          "link": _explorer_link(t["position"]["id"], root, link_tab, **extra)})
+    no_cost, no_pf, pf_seen = [], [], set()
+    for node, _depth in tree:
+        here = {"id": node["id"], "name": node.get("name", "")}
+        for fm in m._modes_on(node["id"]):
+            c = m.failure_consequence(node, [fm["id"]])
+            if c["per_failure"] is None:
+                no_cost.append({"mode": {"id": fm["id"], "text": fm.get("text") or ""}, "position": here,
+                                "counted": fm["id"] in lives_for,
+                                "link": _explorer_link(node["id"], root, "rcm", sel=fm["id"])})
+        if fetch is None:
+            continue
+        for x in _mode_tasks(m, node, None):
+            task = x["task"]
+            if x["outcome"] != "on_condition" or task["id"] in pf_seen or svc._on_event_only(task):
+                continue
+            if _pf_of(fetch, x["evidence"]) is None:
+                pf_seen.add(task["id"])
+                no_pf.append({"task": {"id": task["id"], "name": task.get("name") or ""},
+                              "mode": {"id": x["mode"]["id"], "text": x["mode"].get("text") or ""}, "position": here,
+                              "link": _explorer_link(node["id"], root, "rcm", sel=x["mode"]["id"])})
+    for r in models:
+        if r["cost_per_failure"] is None and not r.get("failure_modes") and not m._modes_on(r["position"]["id"]):
+            # A life for every failure of a position with no failure modes: its class's cost, or a mode of its own.
+            no_cost.append({"mode": None, "life": r["name"], "position": r["position"], "counted": True,
+                            "reason": "a life for every failure here, with no failure mode and no class failure cost: "
+                                      "add the failure mode it's for and enter its cost, or set the class's",
+                            "link": _explorer_link(r["position"]["id"], root, "rcm")})
+    no_cost.sort(key=lambda x: (not x["counted"], x["position"]["name"].lower()))
+    return {"no_effect": no_effect, "no_failure_cost": no_cost, "no_pf": no_pf}
+
+
 # ---- the forecast ----------------------------------------------------------------------------
 
 def position_forecast(m: Maintenance, position_id: str, root: str | None = None, period="month", periods=12,
@@ -641,7 +766,9 @@ def position_forecast(m: Maintenance, position_id: str, root: str | None = None,
     n = len(starts)
     zeros = lambda: np.zeros(n)  # noqa: E731
     count, labour, planned = zeros(), zeros(), zeros()
+    labour_cost, materials_cost = zeros(), zeros()
     fail_exp, fail_cost = zeros(), zeros()
+    down_hours, down_cost = zeros(), zeros()
     tasks_out, not_on_dates, models, not_forecast, by_position, states = [], [], [], [], [], []
     due_in: list[list[dict]] = [[] for _ in range(n)]
     no_cost_tasks, no_hours_tasks = set(), set()
@@ -685,8 +812,11 @@ def position_forecast(m: Maintenance, position_id: str, root: str | None = None,
                     mine.update(count=mine["count"] + 1, labour=mine["labour"] + (lib.duration or 0.0),
                                 planned=mine["planned"] + (lib.cost or 0.0))
                 dates = [d.isoformat() for d in done]
+                lab_each, mat_each = _split_each(view)
                 for k, d in enumerate(done):
                     idx = max(0, min(n - 1, int(np.searchsorted(np.array(starts), d, side="right")) - 1))
+                    labour_cost[idx] += lab_each
+                    materials_cost[idx] += mat_each
                     due_in[idx].append({"task_id": task["id"], "name": task["name"], "date": d.isoformat(),
                                         "position": {"id": node["id"], "name": node.get("name", "")},
                                         "overdue": bool(overdue and k == 0)})
@@ -700,6 +830,7 @@ def position_forecast(m: Maintenance, position_id: str, root: str | None = None,
                     "limits": list(due.limits),
                     "overdue": overdue, "count": len(done),
                     "cost_each": (view.get("cost") or {}).get("amount"), "labour_each": lib.duration,
+                    "labour_cost_each": _money(lab_each), "materials_cost_each": _money(mat_each),
                     "next_due": view.get("next_due"), "rests_on": basis, "notes": list(due.notes)})
         if fetch is not None:
             here = {"id": node["id"], "name": node.get("name", "")}
@@ -711,9 +842,15 @@ def position_forecast(m: Maintenance, position_id: str, root: str | None = None,
                     not_forecast.append({**why, "position": here})
                 if found:
                     fc = found["fc"]
-                    fail_exp += np.asarray(fc.expected_failures, dtype=float)[:n]
+                    expected = np.asarray(fc.expected_failures, dtype=float)[:n]
+                    fail_exp += expected
                     if fc.expected_cost is not None:
                         fail_cost += np.asarray(fc.expected_cost, dtype=float)[:n]
+                    row_ = found["row"]
+                    if row_["downtime_hours_each"]:
+                        down_hours += expected * row_["downtime_hours_each"]
+                        if row_["cost_per_failure"] is not None and row_["downtime_rate"]:
+                            down_cost += expected * row_["downtime_hours_each"] * row_["downtime_rate"]
                     model_rows.append(found)
                     models.append(found["row"])
                     mine["failures"] += float(found["row"]["expected_failures"] or 0)
@@ -746,15 +883,21 @@ def position_forecast(m: Maintenance, position_id: str, root: str | None = None,
     if own_map is not None:
         got = own_map["usage"].by_period(period).usage.get("hours")
         hours = [float(x) for x in got][:n] if got is not None else None
+    priced = bool(model_rows) and any(r["row"]["cost_per_failure"] for r in model_rows)
+    any_downtime = any(r["row"]["downtime_hours_each"] for r in model_rows)
     rows = []
     for k in range(n):
         p_end = (starts[k + 1] - timedelta(days=1)) if k + 1 < n else end
+        unplanned = _money(fail_cost[k]) if priced else None
         row = {"start": starts[k].isoformat(), "end": p_end.isoformat(),
                "hours": _num(hours[k]) if hours and k < len(hours) else None,
                "tasks": int(count[k]), "labour_hours": _num(labour[k]), "planned_cost": _money(planned[k]),
+               **_planned_split(planned[k], labour_cost[k], materials_cost[k]),
                "failures": _num(fail_exp[k]) if model_rows else None,
-               "failure_cost": _money(fail_cost[k]) if model_rows and any(r["row"]["cost_per_failure"] for r in model_rows)
-               else None,
+               "failure_cost": unplanned, "unplanned_cost": unplanned,
+               "downtime_hours": _num(down_hours[k]) if any_downtime else None,
+               "downtime_cost": _money(down_cost[k]) if any_downtime and priced else None,
+               "total_cost": _money(planned[k] + (fail_cost[k] if priced else 0.0)),
                "due": sorted(due_in[k], key=lambda d: (d["date"], d["name"]))}
         if single is not None:
             row["failures_range"] = [_num(single.failures_low[k]) if single.failures_low is not None else None,
@@ -764,13 +907,21 @@ def position_forecast(m: Maintenance, position_id: str, root: str | None = None,
         rows.append(row)
 
     total_cost = float(fail_cost.sum()) if model_rows else None
+    unpriced = [r["row"] for r in model_rows if r["row"]["cost_per_failure"] is None]
     totals = {"tasks": int(count.sum()), "labour_hours": _num(labour.sum()), "planned_cost": _money(planned.sum()),
+              **_planned_split(planned.sum(), labour_cost.sum(), materials_cost.sum()),
               "failures": _num(fail_exp.sum()) if model_rows else None,
               "failures_range": [f_lo, f_hi] if model_rows else None,
-              "failure_cost": _money(total_cost) if model_rows and any(r["row"]["cost_per_failure"] for r in model_rows)
-              else None,
+              "failure_cost": _money(total_cost) if priced else None,
+              "unplanned_cost": _money(total_cost) if priced else None,
               "cost_range": [_money(c_lo), _money(c_hi)] if model_rows and c_lo is not None else None,
+              "downtime_hours": _num(down_hours.sum()) if any_downtime else None,
+              "downtime_cost": _money(down_cost.sum()) if any_downtime and priced else None,
+              "total_cost": _money(planned.sum() + (total_cost if priced else 0.0)),
+              # Every failure forecast has a cost: the total is planned plus unplanned in full.
+              "total_complete": not unpriced,
               "probability": _num(prob_any, 3)}
+    cost_basis = _cost_basis_words(totals, unpriced)
 
     # States (plan 4.3): what's missing, said plainly with what to do.
     if not_on_dates and any("no operating plan and no hours readings" in x["reason"] for x in not_on_dates):
@@ -791,6 +942,14 @@ def position_forecast(m: Maintenance, position_id: str, root: str | None = None,
                            "text": f"{r['position']['name']}: its life model, {r['name']}, was typed in, not fitted "
                                    "from data. Treat its failures as a placeholder until it's fitted."})
 
+    prompts = _prompts(m, fetch, tree, tasks_out, models, root)
+    if prompts["no_failure_cost"]:
+        counted = sum(1 for x in prompts["no_failure_cost"] if x["counted"])
+        if counted:
+            states.append({"kind": "no_failure_cost",
+                           "text": f"{counted} failure mode{'s' if counted != 1 else ''} forecast here "
+                                   f"{'have' if counted != 1 else 'has'} no failure cost: the unplanned cost leaves "
+                                   "their failures out. Enter what a failure costs (listed under What to enter)."})
     answer = _answer(end, totals, len(not_on_dates))
     words = (f"{len(tree)} position{'s' if len(tree) != 1 else ''} ({pos.get('name', '')} and everything inside "
              "it)" if len(tree) > 1 else pos.get("name", ""))
@@ -816,7 +975,7 @@ def position_forecast(m: Maintenance, position_id: str, root: str | None = None,
         "hours_source": own_map["basis"]["kind"] if own_map else None,
         "rows": rows, "totals": totals, "tasks": tasks_out, "not_on_dates": not_on_dates,
         "models": models, "not_forecast": not_forecast, "by_position": by_position,
-        "states": states, "notes": notes,
+        "states": states, "notes": notes, "prompts": prompts, "cost_basis": cost_basis,
         "truncated": len(tree) >= MAX_POSITIONS,
     }
 
@@ -836,6 +995,9 @@ def _answer(end: date, t: dict, left_out: int = 0) -> str:
         text += f"; {t['failures']:.2g} failures expected{rng}"
         if t["failure_cost"] is not None:
             text += f", about ${t['failure_cost']:,.0f}"
+    if t.get("failure_cost") is not None:
+        text += (f"; about ${t['total_cost']:,.0f} in all (${t['planned_cost'] or 0:,.0f} planned, "
+                 f"${t['failure_cost']:,.0f} unplanned)")
     if left_out:
         text += f". {left_out} task{'s' if left_out != 1 else ''} can't be put on dates yet (see Left out)"
     return text + "."

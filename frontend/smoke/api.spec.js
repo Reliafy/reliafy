@@ -102,6 +102,7 @@ const SIGNED_IN = [
   ["GET", "/api/maintenance/positions/smoke/design-rollup"],
   ["GET", "/api/maintenance/items/overview"],
   ["PUT", "/api/maintenance/failure-modes/smoke/decision"],
+  ["GET", "/api/maintenance/failure-modes/smoke/costs"], // what a failure costs (the RCM panel, the forecast)
   ["GET", "/api/maintenance/tasks/smoke/measurement"], // what a task by use counts (its dialog, a move's question)
   ["GET", "/api/maintenance/overview"],
   ["GET", "/api/maintenance/tree"], // the asset tree pane
