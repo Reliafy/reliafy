@@ -473,6 +473,75 @@ def paste_dataset(
                                  **({"library": added} if added else {})})
 
 
+def _notation_error(exc) -> JSONResponse:
+    """A typed text that can't be read: SurPyval's words, with where (``where``: entry, line, column, start,
+    end)."""
+    return JSONResponse(status_code=422, content={"detail": str(exc), "where": exc.payload()})
+
+
+@router.post("/datasets/notation/read")
+def read_notation(
+    text: str = Body(default=""),
+    unit: str | None = Body(default=None),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """New dataset's "Type it in": what typed text says, as it is typed (the live reading), and the columns
+    it would be saved with. Saves nothing. ``text`` in SurPyval's notation (``120, 310, [400, 450],
+    1000+``; one ``P1: …`` history per line for repairable data). Text that can't be read is an answer
+    here, not a failure (it's mid-typing): ``{"error", "where"}`` with 200."""
+    from backend.services import notation
+
+    try:
+        return JSONResponse(content=notation.read(text, unit))
+    except notation.NotationError as exc:
+        return JSONResponse(content={"error": str(exc), "where": exc.payload()})
+
+
+@router.post("/datasets/notation")
+def create_from_notation(
+    name: str = Body(default=""),
+    text: str = Body(default=""),
+    unit: str | None = Body(default=None),
+    library_id: str | None = Body(default=None),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """Save typed text (SurPyval's notation) as a dataset: stored as the CSV the same data in a spreadsheet
+    would be, with its reading, so everything downstream reads it as any other dataset. ``name`` and
+    ``unit`` are needed, as for an upload."""
+    from backend.services import notation
+
+    if not (name or "").strip():
+        return JSONResponse(status_code=422, content={"detail": "Give the dataset a name."})
+    if not (unit or "").strip():
+        return JSONResponse(status_code=422, content={
+            "detail": "Give the unit of the times (hours, cycles, km…), or say they have none."})
+    try:
+        out = notation.read(text, unit)
+    except notation.NotationError as exc:
+        return _notation_error(exc)
+    lib = _upload_library(session, ctx, library_id)
+    if isinstance(lib, JSONResponse):
+        return lib
+    csv_bytes, reading, name = out["csv"].encode(), out["reading"], name.strip()
+    denied = _creation_denied(session, ctx, "datasets")
+    if denied is not None and datasets_service.find_reusable(
+            session, ctx.write_owner, storage.checksum(csv_bytes), name, reading) is None:
+        return denied
+    try:
+        dataset, reused = datasets_service.create_or_reuse(session, name, csv_bytes, ctx.write_owner, reading=reading)
+    except (FitError, dataset_reading.ReadingError) as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Failed to store a typed dataset")
+        return JSONResponse(status_code=500, content={"detail": "Failed to store the dataset. The error has been logged."})
+    added = _into_library(session, ctx, lib, [(dataset, reused)])
+    if isinstance(added, JSONResponse):
+        return added
+    return JSONResponse(content={**_created(dataset, reused, session, ctx, 1, None),
+                                 **({"library": added} if added else {})})
+
+
 def _reading_form(raw: str | None):
     """The ``reading`` form field (JSON) as a dict, None when left out, or the 422."""
     import json
@@ -630,6 +699,28 @@ def download_dataset_csv(
         "Content-Disposition": f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name)}",
         "Cache-Control": "no-store",
     })
+
+
+@router.get("/datasets/{dataset_id}/notation")
+def dataset_notation(
+    dataset_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """The dataset page's "Show as text": its life data in SurPyval's notation (``120, 310, 1000+``), read
+    as its reading says, for a dataset of up to 200 rows. 422 says why one can't be written so."""
+    from backend.services import notation
+
+    dataset, _ = access_service.fetch_readable(session, "datasets", Dataset, dataset_id, ctx)
+    if dataset is None or dataset.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
+    reading, _source = dataset_reading.for_dataset_db(session, dataset, ctx.read_owners, ctx.hidden)
+    try:
+        if dataset.n_rows > notation.MAX_TEXT_ROWS:
+            raise notation.NotationError(f"This dataset has {dataset.n_rows:,} rows; the text is offered up to "
+                                         f"{notation.MAX_TEXT_ROWS}. Download the CSV instead.")
+        out = notation.dataset_text(datasets_service.load_dataframe(dataset), reading)
+    except notation.NotationError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    return JSONResponse(content={**out, "unit": reading.get("unit") or ""})
 
 
 def _lifetimes(session, ctx: AccessCtx, dataset_id: str, draft: dict | None) -> JSONResponse:

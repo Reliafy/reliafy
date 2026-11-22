@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.12.7 (unreleased)
+
+Needs a server on the same release.
+
+- **Type a few lives in**: `change dataset_upload` takes `notation`, small data typed as text in
+  SurPyval's notation, instead of `csv` or `upload_id`: `120, 310, [400, 450], 1000+` (plain numbers
+  failed, `1000+` still running at 1000, `[a, b]` failed in that window, `<50` failed before 50,
+  `3*200` three alike, `| (tl, tr]` the window an entry was observed in), or one `P1: 120, 310, 1000+`
+  history per line for repairable data. `unit` is needed. It's saved as the CSV of the same data
+  (columns `x` or `xl`/`xr`, `c`, `n`, `tl`, `tr`, `i`) with its reading, and `read_as` says what was
+  read. `reliafy upload --notation "120, 310, 1000+" --name Seals --unit hours`, and
+  `Client.upload_notation(text, name=…, unit=…)`. The REST twin (`POST /api/v1/change/dataset_upload`)
+  takes it too.
+
 ## 0.12.6 (unreleased)
 
 Needs a server on the same release.

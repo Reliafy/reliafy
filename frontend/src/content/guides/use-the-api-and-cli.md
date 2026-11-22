@@ -89,6 +89,19 @@ upload`:
 reliafy upload bearings.csv --name "Bearings" --x-col hours --c-col censored --unit hours
 ```
 
+A handful of lives needs no file: type them in SurPyval's notation, the same
+text the app's **Type it in** reads (`1000+` is still running at 1000, `[400,
+450]` failed some time in that window):
+
+```
+reliafy upload --notation "120, 310, [400, 450], 1000+" --name "Seals" --unit hours
+```
+
+It's saved as the CSV the same data would be, with its reading, and the
+answer's `read_as` says what was read (*4 units: 2 failed, 1 in a window
+400–450, 1 still running at 1,000*). Over MCP and REST it's `change
+dataset_upload` with `notation`.
+
 Columns you don't name are guessed, and the answer's `reading` says how
 (`source: guessed`): check it, and change it with
 `reliafy change dataset_update`. Every model built from the dataset, in the app or with

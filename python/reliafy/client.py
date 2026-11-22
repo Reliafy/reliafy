@@ -265,6 +265,13 @@ class Client:
         return self.call("change", "dataset_upload", upload_id=up["upload_id"],
                          name=name or os.path.splitext(os.path.basename(path))[0], sheet=sheet, **args)
 
+    def upload_notation(self, text: str, name: str, unit: str, **args) -> dict:
+        """Save lives typed as text in SurPyval's notation (``"120, 310, [400, 450], 1000+"``; one
+        ``"P1: 120, 310, 1000+"`` history per line for repairable data) as a dataset. ``read_as`` in the
+        answer says what was read."""
+        return self.call("change", "dataset_upload", notation=text, name=name, unit=unit,
+                         **{k: v for k, v in args.items() if v is not None})
+
     def add_measurements(self, dataset_id: str, path: str, sheet: str | None = None, **args) -> dict:
         """Add a CSV or .xlsx file of readings (unit id, age since new, value)
         to a dataset as its measurements, or replace them (``change

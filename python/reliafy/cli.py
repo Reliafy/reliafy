@@ -409,6 +409,18 @@ def cmd_fit(client: Client, ns) -> int:
 
 
 def cmd_upload(client: Client, ns) -> int:
+    if ns.notation is not None:
+        if ns.file or ns.measurements_for or ns.sheet:
+            raise ReliafyError("upload --notation takes the lives as text: leave out the file, --sheet and "
+                               "--measurements-for.")
+        if not ns.name or not ns.unit:
+            raise ReliafyError('upload --notation needs --name and --unit, e.g. reliafy upload --notation '
+                               '"120, 310, [400, 450], 1000+" --name "Pump seals" --unit hours.')
+        render(client.upload_notation(ns.notation, name=ns.name, unit=ns.unit,
+                                      library_id=getattr(ns, "library_id", None)), ns.json)
+        return 0
+    if not ns.file:
+        raise ReliafyError("upload needs a file (CSV or .xlsx), or --notation \"120, 310, 1000+\" for typed lives.")
     if ns.measurements_for:
         render(client.add_measurements(ns.measurements_for, ns.file, sheet=ns.sheet), ns.json)
     else:
@@ -675,8 +687,13 @@ def builtin_parser() -> argparse.ArgumentParser:
                     help="With the best fit: the score the distributions are ranked by (default aic).")
     sp.add_argument("--unit")
     sp.add_argument("--save", metavar="NAME", help="Save the model under this name.")
-    sp = add("upload", cmd_upload, "Upload a CSV or .xlsx file as a dataset, or as a dataset's measurements.")
-    sp.add_argument("file")
+    sp = add("upload", cmd_upload, "Upload a CSV or .xlsx file as a dataset, or as a dataset's measurements; "
+                                   "or type a few lives in with --notation.")
+    sp.add_argument("file", nargs="?")
+    sp.add_argument("--notation", metavar="TEXT",
+                    help='Lives typed as text instead of a file: "120, 310, [400, 450], 1000+" (1000+ still '
+                         "running, [a, b] failed in a window, <50 failed before 50, 3*200 three alike); one "
+                         '"P1: 120, 310, 1000+" history per line for repairable data. Needs --name and --unit.')
     sp.add_argument("--name")
     sp.add_argument("--sheet")
     sp.add_argument("--measurements-for", metavar="DATASET_ID",

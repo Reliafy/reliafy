@@ -3630,6 +3630,12 @@ def upload_dataset(
         "use upload_id instead."))] = None,
     upload_id: Annotated[Optional[str], Field(description=(
         "Instead of csv: a file sent through change upload_create (CSV/TSV, or an .xlsx workbook with sheet)."))] = None,
+    notation: Annotated[Optional[str], Field(min_length=1, description=(
+        "Instead of csv: small data typed as text in SurPyval's notation, entries separated by commas: 120 failed "
+        "at 120, 1000+ still running at 1000, [400, 450] failed between, <50 failed before 50, 3*200 three alike, "
+        "12 | (2, 50] observed only within (2, 50]; or one unit's history per line (P1: 120, 310, 1000+) for "
+        "repairable data. Saved as the CSV of the same data (columns x or xl/xr, c, n, tl, tr, i) with its "
+        "reading; needs unit. guide(action='change.dataset_upload') has the grammar."))] = None,
     sheet: Annotated[Optional[str], Field(description=(
         "With an .xlsx upload_id: the sheet to read (needed when the workbook has several; get kind upload "
         "lists them)."))] = None,
@@ -3652,8 +3658,12 @@ def upload_dataset(
     needs sheet), with its reading (which column is x, c, n, …, Z); returns its id, columns, a preview and
     the reading. Columns not named are guessed and the reading says so. Censoring: 0 = failed, 1 = running."""
     user, db = _caller(ctx), _db()
+    if notation is not None:
+        return _upload_notation(ctx, user, db, name, notation, unit, library_id,
+                                bool(csv is not None or upload_id is not None or (dataset_col or "").strip()))
     if (csv is None) == (upload_id is None):
-        raise ToolError("Give either csv (text) or upload_id (a file sent through change upload_create) — exactly one.")
+        raise ToolError("Give either csv (text), upload_id (a file sent through change upload_create) or notation "
+                        "(typed lives) — exactly one.")
     if library_id and user.get("mcp_plan", "pro") != "pro":
         raise Refusal(_pro_only_message("change.library_add"), "pro_only")
     lib = _own_library(db, user["uid"], library_id) if library_id else None
@@ -3702,6 +3712,38 @@ def upload_dataset(
     if added:
         out["library"] = added
     return out
+
+
+def _upload_notation(ctx, user, db, name: str, text: str, unit: Optional[str], library_id: Optional[str],
+                     other_source: bool) -> dict[str, Any]:
+    """upload_dataset with notation: the typed text read with SurPyval, saved as the CSV of the same data
+    with the reading that names its columns (services/notation.py), as the app's Type it in does."""
+    from backend.services import notation as notation_service
+
+    if other_source:
+        raise ToolError("Give notation on its own: not with csv, upload_id or dataset_col.")
+    if not (unit or "").strip():
+        raise ToolError("notation needs unit: the unit of the times (hours, cycles, km…), or \"none\".")
+    try:
+        out = notation_service.read(text, unit)
+    except notation_service.NotationError as exc:
+        raise ToolError(f"Couldn't read the notation: {exc}") from None
+    if library_id and user.get("mcp_plan", "pro") != "pro":
+        raise Refusal(_pro_only_message("change.library_add"), "pro_only")
+    lib = _own_library(db, user["uid"], library_id) if library_id else None
+    _cap(db, user, "datasets", "datasets")
+    try:
+        ds, reused = datasets_service.create_or_reuse(db, name.strip(), out["csv"].encode(), user["uid"],
+                                                      reading=out["reading"])
+    except (dataset_reading.ReadingError, FitError) as exc:
+        raise ToolError(str(exc)) from None
+    added = _upload_into_library(db, user["uid"], lib, [(ds, reused)])
+    result = {"id": ds.id, "name": ds.name, "n_rows": ds.n_rows, "columns": [c["name"] for c in ds.columns],
+              "preview": datasets_service.preview_rows(ds, 5), "url": _url(f"/data/{ds.id}"),
+              "read_as": out["summary"], "reading": _reading_out(*dataset_reading.for_dataset(ds))}
+    if added:
+        result["library"] = added
+    return result
 
 
 def _upload_into_library(db, uid: str, lib: Optional[dict], made: list) -> Optional[dict]:
