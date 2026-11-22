@@ -18,3 +18,7 @@
 .mt-pk-rules legend { font-size: var(--fs-13); line-height: var(--lh-13); font-weight: 500; margin-bottom: var(--space-2); }
 .mt-pk-rule { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; font-size: var(--fs-13); }
 .mt-pk-rule select { width: auto; min-width: 160px; }
+/* The forecast pane's spares for the year, under the forecast (Forecast… on a level). */
+.mt-fc-spares { margin-top: var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--border-subtle); }
+.mt-fc-spares:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.mt-fc-h { margin: 0 0 var(--space-2); font-size: var(--fs-14); line-height: var(--lh-14); font-weight: 600; color: var(--text); }

@@ -327,12 +327,12 @@ function Work({ r, state, today, fullPage, logEvent = null }) {
           )}
           {visit && (
             <p className="td-quiet td-next-visit">
-              {workOrders ? "Next visit" : "Next planned visit"}: <Link to={explorerHere(pathname, search, { sel: r.key, tab: "lsa", package: visit.id })}>{visit.name}</Link> on {fmtDate(visit.on)}
+              {workOrders ? "Next visit" : "Next planned visit"}: <Link to={explorerHere(pathname, search, { sel: r.key, tab: "maintenance", mpkg: visit.id })}>{visit.name}</Link> on {fmtDate(visit.on)}
             </p>
           )}
           {annual && (
             <p className="td-quiet td-annual" title="Each task's labour hours × 365.25 ÷ its interval in days, added up. Tasks raised by an event or counted by use have no yearly count.">
-              <Link to={explorerHere(pathname, search, { sel: r.key, tab: "lsa" })}>{annual}</Link>
+              <Link to={explorerHere(pathname, search, { sel: r.key, tab: "maintenance" })}>{annual}</Link>
             </p>
           )}
           {tasks.length > 0 && (

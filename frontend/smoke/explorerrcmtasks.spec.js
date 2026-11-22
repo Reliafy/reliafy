@@ -133,7 +133,7 @@ test("a failure mode's tasks are rows of the tree; add one, use an existing one,
   await expect(section(page, "Serves")).toContainText("Serves 1 failure mode here");
   await expect(section(page, "Based on")).toContainText("nothing linked yet");
   await expect(section(page, "Logistics")).toContainText("No labour, tools or method set yet.");
-  await expect(section(page, "Logistics").getByRole("link", { name: "Open in LSA" })).toHaveAttribute("href", new RegExp(`tab=lsa&task=${p.own}`));
+  await expect(section(page, "Logistics").getByRole("link", { name: "What it needs" })).toHaveAttribute("href", new RegExp(`tab=maintenance&mtask=${p.own}&needs=1`));
 
   // Add a task (from the mode's step 3): in place, its kind first (every kind, on condition again too:
   // one kind may come more than once; it starts on one the decision doesn't have), then its name and how

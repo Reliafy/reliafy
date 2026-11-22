@@ -395,9 +395,9 @@ export default function RcmModeTasks({
               <span className="rim-chips">
                 {t.shared_with ? <Chip title={taskServesTip(t)}>{taskSharedText(t)}</Chip> : null}
                 {t.package && (
-                  <Link className="chip chip-neutral chip-btn" title={`Done on this work package's visits: open it in ${tabPlace("lsa")}`}
+                  <Link className="chip chip-neutral chip-btn" title={`Done on this work package's visits: open it in ${tabPlace("maintenance")}`}
                         to={explorerPath(t.package.subject?.kind === "location" ? "locations" : "positions",
-                                         { sel: t.package.subject?.id, tab: "lsa", package: t.package.id })}>
+                                         { sel: t.package.subject?.id, tab: "maintenance", mpkg: t.package.id })}>
                     In: {t.package.name}
                   </Link>
                 )}
@@ -1014,9 +1014,9 @@ function TaskList({ r, lines, label, onPick, ops = null, can = false, onSaid = n
             <span className="rim-tl-chips">
               {t.shared_with ? <Chip title={taskServesTip(t)}>{taskSharedText(t)}</Chip> : null}
               {t.package && (
-                <Link className="chip chip-neutral chip-btn" title={`Done on this work package's visits: open it in ${tabPlace("lsa")}`}
+                <Link className="chip chip-neutral chip-btn" title={`Done on this work package's visits: open it in ${tabPlace("maintenance")}`}
                       to={explorerPath(t.package.subject?.kind === "location" ? "locations" : "positions",
-                                       { sel: t.package.subject?.id, tab: "lsa", package: t.package.id })}>
+                                       { sel: t.package.subject?.id, tab: "maintenance", mpkg: t.package.id })}>
                   In: {t.package.name}
                 </Link>
               )}
