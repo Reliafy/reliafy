@@ -94,6 +94,9 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
   const live = useRef(0);
 
   const unit = graph.unit || "";
+  // A safety function's gains are in its own measure: the change in PFDavg,
+  // the long-run unavailability (1 − availability), not availability points.
+  const safety = !!graph.safety_function;
   const windowLen = availability?.exact?.window ?? availability?.t_simulation ?? null;
 
   const run = async ({ simulate = simWanted, withCosts = sentCosts, withLimits = sentLimits } = {}) => {
@@ -271,7 +274,7 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
             value={rankBy}
             onChange={setRankBy}
             options={[
-              { value: "availability", label: "Availability" },
+              { value: "availability", label: safety ? "PFDavg" : "Availability" },
               { value: "cost", label: "Cost", title: "Rank by the running cost saved per unit time" },
             ]}
           />
@@ -344,10 +347,17 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
               <tr>
                 <th className="rbd-improve-rank">#</th>
                 <th>Lever and change</th>
-                <th title={`Change in availability, in percentage points (pp). ${data.of === "window" && !sim ? WINDOW_TEXT : BASIS_TEXT[basis] || ""}`}>
-                  <span className="rbd-improve-wide">Availability (pp)</span>
-                  <span className="rbd-improve-narrow">Avail. (pp)</span>
-                </th>
+                {safety ? (
+                  <th title={`Change in the average probability of failure on demand (PFD = 1 − availability; lower is better). ${data.of === "window" && !sim ? WINDOW_TEXT : BASIS_TEXT[basis] || ""}`}>
+                    <span className="rbd-improve-wide">{data.of === "window" ? "Mean PFD change" : "PFDavg change"}</span>
+                    <span className="rbd-improve-narrow">PFD</span>
+                  </th>
+                ) : (
+                  <th title={`Change in availability, in percentage points (pp). ${data.of === "window" && !sim ? WINDOW_TEXT : BASIS_TEXT[basis] || ""}`}>
+                    <span className="rbd-improve-wide">Availability (pp)</span>
+                    <span className="rbd-improve-narrow">Avail. (pp)</span>
+                  </th>
+                )}
                 {priced && (
                   <th title={`Change in the running cost per unit time (${per(unit)})`}>
                     <span className="rbd-improve-wide">Cost {per(unit)}</span>
@@ -356,7 +366,8 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
                 )}
                 {editCosts && <th title="What making this change would cost you">Cost to change ({workspaceCurrency()})</th>}
                 {withCosts && (
-                  <th title={rankBy === "cost" ? "Running cost saved per unit time, for every 1,000 spent" : "Availability points gained for every 1,000 spent"}>
+                  <th title={rankBy === "cost" ? "Running cost saved per unit time, for every 1,000 spent"
+                    : safety ? "PFDavg removed for every 1,000 spent" : "Availability points gained for every 1,000 spent"}>
                     Per {prefixCurrency("1,000")} spent
                   </th>
                 )}
@@ -369,7 +380,9 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
                 const slope = r.derivative_shown?.availability;
                 const iv = r.interval?.availability;
                 const dTitle = slope != null
-                  ? `RePyability's slope: ${sig(slope * 100, 3)} points per unit of ${r.kind === "mean" ? r.name.toLowerCase() : r.lever}`
+                  ? safety
+                    ? `RePyability's slope: ${sig(-slope, 3)} PFD per unit of ${r.kind === "mean" ? r.name.toLowerCase() : r.lever}`
+                    : `RePyability's slope: ${sig(slope * 100, 3)} points per unit of ${r.kind === "mean" ? r.name.toLowerCase() : r.lever}`
                   : undefined;
                 return (
                   <tr key={r.id} className={r.kind === "shape" ? "is-shape" : ""}>
@@ -392,7 +405,17 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
                       )}
                     </td>
                     <td title={dTitle}>
-                      {a == null ? "—" : (
+                      {a == null ? "—" : safety ? (
+                        <>
+                          {signed(-a, (v) => sig(v, 2))}
+                          {r.effect_basis === "linear" && <span className="rbd-improve-approx" title="The slope times the step"> ≈</span>}
+                          {sim && iv && (
+                            <div className="muted rbd-improve-iv">
+                              {signed(-iv[1], (v) => sig(v, 2))} to {signed(-iv[0], (v) => sig(v, 2))}
+                            </div>
+                          )}
+                        </>
+                      ) : (
                         <>
                           {signed(a * 100, (v) => sig(v, 2))}
                           {r.effect_basis === "linear" && <span className="rbd-improve-approx" title="The slope times the step"> ≈</span>}
@@ -425,6 +448,8 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
                           ? "—"
                           : rankBy === "cost"
                           ? money(r.benefit_per_cost * 1000)
+                          : safety
+                          ? `−${sig(r.benefit_per_cost * 1000, 2)}`
                           : `${sig(r.benefit_per_cost * 100 * 1000, 2)} pts`}
                       </td>
                     )}

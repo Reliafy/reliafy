@@ -634,6 +634,7 @@ function SifAnswer({ safety }) {
   const optimistic = !!safety.sil_optimistic || noTests || ccfLeftOut;
   const chipTone = !safety.sil ? "danger" : optimistic || safety.sil === 1 ? "warning" : "success";
   const pfd = safety.pfd_avg;
+  const hft = safety.fault_tolerance || null;
   const hasTarget = safety.target_sil != null;
   const tone = hasTarget && !met ? "bad" : optimistic ? "caveat" : hasTarget && met ? "good" : "neutral";
   // Margin to the target's limit, or (no target) to the achieved band's: the
@@ -663,6 +664,7 @@ function SifAnswer({ safety }) {
     },
     margin && { label: "Margin", value: margin },
     pfd > 0 && { label: "Risk reduction", value: <>RRF <b>{formatNumber(1 / pfd)}</b></> },
+    hft && { label: "Fault tolerance (HFT)", value: <HftValue hft={hft} /> },
   ];
   const note = (noTests || ccfLeftOut) && (
     <>
@@ -681,6 +683,29 @@ function SifAnswer({ safety }) {
     </>
   );
   return <AnswerCard tone={tone} rows={rows} note={note} className="rbd-sif-answer" />;
+}
+
+// Hardware fault tolerance (IEC 61508-2): how many dangerous failures each part
+// of the function can take and still trip, read from the diagram (architecture
+// only: no rates, no common cause). Safe failure fraction and the spurious trip
+// rate need each block's safe and detected failure rates, which blocks don't
+// take, so the line says so rather than leaving them out silently.
+function HftValue({ hft }) {
+  const n = (s) => `${s.hft}${s.at_least ? "+" : ""}`;
+  return (
+    <>
+      <b>{n({ hft: hft.function, at_least: hft.at_least })}</b> for the function
+      {hft.subsystems.length > 1 && (
+        <span className="muted">
+          {" "}({hft.subsystems.map((s) => `${s.blocks.join(" + ")}: ${n(s)}`).join(" · ")})
+        </span>
+      )}
+      <div className="muted rbd-hft-note">
+        Failures each part can take and still trip, from the diagram. Safe failure fraction and spurious trip
+        rate need each block&rsquo;s safe and detected failure rates, which the blocks don&rsquo;t take yet.
+      </div>
+    </>
+  );
 }
 
 // A simulated A(t) as drawn: a centred rolling mean over 5% of its
