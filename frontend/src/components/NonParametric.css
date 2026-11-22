@@ -2,12 +2,12 @@
 .plot-option-row {
   display: flex;
   justify-content: flex-end;
-  padding: 4px 8px 6px;
+  padding: var(--space-1) var(--space-2) var(--space-1-5);
 }
 .plot-option-row .seg-field {
   flex-direction: row;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .plot-option-row .seg-label {
   font-size: var(--fs-12);

@@ -1,28 +1,28 @@
 /* What a block can model (#318, #68, #84, #326): the mixture life, repair
    quality, k-of-n standby limits and "Check by simulation" in the block
    dialogs. Tokens only; the dialog's own sections and folds frame them. */
-.rbd-mix { display: flex; flex-direction: column; gap: 8px; }
+.rbd-mix { display: flex; flex-direction: column; gap: var(--space-2); }
 .rbd-mix .rbd-instant-repair { margin: 0; }
 .rbd-mix-mode {
   margin: 0;
-  padding: 8px 12px 12px;
+  padding: var(--space-2) var(--space-3) var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   min-width: 0;
 }
-.rbd-mix-mode > legend { padding: 0 4px; font-size: var(--fs-13); font-weight: 600; color: var(--text); }
+.rbd-mix-mode > legend { padding: 0 var(--space-1); font-size: var(--fs-13); font-weight: 600; color: var(--text); }
 .rbd-mix-rest output {
   display: block;
-  padding: 8px 0;
+  padding: var(--space-2) 0;
   font-size: var(--fs-14);
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
 }
-.rbd-mean-check { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.rbd-mean-check { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1-5); }
 .rbd-mean-check b { font-weight: 600; color: var(--text); }
 .rbd-mean-check-off { color: var(--warning-text); }
 .rbd-limit { color: var(--warning-text); }
-.ccf-model { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 8px; }
+.ccf-model { display: flex; flex-direction: column; gap: var(--space-2); margin: var(--space-1) 0 var(--space-2); }
 .rbd-rq .seg, .ccf-model .seg, .ccf-model .seg-field { align-self: flex-start; }
 
 /* Repairs and replacement (#367): a block on a fitted repairable model. */
