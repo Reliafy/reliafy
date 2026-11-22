@@ -28,6 +28,7 @@ import {
   removePositionPart,
 } from "../api.js";
 import PageHeader from "../components/ui/PageHeader.jsx";
+import { ShowMe } from "../components/SectionPage.jsx";
 import ClampLines from "../components/ui/ClampLines.jsx";
 import NewWorkOrderModal from "../components/NewWorkOrderModal.jsx";
 import { PlusIcon, RowLink, rowOpen } from "../components/LibRows.jsx";
@@ -533,6 +534,7 @@ function PartsListCard({ p, onChanged }) {
     <section className="card">
       <div className="maint-head">
         <h2>Parts</h2>
+        <ShowMe help={{ guide: "superseded-and-obsolete-parts" }} asHelp />
         <button className="secondary" onClick={() => setModal({})}><PlusIcon /> Add part</button>
       </div>
       {error && <div className="card error">{error}</div>}
