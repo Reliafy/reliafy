@@ -1,6 +1,6 @@
 // The Diagnostics tab of an accelerated life model: "can I trust it?" as four
-// small checks, each titled with its question: whether the shape is the
-// same at every stress, whether the tested levels follow the life model,
+// small checks, each titled with its question: whether the failure mechanism
+// (the shape) is the same at every stress (SurPyval's common_shape_test()), whether the tested levels follow the life model,
 // whether another life model fits better and how far the use stress is from
 // the tests. The tests come from SurPyval's diagnose() on the server (about
 // half a second; nothing resamples); the two charts from each level's own
@@ -216,11 +216,17 @@ export default function AltDiagnostics({ results, modelId, name, use }) {
   // question and verdict then takes a line or two, and the charts the rest.
   return (
     <ChecksGrid className="alt-checks">
-      <CheckCard chart question="Is the shape the same at every stress?" term="likelihood-ratio test"
+      <CheckCard chart question="Is the failure mechanism the same at every stress?" term="common-shape test"
                  tone={shape?.tone} verdict={shape?.words || pending}
                  footer={r.distribution_id !== "exponential" && (
                    <>
-                     <p className="muted-line">Dots: each level fitted alone, with its {ciPct(results, 0.9)} interval. Line and band: the model's one shape.</p>
+                     {shape?.detail && <p className="muted-line alt-shape-test">{shape.detail}</p>}
+                     {shape?.leftOut && <p className="muted-line">{shape.leftOut}</p>}
+                     <p className="muted-line">
+                       An accelerated life model assumes one shape at every stress, so that only the life moves
+                       with stress. Dots: each level fitted alone, with its {ciPct(results, 0.9)} interval. Line
+                       and band: the model's one shape.
+                     </p>
                      {noteLines(noteOf(/common-shape/))}
                    </>
                  )}>
