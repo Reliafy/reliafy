@@ -672,11 +672,12 @@ export function pasteDataset(name, content, noHeader = null, reading = null, lib
 // New dataset's "Type it in": what typed text (SurPyval's notation, "120, 310,
 // [400, 450], 1000+") says and the columns it would be saved with. Saves
 // nothing; a 422's err.data.where says where the reading stopped.
-export function readNotation(text, unit = null, { signal } = {}) {
+// ``lifetimes``: also the Lifetimes view's payload for the unsaved data.
+export function readNotation(text, unit = null, { signal, lifetimes = false } = {}) {
   return request("/api/datasets/notation/read", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text: text || "", ...(unit ? { unit } : {}) }),
+    body: JSON.stringify({ text: text || "", ...(unit ? { unit } : {}), ...(lifetimes ? { lifetimes: true } : {}) }),
     signal,
   });
 }

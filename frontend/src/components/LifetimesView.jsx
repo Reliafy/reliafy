@@ -26,14 +26,20 @@ const FIT_HEIGHT = 470;
 // place of the saved one; ``version``: changes when the saved reading does,
 // to fetch again; ``onChange``: opens the reading's Change (absent when the
 // dataset can't be changed); ``name``: the dataset's name for the download.
-export default function LifetimesView({ datasetId, draft = null, version = 0, onChange, name = "" }) {
-  const [payload, setPayload] = useState(null);
+// ``data``: the payload itself, for data not saved yet (New dataset's Type it
+// in reads it with the text, POST /api/datasets/notation/read): drawn as it
+// is, nothing fetched, marked "not saved yet"; null while it's being read.
+export default function LifetimesView({ datasetId, draft = null, version = 0, onChange, name = "", data }) {
+  const given = data !== undefined;
+  const [fetched, setPayload] = useState(null);
   const [error, setError] = useState(null);
+  const payload = given ? data : fetched;
   const [sort, setSort] = useState("time");
   const [showAll, setShowAll] = useState(false);
   const draftKey = draft ? JSON.stringify(draft) : "";
 
   useEffect(() => {
+    if (given) return undefined;
     let live = true;
     setError(null);
     // A draft is fetched once typing settles; the saved reading at once.
@@ -43,7 +49,7 @@ export default function LifetimesView({ datasetId, draft = null, version = 0, on
         .catch((e) => { if (live) setError(e); });
     }, draft ? 300 : 0);
     return () => { live = false; clearTimeout(timer); };
-  }, [datasetId, draftKey, version]);
+  }, [datasetId, draftKey, version, given]);
 
   const options = useMemo(() => sortOptions(payload), [payload]);
   const chosen = options.some((o) => o.value === sort) ? sort : "time";
@@ -99,6 +105,7 @@ export default function LifetimesView({ datasetId, draft = null, version = 0, on
         <>
           <p className="lt-summary" data-testid="lifetimes-summary">
             {draft && <span className="lt-draft">With your changes, not saved yet: </span>}
+            {given && <span className="lt-draft">Not saved yet: </span>}
             <strong>{summaryText(payload)}</strong>
           </p>
           {hint && <p className="calc-warn lt-msg" role="status">! {hint}</p>}

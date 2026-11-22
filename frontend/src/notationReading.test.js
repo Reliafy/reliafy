@@ -78,3 +78,11 @@ test("a slow answer to old text never replaces the newest", async () => {
   reader.read("");
   assert.equal(c.pending(), 0); // nothing to read in blank text
 });
+
+test("the reading carries the lifetimes the chart draws", () => {
+  const lifetimes = { mode: "rows", lines: [{ start: 0, end: 120, marks: [{ kind: "failed", at: 120 }] }] };
+  const view = readingView("120", { text: "120", result: { summary: "1 unit: 1 failed", columns: ["x", "c"], rows: [],
+    n_rows: 1, lifetimes } });
+  assert.equal(view.lifetimes, lifetimes);
+  assert.equal(readingView("120", { text: "120", result: { summary: "s", columns: [], rows: [] } }).lifetimes, null);
+});

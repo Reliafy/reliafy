@@ -103,7 +103,9 @@ write the lives as text, separated by commas:
 
 **What can I type?** under the box lists the same. As you type, Reliafy says
 what it read (*4 units: 2 failed, 1 in a window 400–450, 1 still running at
-1,000*) and the columns it will save. If it can't read something, it says
+1,000*), the columns it will save, and its **Lifetimes**, one line per unit
+drawn just as the dataset's page will draw them (*Not saved yet*). If it can't
+read something, it says
 where and what to write instead (*Entry 2 (line 1, “abc”): Can't read
 'abc'…*). Give the unit of the times and a name, then **Create dataset**. The
 dataset is saved exactly as the same data in a spreadsheet would be, so

@@ -483,18 +483,24 @@ def _notation_error(exc) -> JSONResponse:
 def read_notation(
     text: str = Body(default=""),
     unit: str | None = Body(default=None),
+    lifetimes: bool = Body(default=False),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """New dataset's "Type it in": what typed text says, as it is typed (the live reading), and the columns
     it would be saved with. Saves nothing. ``text`` in SurPyval's notation (``120, 310, [400, 450],
     1000+``; one ``P1: …`` history per line for repairable data). Text that can't be read is an answer
-    here, not a failure (it's mid-typing): ``{"error", "where"}`` with 200."""
+    here, not a failure (it's mid-typing): ``{"error", "where"}`` with 200. ``lifetimes``: also the Lifetimes
+    view's payload for the unsaved data (``lifetimes``, as ``GET /api/datasets/{id}/lifetimes`` answers for a
+    saved dataset; ``{"error"}`` where a fit would refuse the rows), so the chart draws as you type."""
     from backend.services import notation
 
     try:
-        return JSONResponse(content=notation.read(text, unit))
+        out = notation.read(text, unit)
     except notation.NotationError as exc:
         return JSONResponse(content={"error": str(exc), "where": exc.payload()})
+    if lifetimes:
+        out["lifetimes"] = notation.draft_lifetimes(out)
+    return JSONResponse(content=out)
 
 
 @router.post("/datasets/notation")
