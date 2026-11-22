@@ -1,15 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { getTaskTable } from "../api.js";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { addPackageTask, getTaskTable, listPackages } from "../api.js";
 import Chip from "./ui/Chip.jsx";
 import TablePane from "./TablePane.jsx";
 import PositionForecast from "./PositionForecast.jsx";
 import MaintenanceTask, { TradeRates } from "./MaintenanceTask.jsx";
 import RbdTaskUses from "./RbdTaskUses.jsx";
 import { CloseIcon, ExpandIcon, ShrinkIcon } from "./icons.jsx";
-import { fmtDate } from "./MaintenanceParts.jsx";
+import { fmtDate, useSendOnce } from "./MaintenanceParts.jsx";
+import { AddPackageDialog, overdueNote } from "./LsaPanel.jsx";
 import { latestOnly } from "../explorerMissions.js";
-import { taskCell } from "../explorerTasks.js";
+import { rankPackages, taskCell, visitFor } from "../explorerTasks.js";
+import { cadenceWords, ordinal, packageScope, taskOnText } from "../lsaTab.js";
 import "./LsaPanel.css";
+import "./TaskTreeTable.css";
 
 // The Explorer's Maintenance tab is the tree with each position's tasks in it (explorerTasks.js),
 // like the Modelling and Missions tabs: the read of every task in the asset opened, each task
@@ -39,10 +42,17 @@ export function useTreeTasks({ on, within = null, kind = "pos" }) {
   return { ...state, load };
 }
 
-// One cell of a task row (r.ref.task: a task-table row).
-export function TaskCell({ r, col }) {
+// One cell of a task row (r.ref.task: a task-table row). The Packaged cell is a link to the
+// package (`onPackage`), opened in Maintenance › Packages.
+export function TaskCell({ r, col, onPackage = null }) {
   const t = r.ref.task;
   const c = taskCell(t, col.id);
+  if (col.id === "package" && t.package && onPackage) {
+    return (
+      <button type="button" className="link mt-pkg-link" title={c.title} onDoubleClick={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); onPackage(t.package); }}>{c.text}</button>
+    );
+  }
   if (col.id === "due") {
     if (!c.text) return <span className="rw-blank">—</span>;
     return <span className={"ml-num" + (c.overdue ? " pk-overdue" : "")} title={c.title || undefined}>{fmtDate(c.text)}{c.overdue ? " · overdue" : ""}</span>;
@@ -122,5 +132,139 @@ export function ForecastPane({ position, root, phone, headingRef, onClose }) {
         <PositionForecast positionId={position.id} name={position.name} root={root || null} />
       </div>
     </TablePane>
+  );
+}
+
+// A form in the table pane (Package…, Add to package…): the same props as FormModal, its buttons at
+// the foot of the pane rather than a dialog's. Sent once; a refusal shows over the form.
+export function PaneForm({ submitLabel, pendingLabel = "Saving…", onClose, onSubmit, canSubmit = true, children }) {
+  const { busy, error, submit } = useSendOnce(onSubmit, canSubmit);
+  return (
+    <form className="mt-pane-form" onSubmit={(e) => { e.preventDefault(); submit(); }}>
+      {error && <div className="card error" role="alert">{error}</div>}
+      <div className="rcm-form">{children}</div>
+      <div className="mt-pane-foot">
+        <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
+        <button type="submit" disabled={busy || !canSubmit} aria-busy={busy || undefined}>{busy ? pendingLabel : submitLabel}</button>
+      </div>
+    </form>
+  );
+}
+
+const plural = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n === 1 ? one : many}`;
+
+// Package… and Add to package… on the tasks selected (Derryn, 22 Nov 2026: "select multiple rows
+// in the table and right click and 'package'"; "right click a task and 'add to package'"), in the
+// table area with the tree kept beside it. `kind`: "new" or "add"; `tasks`: their task-table rows
+// (the ones already in a package or that can't join one are left out and said so); `holder`: the
+// lowest position or place over them all, where a new package goes; `asset`: the asset's top row,
+// whose packages Add to package… offers.
+export function PackagePane({ kind, tasks, holder, asset, display, phone, headingRef, onClose, onDone }) {
+  const free = tasks.filter((t) => !t.package && !t.why_not);
+  const left = tasks.length - free.length;
+  const title = kind === "new" ? "Package" : "Add to package";
+  const where = holder?.ref?.name ? `on ${holder.ref.name}` : "here";
+  return (
+    <TablePane title={title} subject={`${plural(free.length, "task")}${holder?.ref?.name ? ` · ${holder.ref.name}` : ""}`} phone={phone}
+               headingRef={headingRef} onClose={onClose} closeLabel={`Close ${title.toLowerCase()}`}>
+      <div className="td-tab-page pk-panel rw mt-pkg-pane">
+        {left > 0 && (
+          <p className="lib-date" role="note">
+            {plural(left, "task")} selected {left === 1 ? "isn't" : "aren't"} included: {tasks.filter((t) => t.package || t.why_not)
+              .map((t) => `${t.name} (${t.package ? `in ${t.package.name}` : t.why_not})`).join("; ")}.
+          </p>
+        )}
+        {!free.length ? <p className="lib-date">None of the tasks selected can go in a package.</p>
+          : kind === "new" ? (
+            <AddPackageDialog key={free.map((t) => t.id).join(",")} scope={packageScope(holder)} where={where} tasks={free} named
+                              Frame={PaneForm} onClose={onClose} onDone={(text, id) => onDone(text, id)} />
+          ) : (
+            <AddToPackage key={free.map((t) => t.id).join(",")} asset={asset} tasks={free} display={display} onClose={onClose} onDone={onDone} />
+          )}
+      </div>
+    </TablePane>
+  );
+}
+
+const RULES = [1, 2, 3, 4, 5, 6, 8, 10, 12];
+
+// The packages on this asset, the ones that can take every task first (the same interval before
+// the others); one that can't says why, greyed. Each task comes on every visit, or on every Nth
+// when its interval is a whole multiple of the package's; each can be changed.
+function AddToPackage({ asset, tasks, display, onClose, onDone }) {
+  const [list, setList] = useState(null);
+  const [error, setError] = useState(null);
+  const [pick, setPick] = useState(null);
+  const [rules, setRules] = useState({});
+  const scope = useMemo(() => packageScope(asset), [asset]);
+  useEffect(() => {
+    let live = true;
+    listPackages(scope || {}).then((d) => live && setList(d.packages || [])).catch((e) => live && setError(e.message));
+    return () => { live = false; };
+  }, [scope]);
+  const ranked = useMemo(() => (list ? rankPackages(list, tasks, display) : null), [list, tasks, display]);
+  const chosen = ranked?.find((x) => x.pkg.id === pick && !x.why) || null;
+  // The first that fits is picked to start with.
+  useEffect(() => {
+    if (ranked && pick == null) {
+      const first = ranked.find((x) => !x.why);
+      if (first) setPick(first.pkg.id);
+    }
+  }, [ranked]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A package picked: each task's visits from its interval against the package's.
+  useEffect(() => {
+    if (chosen) setRules(Object.fromEntries(tasks.map((t) => [t.id, visitFor(chosen.pkg, t).every_nth || 1])));
+  }, [chosen?.pkg.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const submit = async () => {
+    for (const t of tasks) {
+      const n = Number(rules[t.id]) || 1;
+      await addPackageTask(chosen.pkg.id, { task_id: t.id, ...(n > 1 ? { visit_rule: "nth", every_nth: n } : { visit_rule: "every" }) });
+    }
+    onDone(`Added ${plural(tasks.length, "task")} to ${chosen.pkg.name}.`, chosen.pkg.id);
+  };
+  const fits = ranked ? ranked.filter((x) => !x.why).length : 0;
+  return (
+    <PaneForm submitLabel="Add" pendingLabel="Adding…" canSubmit={!!chosen} onClose={onClose} onSubmit={submit}>
+      <p className="lib-date">{tasks.map(taskOnText).join(", ")}.</p>
+      {tasks.some((t) => t.overdue) && <p className="maint-overdue" role="status">{overdueNote(tasks.filter((t) => t.overdue).length)}</p>}
+      {error && <div className="card error">Couldn&apos;t load the packages: {error}</div>}
+      {!ranked && !error && <p className="lib-date">Loading…</p>}
+      {ranked && ranked.length === 0 && <p className="lib-date">No packages on this asset yet: use Package… to make one.</p>}
+      {ranked && ranked.length > 0 && (
+        <>
+          {!fits && <p className="lib-date" role="note">None of the packages here can take {tasks.length === 1 ? "this task" : "these tasks"}: each says why. Use Package… to make one that can.</p>}
+          <ul className="pk-pick mt-pk-pick" role="radiogroup" aria-label="Packages">
+            {ranked.map(({ pkg, why }) => (
+              <li key={pkg.id} className={why ? "is-off" : undefined}>
+                <label className="pk-check">
+                  <input type="radio" name="mt-pk-target" checked={pick === pkg.id} disabled={!!why} onChange={() => setPick(pkg.id)}
+                         aria-describedby={why ? `mt-pk-why-${pkg.id}` : undefined} />
+                  <span>
+                    {pkg.parent ? "↳ " : ""}{pkg.name}{" "}
+                    <span className="lib-date">· {cadenceWords(pkg)}{pkg.trade ? ` · ${pkg.trade}` : ""}{pkg.subject?.name ? ` · on ${pkg.subject.name}` : ""} · {plural(pkg.task_count || 0, "task")}</span>
+                    {why && <span className="mt-pk-why" id={`mt-pk-why-${pkg.id}`}>{why}</span>}
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {chosen && (
+        <fieldset className="mt-pk-rules">
+          <legend>On its visits</legend>
+          {tasks.map((t) => (
+            <label key={t.id} className="mt-pk-rule">
+              <span>{t.name} <span className="lib-date">· {taskCell(t, "interval").text || "no interval"}</span></span>
+              <select value={rules[t.id] || 1} onChange={(e) => setRules((r) => ({ ...r, [t.id]: Number(e.target.value) }))}
+                      aria-label={`${t.name}: on which visits`}>
+                {[...new Set([...RULES, rules[t.id] || 1])].sort((a, b) => a - b)
+                  .map((n) => <option key={n} value={n}>{n === 1 ? "Every visit" : `Every ${ordinal(n)} visit`}</option>)}
+              </select>
+            </label>
+          ))}
+        </fieldset>
+      )}
+    </PaneForm>
   );
 }

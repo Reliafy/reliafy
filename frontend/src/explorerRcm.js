@@ -514,13 +514,14 @@ export function withTableCols(prefs, next, shown, { reset = false } = {}) {
 // tree column): a table wider than its pane gives up the same share of each
 // column's slack (its width over its least), never below its least (`min`),
 // so it scrolls sideways only when every column is at its least. Never
-// widened (the row's last cell fills what's left). {id: width}.
-export function fitWidths(ids, widths, room) {
+// widened (the row's last cell fills what's left). {id: width}. `mins`: a table's own least
+// widths, where its columns aren't the RCM's (the Maintenance tab's: room for a header's filter).
+export function fitWidths(ids, widths, room, mins = null) {
   const out = Object.fromEntries(ids.map((id) => [id, widths[id]]));
   if (!Number.isFinite(room) || room <= 0) return out;
   const total = ids.reduce((t, id) => t + out[id], 0);
   if (total <= room) return out;
-  const least = (id) => Math.min(out[id], COLUMN[id]?.min ?? out[id]);
+  const least = (id) => Math.min(out[id], mins?.[id] ?? COLUMN[id]?.min ?? out[id]);
   const slack = ids.reduce((t, id) => t + out[id] - least(id), 0);
   if (slack <= 0) return out;
   const k = Math.min(1, (total - room) / slack);
