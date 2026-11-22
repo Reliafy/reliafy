@@ -27,7 +27,7 @@ Reliafy answers that three ways:
 Open the dataset under [Data](/data) and press **Compare groups** at the
 top of the page. The panel on the right asks for:
 
-- **Time column**: the time to failure or removal.
+- **Time column**: the time to failure or removal. It starts at the dataset's own x (the column its reading uses for time), else a column named like a time (hours, cycles); check it before you compare.
 - **Split by**: the column that names each unit's group.
 - **Failed or still running?**: the column that says which units failed and
   which are still running. A status column the data has (say *Status*, with

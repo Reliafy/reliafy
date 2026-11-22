@@ -437,6 +437,31 @@ export function forestRows(result) {
   });
 }
 
+// A parametric regression (Weibull PH, Lognormal AFT…) shares one shape across
+// every unit; said wherever its life figures are, because a B10 at one group
+// then differs from a fit to that group alone.
+export const SHARED_SHAPE_NOTE = "One shape for every unit: the covariates stretch or shrink the life, but the way "
+  + "failures spread out with age is the same for every group. So a B-life here can differ from a fit to one group "
+  + "on its own. If groups may wear out differently, fit each group on its own and compare them.";
+export const sharesShape = (result) => (result?.params || []).length > 1 && !result?.tvc && result?.kind === "regression";
+
+// A forest row as the chart draws it. A number with a data range is drawn
+// across that range (lowest to highest value), not per +1, so every covariate
+// sits on one scale: per +1 °C (×1.15) beside per +1 of a 0.5-to-0.9 ratio
+// (×205) put the first on the line at 1, as if it did nothing. Categories and
+// rows without a range are drawn as they are. The per-unit figures stay in words.
+export function chartRow(row) {
+  if (!row || row.additive || !row.range || !(row.ratio > 0)) return { ...row, across: false };
+  const span = row.range[1] - row.range[0];
+  if (!(span > 0)) return { ...row, across: false };
+  const pow = (v) => (v != null && v > 0 ? v ** span : null);
+  const ends = [pow(row.lo), pow(row.hi)];
+  return {
+    ...row, ratio: row.ratio ** span, lo: ends[0], hi: ends[1], across: true,
+    label: `${row.label || row.name} (${formatNumber(row.range[0])} to ${formatNumber(row.range[1])}${row.unit ? ` ${row.unit}` : ""})`,
+  };
+}
+
 // One effect in words: "Each +1 °C in temp_C multiplies the failure rate by
 // 1.15 (90% 1.10 to 1.20)." For a small effect per unit it also gives a step
 // of 10 ("+10: ×4.0"), so it reads at a size people think in. A time ratio

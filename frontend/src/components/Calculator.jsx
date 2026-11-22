@@ -21,7 +21,7 @@ import ScrollCue from "./ui/ScrollCue.jsx";
 import ExtrapolationNote from "./ui/ExtrapolationNote.jsx";
 import { timeExtrapolation } from "../extrapolation.js";
 import { unitInText } from "./unitText.js";
-import { applyAnswer, autoRangeEnd, curveIsCurrent, markPending, nextCombinationValues, requestKey } from "../calcSeries.js";
+import { applyAnswer, autoRangeEnd, curveIsCurrent, markPending, nextCombinationValues, requestKey, startNote, startValues } from "../calcSeries.js";
 import { answerFor, exactBound, exactKey, exactTimes, exactValues } from "../calcExact.js";
 import { SPREAD_LABEL, spreadCurves, spreadRangeText, spreadTime, spreadWords } from "../rateSpread.js";
 
@@ -30,21 +30,21 @@ import { SPREAD_LABEL, spreadCurves, spreadRangeText, spreadTime, spreadWords } 
 // switches — the tab body unmounts when you leave it. This builds the initial
 // state for a set of fitted functions. ``times`` are the fit's failure times
 // (the probability plot's points): "At a time" starts inside the data.
-export function initCalcState(functions, times = null) {
+export function initCalcState(functions, times = null, bases = {}) {
   const covariates = functions?.covariates || [];
   const hasCov = covariates.length > 0 && !!functions?.evaluate_path;
-  const values = hasCov
-    ? Object.fromEntries(covariates.map((c) => [c.name, c.default]))
-    : null;
+  const values = hasCov ? startValues(covariates, bases) : null;
+  const moved = hasCov && covariates.some((c) => String(values[c.name]) !== String(c.default));
   const start = startingTime(functions?.curves, times);
   return {
-    series: functions ? [{ id: 0, values, curves: functions.curves, error: null }] : [],
+    series: functions ? [{ id: 0, values, curves: functions.curves, error: null, ...(moved ? { stale: true } : {}) }] : [],
     active: "sf",
     // A round time inside the data (310, not 307.4): only the starting input,
     // and the words beside it say where it came from until it is changed.
     t: start.t,
     tStart: start.t,
-    tFrom: start.from,
+    // The B10 read off the stored curves is not this combination's once it starts elsewhere.
+    tFrom: moved && start.from === "b10" ? null : start.from,
     condAge: "", // conditional survival age s
     xMin: "", // blank = auto-range from the data
     xMax: "",
@@ -195,7 +195,7 @@ function CovariateCombos({ series, covariates, onUpdate, onRemove, onAdd, canAdd
 // The covariates as one compact row above the chart: the first combination's
 // values typed in place; with several combinations, each as a chip (its
 // colour and values), edited in the larger view.
-function CovariateRow({ series, covariates, onUpdate, onAdd, canAdd, onEdit, labelOf }) {
+function CovariateRow({ series, covariates, onUpdate, onAdd, canAdd, onEdit, labelOf, note = null }) {
   const multi = series.length > 1;
   const first = series[0];
   return (
@@ -232,9 +232,11 @@ function CovariateRow({ series, covariates, onUpdate, onAdd, canAdd, onEdit, lab
         )}
       </span>
       {series.map((s) => s.error && <span className="combo-err" key={s.id}>{s.error}</span>)}
+      {note && <span className="calc-cov-note">{note}</span>}
     </div>
   );
 }
+
 
 // Calculator tab: chart any of the reliability functions and read them off at a
 // chosen t. For regression models you can add several covariate combinations,
@@ -242,14 +244,13 @@ function CovariateRow({ series, covariates, onUpdate, onAdd, canAdd, onEdit, lab
 // chart fills the tab's height (the model page's frame).
 export default function Calculator({ functions, unit, params, state, setState, nextIdRef, name = null,
                                      paramLabel = null, fill = false, ciLabel = "90%", ciNote = null,
-                                     credible = false, spread = null, dataRange = null }) {
+                                     credible = false, spread = null, bases = {}, dataRange = null }) {
   const { meta, evaluate_path: evaluatePath } = functions;
   const tLabel = unit ? `t (${unit})` : "t";
   const covariates = functions.covariates || [];
   const hasCov = covariates.length > 0 && !!evaluatePath;
 
-  const defaults = () =>
-    Object.fromEntries(covariates.map((c) => [c.name, c.default]));
+  const defaults = () => startValues(covariates, bases);
 
   // The axes dialog and the covariate combinations' larger view (local UI only).
   const [covModal, setCovModal] = useState(false);
@@ -487,6 +488,14 @@ export default function Calculator({ functions, unit, params, state, setState, n
     seriesRef.current.forEach((s) => runEval(s.id, s.values));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [xLoNum, effHi, evaluatePath]);
+
+  // A first combination that starts away from the stored curves (a category at
+  // its base level): work its curves out once.
+  useEffect(() => {
+    const s0 = seriesRef.current[0];
+    if (evaluatePath && s0?.stale && !s0.pending && !s0.error) runEval(s0.id, s0.values);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [evaluatePath]);
 
   const updateValue = (id, name, value) => {
     const current = series.find((s) => s.id === id);
@@ -750,8 +759,8 @@ export default function Calculator({ functions, unit, params, state, setState, n
       )}
       {confidencePath && cond > 0 && (
         <p className="muted-line" style={{ margin: "0 0 0.4rem" }}>
-          Confidence bounds are shown on the unconditional function only — clear
-          the survived-age to see them.
+          No bound on this answer: given a survived age, the value is a point estimate only. Clear
+          “Given survived to” for the value from new, with its bound.
         </p>
       )}
 
@@ -839,6 +848,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
           canAdd={series.length < MAX_SERIES}
           onEdit={() => setCovModal(true)}
           labelOf={labelOf}
+          note={series.length === 1 ? startNote(covariates, series[0]?.values, bases) : null}
         />
       )}
       <Plot data={traces} layout={layout} download={`${name || "Model"} — ${activeLabel}`} fill={fill} csv={curveCsv} />
@@ -920,7 +930,8 @@ export default function Calculator({ functions, unit, params, state, setState, n
                 </label>
                 </>
                 )}
-                {confidencePath && (
+                {/* Given a survived age there is no bound yet, so its controls step aside. */}
+                {confidencePath && cond === 0 && (
                   <>
                     <label className="calc-t">
                       <span>Confidence bound</span>

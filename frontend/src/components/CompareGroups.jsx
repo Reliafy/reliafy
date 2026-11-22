@@ -73,8 +73,9 @@ export default function CompareGroups({ dataset, splitBy, onClose }) {
   const statusCol = dataset.profile?.status_column || reading.c || "";
   const modeCol = reading.e || "";
   const first = useMemo(
-    () => guessCompareColumns(columns, { distinct: distinct || {}, splitBy, exclude: [statusCol, modeCol].filter(Boolean) }),
-    [columns, distinct, splitBy, statusCol, modeCol]
+    () => guessCompareColumns(columns, { distinct: distinct || {}, splitBy, x: dataset.reading?.x || dataset.last_mapping?.x || "",
+                                         exclude: [statusCol, modeCol].filter(Boolean) }),
+    [columns, distinct, splitBy, dataset.reading, dataset.last_mapping, statusCol, modeCol]
   );
   // Each column's few values (the dataset's profile), so a status column of
   // words ("Failed", "Removed, OK") is read as the fit reads it.

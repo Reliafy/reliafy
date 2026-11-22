@@ -63,6 +63,19 @@ test("compare picks the failed column and ticks invert", () => {
   assert.equal(g.unit, "hours");
 });
 
+test("compare reads the time from a time-named column, not the first number", () => {
+  const seal = [
+    { name: "seal", dtype: "str" }, { name: "site", dtype: "str" }, { name: "flush_plan", dtype: "str" },
+    { name: "duty_pct", dtype: "int64" }, { name: "hours", dtype: "int64" }, { name: "status", dtype: "str" },
+  ];
+  assert.equal(guessCompareColumns(seal, { distinct: { site: 3, flush_plan: 2 } }).time, "hours");
+  // The dataset's own reading wins over any guess.
+  const odd = [{ name: "duty_pct", dtype: "int64" }, { name: "run", dtype: "int64" }];
+  assert.equal(guessCompareColumns(odd, { x: "run" }).time, "run");
+  // No time-like name: the first numeric column, as before.
+  assert.equal(guessCompareColumns(odd).time, "duty_pct");
+});
+
 test("a 'censored' column is not inverted", () => {
   const cols = [{ name: "months", dtype: "int64" }, { name: "censored", dtype: "int64" }];
   const g = guessCompareColumns(cols, { distinct: { months: 20, censored: 2 } });

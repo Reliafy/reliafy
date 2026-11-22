@@ -72,6 +72,14 @@ export { parsePastedValues };
 // (failed between two times) takes Turnbull instead.
 const EXACT_TIMES_ONLY = ["kaplan_meier", "nelson_aalen", "fleming_harrington"];
 
+// The covariates a picked dataset carries, in words: "4 covariates (site,
+// load_kN, belt_speed_mps, dusty)". Said before Next, where the choice to use
+// them is made on the Model step.
+function zWords(z) {
+  const list = (z || []).slice(0, 4).join(", ") + ((z || []).length > 4 ? ", …" : "");
+  return `It has ${z.length} covariate${z.length === 1 ? "" : "s"} (${list})`;
+}
+
 export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDatasetId, autoFit, initialSource }) {
   const [step, setStep] = useState(1);
   // Source step: "saved" (a saved dataset), "paste" (values typed / pasted in) or "upload" (a file).
@@ -743,6 +751,12 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
                           })}
                         </p>
                       ) : null}
+                      {pickedGuess.reading.z?.length > 0 && pickedGuess.problems.length === 0 && (
+                        <p className="hint" role="status" style={{ margin: 0 }}>
+                          {zWords(pickedGuess.reading.z)}: choose <b>Regression on Z</b> on the next step to
+                          see their effects. Without it, the model ignores them.
+                        </p>
+                      )}
                     </>
                   )}
                 </DatasetGlance>
