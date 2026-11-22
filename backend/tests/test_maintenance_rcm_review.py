@@ -72,6 +72,8 @@ def test_a_positions_rollup_counts_every_position_inside_it(m):
     # The parents read with it reach the top, through positions with no RCM of their own.
     assert whole["parents"][ids["m1"]] == ids["prop"] and whole["parents"][ids["prop"]] == ids["uav"]
     assert whole["parents"][ids["uav"]] is None
+    # Each position in parents has its name, so a list can say where a position is.
+    assert set(whole["names"]) == set(whole["parents"])
 
     # The worksheet below a position (depth first) rolls up the same way, the top included.
     sheet = _resolved(m, m.rcm_worksheet(ids["uav"]))
