@@ -138,3 +138,5 @@
 .mt-restore select, .mt-restore input:not([type="checkbox"]) { max-width: 100%; box-sizing: border-box; }
 .mt-restore-row { flex-wrap: wrap; gap: 8px 12px; }
 .mt-restore-row > * { min-width: 0; flex: 1 1 10rem; }
+/* A level's forecast in the Explorer's table area (the Maintenance tab's Forecast…). */
+.mt-forecast-pane { padding: var(--space-3) var(--space-4) var(--space-4); overflow: auto; min-height: 0; flex: 1 1 auto; }

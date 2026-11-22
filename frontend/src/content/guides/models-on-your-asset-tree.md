@@ -214,7 +214,7 @@ priority, and under **More** what a task can't say (an on-condition
 replacement's threshold, cost and time off-line). What nothing says (a cost, a
 repair time) is left blank and flagged. A saved simulation run before a task
 changed says it's out of date, and isn't rerun until you ask. The position's
-**Maintenance › Tasks** lists the RBDs that use its tasks. Blocks drawn by hand keep
+**Maintenance › Tasks** shows the RBDs that use a task when you open it. Blocks drawn by hand keep
 their own plan.
 
 ### Positions that back each other up

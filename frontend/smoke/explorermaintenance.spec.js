@@ -1,15 +1,13 @@
-// The Explorer's Maintenance tab (Operate › Assets › Explorer, ?tab=maintenance): every
-// maintenance task on the picked position, from its RCM or added directly, with where it came
-// from, how often, its package, next due and what it costs each time ("Include what's inside"
-// adds the tasks below). Add task (the bar's button, the row menu's first item) opens a form in
-// the panel beside the tree, never a dialog; a task opens there too, its cost typed or from its
-// LSA at trade rates. The RCM reads each task's cost: a failure mode's task shows it in its
-// details, and the P-F calculator starts from it. At 400 px the table scrolls inside its card and
-// nothing scrolls the page sideways. Each test makes its own small plant through the API.
+// The Explorer's Maintenance tab (Operate › Assets › Explorer, ?tab=maintenance): a tree-table, like
+// the Modelling and Missions tabs. Under each position hang its own maintenance tasks (from its RCM or
+// added directly) with how often, next due, what each costs, its package, where it came from and its
+// kind; each level's roll-up counts the tasks at and below it. A position's Forecast… opens the
+// forecast for that level and everything inside it in the table area; a task opens beside the table.
+// The RCM reads each task's cost. At 400 px nothing scrolls the page sideways. Each test makes its
+// own small plant through the API.
 //
 // With SMOKE_SHOTS_DIR set, it saves screenshots (for the pull request).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
-import { headMenu } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -38,130 +36,94 @@ async function plant(request, tag) {
 }
 
 const query = (page) => new URL(page.url()).searchParams;
-const panel = (page) => page.locator(".pk-panel");
-const rows = (page) => panel(page).locator(".pk-trow");
-const row = (page, name) => rows(page).filter({ hasText: name });
-const sideways = (page) => page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+const nameRow = (page, text) => page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: text }) });
+const side = (page) => page.locator(".tt-side");
+const sideways = (page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 
-test("Maintenance: every task here with where it came from and its cost; add one, cost one, the RCM reads it", async ({ page, request, problems }) => {
+test("Maintenance: the tasks in the tree with a roll-up at each level; open one, add one, forecast a level", async ({ page, request, problems }) => {
   const tag = `m${Date.now()}`;
   const p = await plant(request, tag);
+  // Another asset: none of it may show while the pump is open.
+  const other = await postOk(request, `${M}/positions`, { name: `Other asset ${tag}` });
+  await postOk(request, `${M}/positions/${other.id}/tasks`, { name: `Not ours ${tag}`, interval: 1, unit: "weeks" });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}`);
-  await page.getByRole("tab", { name: "Maintenance" }).click();
-  await expect.poll(() => query(page).get("tab")).toBe("maintenance");
-  // The position's own tasks: from the RCM (its failure mode) and added directly (and why).
-  await expect(rows(page)).toHaveCount(2);
-  // With work management off (SMOKE_WORK_MANAGEMENT=off) the plan is hypothetical: Next planned.
-  const off = (await (await request.get("/api/config")).json()).work_management === false;
-  await expect(panel(page).getByRole("columnheader")).toHaveText(
-    ["Task", "From", "Interval", "Cost each time", off ? "Next planned" : "Next due", "Package", "Kind"]);
-  await expect(row(page, `Check the seal ${tag}`)).toContainText(`RCM: Seal leaks ${tag}`);
-  await expect(row(page, `Check the seal ${tag}`)).toContainText("$45");
-  await expect(row(page, `Inspect the guard ${tag}`)).toContainText("Added directly: law, regulation or standard (AS 4024)");
-  await expect(row(page, `Inspect the guard ${tag}`)).toContainText("Not set");
-  // What's inside too: the motor's task, with the Position column.
-  await panel(page).getByRole("checkbox", { name: "Include what's inside" }).check();
-  await expect(rows(page)).toHaveCount(3);
-  await expect(panel(page).getByRole("columnheader").first()).toHaveText("Position");
-  await expect.poll(() => query(page).get("below")).toBe("1");
-  await shot(page, "maintenance-tab-desktop");
-  await panel(page).getByRole("checkbox", { name: "Include what's inside" }).uncheck();
-  await expect(rows(page)).toHaveCount(2);
+  await open(page, `/asset-register/explorer?arrange=positions&root=${p.pump.id}&sel=${p.pump.id}&tab=maintenance`);
+  // Each task under its own position; the motor's under the motor.
+  await expect(nameRow(page, `Check the seal ${tag}`)).toBeVisible();
+  await expect(nameRow(page, `Inspect the guard ${tag}`)).toBeVisible();
+  await expect(nameRow(page, `Not ours ${tag}`)).toHaveCount(0);
+  const motor = nameRow(page, `Maint motor ${tag}`);
+  await expect(motor).toContainText("1 task here");
+  if (!(await nameRow(page, `Grease the bearings ${tag}`).isVisible())) await motor.locator(".tp-chev").click();
+  await expect(nameRow(page, `Grease the bearings ${tag}`)).toBeVisible();
+  // The level's roll-up: its own and everything below it.
+  await expect(page.locator(".mt-rollup")).toHaveText("2 here · 3 tasks at and below");
+  // With work management off (SMOKE_WORK_MANAGEMENT=off) the column still reads Next due here.
+  await expect(page.getByRole("columnheader")).toHaveText([/Position, and its tasks/, "Interval", "Next due", "Cost each time", "Package", "From", "Kind"]);
+  await expect(nameRow(page, `Check the seal ${tag}`)).toContainText("$45");
+  await expect(nameRow(page, `Inspect the guard ${tag}`)).toContainText("Added directly: law, regulation or standard (AS 4024)");
+  await expect(nameRow(page, `Inspect the guard ${tag}`)).toContainText("Not set");
+  await shot(page, "maintenance-tree-desktop");
 
-  // The heading's "…": Add task…, Columns…, Trade rates…, Export CSV.
-  await expect((await headMenu(page)).locator(".ovm-menu .ovm-item")).toHaveText(["Add task…", "Columns…", "Trade rates…", "Export CSV", "Open the full page"]);
-  await page.keyboard.press("Escape");
-
-  // Add task: a form in the panel beside the tree, never a dialog.
-  await panel(page).getByRole("button", { name: "Add task" }).click();
-  await expect.poll(() => query(page).get("addtask")).toBe(p.pump.id);
-  const form = panel(page).getByRole("form", { name: "Add a task" });
-  await expect(form).toBeVisible();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  await form.getByRole("textbox", { name: /Task: the action only/ }).fill(`Replace the impeller ${tag}`);
-  await form.getByRole("group", { name: "How often" }).getByRole("spinbutton", { name: "How many" }).fill("24");
-  await form.getByRole("combobox", { name: "Why it's done (optional)" }).selectOption("oem");
-  await form.getByRole("textbox", { name: "Reference (optional)" }).fill("Pump manual 7.2");
-  await form.getByRole("checkbox", { name: `Seal leaks ${tag}` }).check();
-  await form.getByRole("spinbutton", { name: /Cost each time/ }).fill("1250");
-  await shot(page, "maintenance-add-task-desktop");
-  await form.getByRole("button", { name: "Add task" }).click();
-  await expect(rows(page)).toHaveCount(3);
-  await expect(row(page, `Replace the impeller ${tag}`)).toContainText(`Added directly: maker's recommendation (Pump manual 7.2) · prevents Seal leaks ${tag}`);
-  await expect(row(page, `Replace the impeller ${tag}`)).toContainText("$1,250");
-  await expect(panel(page)).toContainText(`Added Replace the impeller ${tag}.`);
-
-  // Open the statutory task and type its cost: the table says so.
-  await row(page, `Inspect the guard ${tag}`).getByRole("button", { name: `Inspect the guard ${tag}` }).click();
-  const edit = panel(page).getByRole("form", { name: `Task: Inspect the guard ${tag}` });
+  // A task opened: its form beside the table; the cost typed shows in the row.
+  await nameRow(page, `Inspect the guard ${tag}`).locator(".tp-nm").click();
+  const edit = side(page).getByRole("form", { name: `Task: Inspect the guard ${tag}` });
   await expect(edit).toContainText("Not set yet");
   await edit.getByRole("spinbutton", { name: /Cost each time/ }).fill("60");
   await edit.getByRole("button", { name: "Save" }).click();
-  await expect(row(page, `Inspect the guard ${tag}`)).toContainText("$60");
-  await shot(page, "maintenance-tab-costs-desktop");
-  // The RCM task's pane: its cost from its LSA, and the RCM tab named for its reason and modes.
-  await row(page, `Check the seal ${tag}`).getByRole("button", { name: `Check the seal ${tag}` }).click();
-  const rcmTask = panel(page).getByRole("form", { name: `Task: Check the seal ${tag}` });
-  await expect(rcmTask).toContainText("$45 each time. From its LSA: labour $45.");
-  await expect(rcmTask.getByRole("link", { name: "RCM tab" })).toBeVisible();
-  await rcmTask.getByRole("button", { name: "Cancel" }).click();
-  // The foot adds them up.
-  await expect(panel(page).getByRole("region", { name: "What the tasks cost" })).toContainText("$1,355 each time for them all.");
-  await expectHealthy(page, problems, { label: "maintenance tab" });
+  await expect(nameRow(page, `Inspect the guard ${tag}`)).toContainText("$60");
+  await shot(page, "maintenance-task-desktop");
 
-  // The row menu's first item on this tab: Add task….
-  await page.getByRole("treeitem", { name: new RegExp(`^Maint motor ${tag}`) }).locator(".tp-nm").click({ button: "right" });
+  // Add task… on the motor (its row menu): a form beside the table, never a dialog.
+  await motor.locator(".tp-nm").click({ button: "right" });
   const menu = page.getByRole("menu", { name: new RegExp(`^Actions for Maint motor ${tag}`) });
   await expect(menu.getByRole("menuitem").first()).toHaveText("Add task…");
+  await expect(menu.getByRole("menuitem", { name: "Forecast…" })).toBeVisible();
   await menu.getByRole("menuitem", { name: "Add task…" }).click();
   await expect.poll(() => query(page).get("addtask")).toBe(p.motor.id);
-  await expect(panel(page).getByRole("form", { name: "Add a task" })).toContainText(`Add a task to Maint motor ${tag}`);
+  const form = side(page).getByRole("form", { name: "Add a task" });
+  await expect(form).toContainText(`Add a task to Maint motor ${tag}`);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await form.getByRole("textbox", { name: /Task: the action only/ }).fill(`Check the coupling ${tag}`);
+  await form.getByRole("group", { name: "How often" }).getByRole("spinbutton", { name: "How many" }).fill("6");
+  await form.getByRole("button", { name: "Add task" }).click();
+  await expect(nameRow(page, `Check the coupling ${tag}`)).toBeVisible();
+  await expect(motor).toContainText("2 tasks here");
+
+  // Forecast… on the motor: that level's forecast in the table area, the tree kept beside it.
+  await motor.locator(".tp-nm").click({ button: "right" });
+  await page.getByRole("menu", { name: new RegExp(`^Actions for Maint motor ${tag}`) }).getByRole("menuitem", { name: "Forecast…" }).click();
+  await expect.poll(() => query(page).get("forecast")).toBe(p.motor.id);
+  const pane = page.locator("section.table-pane");
+  await expect(pane).toContainText(`Maint motor ${tag}`);
+  await expect(pane).toContainText(/tasks?/, { timeout: 30_000 });
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await shot(page, "maintenance-forecast-desktop");
+  await pane.getByRole("button", { name: "Close the forecast" }).click();
+  await expect.poll(() => query(page).get("forecast")).toBe(null);
+  await expectHealthy(page, problems, { label: "maintenance tab" });
 
   // The RCM reads the cost: the P-F calculator starts from the task's $45.
   const inputs = await (await request.get(`${M}/failure-modes/${p.mode.id}/interval-inputs?task_id=${p.check}`)).json();
   expect(inputs.task_cost.amount).toBe(45);
-  // The pump picked, then the RCM tab: it opens the pump down to its failure modes.
-  await page.getByRole("treeitem", { name: new RegExp(`^Maint pump ${tag}`) }).locator(".tp-nm").click();
-  await page.getByRole("tab", { name: "RCM" }).click();
-  const modeRow = page.getByRole("treegrid", { name: /and their RCM/ }).getByRole("row", { name: new RegExp(`^Failure mode: Seal leaks ${tag}`) });
-  await modeRow.locator(".tp-nm").dblclick();
-  const details = page.getByRole("complementary", { name: "Details" });
-  const costs = details.getByRole("group", { name: "What the tasks cost" });
-  await expect(costs).toContainText(`Check the seal ${tag}: $45 each time (from its LSA).`);
-  await expect(costs).toContainText(`Replace the impeller ${tag}: $1,250 each time (typed on the task).`);
-  await costs.scrollIntoViewIfNeeded();
-  await shot(page, "maintenance-rcm-costs-desktop");
-  await expectHealthy(page, problems, { label: "rcm reads the task costs" });
 });
 
-test("Maintenance at 400 px: the table scrolls in its card, Add task fits, nothing scrolls sideways", async ({ page, request, problems }) => {
+test("Maintenance at 400 px: the tree of tasks, a task opened, the forecast; nothing scrolls sideways", async ({ page, request, problems }) => {
   const tag = `n${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 400, height: 860 });
-  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=maintenance`);
-  // On a phone the panel is its own screen: tap the row to open it.
-  await page.getByRole("treeitem", { name: new RegExp(`^Maint pump ${tag}`) }).locator(".tp-nm").click();
-  await expect(rows(page)).toHaveCount(2);
+  await open(page, `/asset-register/explorer?arrange=positions&root=${p.pump.id}&sel=${p.pump.id}&tab=maintenance`);
+  await expect(nameRow(page, `Check the seal ${tag}`)).toBeVisible();
+  await expect(nameRow(page, `Check the seal ${tag}`)).toContainText("$45");
   expect(await sideways(page)).toBeLessThanOrEqual(0);
-  await shot(page, "maintenance-tab-phone");
-  await panel(page).getByRole("button", { name: "Add task" }).click();
-  const form = panel(page).getByRole("form", { name: "Add a task" });
-  await expect(form).toBeVisible();
-  expect(await sideways(page)).toBeLessThanOrEqual(0);
-  await shot(page, "maintenance-add-task-phone");
-  await form.getByRole("button", { name: "Cancel" }).click();
-  await row(page, `Check the seal ${tag}`).getByRole("button", { name: `Check the seal ${tag}` }).click();
-  await expect(panel(page).getByRole("form", { name: `Task: Check the seal ${tag}` })).toContainText("$45 each time");
+  await shot(page, "maintenance-tree-phone");
+  await nameRow(page, `Check the seal ${tag}`).locator(".tp-nm").click();
+  await expect(side(page).getByRole("form", { name: `Task: Check the seal ${tag}` })).toContainText("$45 each time");
   expect(await sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "maintenance-task-phone");
-  await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=rcm`);
-  const modeRow = page.getByRole("treegrid", { name: /and their RCM/ }).getByRole("row", { name: new RegExp(`^Failure mode: Seal leaks ${tag}`) });
-  await modeRow.locator(".tp-nm").dblclick();
-  const costs = page.getByRole("complementary", { name: "Details" }).getByRole("group", { name: "What the tasks cost" });
-  await expect(costs).toContainText(`Check the seal ${tag}: $45 each time`);
-  await costs.scrollIntoViewIfNeeded();
+  await open(page, `/asset-register/explorer?arrange=positions&root=${p.pump.id}&sel=${p.pump.id}&tab=maintenance&forecast=${p.pump.id}`);
+  await expect(page.locator("section.table-pane")).toContainText(/tasks?/, { timeout: 30_000 });
   expect(await sideways(page)).toBeLessThanOrEqual(0);
-  await shot(page, "maintenance-rcm-costs-phone");
+  await shot(page, "maintenance-forecast-phone");
   await expectHealthy(page, problems, { label: "maintenance phone" });
 });

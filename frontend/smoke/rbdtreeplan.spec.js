@@ -59,11 +59,13 @@ for (const [w, h, label] of [[1440, 900, "desktop"], [400, 860, "phone"]]) {
   });
 }
 
-test("the position's Maintenance tab lists the RBDs that use its tasks", async ({ page, request, problems }) => {
+test("a task opened on the Maintenance tab lists the RBDs that use it", async ({ page, request, problems }) => {
   const tag = `u${Date.now()}`;
   const { a } = await station(request, tag);
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${a.id}&tab=maintenance`);
+  // The task is a row under its position in the tree: opened, its details beside the table.
+  await page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: "Replace the seal" }) }).first().locator(".tp-nm").click();
   const uses = page.getByRole("region", { name: "Used in RBDs" });
   await expect(uses).toBeVisible({ timeout: 15_000 });
   await expect(uses).toContainText("“Replace the seal” is its plan");

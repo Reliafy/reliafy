@@ -29,6 +29,26 @@ on every third month. A layer has its own name and tasks, but its lines go on
 the weekly visit's work order that day, so there's still one work order per
 visit.
 
+## Every task here and below
+
+The **Tasks** view of the **Maintenance** tab shows your tasks **in the tree**:
+under each position (or place) hang its own maintenance tasks, one row each,
+with **Interval**, **Next due**, **Cost each time**, **Package**, **From** and
+**Kind** beside them. Every level says how many tasks are on it and below it
+(*2 here · 7 tasks at and below · 1 overdue*), so the top of an asset adds up
+its whole programme; open or close a level with its arrow. Only the asset you
+opened is shown, and retired tasks aren't.
+
+Click a task to open it beside the table: change how often, its cost or what
+it prevents, and see the repairable RBDs that use it. **Add task…** on a row's
+**More actions (…)** adds one to that position. **Trade rates…** in the
+heading's **…** prices every task's labour.
+
+**Forecast…** on a position's **…** runs the forecast for that level and
+everything inside it (the work, the expected failures and the costs to come,
+by month, quarter or year) in the table area, with the tree still beside it.
+It's the same forecast as the **Forecast** view, for whichever level you pick.
+
 ## See the tasks here
 
 Open **Assets → Explorer**, pick a position or a location, choose the

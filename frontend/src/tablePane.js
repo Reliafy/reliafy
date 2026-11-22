@@ -73,6 +73,15 @@ export const TABLE_PANES = {
       confirmLabel: "Leave it", cancelLabel: "Stay",
     },
   },
+  // A level's forecast (?forecast=<position id>; the Maintenance tab's Forecast… on a position): the
+  // work, failures and costs to come there and everything inside it. Nothing to discard.
+  forecast: {
+    param: "forecast",
+    discard: {
+      title: "Close the forecast?", body: "Nothing is lost: it's worked out again when opened.",
+      confirmLabel: "Close it", cancelLabel: "Keep it open",
+    },
+  },
   rbd: {
     param: "rbd",
     on: "on",

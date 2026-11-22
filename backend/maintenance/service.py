@@ -10904,17 +10904,25 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         opened = [r["open_work_order"] for r in rows if r["open_work_order"] and r["parent"] is None]
         return {"packages": rows, "open_work_orders": len(opened), "late": sum(1 for w in opened if w["late"])}
 
-    def task_table(self, position_id=None, location_id=None, limit: int = 5000) -> dict:
+    def task_table(self, position_id=None, location_id=None, limit: int = 5000, within=None) -> dict:
         """Every live task on a position or location and everything inside it (the
         Explorer's LSA tab: a table to search, sort and package from), one row
         each: where it is, the failure modes it prevents (each with its function ›
         functional failure), its kind (the decision's outcome), interval or trigger,
         trade, next due, its package (if any), whether it can join one (an item's
         task, a task by use and a round can't: ``why_not``), what it needs
-        (``resources``: its LSA record) and its ``instructions``."""
+        (``resources``: its LSA record) and its ``instructions``. Everything inside is the
+        Explorer's roll-up (``subtree_ids``), at any depth; ``within``: the asset opened, so
+        nothing from another asset is listed."""
         scope = self._package_scope(position_id, location_id)
+        if scope is None and within not in (None, ""):
+            # The whole asset opened (the Explorer's Maintenance tab: its tree of tasks).
+            scope = self.s.node(self.org, str(within))
+            if scope is None or scope.get("retired") or scope["label"] not in ("Position", "Location"):
+                raise NotFound(within)
         if scope is None:
-            raise Invalid("Give position_id or location_id.")
+            raise Invalid("Give position_id or location_id (or within, the asset opened).")
+        inside = self.subtree_ids(scope["id"], within)
         index = self._rcm_index()
         modes_of: dict[str, list] = {}
         for mode_id, found in index["tasks_of"].items():
@@ -10929,7 +10937,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             subject = _subject(self.s, self.org, task)
             if subject is None or subject.get("retired") or subject["label"] not in ("Position", "Location"):
                 continue
-            if not self._in_area(scope, subject):
+            if subject["id"] not in inside:
                 continue
             modes = []
             kind = task.get("outcome")
@@ -15133,6 +15141,34 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         for pid, r in rows.items():
             kids.setdefault(r["parent_id"], []).append(pid)
         return _walk_down(root_id, kids)
+
+    def subtree_ids(self, node_id: str, within: str | None = None) -> set[str]:
+        """The Explorer's roll-up: a tree node and everything the tree shows below it, at any
+        depth, as ids. For a position, it and every position nested inside it (one an item
+        carries included); for a place (a location), it, the places inside it and every position
+        there, set or inherited. ``within``: the asset opened (?root=): the node must be inside
+        it, and nothing outside it is given, so another asset's positions never show. One tree
+        read, for any tab that rolls a node's records up (the Maintenance tab's tasks first)."""
+        node = self.s.node(self.org, str(node_id or ""))
+        if node is None or node.get("retired") or node["label"] not in ("Position", "Location"):
+            raise NotFound(node_id)
+        read = self._tree_read()
+        ids = set(self.positions_inside(node["id"], read))
+        if node["label"] == "Location":
+            ids.update(self._location_ids_in(node["id"]))
+        ids.add(node["id"])
+        if within not in (None, ""):
+            asset = self.s.node(self.org, str(within))
+            if asset is None or asset.get("retired") or asset["label"] not in ("Position", "Location"):
+                raise NotFound(within)
+            allowed = set(self.positions_inside(asset["id"], read)) | {asset["id"]}
+            if asset["label"] == "Location":
+                allowed.update(self._location_ids_in(asset["id"]))
+            # A place picked while one asset is open: only that asset's positions there.
+            if node["label"] == "Position" and node["id"] not in allowed:
+                raise Invalid(f"{node.get('name') or node_id} isn't inside the asset opened.")
+            ids &= allowed
+        return ids
 
     def _tree_task_due(self, task: dict, subject_label: str) -> str | None:
         """A task's next due date, as _task_view gives it, without its store reads

@@ -2798,11 +2798,12 @@ def list_packages(status: str | None = None, position_id: str | None = None, loc
 
 
 @router.get("/task-table")
-def task_table(position_id: str | None = None, location_id: str | None = None,
+def task_table(position_id: str | None = None, location_id: str | None = None, within: str | None = None,
                m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    """Every task on a position or location and below it, one row each, for the Explorer's
-    Packages tab: where, failure modes, kind, interval, trade, next due, package."""
-    return _run(m.task_table, position_id, location_id)
+    """Every task on a position or location and on everything below it at any depth, one row
+    each, for the Explorer's Maintenance tab: where, failure modes, kind, interval, trade, next
+    due, package. within: the asset opened (the Explorer's ?root=): only what's inside it."""
+    return _run(lambda: m.task_table(position_id, location_id, within=within or None))
 
 
 @router.get("/packages/propose")

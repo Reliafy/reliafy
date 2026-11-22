@@ -99,7 +99,8 @@ test("panel tabs at 400 px: the row fits with ⋯, nothing scrolls sideways", as
   const id = await conveyor(request);
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, at(id, "&tab=maintenance"));
-  await page.getByRole("treeitem", { name: new RegExp(`^${escapeRegExp(NAME)}`) }).first().locator(".tp-nm").click();
+  // The Maintenance tab's Tasks view is a tree-table: its rows are the table's.
+  await page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: NAME }) }).first().locator(".tp-nm").click();
   const tabs = page.getByRole("tablist", { name: new RegExp("^What to show for") }).first();
   await expect(tabs.getByRole("tab", { name: "Maintenance" })).toHaveAttribute("aria-selected", "true");
   await expect(tabs.getByRole("tab", { name: /more tabs?:/ })).toBeVisible();
