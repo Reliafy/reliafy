@@ -50,6 +50,19 @@ def _spec_from_form(x, s1, s2, distribution, life_model, unit, *, c=None, n=None
     }
 
 
+def _json_list(text):
+    """A form field holding a JSON list, or None (absent, blank or not a list)."""
+    import json
+
+    if not text:
+        return None
+    try:
+        v = json.loads(text)
+    except ValueError:
+        return None
+    return v if isinstance(v, list) else None
+
+
 def _model_summary(doc, ctx: AccessCtx) -> dict:
     r = doc.results or {}
     return {
@@ -171,6 +184,7 @@ def save_model(
     unit: str | None = Form(default=None),
     s1_unit: str | None = Form(default=None),
     s2_unit: str | None = Form(default=None),
+    use_stress: str | None = Form(default=None),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -192,6 +206,10 @@ def save_model(
                                c=c, n=n, xl=xl, xr=xr, tl=tl, tr=tr,
                                s1_label=s1_label, s2_label=s2_label,
                                s1_unit=s1_unit, s2_unit=s2_unit)
+        # The use stress typed on the Model step (the user's units), so the saved page opens at it.
+        use = alt_service.clean_use_stress(_json_list(use_stress), len(spec["stress_cols"]))
+        if use is not None:
+            spec["use_stress"] = use
         doc = alt_service.save_model(session, name, dataset, spec, ctx.write_owner)
         access_service.stamp_editor(session, "alt_models", doc.id, ctx)
     except FitError as exc:
@@ -247,21 +265,30 @@ def export_python(model_id: str, session=Depends(get_session), ctx: AccessCtx = 
 
 @router.patch("/alt/models/{model_id}")
 def rename_model(
-    model_id: str, name: str = Body(..., embed=True),
+    model_id: str, body: dict = Body(...),
     session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
+    """Rename (``name``) and/or keep the use stress entered on the page (``use_stress``: a number per
+    stress in the user's units, or null to forget it), so the page reopens at it."""
     existing = alt_service.get_model(session, model_id, ctx.read_owners)
     if existing is not None:
         denial = access_service.write_denial(ctx, existing.owner_id)
         if denial:
             status, payload = denial
             return JSONResponse(status_code=status, content=payload)
+    name = body.get("name")
+    if name is None and "use_stress" not in body:
+        return JSONResponse(status_code=422, content={"detail": "Give a name or a use stress."})
     try:
-        doc = alt_service.rename_model(session, model_id, name, ctx.write_owner)
+        doc = None
+        if name is not None:
+            doc = alt_service.rename_model(session, model_id, str(name), ctx.write_owner)
+        if "use_stress" in body:
+            doc = alt_service.set_use_stress(session, model_id, body.get("use_stress"), ctx.write_owner)
         access_service.stamp_editor(session, "alt_models", doc.id, ctx)
     except alt_service.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
-    return JSONResponse(content=_model_summary(doc, ctx))
+    return JSONResponse(content={**_model_summary(doc, ctx), "spec": doc.spec})
 
 
 @router.delete("/alt/models/{model_id}")

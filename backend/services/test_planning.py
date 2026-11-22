@@ -599,6 +599,14 @@ def _stress(value, label: str) -> float:
     return v
 
 
+#: The thermal life-stress models: their stress is an absolute temperature (kelvin).
+_THERMAL = ("arrhenius", "eyring")
+#: Temperatures typed in °C for a thermal model: worked in kelvin, shown in °C.
+_CELSIUS = {"°c", "c", "degc", "deg c", "celsius"}
+#: A precision factor past this is too wide to plan with: said in words, with what would narrow it.
+WIDE_FACTOR = 10.0
+
+
 def accelerated_test(
     mode: str = "plan",
     distribution: str = "weibull",
@@ -638,20 +646,27 @@ def accelerated_test(
     sh = _demo_positive(shape, "Shape", _MAX_SHAPE)
     if _blank(use_stress):
         raise StrategyError("Give the use stress: the stress the life is estimated at.")
-    use = _stress(use_stress, "Use stress")
+    unit_s, su = (unit or "").strip(), (stress_unit or "").strip()
+    # A thermal model reads kelvin: a temperature typed in °C is worked in kelvin and shown in °C.
+    celsius = lm in _THERMAL and su.lower() in _CELSIUS
+    off = 273.15 if celsius else 0.0
+    if celsius:
+        su = "°C"
+    use = _stress(use_stress, "Use stress") + off
+    if lm in _THERMAL and use <= 0:
+        raise StrategyError("A thermal model reads an absolute temperature: give it in kelvin (above 0 K), or choose °C.")
     if _blank(censor_time):
         raise StrategyError("Give the test length (when the test stops).")
     tc = _demo_positive(censor_time, "Test length")
     p, what = _quantity("b_life", b_life)
     alpha = _alpha(confidence)
-    unit_s, su = (unit or "").strip(), (stress_unit or "").strip()
     common = dict(use_stress=use, censor_time=tc, p=p, alpha_ci=alpha)
     alternatives = []
     try:
         if mode == "plan":
             if _blank(high_stress):
                 raise StrategyError("Give the highest stress the test may use.")
-            hi = _stress(high_stress, "Highest stress")
+            hi = _stress(high_stress, "Highest stress") + off
             n = _demo_count(units, "Units on test", 2, 100_000)
             k = _demo_count(2 if _blank(levels) else levels, "Stress levels", 2, 6)
             shares = None
@@ -669,7 +684,7 @@ def accelerated_test(
                     alt = tp.accelerated_test_plan(dist, model, lp, sh, high_stress=hi, n=n, levels=other,
                                                    middle_fraction=mf, **common)
                     alternatives.append({"levels": other, "precision": float(alt.precision),
-                                         "stresses": list(alt.stresses), "units": list(alt.units)})
+                                         "stresses": [float(s) - off for s in alt.stresses], "units": list(alt.units)})
         else:
             if not isinstance(stresses, (list, tuple)) or not isinstance(units_at, (list, tuple)) or not stresses:
                 raise StrategyError("Give the test stresses and the units at each.")
@@ -677,7 +692,7 @@ def accelerated_test(
                 raise StrategyError("Give one unit count per test stress.")
             if len(stresses) > 10:
                 raise StrategyError("A test takes up to 10 stresses.")
-            levels_ = [_stress(s, "Test stress") for s in stresses]
+            levels_ = [_stress(s, "Test stress") + off for s in stresses]
             counts = [_demo_count(u, "Units at a stress", 0, 100_000) for u in units_at]
             plan = tp.accelerated_test_precision(dist, model, lp, sh, stresses=levels_, units=counts, **common)
     except ValueError as exc:
@@ -687,20 +702,32 @@ def accelerated_test(
     out.pop("result", None)
     out.pop("non_finite", None)
     s_txt = (lambda v: f"{fmt_num(v)} {su}".strip())
-    rows = [{"stress": float(s), "units": int(u), "share": float(u) / max(1, sum(plan.units)),
+    # Stresses come back in the units they were typed in (°C for a temperature given in °C).
+    rows = [{"stress": float(s) - off, "units": int(u), "share": float(u) / max(1, sum(plan.units)),
              "expected_failures": float(f)}
             for s, u, f in zip(plan.stresses, plan.units, plan.expected_failures)]
     expected = sum(plan.expected_failures)
     lower, upper = plan.estimate / plan.precision, plan.estimate * plan.precision
     lead = ("Test " + ", ".join(f"{r['units']} at {s_txt(r['stress'])}" for r in rows) +
             f", each for {_time_phrase(tc, unit_s)}.")
+    wide = float(plan.precision) > WIDE_FACTOR
     summary = (
         f"{lead} Expect about {expected:.1f} failures in all. The test estimates {what} at the use stress "
-        f"({s_txt(use)}: {_time_phrase(plan.estimate, unit_s)} on these planning values) to within a factor of "
-        f"{plan.precision:.3g} at {_pct(1 - alpha)} confidence, about {_time_phrase(lower, unit_s)} to "
-        f"{_time_phrase(upper, unit_s)}."
+        f"({s_txt(use - off)}: {_time_phrase(float(f'{plan.estimate:.4g}'), unit_s)} on these planning values) to within a factor "
+        f"of {fmt_num(plan.precision)} at {_pct(1 - alpha)} confidence (two-sided), about "
+        f"{_time_phrase(float(f'{lower:.3g}'), unit_s)} to {_time_phrase(float(f'{upper:.3g}'), unit_s)}."
+        + (" That range is too wide to quote: this test can't pin the use-level life down." if wide else "")
     )
     warnings = []
+    if wide:
+        # Say why, in the test's own terms: the stress nearest use is what pins the slope down.
+        low = rows[0]
+        warnings.append(
+            f"A factor of {fmt_num(plan.precision)} means the test can't say much about {what} at use. The stress "
+            f"nearest use ({s_txt(low['stress'])}) expects {low['expected_failures']:.1f} failure"
+            f"{'' if round(low['expected_failures'], 1) == 1 else 's'}, so the slope of the life-stress line, and "
+            "everything read off it at use, is barely tied down. To narrow it: test longer, put more units at the "
+            "lower stresses, or raise the lowest test stress so that units fail there.")
     few = [r for r in rows if r["units"] and r["expected_failures"] < 3]
     if few:
         warnings.append(
@@ -726,6 +753,9 @@ def accelerated_test(
         "life_model_name": lm_name,
         "unit": unit_s,
         "stress_unit": su,
+        # In the stress unit said (°C for a temperature typed in °C), like the rows.
+        "stresses": [float(v) - off for v in plan.stresses],
+        "use_stress": use - off,
         "b_life": p * 100,
         "label": what,
         "confidence": 1 - alpha,
@@ -995,8 +1025,12 @@ def _plan_for(kind: str, inputs: dict):
         return out, tp.life_test_precision(dist, tuple(out["params"]), out["n"], **args, **kw)
     _, model, _ = _life_model(out["life_model_id"])
     dist = getattr(surpyval, out["distribution"])
-    plan = tp.accelerated_test_precision(dist, model, out["life_params"], out["shape"], use_stress=out["use_stress"],
-                                         stresses=out["stresses"], units=out["units"], censor_time=out["censor_time"],
+    # The answer's stresses are in the unit said: back to kelvin for a thermal model given °C.
+    off = 273.15 if out["life_model_id"] in _THERMAL and out.get("stress_unit") == "°C" else 0.0
+    plan = tp.accelerated_test_precision(dist, model, out["life_params"], out["shape"],
+                                         use_stress=out["use_stress"] + off,
+                                         stresses=[v + off for v in out["stresses"]], units=out["units"],
+                                         censor_time=out["censor_time"],
                                          p=out["p"], alpha_ci=alpha)
     return out, plan
 

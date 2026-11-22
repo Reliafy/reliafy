@@ -2299,6 +2299,12 @@ def fit(
         split = model_split.data_split(df, mapping)
         if split is not None:
             result["split"] = split
+    if not mapping.get("i") and result.get("kind") in (*model_split.SPLIT_KINDS, "regression"):
+        # Where the data sit in time: an answer before the first failure or past the
+        # oldest unit says it is an extrapolation (the Calculator's note).
+        span = model_split.data_range(df, mapping)
+        if span is not None:
+            result["data_range"] = span
     if result.get("kind") in model_split.SPLIT_KINDS:
         if (mapping.get("xl") or mapping.get("xr")) and "interval_censored" not in result:
             result["interval_censored"] = True

@@ -176,9 +176,12 @@ export default function AltNewPage() {
     if (!name.trim()) return;
     setSaving(true); setError(null);
     try {
+      const typedUse = useStress.slice(0, nStress);
       const saved = await saveAltModel(name.trim(), null, {
         datasetId: result.dataset_id || datasetId, mapping, stress: stress.slice(0, nStress),
         distribution, lifeModel, unit,
+        // The use stress typed on the Model step goes with the model, so its page opens at it.
+        ...(typedUse.every((v, j) => useFor(j) != null && Number.isFinite(Number(v))) ? { useStress: typedUse } : {}),
       });
       navigate(`/models/alt/${saved.id}`);
     } catch (err) { setError(err); setSaving(false); }

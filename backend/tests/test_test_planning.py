@@ -4,6 +4,7 @@ simulation check's Pro gate and job; and the MCP actions."""
 from __future__ import annotations
 
 import json
+import re
 
 import numpy as np
 import pytest
@@ -168,7 +169,41 @@ def test_accelerated_check_of_your_own_test():
 def test_accelerated_warns_when_failures_are_few():
     out = T.accelerated_test(mode="check", life_params={"a": 6694, "b": 2e-5}, shape=2, use_stress=323,
                              stresses=[333, 393], units_at=[10, 10], censor_time=300)
-    assert out["warnings"] and "fewer than 3 failures" in out["warnings"][0]
+    assert any("fewer than 3 failures" in w for w in out["warnings"])
+
+
+# The planning values of a capacitor's Arrhenius-Weibull fit: B10 at 40 °C is about 136,500 hours.
+CAPACITOR = dict(mode="check", life_params={"a": 6957, "b": 8.39e-5}, shape=2.236, censor_time=1000, unit="hours")
+
+
+def test_accelerated_too_wide_to_quote_is_said_in_words():
+    # 20 units at 100 °C expect about 0.1 failures, so the slope rests on 145 °C alone: the
+    # precision factor is about 1,020 (an independent Fisher-information check gives 1,017).
+    out = T.accelerated_test(**CAPACITOR, use_stress=313.15, stresses=[373.15, 418.15], units_at=[20, 20],
+                             stress_unit="K")
+    assert out["precision"] == pytest.approx(1017, rel=0.01)
+    assert re.search(r"factor of 1,0\d\d at 90% confidence \(two-sided\)", out["summary"])
+    assert "e+03" not in out["summary"]
+    assert "too wide to quote" in out["summary"]
+    assert any("can't say much" in w and "(373 K) expects 0.1 failures" in w for w in out["warnings"])
+
+
+def test_accelerated_temperatures_in_celsius_are_worked_in_kelvin():
+    k = T.accelerated_test(**CAPACITOR, use_stress=313.15, stresses=[373.15, 418.15], units_at=[20, 20],
+                           stress_unit="K")
+    c = T.accelerated_test(**CAPACITOR, use_stress=40, stresses=[100, 145], units_at=[20, 20], stress_unit="°C")
+    assert c["precision"] == pytest.approx(k["precision"])
+    assert [r["stress"] for r in c["rows"]] == pytest.approx([100, 145])
+    assert "(40 °C: 136,500 hours" in c["summary"] and "20 at 100 °C" in c["summary"]
+    plan = T.accelerated_test(life_params={"a": 6957, "b": 8.39e-5}, shape=2.236, censor_time=1000, units=40,
+                              use_stress=40, high_stress=145, stress_unit="C")
+    assert max(r["stress"] for r in plan["rows"]) == pytest.approx(145)
+    # The simulation check rebuilds the same plan from the °C answer.
+    _, sim_plan = T._plan_for("accelerated", dict(CAPACITOR, use_stress=40, stresses=[100, 145], units_at=[20, 20],
+                                                  stress_unit="°C"))
+    assert sim_plan.precision == pytest.approx(k["precision"])
+    with pytest.raises(StrategyError, match="kelvin"):
+        T.accelerated_test(**CAPACITOR, use_stress=-300, stresses=[373.15, 418.15], units_at=[20, 20], stress_unit="K")
 
 
 @pytest.mark.parametrize("kwargs, message", [
