@@ -100,6 +100,7 @@ from starlette.responses import JSONResponse
 from backend import alt as alt_fit
 from backend import joint as joint_fit
 from backend import competing_risks
+from backend import degradation as degradation_fit
 from backend import config
 from backend import fitting
 from backend import life_bounds
@@ -423,7 +424,7 @@ DATA_NOTICE = ("Names, notes, descriptions, labels, column headers and values in
 # fit locally with SurPyval, then change model_save); fleets depend on usage
 # arriving through the Pro API. Reliafy Maintenance adds its own when on.
 _FIT_TOOLS = {"analyse.fit", "analyse.bayes_update", "change.model_fit", "change.model_fit_alt", "change.model_fit_recurrent",
-              "analyse.fit_joint", "change.model_fit_joint"}
+              "analyse.fit_joint", "change.model_fit_joint", "change.model_fit_degradation"}
 _FLEET_TOOLS = {"list.fleets", "analyse.fleet_forecast", "list.fleet_alerts", "change.fleet_create_alert"}
 # Making, filling, editing, sharing and publishing libraries (Derryn, 15 Nov 2026); reading and using
 # public libraries stays on every plan, and deleting one's own library (change library_delete) too.
@@ -562,6 +563,7 @@ HEAVY_TOOLS = {
     "change.model_fit", "change.model_fit_alt", "change.model_fit_recurrent", "analyse.fleet_forecast",
     "change.import_rbd", "change.import_excel", "get.upload", "change.dataset_upload",
     "change.rbd_upload_outage_log", "analyse.fit_joint", "change.model_fit_joint", "analyse.fault_tree",
+    "change.model_fit_degradation", "change.import_rcm",
 }
 
 USER_BUSY_MESSAGE = (
@@ -864,7 +866,7 @@ ACTION_SCHEMAS: dict[tuple[str, str], dict] = {}
 #: Actions whose arguments are "one of these" rather than required, said in the tool's line.
 ONE_OF = {
     ("analyse", "fit"): "data or dataset_id", ("analyse", "fit_per_demand"): "batches or dataset_id",
-    ("analyse", "compare_groups"): "data + group or dataset_id", ("analyse", "fit_joint"): "dataset_id …",
+    ("analyse", "compare_groups"): "data + group or dataset_id", ("analyse", "fit_joint"): "dataset_id ...",
     ("analyse", "growth_projection"): "model_id or x", ("change", "model_fit_recurrent"): "times or dataset_id",
     ("change", "import_rbd"): "upload_id or content", ("change", "model_fit"): "name, data or dataset_id",
     ("change", "model_fit_alt"): "name, data + stresses or dataset_id",
@@ -875,6 +877,9 @@ ONE_OF = {
     ("analyse", "prediction"): "lines or product_id", ("analyse", "schedule"): "rule or plan",
     ("change", "prediction_save"): "name, lines or product_id",
     ("change", "library_add"): "library_id, dataset_id or model_id",
+    ("change", "model_fit_degradation"): "name, dataset_id ...", ("change", "import_rcm"): "position_id, upload_id or csv",
+    ("change", "optimal_replacement_save"): "name, model_id or params ...",
+    ("change", "upload_send_part"): "upload_id ...", ("analyse", "plan_accelerated_test"): "life_params ...",
 }
 #: Kept short: tools/list is capped at 8,000 characters (test_mcp_tools.py); it appears on every tool.
 ARGS_HELP = "Args: see guide(action='<tool>.<action>')."
@@ -1488,10 +1493,10 @@ def _fit_summary(result: dict) -> dict:
 
 def list_models(
     ctx: Context,
-    kind: Annotated[Literal["all", "life", "recurrent", "joint"], Field(
+    kind: Annotated[Literal["all", "life", "recurrent", "joint", "degradation"], Field(
         description="all (default); life = life distributions (for reliability_at, the calculators and RBD "
                     "blocks); recurrent = repairable-system (event history) models; joint = condition-based "
-                    "risk models (readings and failures).")] = "all",
+                    "risk models (readings and failures); degradation = readings to a threshold.")] = "all",
 ) -> dict[str, Any]:
     """Saved models: id, name, kind, distribution, fitted params, time unit (model_type: life or recurrent).
     Call before referring to a model by id."""
@@ -1504,6 +1509,10 @@ def list_models(
         out["recurrent_models"] = [_recurrent_brief(d) for d in recurrent_service.list_models(db, owners)]
     if kind in ("all", "joint"):
         out["joint_models"] = [_joint_brief(m) for m in joint_service.list_models(db, owners)]
+    if kind in ("all", "degradation"):
+        from backend.services import degradation as degradation_service
+
+        out["degradation_models"] = [_degradation_brief(d) for d in degradation_service.list_models(db, owners)]
     return out
 
 
@@ -1587,6 +1596,12 @@ def get_model(
         if (doc.spec or {}).get("notes"):
             out["notes"] = doc.spec["notes"]
         return out
+    from backend.services import degradation as degradation_service
+
+    deg = degradation_service.get_model(db, model_id, owners)
+    if deg is not None:
+        return {**_degradation_brief(deg),
+                **_degradation_report(degradation_service.current_results(db, deg, owners) or {})}
     raise ToolError("Model not found.")
 
 
@@ -3292,6 +3307,116 @@ def _joint_brief(m) -> dict:
             "marker": r.get("marker"), "unit": r.get("unit"), "covariates": r.get("covariates") or [],
             "n_running": r.get("n_running"), "running_units": list(((m.serialized or {}).get("units") or {}))[:50],
             "url": _url(f"/models/joint/{m.id}")}
+
+
+# ---- Degradation models: readings that drift to a failure threshold -----------------------
+# The app's Degradation > Fit (backend/routers/degradation.py): the same fit and the same save.
+
+
+def _deg_time_at(xs: list, curve: Optional[list], target: float) -> Optional[float]:
+    """When ``curve`` (R over ``xs``) first falls to ``target``, by straight lines between grid
+    points: the app's Calculator and the model's Download as Python read B-lives this way."""
+    for k in range(1, min(len(xs), len(curve or []))):
+        a, b = _finite(curve[k - 1]), _finite(curve[k])
+        if a is None or b is None:
+            continue
+        if a >= target >= b:
+            f = 0.0 if a == b else (a - target) / (a - b)
+            return _sig(xs[k - 1] + f * (xs[k] - xs[k - 1]))
+    return None
+
+
+def _degradation_report(results: dict, top: int = 20) -> dict:
+    """A degradation fit for an agent: the path chosen (and the others by AICc), the life it
+    implies with B-lives and their 90% one-sided lower bounds, and each unit's crossing."""
+    life = results.get("life_model") or {}
+    curves = life.get("curves") or {}
+    xs = curves.get("x") or []
+    b_lives = {label: {"value": _deg_time_at(xs, curves.get("sf"), 1 - share),
+                       "lower_90": _deg_time_at(xs, curves.get("life_lower"), 1 - share)}
+               for label, share in (("B1", 0.01), ("B10", 0.10), ("B50", 0.50))}
+    units = results.get("units") or []
+    return {
+        "threshold": results.get("threshold"), "unit": results.get("unit"),
+        "measurement_unit": results.get("measurement_unit"),
+        "counts": {"n_units": results.get("n_units"), "n_measurements": results.get("n_measurements"),
+                   "n_censored": sum(1 for u in units if u.get("censored"))},
+        "path_model": (results.get("path_model") or {}).get("name"),
+        "path_selection": [{"name": p.get("name"), "aicc": _sig(_finite(p.get("aicc")))}
+                           for p in (results.get("path_selection") or [])[:6]],
+        "population_method": results.get("population_method"),
+        "life_model": {"distribution": life.get("distribution"),
+                       "params": [{"name": p.get("name"), "value": _sig(_finite(p.get("value")))}
+                                  for p in life.get("params") or []],
+                       "mean": _sig(_finite(life.get("mean")))},
+        "b_lives": b_lives,
+        "b_lives_note": ("B10 is the time by which 10% reach the threshold; lower_90 is its 90% one-sided "
+                         "lower bound, the cautious figure to plan with."),
+        "crossings": [{"unit_id": u.get("id"), "time": _sig(_finite(u.get("pseudo_failure_time"))),
+                       "censored": bool(u.get("censored"))} for u in units[:top]],
+        **({"crossings_omitted": len(units) - top} if len(units) > top else {}),
+    }
+
+
+def _degradation_brief(doc) -> dict:
+    r = doc.results or {}
+    return {"id": doc.id, "name": doc.name, "model_type": "degradation",
+            "path_model": (r.get("path_model") or {}).get("name"), "threshold": r.get("threshold"),
+            "unit": r.get("unit"), "measurement_unit": r.get("measurement_unit"),
+            "dataset_id": doc.dataset_id, "url": _url(f"/models/degradation/{doc.id}")}
+
+
+_DegPath = Annotated[Literal[tuple(degradation_fit.PATH_CHOICES)], Field(  # type: ignore[valid-type]
+    description="The reading's path with age: best (the lowest AICc of them all) or one by name.")]
+
+
+def fit_degradation_model(
+    ctx: Context,
+    name: Annotated[str, Field(min_length=1, max_length=200, description="The model's name.")],
+    dataset_id: Annotated[str, Field(description=(
+        "One of the user's datasets (list kind datasets) of readings, one row per reading: its "
+        "measurements part when it has one, else its table."))],
+    unit_id_column: Annotated[str, Field(description="Column naming the unit each reading is of.")],
+    age_column: Annotated[str, Field(description="Column of each reading's age (since new).")],
+    value_column: Annotated[str, Field(description="Column of the reading itself (wear, crack length, ...).")],
+    threshold: Annotated[float, Field(description=(
+        "The reading at which a unit counts as failed, rising or falling to it (in measurement_unit)."))],
+    path: _DegPath = "best",
+    distribution: Annotated[str, Field(description=(
+        "The life distribution fitted to the crossing times: weibull, lognormal, normal, gamma, ..."))] = "weibull",
+    population_method: Annotated[Literal["moments", "reml"], Field(description=(
+        "moments (Lu-Meeker) or reml (linear paths, more robust)."))] = "moments",
+    unit: Annotated[Optional[str], Field(description=(
+        "The ages' time unit, e.g. hours. Default: the dataset's reading's."))] = None,
+    measurement_unit: Annotated[Optional[str], Field(max_length=40, description="The reading's unit, e.g. mm.")] = None,
+    dry_run: Annotated[bool, Field(description="true: fit and report only, nothing saved.")] = False,
+) -> dict[str, Any]:
+    """Fit a degradation model (readings drifting to a failure threshold) and save it, as the app's
+    Degradation fit does: each unit's path, where it crosses the threshold, and the life
+    distribution of those times with B-lives and 90% one-sided lower bounds. dry_run=true saves
+    nothing."""
+    from backend.services import degradation as degradation_service
+
+    user, db = _caller(ctx), _db()
+    dataset = datasets_service.get_dataset(db, dataset_id, user["uid"])
+    if dataset is None:
+        raise ToolError("Dataset not found among the user's own datasets (list kind datasets). A shared sample "
+                        "can't be fitted here: save its readings as the user's own with change dataset_upload.")
+    if not unit:
+        unit = _reading_unit(db, dataset, user["uid"], age_column)
+    spec = {"mapping": {"i": unit_id_column, "x": age_column, "y": value_column}, "threshold": threshold,
+            "path": path, "distribution_id": distribution, "population_method": population_method,
+            "unit": canonical_unit(unit), "measurement_unit": (measurement_unit or "").strip()}
+    if dry_run:
+        payload, _ = degradation_fit.fit(
+            datasets_service.load_measurements(dataset), spec["mapping"], threshold, path, distribution,
+            population_method, spec["unit"], spec["measurement_unit"])
+        return {"saved": False, "dataset_id": dataset.id, **_degradation_report(payload),
+                "note": "Nothing was saved: run again with dry_run false to save it."}
+    _cap(db, user, "degradation_models", "degradation models")
+    doc = degradation_service.save_model(db, name.strip(), dataset, spec, user["uid"])
+    access_service.stamp_editor(db, "degradation_models", doc.id, _reader(user))
+    return {"saved": True, **_degradation_brief(doc), **_degradation_report(doc.results or {})}
 
 
 # ---------------------------------------------------------------------------
@@ -6830,6 +6955,40 @@ def optimal_replacement(
     return _with_conversion(_maybe_curve(out, include_curve), converted)
 
 
+def save_optimal_replacement(
+    ctx: Context,
+    name: Annotated[str, Field(min_length=1, max_length=200, description="The analysis's name.")],
+    planned_cost: Annotated[float, Field(gt=0, description="Cost of a planned (preventive) replacement.")],
+    unplanned_cost: Annotated[float, Field(gt=0, description="Cost of an unplanned (failure) replacement.")],
+    model_id: _MODEL_ID = None,
+    distribution_id: _DIST_ID = None,
+    params: _PARAMS = None,
+    unit: _UNIT = None,
+    use_per_year: Annotated[Optional[float], Field(gt=0, description="Use a unit runs a year (model units).")] = None,
+    units: Annotated[Optional[float], Field(gt=0, description="Units in the fleet.")] = None,
+    position_id: _POSITION_ID = None,
+) -> dict[str, Any]:
+    """Save an optimal-replacement analysis (Strategy > Replacement's Save analysis), worked out
+    afresh from these inputs, as analyse optimal_replacement answers: a record an RCM decision can
+    cite as evidence."""
+    from backend.services import strategy_store as store
+
+    user, db = _caller(ctx), _db()
+    inputs = _dist_inputs(db, user["uid"], model_id, distribution_id, params, unit)
+    inputs.pop("unit_conversion", None)
+    inputs = {**inputs, "planned_cost": planned_cost, "unplanned_cost": unplanned_cost,
+              "use_per_year": use_per_year, "units": units}
+    if model_id:
+        m = models_service.get_model(db, model_id, _owners(user["uid"]))
+        inputs.update(model_id=model_id, model_name=m.name if m is not None else "")
+    if position_id:
+        inputs = {**inputs, "position_id": position_id, **_position_clock(user, position_id, inputs["unit"])}
+    doc = store.save_analysis(db, name, "optimal_replacement", inputs, user["uid"])
+    access_service.stamp_editor(db, "strategy_analyses", doc.id, _reader(user))
+    return {"saved": True, "id": doc.id, "name": doc.name, "kind": doc.kind, "headline": store.headline(doc),
+            "url": _url(f"/strategy/analyses/{doc.id}"), "results": _maybe_curve(doc.results or {}, False)}
+
+
 class CalendarShut(BaseModel):
     name: str = Field(description="The shut's name, e.g. annual shutdown.")
     cost: float = Field(ge=0, description="What replacing the part at this shut costs.")
@@ -8867,7 +9026,7 @@ def _excel_rcm_position(db, user, doc, data, sheet, mapping, header_row, positio
                         ) from None
     except (Invalid, excel.ExcelError) as err:
         raise ToolError(str(err)) from None
-    if result["ok"] and not dry_run:
+    if result["ok"] and not dry_run and doc.get("_id"):
         uploads_service.delete(db, doc["_id"])
     given = {"consequence": options.get("consequence_map") or {}, "outcome": options.get("outcome_map") or {}}
     unmapped = {k: [v for v in vals if v.get("guess") is None and str(v.get("value")) not in given.get(k, {})]
@@ -8981,6 +9140,37 @@ def import_excel(
         if target == "rcm" and position_id:
             return _excel_rcm_position(db, user, doc, data, sheet, mapping, header_row, position_id, dry_run)
         return _excel_rbd(db, user, doc, data, sheet, mapping, name, header_row, rbd_id, replace)
+
+
+def import_rcm(
+    ctx: Context,
+    position_id: Annotated[str, Field(max_length=64, description=(
+        "The maintenance position whose RCM the rows are added to (maintenance overview has the tree)."))],
+    upload_id: Annotated[Optional[str], Field(description=(
+        "A CSV or .xlsx sent with change upload_create (purpose excel). Or csv instead."))] = None,
+    csv: Annotated[Optional[str], Field(min_length=1, max_length=1_000_000, description=(
+        "The worksheet as CSV text, a header row then one row per failure mode. Or upload_id instead."))] = None,
+    sheet: Annotated[Optional[str], Field(description="A workbook's sheet to read (get kind upload lists them).")] = None,
+    mapping: Annotated[Optional[dict[str, Any]], Field(description=(
+        "As change import_excel target rcm: {field: column} (mode required), or {mapping, consequence_map, "
+        "outcome_map, extra_columns}. Omit to use the guess from the headers."))] = None,
+    header_row: Annotated[Optional[int], Field(ge=0, description=(
+        "The row holding the column names (1-based; 0 = none). Default: guessed."))] = None,
+    dry_run: Annotated[bool, Field(description="true previews what it would add; nothing written. Preview first.")
+                       ] = False,
+) -> dict[str, Any]:
+    """Add an RCM or FMEA worksheet, or a task plan (one row per failure mode, with its task and interval), to a
+    position's RCM from CSV text or an uploaded CSV / .xlsx, as the position's RCM import does in the app.
+    Only adds: importing it again adds nothing."""
+    if (upload_id is None) == (csv is None):
+        raise ToolError("Give exactly one of upload_id (a file from change upload_create) or csv (the text).")
+    user, db = _caller(ctx), _db()
+    if upload_id:
+        doc, data = uploads_service.read(db, upload_id, user["uid"])
+    else:
+        doc, data = {"_id": None, "filename": "rcm.csv"}, csv.encode("utf-8")
+    with _untrusted_file(user["uid"]):
+        return _excel_rcm_position(db, user, doc, data, sheet, mapping, header_row, position_id, dry_run)
 
 
 # ---------------------------------------------------------------------------
@@ -10328,6 +10518,7 @@ _A = {  # new tool -> {action: the function it runs}
         "model_fit_alt": _act(fit_alt_model),
         "model_fit_recurrent": _act(fit_recurrent_model),
         "model_fit_joint": _act(fit_joint_model),
+        "model_fit_degradation": _act(fit_degradation_model),
         "model_update": _act(update_model),
         "model_delete": _act(delete_model),
         "dataset_upload": _act(upload_dataset),
@@ -10348,6 +10539,8 @@ _A = {  # new tool -> {action: the function it runs}
         "upload_send_part": _act(upload_file_part),
         "import_rbd": _act(import_rbd),
         "import_excel": _act(import_excel),
+        "import_rcm": _act(import_rcm),
+        "optimal_replacement_save": _act(save_optimal_replacement),
         "share_link": _act(share_link),
         "share_report": _act(create_report),
         "share_revoke": _act(revoke_share_link),
@@ -10374,11 +10567,11 @@ _A = {  # new tool -> {action: the function it runs}
 }
 
 _action_tool("get", _READ, "Read one item", "kind",
-             "One item by kind and id; the account; the upgrade link.", _A["get"],
+             "One item by kind and id.", _A["get"],
              docs={"id": "The item's id (a job's job_id, an upload's upload_id, a library record's id, a maintainability "
                          "prediction's id)."})
 _action_tool("list", _READ, "List items", "kind",
-             "Items of one kind (with samples), changes, libraries.",
+             "Items of one kind, with samples.",
              _A["list"])
 _action_tool("analyse", _READ, "Analyse", "action",
              "Every calculation; saves nothing.", _A["analyse"], docs={
@@ -10398,8 +10591,7 @@ _action_tool("analyse", _READ, "Analyse", "action",
     "rbd_id": "The diagram's id (list kind rbds).",
 })
 _action_tool("change", _WRITE, "Change items", "action",
-             "Every write: models, data, RBDs, fault trees, libraries, files, shares, alerts. Delete, "
-             "share or overwrite only when asked.",
+             "Every write. Delete, share or overwrite only when asked.",
              _A["change"], docs={
     "dataset_id": ("A saved dataset (list kind datasets) instead of inline data; model_save: the dataset the "
                    "parameters were fitted to, kept as a reference."),
@@ -10411,7 +10603,7 @@ _action_tool("change", _WRITE, "Change items", "action",
     "label": "Who or what the link is for, e.g. 'for the client'. Shown only to the user.",
 })
 _action_tool("report_problem", _REPORT, "Report a problem", "action",
-             "Tell Reliafy's developers a tool got in your way; check back later.",
+             "Tell Reliafy a tool got in your way.",
              _A["report_problem"])
 
 

@@ -286,6 +286,13 @@ class Client:
         up = self.upload_file(path, "excel")
         return self.call("change", "import_excel", upload_id=up["upload_id"], **args)
 
+    def import_rcm(self, path: str, position_id: str, **args) -> dict:
+        """Add an RCM / FMEA worksheet or a task plan (CSV or .xlsx, one row
+        per failure mode) to a maintenance position's RCM (``change
+        import_rcm``). ``dry_run=True`` previews it. Only adds."""
+        up = self.upload_file(path, "excel")
+        return self.call("change", "import_rcm", upload_id=up["upload_id"], position_id=position_id, **args)
+
     def add_photo(self, path: str, target_id: str, caption: str | None = None) -> dict:
         """Add a photo (JPEG, PNG, HEIC, …) to a maintenance position, item,
         location or work order, streamed from disk. Reliafy Maintenance only."""

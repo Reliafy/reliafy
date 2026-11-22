@@ -87,7 +87,14 @@ it may come back as a job (get kind job). Quote each hazard ratio with its 90% C
 - A running unit's risk: analyse predict_joint (unit_id, or age_now + readings + unit_covariates): \
 survival over the horizons with bounds, and the median remaining life. Never quote a mean life for these \
 units: a reading that levels off can leave a chance of never failing, so the mean can be infinite; "not \
-reached" means the median is beyond any finite age."""),
+reached" means the median is beyond any finite age.
+- Degradation (readings that drift to a failure level, no failures needed: wear, crack length, a coating's \
+thickness): change model_fit_degradation (Pro) with a dataset of readings (dataset_id; one row per reading: \
+unit_id_column, age_column since new, value_column) and threshold, the level that counts as failed (rising or \
+falling to it; ask, never assume). path best picks the path by AICc. dry_run=true reports without saving. Back: \
+each unit's crossing time (extrapolated along its path; censored: its path never reaches the level), the life distribution of those times and B1/B10/B50 with \
+lower_90, the 90% one-sided lower bound to plan with; quote both, with the unit. list kind models (model_type degradation) \
+and get kind model read saved ones."""),
 
     "units": ("Time units for data, models and diagrams.", """\
 Units.
@@ -411,6 +418,9 @@ are exact and free; sampling (Pro) is for calendars whose cycle is very long, wi
 - analyse next_replacement: the same calendar plus the age of the unit in service today: replace it now, at the \
 coming shuts (the next, the one after, and on), between shuts, or run it to failure, each choice's cost, the best, and replace_from_age \
 (from that age replacing now beats waiting).
+- To keep a replacement answer (as the app's Save analysis does, e.g. as evidence for an RCM decision): change \
+optimal_replacement_save with a name and the same inputs; the server works the results out again. Saved \
+analyses show under Strategy in the app.
 - With a saved Weibull (or Crow-AMSAA) model fitted to data, shape_uncertainty gives the answer at each end of \
 the shape's 90% interval: relay uncertainty_note when present — the recommendation is less firm than it reads \
 (for a protective function, the shorter interval is the safe side).
@@ -452,12 +462,12 @@ refused attempt.
 RePyability JSON); any other file of up to a few hundred KB (an .xlsx, a BlockSim project) goes through this \
 connection with change upload_send_part (base64 parts 0, 1, 2… into the same upload_id, last=true with sha256 on the \
 final one; not counted against the Free allowance), then import as usual (an FMEA / RCM worksheet goes onto a \
-position's RCM with change import_excel target rcm and position_id). Anything larger: ask the user to upload it in the app (create's \
+position's RCM with change import_rcm position_id; as CSV text it can go in its csv argument instead). Anything larger: ask the user to upload it in the app (create's \
 fallback says where).
 4. get kind upload shows a workbook's sheets, columns and a guessed mapping, or a diagram file's diagrams.
 5. Import with the upload_id: change import_rbd (diagrams; save=false previews with edges and cut sets; only \
-picks diagrams by name; time_unit when the file states none), change import_excel (target dataset, rcm with a position_id, or \
-rbd_template), change dataset_upload, or change rbd_upload_outage_log.
+picks diagrams by name; time_unit when the file states none), change import_excel (target dataset or \
+rbd_template), change import_rcm (an RCM worksheet or task plan, CSV or .xlsx, onto a position), change dataset_upload, or change rbd_upload_outage_log.
 Relay the import notes: they say what was approximated. Blocks imported without a non-repairable model (needs_model) \
 need one before analysis: ask the user, don't invent values."""),
 
