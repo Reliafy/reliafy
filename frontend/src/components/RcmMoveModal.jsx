@@ -4,6 +4,7 @@ import { tasksOf } from "../rcmWorksheet.js";
 import { Field, FormModal } from "./MaintenanceParts.jsx";
 import { Chevron, Highlight } from "./OutlineBits.jsx";
 import { RowIcon } from "./TreePane.jsx";
+import { Select } from "./ui/Controls.jsx";
 
 // "Move to…" on the RCM tab, for every kind of row (a function, a performance
 // standard, a functional failure, failure modes, a task): from a row's ⋯ menu
@@ -127,9 +128,9 @@ export default function RcmMoveModal({ whole, src: given = null, taskFrom = null
                }}>
       {taskFrom && tasks.length > 1 && (
         <Field label="Which task?">
-          <select value={taskId} onChange={(e) => setTaskId(e.target.value)}>
+          <Select value={taskId} onChange={(e) => setTaskId(e.target.value)}>
             {tasks.map((t) => <option key={t.id} value={t.id}>{t.name || t.text}</option>)}
-          </select>
+          </Select>
         </Field>
       )}
       <Field label="Find a place">

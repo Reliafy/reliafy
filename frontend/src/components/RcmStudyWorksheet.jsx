@@ -13,7 +13,7 @@ import {
 } from "../rcmStudyWorksheet.js";
 import { charCount } from "../maintenanceText.js";
 import "./RcmStudyWorksheet.css";
-import { Checkbox } from "./ui/Controls.jsx";
+import { Checkbox, Select } from "./ui/Controls.jsx";
 
 // The RCM study's worksheet as an outline grid: the study's hierarchy in the
 // first column (function → functional failure → failure mode: indent, arrow,
@@ -201,11 +201,11 @@ export function CellEditor({ col, r, onCommit, onCancel }) {
   const label = `${col.label} of ${nameOf(r) || LEVEL_OF[r.type].label.toLowerCase()}`;
   if (col.id === "consequence") {
     return (
-      <select className="rsw-edit" autoFocus ref={field} value={value} aria-label={label} onKeyDown={keys} disabled={busy}
+      <Select className="rsw-edit" autoFocus ref={field} value={value} aria-label={label} onKeyDown={keys} disabled={busy}
               onChange={(e) => { setValue(e.target.value); commit(e.target.value); }} onBlur={() => commit()}>
         <option value="">Not set</option>
         {Object.entries(CONSEQUENCE_LABEL).map(([id, l]) => <option key={id} value={id}>{l}</option>)}
-      </select>
+      </Select>
     );
   }
   // A function's text: kept to 200 characters, with a counter at its end.
@@ -381,10 +381,10 @@ export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDec
           <label className="rsw-field">
             <span className="rsw-flabel">Consequence</span>
             {readOnly ? <span className="rsw-fval">{CONSEQUENCE_LABEL[r.ref.consequence] || "Not set"}</span> : (
-              <select value={r.ref.consequence || ""} onChange={(e) => onCommit(r, "consequence", e.target.value)}>
+              <Select value={r.ref.consequence || ""} onChange={(e) => onCommit(r, "consequence", e.target.value)}>
                 <option value="">Not set</option>
                 {Object.entries(CONSEQUENCE_LABEL).map(([id, l]) => <option key={id} value={id}>{l}</option>)}
-              </select>
+              </Select>
             )}
           </label>
         )}
