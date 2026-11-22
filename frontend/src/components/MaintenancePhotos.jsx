@@ -250,7 +250,7 @@ export default function MaintenancePhotos({ title = "Photos", targetId, targetNa
     <section className="card">
       <div className="maint-head">
         <h2>{title}</h2>
-        <div className="maint-row" style={{ marginTop: 0 }}>
+        <div className="maint-row mt-0">
           <button className="secondary" onClick={phoneLink}>Link for a phone</button>
           <button onClick={() => input.current?.click()} disabled={!!busy}>{busy || "Add photos"}</button>
         </div>
@@ -264,7 +264,7 @@ export default function MaintenancePhotos({ title = "Photos", targetId, targetNa
             A photo has a location ({offer.lat.toFixed(5)}, {offer.lon.toFixed(5)}). Save it as where{" "}
             {targetName || "this equipment"} is?
           </p>
-          <div className="maint-row" style={{ marginTop: 0 }}>
+          <div className="maint-row mt-0">
             <button onClick={() => answer(true)}>Save location</button>
             <button className="secondary" onClick={() => answer(false)}>No thanks</button>
           </div>

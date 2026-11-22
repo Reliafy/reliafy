@@ -89,7 +89,7 @@ export function ItemKindCard({ item, kinds, onChanged }) {
     <section className="card">
       <div className="maint-head">
         <h2>What it is</h2>
-        <div className="maint-row" style={{ marginTop: 0 }}>
+        <div className="maint-row mt-0">
           <button className="secondary" onClick={() => setModal("kind")}>Class, model and maker</button>
           {item.item_class && item.attributes.length > 0 && <button onClick={() => setModal("values")}>Fill in attributes</button>}
         </div>
@@ -248,7 +248,7 @@ export function ItemClassesSection() {
       <section className="card">
         <div className="maint-head">
           <h2>Item classes</h2>
-          <div className="maint-row" style={{ marginTop: 0 }}>
+          <div className="maint-row mt-0">
             <button className="secondary" onClick={() => setModal("starter")}>Starter taxonomy</button>
             <button className="secondary" onClick={() => setModal("import")}>Import</button>
             {!empty && <button className="secondary" onClick={() => download("csv")}>Export CSV</button>}
@@ -309,7 +309,7 @@ function ItemClassPanel({ id, data, onChanged, onRetired, onAddChild }) {
     <section className="card">
       <div className="maint-head">
         <h2>{c.display}</h2>
-        <div className="maint-row" style={{ marginTop: 0 }}>
+        <div className="maint-row mt-0">
           <button className="secondary" onClick={() => setModal("edit")}>Edit</button>
           <button className="secondary" onClick={() => setModal("attributes")}>Attributes</button>
           <button className="secondary" onClick={() => setModal("move")}>Move</button>
@@ -398,7 +398,7 @@ function ClassAttributesModal({ c, onClose, onDone }) {
         <p className="lib-date">Inherited: {inherited.map((a) => `${attributeText(a)} (${a.from.name})`).join("; ")}.</p>
       )}
       {rows.map((r, i) => (
-        <div key={i} className="maint-row" style={{ marginTop: "0.25rem" }}>
+        <div key={i} className="maint-row mt-1">
           <input placeholder="e.g. Flow" value={r.name} onChange={setRow(i, "name")} />
           <input placeholder="unit, e.g. m3/h" value={r.unit} style={{ width: "7rem" }} onChange={setRow(i, "unit")} />
           <select value={r.kind} onChange={setRow(i, "kind")}>
@@ -408,7 +408,7 @@ function ClassAttributesModal({ c, onClose, onDone }) {
           <button className="secondary" onClick={() => setRows(rows.filter((_, j) => j !== i))}>Remove</button>
         </div>
       ))}
-      <button className="secondary" style={{ marginTop: "0.5rem" }}
+      <button className="secondary mt-2"
               onClick={() => setRows([...rows, { name: "", unit: "", kind: "number", options: "" }])}>Add an attribute</button>
       <p className="lib-date">Classes inside it inherit these. Values items already have for one you remove stay on them.</p>
     </FormModal>
@@ -505,7 +505,7 @@ export function ManufacturersCard() {
     <section className="card">
       <div className="maint-head">
         <h2>Manufacturers</h2>
-        <div className="maint-row" style={{ marginTop: 0 }}>
+        <div className="maint-row mt-0">
           {makers?.length > 0 && <button className="secondary" onClick={() => setModal("link")}>Link by name</button>}
           <button onClick={() => setModal("new")}>Add a manufacturer</button>
         </div>

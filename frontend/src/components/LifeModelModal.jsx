@@ -127,7 +127,7 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
           "Enter a mean or parameters, or pick a saved model."
         )}
       </span>
-      <div className="row" style={{ margin: 0 }}>
+      <div className="row m-0">
         <button className="secondary" onClick={onClose}>Cancel</button>
         <button onClick={submit} disabled={!valid}>Save block</button>
       </div>

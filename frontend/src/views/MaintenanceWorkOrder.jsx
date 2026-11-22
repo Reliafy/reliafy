@@ -96,8 +96,8 @@ export default function MaintenanceWorkOrder() {
       )}
       {!["closed", "cancelled"].includes(wo.status) && (
         <section className="card">
-          <div className="maint-row" style={{ marginTop: 0 }}>
-            <label className="maint-row" style={{ marginTop: 0, gap: "0.4rem" }}>Status
+          <div className="maint-row mt-0">
+            <label className="maint-row mt-0 gap-1-5">Status
               <select value={wo.status} onChange={async (e) => setWo(await setWorkStatus(wo.id, e.target.value))}>
                 <option value="open">Open</option><option value="planned">Planned</option>
                 <option value="in_progress">In progress</option><option value="waiting">Waiting (parts or access)</option>
@@ -114,7 +114,7 @@ export default function MaintenanceWorkOrder() {
           <div className="maint-head"><h2>Instructions</h2></div>
           {wo.instructions && <p style={{ whiteSpace: "pre-wrap" }}>{wo.instructions}</p>}
           {wo.checklist.map((c, i) => (
-            <label key={i} className="maint-row" style={{ marginTop: "0.25rem", gap: "0.5rem" }}>
+            <label key={i} className="maint-row mt-1 gap-2">
               <input type="checkbox" checked={c.done} disabled={["closed", "cancelled"].includes(wo.status)}
                      onChange={async (e) => setWo(await checkWorkItem(wo.id, i, e.target.checked))} />
               <span style={c.done ? { textDecoration: "line-through", color: "var(--text-secondary)" } : null}>
@@ -286,7 +286,7 @@ function CostsCard({ wo, onChanged }) {
     <section className="card">
       <div className="maint-head">
         <h2>Labour, parts and costs</h2>
-        <div className="maint-row" style={{ marginTop: 0 }}>
+        <div className="maint-row mt-0">
           <button className="secondary" onClick={() => { setForm("labour"); setF({}); }}>Log labour</button>
           <button className="secondary" onClick={openPart}>Part used</button>
           <button className="secondary" onClick={() => { setForm("cost"); setF({}); }}>Other cost</button>

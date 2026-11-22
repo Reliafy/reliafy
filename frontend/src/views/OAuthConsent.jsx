@@ -187,7 +187,7 @@ export default function OAuthConsent() {
                 Not you?
               </button>
             </p>
-            {error && <div className="error" style={{ marginTop: 0 }}>{error}</div>}
+            {error && <div className="error mt-0">{error}</div>}
             <p className="consent-who">
               Approving sends you to <b className="consent-host-inline">{info.loopback ? info.redirect_host : hostLabel}</b>.
             </p>

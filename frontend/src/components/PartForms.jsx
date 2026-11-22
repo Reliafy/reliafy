@@ -118,7 +118,7 @@ export function PartEntryModal({ p, entry, onClose, onDone, positions = null }) 
       </Field>
       <Field label="Quantity per job"><input type="number" inputMode="decimal" min="0" step="any" value={f.quantity}
              onChange={set("quantity")} /></Field>
-      <label className="maint-row" style={{ gap: "0.5rem" }}>
+      <label className="maint-row gap-2">
         <input type="checkbox" checked={f.critical} onChange={(e) => setF({ ...f, critical: e.target.checked })} />
         Critical spare: keep some in stock
       </label>

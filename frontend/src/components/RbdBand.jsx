@@ -192,7 +192,7 @@ export function BandTargets({ band, unit, onChange }) {
           </button>
         </div>
       )}
-      <p className="muted-line" style={{ margin: 0 }}>
+      <p className="muted-line m-0">
         Every bound and interval comes from the same {band.n_draws?.toLocaleString()} draws of the fitted models, in
         one run. A B-life gets a lower bound (at least this long, {pct(band.level)} sure); a reliability its
         two-sided {pct(band.level)} interval.

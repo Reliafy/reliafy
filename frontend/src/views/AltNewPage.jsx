@@ -206,14 +206,14 @@ export default function AltNewPage() {
   let nav;
   if (step === 1) {
     nav = (<><button className="secondary" onClick={goBack} disabled={loading}>Cancel</button>
-      <span className="hint" style={{ margin: 0 }}>Pick a saved dataset, or upload a CSV or Excel file, to continue</span></>);
+      <span className="hint m-0">Pick a saved dataset, or upload a CSV or Excel file, to continue</span></>);
   } else if (step === 2) {
     const why = !dataValid ? "First fix how the columns are read: Change the reading."
       : rd.editing ? "First save or cancel the change to the reading."
       : !mappingValid ? `First settle the note${new Set(stressIssues.map((i) => i.stress)).size === 1 ? "" : "s"} beside the stress${nStress > 1 ? "es" : ""}.`
       : null;
     nav = (<><button className="secondary" onClick={goBack} disabled={loading}>Back</button>
-      {why && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{why}</span>}
+      {why && <span className="hint ds-next-why m-0" role="status">{why}</span>}
       <button onClick={onFit} disabled={!mappingValid || loading}>{loading ? "Fitting…" : "Fit model"}</button></>);
   } else {
     nav = (<><button className="secondary" onClick={goBack} disabled={saving}>Back</button>
@@ -290,7 +290,7 @@ export default function AltNewPage() {
             {(missing || dataIssues.length > 0) && (
               <div className="xcn-below" role="status">
                 {missing
-                  ? <p className="xcn-issue" style={{ margin: 0 }}>{missing}</p>
+                  ? <p className="xcn-issue m-0">{missing}</p>
                   : dataIssues.map((i) => <p key={i.text} className="xcn-issue">{i.text} Change the reading to fix it.</p>)}
                 {!rd.editing && (
                   <button type="button" className="secondary" style={{ alignSelf: "flex-start" }}
@@ -313,7 +313,7 @@ export default function AltNewPage() {
               </div>
             </div>
             {lm?.desc && (
-              <p className="muted-line" style={{ margin: 0 }}>
+              <p className="muted-line m-0">
                 {lm.desc}{" "}
                 <RefLink text entryId={lifeModel} label={`About ${lm.name}`} />
                 {getEntry(lifeModel) && getEntry(distribution) ? " · " : ""}
@@ -381,7 +381,7 @@ export default function AltNewPage() {
               <input type="text" autoFocus value={name} placeholder="e.g. Valve seal — Arrhenius"
                      onChange={(e) => setName(e.target.value)} />
             </label>
-            <p className="muted-line" style={{ margin: 0 }}>
+            <p className="muted-line m-0">
               Review the fit below. Go <b>Back</b> to change anything and fit again, or save it: the Calculator and
               the Diagnostics tests run once it's saved.
             </p>
@@ -395,7 +395,7 @@ export default function AltNewPage() {
         <ErrorNotice error={error} />
 
         <div className="fit-flow-foot">
-          <div className="row" style={{ margin: 0 }}>{nav}</div>
+          <div className="row m-0">{nav}</div>
         </div>
       </div>
     </div>

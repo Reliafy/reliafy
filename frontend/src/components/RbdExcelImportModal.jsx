@@ -104,7 +104,7 @@ export default function RbdExcelImportModal({ file, message, onClose, onImported
     <Modal title={`Import RBD from ${file.name}`} className="modal-xl" locked={busy} onClose={onClose} footer={footer}>
       {step === "sheet" && (
         <div className="fit-step">
-          <p className="muted-line" style={{ margin: 0 }}>
+          <p className="muted-line m-0">
             {message || "This workbook isn't laid out like Reliafy's RBD template."} Pick the sheet that lists
             the blocks (one row per block) and its header row, then map its columns.{" "}
             <button className="link" onClick={() => downloadRbdTemplate().catch((e) => setError(e.message))}>
@@ -123,7 +123,7 @@ export default function RbdExcelImportModal({ file, message, onClose, onImported
         <div className="fit-step">
           <div className="xl-rbd-section">
             <div className="ds-section-h">Blocks · {blocks.sheet} · {blocks.n_rows} rows</div>
-            <p className="hint" style={{ margin: 0 }}>
+            <p className="hint m-0">
               Each block needs an ID or a name, and (unless it's a k-of-n node) a failure distribution
               with its parameters — Weibull (alpha, beta), Exponential (failure rate or MTTF),
               Lognormal / Normal (mu, sigma), Gamma, LogLogistic, Gumbel, Logistic, Rayleigh.
@@ -149,7 +149,7 @@ export default function RbdExcelImportModal({ file, message, onClose, onImported
               <SheetColumnMapper fields={links.fields} columns={links.columns} mapping={linkMap}
                                  onChange={setLinkMap} rows={links.rows} />
             )}
-            <p className="hint" style={{ margin: 0 }}>
+            <p className="hint m-0">
               Blocks with nothing feeding them connect from the diagram's input; blocks feeding nothing
               connect to its output.
             </p>

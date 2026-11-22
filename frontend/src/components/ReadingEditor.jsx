@@ -118,7 +118,7 @@ export default function ReadingEditor({ columns, facts, nRows, reading, onChange
           <span className="xcn-words">covariates: every column not used above. A plain life model ignores them; a regression offers them.</span>
         </div>
         {zCols.length + off.length === 0 ? (
-          <p className="xcn-words" style={{ margin: 0 }}>Every column has a role.</p>
+          <p className="xcn-words m-0">Every column has a role.</p>
         ) : (
           <ul className="reading-z-list">
             {zCols.map((c) => (

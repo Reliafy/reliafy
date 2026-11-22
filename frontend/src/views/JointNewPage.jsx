@@ -319,9 +319,9 @@ export default function JointNewPage() {
           <ReadingChange name={dataset.name} rd={rd} />
 
           <h3 className="joint-h3">Measurements</h3>
-          <p className="muted-line" style={{ margin: 0 }}>m is what was measured on each item over time: readings, not covariates.</p>
+          <p className="muted-line m-0">m is what was measured on each item over time: readings, not covariates.</p>
           {!editing && (dataset.combined ? (
-            <p className="muted-line" style={{ margin: 0 }}>
+            <p className="muted-line m-0">
               From the same table: i = {rmap.id || "—"} · x = {rmap.age || "—"} · m = {rmap.value || "—"}
             </p>
           ) : (
@@ -439,10 +439,10 @@ export default function JointNewPage() {
 
           <div className="joint-actions">
             {ready && editing && (
-              <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>First save or cancel the change to the reading.</span>
+              <span className="hint ds-next-why m-0" role="status">First save or cancel the change to the reading.</span>
             )}
             {ready && !editing && issues.length > 0 && (
-              <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>
+              <span className="hint ds-next-why m-0" role="status">
                 {issues[0].text.replace(/\.\s*$/, "")} ({issues[0].table === "life" ? "life data" : "measurements"}: use its
                 Change the reading{issues.length > 1 ? `; ${issues.length - 1} more note${issues.length === 2 ? "" : "s"} above` : ""}).
               </span>
@@ -463,7 +463,7 @@ export default function JointNewPage() {
 
           {check && (
             <div className="card note joint-check-out" role="status">
-              <p style={{ margin: 0 }}>
+              <p className="m-0">
                 {check.n_units} units: {check.n_failed} failed, {check.n_running} still running.{" "}
                 {check.n_readings} readings on {check.n_with_readings} units.
               </p>
@@ -479,7 +479,7 @@ export default function JointNewPage() {
           )}
           {needsPro && (
             <div className="card note" role="status">
-              <p style={{ margin: 0 }}>{needsPro}</p>
+              <p className="m-0">{needsPro}</p>
               <div className="rbd-upgrade-actions"><Link className="cta cta-solid" to="/billing">Upgrade to Pro</Link></div>
             </div>
           )}

@@ -72,12 +72,12 @@ export default function RbdBuilder() {
         <PageHeader crumbs={[{ label: RBDS_LABEL, to: RBDS_PATH }]}
                     title={loadError.missing ? "Diagram not found" : "Couldn't open this diagram"} />
         <div className="card load-failed" role="alert">
-          <p style={{ marginTop: 0 }}>
+          <p className="mt-0">
             {loadError.missing
               ? "There's no diagram at this address. It may have been deleted, or the link may be mistyped."
               : `Something stopped the diagram loading. ${plainLoadError(loadError)}`}
           </p>
-          <p style={{ marginBottom: 0 }}>
+          <p className="mb-0">
             <Link to={RBDS_PATH}>See your RBDs</Link> · <Link to="/systems/b">Start a new diagram</Link>
           </p>
           {!loadError.missing && (

@@ -63,7 +63,7 @@ export default function RbdCrewsModal({ initial = {}, groupNames = [], onClose, 
       <span className="hint">
         {section === "safety" ? "Proof tests: double-click a block." : "Block priorities and groups: double-click a block."}
       </span>
-      <div className="row" style={{ margin: 0 }}>
+      <div className="row m-0">
         <button className="secondary" onClick={onClose}>Cancel</button>
         <button onClick={submit} disabled={!valid}>Set</button>
       </div>
@@ -102,7 +102,7 @@ export default function RbdCrewsModal({ initial = {}, groupNames = [], onClose, 
       ) : (
         <>
           <div className="rbd-costs-h">Repair crews</div>
-          <p className="muted-line" style={{ marginTop: 0 }}>
+          <p className="muted-line mt-0">
             How many repairs can run at once. With fewer crews than repair jobs, a failed block waits — down —
             until a crew is free (highest priority first, then first come). Exponential lives and repairs give
             exact long-run values (a Markov chain of the repair queue); anything else is simulated.

@@ -92,7 +92,7 @@ export default function ApiAccessPanel() {
 
   return (
     <div className="set-section">
-      <p className="muted-line" style={{ marginTop: 0 }}>
+      <p className="muted-line mt-0">
         Personal tokens for scripts, cron jobs and AI agents. Give each token only what it
         needs: a token that only pushes data can't read your analyses. The{" "}
         <Link className="evidence-link" to="/api-docs">API reference</Link> has every
@@ -179,7 +179,7 @@ export default function ApiAccessPanel() {
             </div>
           </div>
         )}
-        {error && <div className="error" style={{ marginTop: "0.6rem" }}>{error}</div>}
+        {error && <div className="error mt-2">{error}</div>}
 
         {tokens === null ? (
           <p className="muted-line">Loading…</p>

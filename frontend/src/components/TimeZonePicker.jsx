@@ -28,7 +28,7 @@ export default function TimeZonePicker({ value, onSave, readOnly = false }) {
   };
 
   if (readOnly) {
-    return <p className="muted-line" style={{ margin: 0 }}>{value || "Not set (UTC)"} · the team owner sets it.</p>;
+    return <p className="muted-line m-0">{value || "Not set (UTC)"} · the team owner sets it.</p>;
   }
   return (
     <>
@@ -46,7 +46,7 @@ export default function TimeZonePicker({ value, onSave, readOnly = false }) {
           </Button>
         )}
       </div>
-      {error && <div className="error" style={{ marginBottom: 0 }}>{error}</div>}
+      {error && <div className="error mb-0">{error}</div>}
     </>
   );
 }

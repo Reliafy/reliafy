@@ -40,7 +40,7 @@ function PartStockingModal({ spare, onClose, onDone }) {
           {SERVICE_LEVELS.map((l) => <option key={l} value={l}>{levelText(l)}</option>)}
         </select>
       </Field>
-      <label className="maint-row" style={{ gap: "0.4rem", marginTop: 0 }}>
+      <label className="maint-row gap-1-5 mt-0">
         <input type="checkbox" checked={f.repairable} onChange={(e) => setF({ ...f, repairable: e.target.checked })} />
         Repairable: failed ones are repaired and come back
       </label>
@@ -121,7 +121,7 @@ export function ClassStocking({ data, name, serviceLevel, reviewDays, onOptions,
       {chosen && (
         <>
           {rows.length > 1 && (
-            <p className="maint-row lib-date" style={{ gap: "0.4rem" }}>
+            <p className="maint-row lib-date gap-1-5">
               <label htmlFor="stock-part">Part</label>
               <select id="stock-part" value={chosen.part.id} onChange={(e) => setPick(e.target.value)}>
                 {rows.map((s) => <option key={s.part.id} value={s.part.id}>{s.part.part_number} {s.part.name}</option>)}

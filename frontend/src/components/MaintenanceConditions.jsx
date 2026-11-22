@@ -194,7 +194,7 @@ export function ConditionsSection() {
       <section className="card">
         <div className="maint-head">
           <h2>Conditions</h2>
-          <div className="maint-row" style={{ marginTop: 0 }}>
+          <div className="maint-row mt-0">
             <button className="secondary" onClick={() => setModal("import")}>Import</button>
             {!empty && <button className="secondary" onClick={() => download("csv")}>Export CSV</button>}
             {!empty && <button className="secondary" onClick={() => download("json")}>Export JSON</button>}
@@ -264,7 +264,7 @@ function ConditionPanel({ id, data, onChanged, onRetired, onAddChild }) {
     <section className="card">
       <div className="maint-head">
         <h2>{c.display}</h2>
-        <div className="maint-row" style={{ marginTop: 0 }}>
+        <div className="maint-row mt-0">
           <button className="secondary" onClick={() => setModal("edit")}>Edit</button>
           <button className="secondary" onClick={() => setModal("move")}>Move</button>
           <button className="secondary" onClick={onAddChild}>Add a condition inside</button>

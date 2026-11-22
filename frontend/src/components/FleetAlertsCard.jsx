@@ -65,7 +65,7 @@ export default function FleetAlertsCard({ fleetId, version }) {
   }, [loaded]);
 
   if (!data) {
-    return error ? <div className="card error" style={{ marginTop: "1rem" }}>{error}</div> : null;
+    return error ? <div className="card error mt-4">{error}</div> : null;
   }
 
   const label = data.period_label || "periods";
@@ -113,7 +113,7 @@ export default function FleetAlertsCard({ fleetId, version }) {
   };
 
   return (
-    <div className="card fleet-alerts" id="alerts" style={{ marginTop: "1rem" }}>
+    <div className="card fleet-alerts mt-4" id="alerts">
       <CardHeader
         title="Alerts"
         subtitle={
@@ -210,7 +210,7 @@ export default function FleetAlertsCard({ fleetId, version }) {
         </form>
       )}
       {full && <p className="muted-line">This fleet has the maximum of {data.max_alerts} alerts.</p>}
-      {error && <div className="error" style={{ marginTop: "0.6rem", marginBottom: 0 }}>{error}</div>}
+      {error && <div className="error mt-2 mb-0">{error}</div>}
     </div>
   );
 }

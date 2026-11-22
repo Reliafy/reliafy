@@ -122,7 +122,7 @@ export default function Login() {
               <button type="button" onClick={() => switchMode("reset")}>Forgot password?</button>
             </div>
           )}
-          {error && <div className="error" style={{ marginTop: 0 }}>{error}</div>}
+          {error && <div className="error mt-0">{error}</div>}
           {notice && <div className="login-notice">{notice}</div>}
           <button type="submit" disabled={busy} style={{ width: "100%", justifyContent: "center" }}>
             {busy ? "Please wait…" : mode === "signin" ? "Sign in" : mode === "signup" ? "Create account" : "Send reset link"}

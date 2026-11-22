@@ -50,8 +50,8 @@ export default function ModelNotFound({ id, kind }) {
   return (
     <div className="mf-body mf-single">
       <div className="card" role="alert">
-        <p style={{ marginTop: 0 }}>We couldn't find this model. It may have been deleted, or the link may be mistyped.</p>
-        <p style={{ marginBottom: 0 }}>
+        <p className="mt-0">We couldn't find this model. It may have been deleted, or the link may be mistyped.</p>
+        <p className="mb-0">
           {own && <><Link to={own.list}>See your {own.listLabel.toLowerCase()}</Link> · </>}
           <Link to="/models">All models</Link>
         </p>
@@ -67,8 +67,8 @@ export function ModelDrawFailed() {
   return (
     <div className="mf-body mf-single">
       <div className="card error" role="alert">
-        <p style={{ marginTop: 0 }}>This model's results couldn't be shown. The problem has been reported.</p>
-        <p style={{ marginBottom: 0 }}>
+        <p className="mt-0">This model's results couldn't be shown. The problem has been reported.</p>
+        <p className="mb-0">
           <button type="button" className="link" onClick={() => window.location.reload()}>Reload the page</button>
           {" "}· <Link to="/models">All models</Link>
         </p>

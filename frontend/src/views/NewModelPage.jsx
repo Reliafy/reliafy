@@ -121,7 +121,7 @@ export default function NewModelPage() {
               </span>
               <div className="sample-picks">
                 {samples.length === 0 ? (
-                  <span className="muted-line" style={{ margin: 0 }}>Loading samples…</span>
+                  <span className="muted-line m-0">Loading samples…</span>
                 ) : (
                   samples.map((d) => (
                     <button

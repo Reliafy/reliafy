@@ -150,7 +150,7 @@ function AddTaskModal({ subject, modes, counters, onClose, onDone }) {
         </Field>
       )}
       {kind === "location" && (
-        <label className="maint-row" style={{ gap: "0.5rem" }}>
+        <label className="maint-row gap-2">
           <input type="checkbox" checked={f.include_positions} onChange={(e) => setF({ ...f, include_positions: e.target.checked })} />
           {workOrders ? "List every position here on its work orders (a walkdown: one line each)"
             : "List every position here (a walkdown: one line each)"}
@@ -235,7 +235,7 @@ function TaskModal({ task, modes = [], onClose, onDone }) {
         </Field>
       )}
       {kind === "location" && (
-        <label className="maint-row" style={{ gap: "0.5rem" }}>
+        <label className="maint-row gap-2">
           <input type="checkbox" checked={includePositions} onChange={(e) => setIncludePositions(e.target.checked)} />
           {workOrders ? "List every position here on its work orders" : "List every position here"}
         </label>

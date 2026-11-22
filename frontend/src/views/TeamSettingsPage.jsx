@@ -275,7 +275,7 @@ export default function TeamSettingsPage() {
         </table>
       </div>
 
-      <div className="card" style={{ marginTop: "1rem" }}>
+      <div className="card mt-4">
         <CardHeader
           title="Time zone"
           subtitle="Where the team's workspace is. Today, due dates and overdue follow its calendar for everyone in the team; not set, they follow UTC."
@@ -287,7 +287,7 @@ export default function TeamSettingsPage() {
         />
       </div>
 
-      <div className="card" style={{ marginTop: "1rem" }}>
+      <div className="card mt-4">
         <CardHeader
           title="Currency"
           subtitle="The symbol in front of costs in the team's workspace. It's only a label: nothing is converted."
@@ -316,7 +316,7 @@ export default function TeamSettingsPage() {
             </div>
           }
         >
-          <p className="muted-line" style={{ marginTop: 0 }}>
+          <p className="muted-line mt-0">
             This permanently deletes the team and <b>every artifact in its
             workspace</b> — datasets, models, RBDs, degradation models, tracked
             items, analyses and forecasts — for all members. This can't be

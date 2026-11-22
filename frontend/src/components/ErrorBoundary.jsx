@@ -23,7 +23,7 @@ export default class ErrorBoundary extends Component {
     // A local boundary (a panel inside a page) shows its own small card.
     if (this.props.fallback) return this.props.fallback;
     return (
-      <div className="app" style={{ padding: "2rem" }}>
+      <div className="app p-8">
         <div className="card error-boundary">
           <h2>Something went wrong</h2>
           <p className="muted-line">

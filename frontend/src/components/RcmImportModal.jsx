@@ -165,7 +165,7 @@ export default function RcmImportModal({ position, onClose, onImported }) {
            className="modal-xl" locked={busy} onClose={onClose} footer={footer}>
       {step === "file" && (
         <div className="fit-step">
-          <p className="muted-line" style={{ marginTop: 0 }}>
+          <p className="muted-line mt-0">
             An FMEA or RCM worksheet with one row per failure mode — columns like Function,
             Functional failure, Failure mode, Effects, Consequence, Task and Interval. Blank
             function / failure cells carry down from the row above, as in most worksheets.
@@ -198,7 +198,7 @@ export default function RcmImportModal({ position, onClose, onImported }) {
 
       {step === "map" && table && (
         <div className="fit-step">
-          <p className="muted-line" style={{ margin: 0 }}>
+          <p className="muted-line m-0">
             <b>{table.sheet}</b> · {table.n_rows.toLocaleString("en-AU")} rows. Only Failure mode is
             required; a missing Function or Functional failure column puts everything under “Imported”.
           </p>
@@ -315,7 +315,7 @@ function PositionResult({ preview, summary, name }) {
       )}
       {preview.errors?.length > 0 && (
         <div className="error" role="alert">
-          <p style={{ margin: 0 }}>
+          <p className="m-0">
             {preview.errors.length === 1 ? "One row needs fixing" : `${preview.counts.errors} rows need fixing`} before
             anything can be added:
           </p>

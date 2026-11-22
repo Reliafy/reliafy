@@ -678,7 +678,7 @@ function DesignResult({ result, shown, picked, onPick, unit, hasTypes, designabl
               if (p && p.curveNumber === 0) onPick(p.pointIndex);
             }}
           />
-          <p className="muted-line" style={{ margin: 0 }}>
+          <p className="muted-line m-0">
             Each point is the most reliable design for its cost
             {extra.length ? ` within the ${extra.join(" and ")} limits` : ""}. Click one to inspect it
             and apply it instead.

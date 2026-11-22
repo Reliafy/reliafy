@@ -85,7 +85,7 @@ export default function RbdPhasesModal({ initial, nodes, edges, unit, conditions
       ) : (
         <span />
       )}
-      <div className="row" style={{ margin: 0 }}>
+      <div className="row m-0">
         <button className="secondary" onClick={onClose}>Cancel</button>
         <button onClick={submit} disabled={tried && errors.length > 0}>Save phases</button>
       </div>
@@ -94,7 +94,7 @@ export default function RbdPhasesModal({ initial, nodes, edges, unit, conditions
 
   return (
     <Modal title="Phased mission" onClose={onClose} footer={footer} className="rbd-phases-modal">
-      <p className="muted-line" style={{ marginTop: 0 }}>
+      <p className="muted-line mt-0">
         The mission runs through its phases in order. A block that fails in one phase stays failed for
         the rest of the mission, even through phases that don't need it.
       </p>

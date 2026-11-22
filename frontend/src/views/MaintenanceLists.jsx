@@ -409,7 +409,7 @@ export function ClassesPanel({ here = [], scopeName = "", all = false, onAll, op
       <div className="tablebar section-tablebar">
         <span className="count">{all ? "Every class in the register" : `Classes used at ${scopeName || "this row"} and inside it`}</span>
         <span className="grow" />
-        <label className="maint-row lib-date td-tab-check" style={{ marginTop: 0, gap: "0.4rem" }}>
+        <label className="maint-row lib-date td-tab-check mt-0 gap-1-5">
           <input type="checkbox" checked={all} onChange={(e) => onAll?.(e.target.checked)} /> Show all classes
         </label>
       </div>
@@ -462,7 +462,7 @@ export function ClassesPanel({ here = [], scopeName = "", all = false, onAll, op
             {data?.note && <p className="lib-date">{data.note}</p>}
             {data === null ? <p className="lib-date">Loading…</p> : <div className="maint-scroll"><LifeTable rows={data.rows} showPosition unit={data.unit || "days"} /></div>}
             {data?.excluded?.length > 0 && (
-              <details className="lib-date" style={{ marginTop: "0.5rem" }}>
+              <details className="lib-date mt-2">
                 <summary>Left out: {data.excluded.length} fitment{data.excluded.length === 1 ? "" : "s"} the readings can’t count</summary>
                 <div className="maint-scroll"><table className="lib-table">
                   <thead><tr><th>Position</th><th>Item</th><th>In</th><th>Why</th></tr></thead>
@@ -555,7 +555,7 @@ function ClassPanel({ name, label = name, unit = "days", onUnit, onChanged }) {
           {c.failures < 2 && <span className="lib-date">Needs at least 2 failures on record ({c.failures} so far).</span>}
         </div>
         {model && (
-          <p className="lib-date" style={{ marginTop: "0.75rem" }}>
+          <p className="lib-date mt-3">
             {model.distribution} fitted {fmtDate(model.fitted_on)} to {model.failures} failures and {model.suspensions} suspensions:{" "}
             {(model.params || []).map((p) => `${p.name} ${Number(p.value).toPrecision(4)}`).join(", ")} ({model.unit || "days"}).{" "}
             <Link to={`/models/m/${model.model_id}`}>Open the model</Link>
@@ -591,7 +591,7 @@ function ReplacementCostCard({ name, label = name, cost, onSaved }) {
         <span className="lib-date">{cost ? costText(cost, fmtDate) : "not set"}</span></div>
       {error && <div className="card error">{error}</div>}
       <p className="lib-date">The default for items in these positions with no replacement cost of their own.</p>
-      <div className="maint-row" style={{ marginTop: 0 }}>
+      <div className="maint-row mt-0">
         <input type="number" inputMode="decimal" min="0" step="any" placeholder="amount" value={f.amount} style={{ width: "8rem" }}
                onChange={(e) => setF({ ...f, amount: e.target.value })} />
         <input placeholder="AUD" maxLength={3} value={f.currency} style={{ width: "5rem" }}
@@ -622,7 +622,7 @@ function EconomicsCard({ name, label = name, modelUnit = "days" }) {
     <section className="card">
       <div className="maint-head"><h2>{label}: what the plan costs</h2></div>
       {error && <div className="card error">{error}</div>}
-      <div className="maint-row" style={{ marginTop: 0 }}>
+      <div className="maint-row mt-0">
         <span className="lib-date">What if every</span>
         <input type="number" inputMode="decimal" min="0" step="any" value={whatIf} style={{ width: "5rem" }} onChange={(e) => setWhatIf(e.target.value)} />
         <select value={unit} onChange={(e) => setUnit(e.target.value)}>
@@ -637,7 +637,7 @@ function EconomicsCard({ name, label = name, modelUnit = "days" }) {
       </div>
       {data && (
         <>
-          <table className="lib-table" style={{ marginTop: "0.75rem" }}>
+          <table className="lib-table mt-3">
             <thead><tr><th>Plan</th><th>Interval</th><th>Per year</th><th>Net present cost</th></tr></thead>
             <tbody>
               {data.options.map((o) => (
@@ -687,7 +687,7 @@ export function ForecastCard({ name, label = name, show = "all", note = null }) 
     <section className="card" data-testid="class-forecast">
       <div className="maint-head"><h2>{label}: {sparesOnly ? "spares" : "failure forecast"}</h2></div>
       {note && <p className="lib-date">{note}</p>}
-      <div className="maint-row" style={{ marginTop: 0 }}>
+      <div className="maint-row mt-0">
         <span className="lib-date">Next</span>
         <input type="number" inputMode="numeric" min="1" max={most} value={periods} style={{ width: "4.5rem" }}
                aria-label="How many periods" onChange={(e) => setPeriods(e.target.value)} />
@@ -865,7 +865,7 @@ export function PartsPanel({ branch, scopeName = "", all = false, onAll, design 
         <SegmentedControl size="sm" label="Show" value={view} onChange={(v) => onShow?.(v)} style={{ flex: "none" }}
                           options={[{ value: "list", label: "List" }, { value: "structure", label: "Structure" }]} />
         <span className="grow" />
-        <label className="maint-row lib-date td-tab-check" style={{ marginTop: 0, gap: "0.4rem" }}>
+        <label className="maint-row lib-date td-tab-check mt-0 gap-1-5">
           <input type="checkbox" checked={all} onChange={(e) => onAll?.(e.target.checked)} /> Show all parts
         </label>
       </div>
@@ -979,7 +979,7 @@ function SparesCoverCard({ parts }) {
     <section className="card">
       <div className="maint-head">
         <h2>Spares cover</h2>
-        <label className="maint-row lib-date" style={{ marginTop: 0, gap: "0.4rem" }}>
+        <label className="maint-row lib-date mt-0 gap-1-5">
           <input type="checkbox" checked={unlisted} onChange={(e) => setUnlisted(e.target.checked)} />
           Positions with no parts list
         </label>

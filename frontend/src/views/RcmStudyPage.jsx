@@ -217,7 +217,7 @@ export default function RcmStudyPage() {
         <div className="card error">
           {error}
           {conflict && (
-            <div style={{ marginTop: "0.6rem" }}>
+            <div className="mt-2">
               <button className="secondary" onClick={onReload}>Reload latest version</button>
             </div>
           )}

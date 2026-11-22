@@ -326,7 +326,7 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
           <span className="drop">{(result.ccf.reliability_without * 100).toFixed(1)}%</span>
           <span>to</span>
           <span className="drop">{(result.ccf.reliability_with * 100).toFixed(1)}%</span>
-          <span className="muted-line" style={{ margin: 0 }}>
+          <span className="muted-line m-0">
             ({result.ccf.groups.map((g) => `${g.members.join(" & ")} β ${formatPercent(g.beta)}`).join("; ")}, at t={fmt(result.ccf.time)}{unit ? ` ${unitInText(unit)}` : ""})
           </span>
         </div>
@@ -541,7 +541,7 @@ function DowntimeBars({ rows, title, note }) {
           <span className="rbd-avail-bar-pct">{((n.share || 0) * 100).toFixed(1)}%</span>
         </div>
       ))}
-      {note && <p className="muted-line" style={{ margin: 0 }}>{note}</p>}
+      {note && <p className="muted-line m-0">{note}</p>}
     </div>
   );
 }
@@ -1189,7 +1189,7 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
           said, never rerun unasked. */}
       {tasksChanged?.length > 0 && (
         <div className="card note rbd-tasks-changed" role="status">
-          <p style={{ margin: 0 }}>
+          <p className="m-0">
             <b>The saved simulation is out of date.</b> It was run before {tasksChanged.length === 1 ? "this task" : "these tasks"} in
             the tree changed: {tasksChanged.join(", ")}. The exact figures above use the tasks as they are now; run the
             simulation again for its figures.
@@ -1200,7 +1200,7 @@ export function AvailabilityView({ result, unit, graph = null, onSimulate = null
           simulated chart, unless the exact ones are there to be asked for. */}
       {exact && (exact.status === "on_request" || (exact.status !== "ok" && exact.status !== "simulation_only" && !needsSim && exact.message)) && (
         <div className="card note rbd-exact-note" role="status">
-          <p style={{ margin: 0 }}>{exact.message}</p>
+          <p className="m-0">{exact.message}</p>
           {exact.status === "on_request" && onCompute && (
             <div className="rbd-upgrade-actions">
               <button type="button" onClick={onCompute} disabled={busy === "exact"}>
@@ -1452,14 +1452,14 @@ function AsOfPanel({ blocks, states, onChange, unitLabel, repairable, sources = 
   const outMode = repairable ? "down" : "failed";
   return (
     <div className="rbd-asof-panel">
-      <p className="hint" style={{ margin: 0 }}>
+      <p className="hint m-0">
         {repairable
           ? "Mark blocks that are down now (with how long they've been in repair) or set how long " +
             "they've been running since new or their last renewal. Blocks left as New start new."
           : "Mark blocks that have failed, or set how long they've been running. Results then run " +
             "from now: the remaining life. Blocks left as New start new."}
       </p>
-      {agesNote && <p className="hint" style={{ margin: 0 }}>{agesNote}</p>}
+      {agesNote && <p className="hint m-0">{agesNote}</p>}
       <ScrollCue className="rbd-avail-imp-scroll">
         <table className="calc-table rbd-asof-table">
           <thead>

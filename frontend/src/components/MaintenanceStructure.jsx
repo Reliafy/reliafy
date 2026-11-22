@@ -68,7 +68,7 @@ export function StructureTree({ tree, onEdit, onRemove, showTop = true }) {
   return (
     <>
       {all.length > 2 && (
-        <div className="maint-row" style={{ marginTop: 0, marginBottom: "0.5rem" }}>
+        <div className="maint-row mt-0 mb-2">
           <button className="link" onClick={() => setOpen(new Set(all))}>Expand all</button>
           <button className="link" onClick={() => setOpen(new Set(showTop ? [tree.id] : []))}>Collapse all</button>
         </div>
@@ -95,7 +95,7 @@ export function RollupCard({ structure, design = false }) {
     <section className="card">
       <div className="maint-head">
         <h2>Quantities rolled up</h2>
-        <label className="maint-row lib-date" style={{ marginTop: 0, gap: "0.4rem" }}>
+        <label className="maint-row lib-date mt-0 gap-1-5">
           <input type="checkbox" checked={every} onChange={(e) => setEvery(e.target.checked)} />
           Every level
         </label>
@@ -343,7 +343,7 @@ export function ImportBomModal({ onClose, onDone }) {
             <p>{bomImportSummary(preview)}</p>
             {preview.format && <p className="lib-date">Read as: {bomFormatText(preview)}</p>}
             {bomIsIndented(preview) && (
-              <label className="maint-row lib-date" style={{ marginTop: 0, gap: "0.4rem" }}>
+              <label className="maint-row lib-date mt-0 gap-1-5">
                 <input type="checkbox" checked={byDepth} onChange={(e) => nameByDepth(e.target.checked)} />
                 Name each part's indenture level by its depth, from this workspace's list (a part's own indenture
                 level column still wins)
@@ -392,16 +392,16 @@ export function PositionsFromStructureModal({ structure, onClose, onDone }) {
       </Field>
       <fieldset className="maint-fieldset">
         <legend>Which levels become positions</legend>
-        <label className="maint-row" style={{ marginTop: 0, gap: "0.4rem" }}>
+        <label className="maint-row mt-0 gap-1-5">
           <input type="radio" checked={every} onChange={() => { setEvery(true); setPreview(null); }} /> Every part
         </label>
         {found.length > 0 && (
-          <label className="maint-row" style={{ marginTop: "0.25rem", gap: "0.4rem" }}>
+          <label className="maint-row mt-1 gap-1-5">
             <input type="radio" checked={!every} onChange={() => { setEvery(false); setPreview(null); }} /> Only these levels:
           </label>
         )}
         {!every && (
-          <div className="maint-row" style={{ marginTop: "0.25rem" }}>
+          <div className="maint-row mt-1">
             {found.map((l) => (
               <label key={l} style={{ display: "inline-flex", gap: "0.3rem", alignItems: "center" }}>
                 <input type="checkbox" checked={chosen.has(l)} onChange={() => flip(l)} /> {l}

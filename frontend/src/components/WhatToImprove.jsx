@@ -312,11 +312,11 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
 
       {error && <div className="card error">{error}</div>}
       {job && <p className="rbd-job-status" role="status" aria-live="polite">{jobText(job)}</p>}
-      {phase === "running" && !job && <p className="hint" role="status" style={{ margin: 0 }}>Working out what to improve…</p>}
+      {phase === "running" && !job && <p className="hint m-0" role="status">Working out what to improve…</p>}
 
       {data?.status === "pro_required" && (
         <div className="card note" role="status">
-          <p style={{ margin: 0 }}>
+          <p className="m-0">
             <b>This diagram's effects need the simulation.</b> {data.basis_reason}
           </p>
           <p style={{ margin: "6px 0 0" }}>
@@ -496,7 +496,7 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
 
       {/* The method, in one short line; the long form is on the column's tooltip. */}
       {data?.status === "ok" && (
-        <p className="muted-line" style={{ margin: 0 }}>
+        <p className="muted-line m-0">
           {BASIS_WORD[sim ? "simulation" : basis] || ""}each lever moved {Math.round(step * 100)}% the way that helps
           (longer life, shorter repair or test interval, one more crew), ranked by its gain
           {data.of === "window" ? ` over the first ${num(windowLen)}${unit ? ` ${unit.toLowerCase()}` : ""}` : " in the long run"}

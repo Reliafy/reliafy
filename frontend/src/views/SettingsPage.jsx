@@ -144,10 +144,10 @@ function EmailPreferences() {
           <b>Product update emails</b> — a short monthly note on what's new, and a couple of getting-started tips when you join.
         </span>
       </label>
-      <p className="muted-line" style={{ marginBottom: 0 }}>
+      <p className="muted-line mb-0">
         Emails you trigger yourself, like team invites and shares, aren't affected.
       </p>
-      {error && <div className="error" style={{ marginBottom: 0 }}>{error}</div>}
+      {error && <div className="error mb-0">{error}</div>}
     </Card>
   );
 }
@@ -240,7 +240,7 @@ export default function SettingsPage() {
               title="Sample data"
               subtitle="A fresh workspace comes with sample datasets, models, RBDs and studies to explore. Hiding them only changes your view; restore them any time."
             />
-            <div className="row" style={{ gap: "0.6rem" }}>
+            <div className="row gap-2">
               <Button variant="secondary" onClick={onRestore} disabled={!!samplesBusy}>
                 {samplesBusy === "restore" ? "Restoring…" : "Restore sample data"}
               </Button>

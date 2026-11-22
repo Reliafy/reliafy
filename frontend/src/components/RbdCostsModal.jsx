@@ -37,7 +37,7 @@ export default function RbdCostsModal({ initial, unit, onClose, onSubmit }) {
   const footer = (
     <>
       <span className="hint">Block costs: double-click a block.</span>
-      <div className="row" style={{ margin: 0 }}>
+      <div className="row m-0">
         <button className="secondary" onClick={onClose}>Cancel</button>
         <button onClick={submit} disabled={!valid}>Set costs</button>
       </div>
@@ -46,7 +46,7 @@ export default function RbdCostsModal({ initial, unit, onClose, onSubmit }) {
 
   return (
     <Modal title="Diagram costs" onClose={onClose} footer={footer}>
-      <p className="muted-line" style={{ marginTop: 0 }}>
+      <p className="muted-line mt-0">
         Price the system's downtime to weigh repairs, maintenance and spare units against the
         production they save. Costs are in {workspaceCurrency()} (set under Settings › Currency); with a discount rate the total
         cost of ownership is a present value.

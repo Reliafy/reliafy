@@ -247,7 +247,7 @@ export default function MaintenancePosition() {
       <section className="card">
         <div className="maint-head">
           <h2>Life data</h2>
-          <div className="maint-row" style={{ marginTop: 0 }}>
+          <div className="maint-row mt-0">
             <span className="lib-date">one row per item fitted here</span>
             <button className="secondary" onClick={() => setModal("past")}>Add past fitment</button>
           </div>
@@ -592,7 +592,7 @@ function ConnectionsCard({ p, onChanged }) {
     <section className="card">
       <div className="maint-head">
         <h2>Connections and redundancy</h2>
-        <div className="maint-row" style={{ marginTop: 0 }}>
+        <div className="maint-row mt-0">
           <button className="secondary" onClick={() => getPositionImpact(p.id).then(setImpact).catch((e) => setError(e.message))}>
             What depends on it?
           </button>
@@ -620,11 +620,11 @@ function ConnectionsCard({ p, onChanged }) {
         </ul>
       )}
       {p.groups.map((g) => (
-        <div key={g.id} className="maint-ask" style={{ marginTop: "0.75rem" }}>
+        <div key={g.id} className="maint-ask mt-3">
           <p><strong>{g.name}</strong>: {g.k} of {g.n} needed{g.mode === "standby" ? ` (${g.standby} standby)` : ""}.
             {" "}Members: {g.members.map((mm) => mm.name).join(", ")}.
             {g.mode === "standby" && <> On duty: {g.members.find((mm) => mm.id === g.duty)?.name || "not set"}.</>}</p>
-          <div className="maint-row" style={{ marginTop: 0 }}>
+          <div className="maint-row mt-0">
             {g.mode === "standby" && g.duty !== p.id && (
               <button className="secondary" onClick={() => act(() => setGroupDuty(g.id, p.id))}>Put {p.name} on duty</button>
             )}
@@ -632,7 +632,7 @@ function ConnectionsCard({ p, onChanged }) {
           </div>
         </div>
       ))}
-      {impact && <p className="lib-date" style={{ marginTop: "0.75rem" }}>{impact.summary}
+      {impact && <p className="lib-date mt-3">{impact.summary}
         {impact.downstream.length > 0 && <> ({impact.downstream.map((d) => d.name).join(", ")})</>}</p>}
       {modal === "connect" && <ConnectModal p={p} positions={positions} onClose={() => setModal(null)}
                                             onDone={() => { setModal(null); onChanged(); }} />}
@@ -682,7 +682,7 @@ function GroupModal({ p, positions, onClose, onDone }) {
       <div className="login-field">
         <span>With</span>
         {positions.map((x) => (
-          <label key={x.id} className="maint-row" style={{ marginTop: 0, gap: "0.4rem" }}>
+          <label key={x.id} className="maint-row mt-0 gap-1-5">
             <input type="checkbox" checked={chosen.includes(x.id)}
                    onChange={(e) => setChosen(e.target.checked ? [...chosen, x.id] : chosen.filter((c) => c !== x.id))} />
             {"\u00a0\u00a0".repeat(x.depth)}{x.name}
@@ -716,7 +716,7 @@ function RbdCard({ p, onChanged }) {
     <section className="card">
       <div className="maint-head">
         <h2>Reliability block diagram</h2>
-        <div className="maint-row" style={{ marginTop: 0 }}>
+        <div className="maint-row mt-0">
           {rbdId && <Link to={`/systems/b/${rbdId}`}>Open the RBD</Link>}
           <button onClick={make} disabled={busy}>{busy ? "Generating…" : rbdId ? "Regenerate from the plant" : "Generate from the plant"}</button>
         </div>
@@ -792,7 +792,7 @@ export function MeasurementsCard({ measurements, target, onChanged }) {
                     </>}
                 </td>
                 <td>{c.source === "manual" && (
-                  <div className="maint-row" style={{ marginTop: 0 }}>
+                  <div className="maint-row mt-0">
                     <button className="secondary" onClick={() => setModal({ read: c })}>Record</button>
                     {c.readings.length > 0 && <button className="secondary" onClick={() => setModal({ list: c })}>Readings</button>}
                   </div>
