@@ -27,7 +27,7 @@ import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { planWords } from "../workManagement.js";
 import "./Maintenance.css";
 import Loading from "../components/ui/Loading.jsx";
-import { Checkbox } from "../components/ui/Controls.jsx";
+import { Checkbox, Select } from "../components/ui/Controls.jsx";
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const unitWord = (n, unit) => (Number(n) === 1 ? String(unit).replace(/s$/, "") : unit);
@@ -341,10 +341,10 @@ function EditPane({ pkg, phone, onClose, onSaved }) {
         <Field label="Name" text={form.name}><input value={form.name} maxLength={200} onChange={set("name")} /></Field>
         {!layer && (
           <Field label="Dates">
-            <select value={form.timing} onChange={set("timing")}>
+            <Select value={form.timing} onChange={set("timing")}>
               <option value="fixed">Set dates</option>
               <option value="from_last_visit">Counted from the last visit</option>
-            </select>
+            </Select>
           </Field>
         )}
         <fieldset className="mt-how">
@@ -360,10 +360,10 @@ function EditPane({ pkg, phone, onClose, onSaved }) {
               <input type="number" min="0" step={form.toleranceUnit === "days" ? "1" : "any"} inputMode="decimal" value={form.tolerance} onChange={set("tolerance")} />
             </Field>
             <Field label="Of">
-              <select value={form.toleranceUnit} onChange={set("toleranceUnit")}>
+              <Select value={form.toleranceUnit} onChange={set("toleranceUnit")}>
                 <option value="days">days after</option>
                 <option value="hours">hours after</option>
-              </select>
+              </Select>
             </Field>
           </div>
         )}
@@ -397,11 +397,11 @@ function EditPane({ pkg, phone, onClose, onSaved }) {
               return (
                 <div key={t.task_id} className="pkg-rule">
                   <span className="pkg-rule-name">{taskLabel(t, pkg.tasks)}</span>
-                  <select aria-label={`${taskLabel(t, pkg.tasks)}: on which visits`} value={r.rule}
+                  <Select aria-label={`${taskLabel(t, pkg.tasks)}: on which visits`} value={r.rule}
                           onChange={(e) => setRule(t.task_id, { rule: e.target.value, nth: e.target.value === "nth" ? r.nth || "2" : "" })}>
                     <option value="every">Every visit</option>
                     <option value="nth">Every Nth visit</option>
-                  </select>
+                  </Select>
                   {r.rule === "nth" && (
                     <input aria-label={`${taskLabel(t, pkg.tasks)}: every how many visits`} className="pkg-rule-n" type="number" min="2" max="100" step="1"
                            inputMode="numeric" value={r.nth} onChange={(e) => setRule(t.task_id, { nth: e.target.value })} />
