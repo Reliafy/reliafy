@@ -13,6 +13,7 @@ import {
 } from "../rcmStudyWorksheet.js";
 import { charCount } from "../maintenanceText.js";
 import "./RcmStudyWorksheet.css";
+import { Checkbox, Select } from "./ui/Controls.jsx";
 
 // The RCM study's worksheet as an outline grid: the study's hierarchy in the
 // first column (function → functional failure → failure mode: indent, arrow,
@@ -200,11 +201,11 @@ export function CellEditor({ col, r, onCommit, onCancel }) {
   const label = `${col.label} of ${nameOf(r) || LEVEL_OF[r.type].label.toLowerCase()}`;
   if (col.id === "consequence") {
     return (
-      <select className="rsw-edit" autoFocus ref={field} value={value} aria-label={label} onKeyDown={keys} disabled={busy}
+      <Select className="rsw-edit" autoFocus ref={field} value={value} aria-label={label} onKeyDown={keys} disabled={busy}
               onChange={(e) => { setValue(e.target.value); commit(e.target.value); }} onBlur={() => commit()}>
         <option value="">Not set</option>
         {Object.entries(CONSEQUENCE_LABEL).map(([id, l]) => <option key={id} value={id}>{l}</option>)}
-      </select>
+      </Select>
     );
   }
   // A function's text: kept to 200 characters, with a counter at its end.
@@ -284,7 +285,7 @@ function Row({
     tabIndex: pinned ? undefined : focused || tabbable ? 0 : -1,
     style: pinned ? { height, width: phone ? undefined : total } : { top, height, width: phone ? undefined : total },
     onClick: (e) => {
-      if (e.target.closest("input, select, a, button.rsw-todo-btn")) return;
+      if (e.target.closest("input, select, .sel-trigger, .sel-menu, a, button.rsw-todo-btn")) return;
       onPick(r.key, { open: true });
     },
   };
@@ -380,10 +381,10 @@ export function Details({ r, display, readOnly, onCommit, onAdd, onDelete, onDec
           <label className="rsw-field">
             <span className="rsw-flabel">Consequence</span>
             {readOnly ? <span className="rsw-fval">{CONSEQUENCE_LABEL[r.ref.consequence] || "Not set"}</span> : (
-              <select value={r.ref.consequence || ""} onChange={(e) => onCommit(r, "consequence", e.target.value)}>
+              <Select value={r.ref.consequence || ""} onChange={(e) => onCommit(r, "consequence", e.target.value)}>
                 <option value="">Not set</option>
                 {Object.entries(CONSEQUENCE_LABEL).map(([id, l]) => <option key={id} value={id}>{l}</option>)}
-              </select>
+              </Select>
             )}
           </label>
         )}
@@ -529,11 +530,9 @@ export function ColumnChooser({ cols, onCols, usual = DEFAULT_COLUMNS }) {
       {open && (
         <div className="rsw-pop" role="group" aria-label="Columns to show">
           {COLUMNS.map((c) => (
-            <label key={c.id} className="rsw-pop-item" title={c.title}>
-              <input type="checkbox" checked={cols.includes(c.id)}
-                     onChange={(e) => onCols(e.target.checked ? COLUMNS.map((x) => x.id).filter((id) => id === c.id || cols.includes(id)) : cols.filter((x) => x !== c.id))} />
-              {c.label}{c.sum ? <span className="rsw-sig" title="A parent row counts what's inside it"> Σ</span> : null}
-            </label>
+            <Checkbox key={c.id} className="rsw-pop-item" title={c.title} checked={cols.includes(c.id)}
+                      onChange={(e) => onCols(e.target.checked ? COLUMNS.map((x) => x.id).filter((id) => id === c.id || cols.includes(id)) : cols.filter((x) => x !== c.id))}
+                      label={<>{c.label}{c.sum ? <span className="rsw-sig" title="A parent row counts what's inside it"> Σ</span> : null}</>} />
           ))}
           <button type="button" className="link rsw-pop-reset" onClick={() => onCols(usual, { reset: true })}>Show the usual columns</button>
         </div>

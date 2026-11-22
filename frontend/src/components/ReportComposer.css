@@ -109,7 +109,7 @@
 .rc-picker-search { flex: 3 1 220px; min-width: 0; }
 .rc-picker-kind { flex: 1 1 160px; min-width: 0; }
 .rc-picker-tools input,
-.rc-picker-tools select { width: 100%; box-sizing: border-box; }
+.rc-picker-tools select, .rc-picker-tools .sel-trigger { width: 100%; box-sizing: border-box; }
 .rc-picker-list {
   list-style: none;
   margin: 0;

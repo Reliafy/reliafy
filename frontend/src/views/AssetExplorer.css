@@ -62,11 +62,11 @@
 
 /* The tree pane's small icon buttons (« fold, » unfold), and the panel
    heading's two controls (the "…" menu and Full screen) on every tab: one
-   look, 30 × 30 (36 on a phone). */
+   look, control-md square (control-lg on a phone). */
 .tp button.tp-icon-btn,
 .tt-actions button.tp-icon-btn {
-  min-width: 30px;
-  height: 30px;
+  min-width: var(--control-md);
+  height: var(--control-md);
   padding: 0 var(--space-2);
   justify-content: center;
   border: 1px solid var(--border);
@@ -464,8 +464,8 @@
   }
   .tx.phone .tp button.tp-icon-btn,
   .tx.phone .tt-actions button.tp-icon-btn {
-    min-width: 36px;
-    height: 36px;
+    min-width: var(--control-lg);
+    height: var(--control-lg);
   }
   .td .page-header .head-actions {
     width: 100%;
@@ -1028,7 +1028,7 @@ button.rw-cklink {
 .tt-more:hover:not(:disabled), .tt-more.open { background: var(--accent-subtle); color: var(--accent-text); }
 .tp-row:hover .tt-more, .tp-row:focus-visible .tt-more, .tp-row.focus .tt-more,
 .tp-row.menu-open .tt-more { opacity: 1; }
-.tx.phone .tt-more { opacity: 1; width: 36px; height: 36px; }
+.tx.phone .tt-more { opacity: 1; width: var(--control-lg); height: var(--control-lg); }
 @media (hover: none), (max-width: 700px) {
   .tt-more { opacity: 1; }
 }

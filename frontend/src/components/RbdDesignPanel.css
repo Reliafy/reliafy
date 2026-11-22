@@ -76,10 +76,6 @@
   cursor: pointer;
 }
 
-.rbd-design-block label input {
-  margin-top: 0.2rem;
-}
-
 .rbd-design-block label span {
   display: flex;
   flex-direction: column;

@@ -30,8 +30,6 @@
 .ds-part-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 /* A part's input (a file or a paste) in the dialogs. */
 .ds-part-input { display: flex; flex-direction: column; gap: var(--space-3); }
-.ds-part-modes { display: flex; gap: var(--space-1); }
-.ds-part-modes .tab { padding: 4px 12px; }
 .dropzone.ds-part-drop { padding: 22px 16px; }
 .ds-meas > summary { margin-top: var(--space-2); }
 /* Every preview row shows: the page has room, so no inner scroller. */

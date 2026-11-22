@@ -1,6 +1,7 @@
 // A work package's own page: its sentence, next visits and tasks, and Edit in a
 // pane beside it (never a dialog), at desktop width and on a phone.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
+import { choose } from "./select.js";
 
 async function freshPackage(request) {
   const tag = `${Date.now() % 1000000}`;
@@ -31,7 +32,7 @@ for (const width of [1440, 400]) {
     await expect(pane).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await pane.getByLabel("Trade (optional)").fill("Fitter");
-    await pane.getByLabel(`Grease ${tag}: on which visits`).selectOption("every");
+    await choose(pane.getByLabel(`Grease ${tag}: on which visits`), "every");
     await pane.getByRole("button", { name: "Save changes" }).click();
     await expect(page.getByRole("status")).toHaveText("Saved.");
     await expect(pane).toHaveCount(0);

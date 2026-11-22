@@ -5,6 +5,7 @@ import { STANDBY_KINDS, blankDraft, draftBody, draftFrom, draftProblems, setWord
 import { useConfirm } from "./ConfirmProvider.jsx";
 import TablePane from "./TablePane.jsx";
 import "./RedundancyPane.css";
+import { Checkbox, Radio, Select } from "./ui/Controls.jsx";
 
 // Redundancy inside a position, in the Explorer's table area beside the tree (Derryn, 12 Nov 2026;
 // no modal): the positions inside it that back each other up, as sets. Each set is either "any k of
@@ -128,24 +129,23 @@ export default function RedundancyPane({ position, phone = false, headingRef = n
             <fieldset className="redundancy-members">
               <legend>Which positions back each other up</legend>
               {kids.map((c) => (
-                <label key={c.id} className="redundancy-member">
-                  <input type="checkbox" checked={draft.members.includes(c.id)} disabled={!!inOther(c)}
-                         onChange={() => toggle(c.id)} />
-                  <span>{c.name}</span>
-                  {inOther(c) && <small className="rim-tquiet">in {setName(c.set_id)}</small>}
-                </label>
+                <Checkbox key={c.id} className="redundancy-member"
+                          checked={draft.members.includes(c.id)} disabled={!!inOther(c)}
+                          onChange={() => toggle(c.id)}
+                          label={<>
+                            <span>{c.name}</span>
+                            {inOther(c) && <small className="rim-tquiet">in {setName(c.set_id)}</small>}
+                          </>} />
               ))}
             </fieldset>
             <fieldset className="redundancy-mode">
               <legend>How they back each other up</legend>
-              <label className="redundancy-choice">
-                <input type="radio" name="redundancy-mode" checked={draft.mode === "active"} onChange={() => edit({ ...draft, mode: "active" })} />
-                <span><b>Any of them can do the job</b> · all running at once</span>
-              </label>
-              <label className="redundancy-choice">
-                <input type="radio" name="redundancy-mode" checked={draft.mode === "standby"} onChange={() => edit({ ...draft, mode: "standby" })} />
-                <span><b>Duty and standby</b> · the others wait to take over</span>
-              </label>
+              <Radio className="redundancy-choice" name="redundancy-mode" checked={draft.mode === "active"}
+                     onChange={() => edit({ ...draft, mode: "active" })}
+                     label={<span><b>Any of them can do the job</b> · all running at once</span>} />
+              <Radio className="redundancy-choice" name="redundancy-mode" checked={draft.mode === "standby"}
+                     onChange={() => edit({ ...draft, mode: "standby" })}
+                     label={<span><b>Duty and standby</b> · the others wait to take over</span>} />
             </fieldset>
             <div className="redundancy-fields">
               <label className="redundancy-field">
@@ -160,9 +160,9 @@ export default function RedundancyPane({ position, phone = false, headingRef = n
                 <>
                   <label className="redundancy-field">
                     <span>While it waits</span>
-                    <select value={draft.standby} onChange={set("standby")}>
+                    <Select value={draft.standby} onChange={set("standby")}>
                       {STANDBY_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
-                    </select>
+                    </Select>
                     <small className="rim-tquiet">{STANDBY_KINDS.find((k) => k.value === draft.standby)?.help}</small>
                   </label>
                   {draft.standby === "cold" && (

@@ -11,6 +11,7 @@ import { enteredUnit, fromKelvin, inputStressName, kelvinWords, toKelvin, useFor
 import ProTag from "./ProTag.jsx";
 import ExtrapolationNote from "./ui/ExtrapolationNote.jsx";
 import { formatReadable } from "../format.js";
+import { Checkbox } from "./ui/Controls.jsx";
 
 const fmt = (v) =>
   v == null || !Number.isFinite(v)
@@ -312,10 +313,8 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
             </label>
           ))}
           {inKelvin && <p className="muted alt-use-kelvin">{inKelvin}: the model is fitted in kelvin.</p>}
-          <label className="alt-ref-toggle">
-            <input type="checkbox" checked={st.refOn} onChange={(e) => set({ refOn: e.target.checked })} />
-            <span>Acceleration factor against a reference</span>
-          </label>
+          <Checkbox className="alt-ref-toggle" checked={st.refOn} onChange={(e) => set({ refOn: e.target.checked })}
+                    label="Acceleration factor against a reference" />
           {st.refOn && stresses.map((s, j) => (
             <label key={s.key} className="alt-use-field">
               <span>Reference {inputStressName(s)}</span>

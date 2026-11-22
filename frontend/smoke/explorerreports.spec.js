@@ -12,6 +12,7 @@
 // With SMOKE_SHOTS_DIR set, it also saves screenshots there (for the pull request).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { headMenu, phoneTree } from "./explorer.js";
+import { choose } from "./select.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -73,7 +74,7 @@ test("Failure reports: file one from the row menu, see it under the parent, and 
   await expect(dialog.getByRole("button", { name: "Report it" })).toBeDisabled(); // nothing said yet
   await dialog.getByRole("textbox", { name: /What happened/ }).fill(`Seal leaking at the drive end ${tag}`);
   await dialog.getByRole("radio", { name: "Safety" }).check();
-  await dialog.getByRole("combobox").selectOption("new");
+  await choose(dialog.getByRole("combobox"), "new");
   await dialog.getByPlaceholder("e.g. Seal leaking", { exact: true }).fill("Mechanical seal leak");
   await shot(page, "reports-desktop-new");
   await dialog.getByRole("button", { name: "Report it" }).click();
@@ -99,7 +100,7 @@ test("Failure reports: file one from the row menu, see it under the parent, and 
   await expect(status(page)).toHaveText("Investigating");
   await expect(said(page)).toHaveText("Now investigating.");
   // The investigation card is open for the stage: the root cause saved.
-  await detail(page).getByRole("combobox", { name: /Root cause category/ }).selectOption("wear");
+  await choose(detail(page).getByRole("combobox", { name: /Root cause category/ }), "wear");
   await detail(page).getByRole("textbox", { name: /^Root cause/ }).fill("Seal faces worn through at 4,000 hours");
   await detail(page).getByRole("textbox", { name: "Why 1" }).fill("The seal faces wore out");
   await detail(page).getByRole("button", { name: "Add a why" }).click();

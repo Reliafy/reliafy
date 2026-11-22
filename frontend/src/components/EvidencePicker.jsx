@@ -7,7 +7,7 @@ import { EVIDENCE_KIND_LABEL, evidenceKinds, startKind } from "../rcmWorksheet.j
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
 import Field from "./ui/Field.jsx";
-import { TextInput } from "./ui/Controls.jsx";
+import { Radio, TextInput } from "./ui/Controls.jsx";
 import Button from "./ui/Button.jsx";
 import Select from "./Select.jsx";
 
@@ -163,16 +163,17 @@ export default function EvidencePicker({ expectedType, analysisKind, value, onCh
         : list.length === 0 ? <p className="muted-line">No {empty}</p> : (
           <div className="evidence-picker" role="radiogroup" aria-label={EVIDENCE_KIND_LABEL[shown]}>
             {list.map((o) => (
-              <label key={`${optType(o)}:${o.id}`} className={"evidence-option" + (isChosen(o) ? " selected" : "")}>
-                <input
-                  type="radio"
-                  name={`evidence-${group}`}
-                  checked={isChosen(o)}
-                  onChange={() => onChange({ type: optType(o), id: o.id })}
-                />
-                <span className="evidence-name">{o.label}</span>
-                <span className="evidence-meta">{o.meta}</span>
-              </label>
+              <Radio
+                key={`${optType(o)}:${o.id}`}
+                className={"evidence-option" + (isChosen(o) ? " selected" : "")}
+                name={`evidence-${group}`}
+                checked={isChosen(o)}
+                onChange={() => onChange({ type: optType(o), id: o.id })}
+                label={<>
+                  <span className="evidence-name">{o.label}</span>
+                  <span className="evidence-meta">{o.meta}</span>
+                </>}
+              />
             ))}
           </div>
         )}
@@ -242,11 +243,12 @@ function FoundEvidence({ positionId, modeId, value, onChange, group }) {
               <div key={g.scope} className="evidence-group" role="group" aria-label={g.words}>
                 <p className="evidence-group-head">{g.words}</p>
                 {g.items.map((c) => (
-                  <label key={`${c.type}:${c.id}`} className={"evidence-option" + (chosen(c) ? " selected" : "")}>
-                    <input type="radio" name={`evidence-${group}`} checked={chosen(c)} onChange={() => pick(c)} />
-                    <span className="evidence-name">{c.label}</span>
-                    <span className="evidence-meta">{c.meta}</span>
-                  </label>
+                  <Radio key={`${c.type}:${c.id}`} className={"evidence-option" + (chosen(c) ? " selected" : "")}
+                         name={`evidence-${group}`} checked={chosen(c)} onChange={() => pick(c)}
+                         label={<>
+                           <span className="evidence-name">{c.label}</span>
+                           <span className="evidence-meta">{c.meta}</span>
+                         </>} />
                 ))}
               </div>
             ))}
