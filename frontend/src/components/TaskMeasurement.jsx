@@ -6,7 +6,7 @@ import {
   readingText, startChoice,
 } from "../taskMeasurement.js";
 import "./TaskMeasurement.css";
-import { Radio } from "./ui/Controls.jsx";
+import { Radio, Select } from "./ui/Controls.jsx";
 
 const CALENDAR_UNITS = ["days", "weeks", "months", "years"];
 
@@ -99,10 +99,10 @@ export function TaskMeasurementField({ taskId, unit, disabled = false, onChange 
         <div className="tm-edit">
           <label className="tm-label">
             <span>Count</span>
-            <select className="ctl" value={pick} disabled={disabled} onChange={(e) => setPick(e.target.value)} aria-label="Measurement to count">
+            <Select value={pick} disabled={disabled} onChange={(e) => setPick(e.target.value)} aria-label="Measurement to count">
               <option value="">{auto}</option>
               {view.choices.map((c) => <option key={c.id} value={c.id}>{choiceLabel(c)}</option>)}
-            </select>
+            </Select>
           </label>
           {!view.choices.length && (
             <p className="tm-help">No other {view.unit} counter on this position, above or below it, or on the fitted item. Add one on the position first.</p>
@@ -145,10 +145,10 @@ function MoveChoice({ view, there, state, many, disabled, onState }) {
       )}
       {state.mode === "switch" && view.choices.length > 0 && (
         <div className="tm-sub">
-          <select className="ctl" value={state.pointId} disabled={disabled} onChange={(e) => set("pointId")(e.target.value)}
+          <Select value={state.pointId} disabled={disabled} onChange={(e) => set("pointId")(e.target.value)}
                   aria-label={`Measurement for ${view.name} to count`}>
             {view.choices.map((c) => <option key={c.id} value={c.id}>{choiceLabel(c)}</option>)}
-          </select>
+          </Select>
           {view.last_done && (
             <LastDoneReading name={id} lastDone={view.last_done} unit={view.unit} estimate={atLastDoneText(picked, view.unit)}
                              mode={state.readingMode} value={state.reading} disabled={disabled}
@@ -165,9 +165,9 @@ function MoveChoice({ view, there, state, many, disabled, onState }) {
           <span>Every</span>
           <input type="number" className="ctl" inputMode="decimal" min="0" step="any" value={state.interval} disabled={disabled} autoFocus
                  aria-label={`How often ${view.name} falls due`} onChange={(e) => set("interval")(e.target.value)} />
-          <select className="ctl" value={state.calendarUnit} disabled={disabled} aria-label="Calendar unit" onChange={(e) => set("calendarUnit")(e.target.value)}>
+          <Select value={state.calendarUnit} disabled={disabled} aria-label="Calendar unit" onChange={(e) => set("calendarUnit")(e.target.value)}>
             {CALENDAR_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-          </select>
+          </Select>
         </div>
       )}
     </fieldset>

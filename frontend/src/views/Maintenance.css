@@ -562,6 +562,7 @@ button.maint-toggle {
 /* The area picker shrinks to the bar (a long location name mustn't widen the page). */
 .maint-filters label { min-width: 0; max-width: 100%; }
 .maint-filters select, .maint-filters .sel-trigger { min-width: 0; max-width: 100%; text-overflow: ellipsis; }
+.sel-trigger.kind-filter { max-width: 16rem; }
 @media (max-width: 720px) {
   .maint-filters label { flex: 1 1 100%; }
   .maint-filters label select, .maint-filters label .sel-trigger { flex: 1 1 auto; width: 0; }
