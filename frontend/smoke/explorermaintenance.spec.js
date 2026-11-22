@@ -1,7 +1,7 @@
 // The Explorer's Maintenance tab (Operate › Assets › Explorer, ?tab=maintenance): every
-// maintenance task on the picked position, from its RCM or added directly, with where it came
-// from, how often, its package, next due and what it costs each time ("Include what's inside"
-// adds the tasks below). Add task (the bar's button, the row menu's first item) opens a form in
+// maintenance task on the picked position and on every position below it (the position's own
+// first, marked "This position"), from its RCM or added directly, with where it came from, how
+// often, its package, next due and what it costs each time. Add task (the bar's button, the row menu's first item) opens a form in
 // the panel beside the tree, never a dialog; a task opens there too, its cost typed or from its
 // LSA at trade rates. The RCM reads each task's cost: a failure mode's task shows it in its
 // details, and the P-F calculator starts from it. At 400 px the table scrolls inside its card and
@@ -50,24 +50,27 @@ test("Maintenance: every task here with where it came from and its cost; add one
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}`);
   await page.getByRole("tab", { name: "Maintenance" }).click();
   await expect.poll(() => query(page).get("tab")).toBe("maintenance");
-  // The position's own tasks: from the RCM (its failure mode) and added directly (and why).
-  await expect(rows(page)).toHaveCount(2);
+  // The position's own tasks (from the RCM, its failure mode, and added directly, and why) and the
+  // motor's below it: the pump's first, each row saying where it is.
+  await expect(rows(page)).toHaveCount(3);
+  await expect(rows(page).last()).toContainText(`Grease the bearings ${tag}`);
+  await expect(row(page, `Grease the bearings ${tag}`)).toContainText(`Maint motor ${tag}`);
+  await expect(row(page, `Check the seal ${tag}`)).toContainText("This position");
+  await expect(panel(page).locator(".pk-count")).toHaveText("3 tasks · 2 on this position");
   // With work management off (SMOKE_WORK_MANAGEMENT=off) the plan is hypothetical: Next planned.
   const off = (await (await request.get("/api/config")).json()).work_management === false;
   await expect(panel(page).getByRole("columnheader")).toHaveText(
-    ["Task", "From", "Interval", "Cost each time", off ? "Next planned" : "Next due", "Package", "Kind"]);
+    ["Position", "Task", "From", "Interval", "Cost each time", off ? "Next planned" : "Next due", "Package", "Kind"]);
   await expect(row(page, `Check the seal ${tag}`)).toContainText(`RCM: Seal leaks ${tag}`);
   await expect(row(page, `Check the seal ${tag}`)).toContainText("$45");
   await expect(row(page, `Inspect the guard ${tag}`)).toContainText("Added directly: law, regulation or standard (AS 4024)");
   await expect(row(page, `Inspect the guard ${tag}`)).toContainText("Not set");
-  // What's inside too: the motor's task, with the Position column.
-  await panel(page).getByRole("checkbox", { name: "Include what's inside" }).check();
-  await expect(rows(page)).toHaveCount(3);
-  await expect(panel(page).getByRole("columnheader").first()).toHaveText("Position");
-  await expect.poll(() => query(page).get("below")).toBe("1");
   await shot(page, "maintenance-tab-desktop");
-  await panel(page).getByRole("checkbox", { name: "Include what's inside" }).uncheck();
-  await expect(rows(page)).toHaveCount(2);
+  // The motor picked: its own task alone (nothing below it), the tab still there.
+  await page.getByRole("treeitem", { name: new RegExp(`^Maint motor ${tag}`) }).locator(".tp-nm").click();
+  await expect(rows(page)).toHaveCount(1);
+  await page.getByRole("treeitem", { name: new RegExp(`^Maint pump ${tag}`) }).locator(".tp-nm").click();
+  await expect(rows(page)).toHaveCount(3);
 
   // The heading's "…": Add task…, Columns…, Trade rates…, Export CSV.
   await expect((await headMenu(page)).locator(".ovm-menu .ovm-item")).toHaveText(["Add task…", "Columns…", "Trade rates…", "Export CSV", "Open the full page"]);
@@ -87,7 +90,7 @@ test("Maintenance: every task here with where it came from and its cost; add one
   await form.getByRole("spinbutton", { name: /Cost each time/ }).fill("1250");
   await shot(page, "maintenance-add-task-desktop");
   await form.getByRole("button", { name: "Add task" }).click();
-  await expect(rows(page)).toHaveCount(3);
+  await expect(rows(page)).toHaveCount(4);
   await expect(row(page, `Replace the impeller ${tag}`)).toContainText(`Added directly: maker's recommendation (Pump manual 7.2) · prevents Seal leaks ${tag}`);
   await expect(row(page, `Replace the impeller ${tag}`)).toContainText("$1,250");
   await expect(panel(page)).toContainText(`Added Replace the impeller ${tag}.`);
@@ -107,7 +110,7 @@ test("Maintenance: every task here with where it came from and its cost; add one
   await expect(rcmTask.getByRole("link", { name: "RCM tab" })).toBeVisible();
   await rcmTask.getByRole("button", { name: "Cancel" }).click();
   // The foot adds them up.
-  await expect(panel(page).getByRole("region", { name: "What the tasks cost" })).toContainText("$1,355 each time for them all.");
+  await expect(panel(page).getByRole("region", { name: "What the tasks cost" })).toContainText("$1,355 each time for the 3 with a cost; 1 has no cost yet.");
   await expectHealthy(page, problems, { label: "maintenance tab" });
 
   // The row menu's first item on this tab: Add task….
@@ -142,7 +145,7 @@ test("Maintenance at 400 px: the table scrolls in its card, Add task fits, nothi
   await open(page, `/asset-register/explorer?arrange=positions&sel=${p.pump.id}&tab=maintenance`);
   // On a phone the panel is its own screen: tap the row to open it.
   await page.getByRole("treeitem", { name: new RegExp(`^Maint pump ${tag}`) }).locator(".tp-nm").click();
-  await expect(rows(page)).toHaveCount(2);
+  await expect(rows(page)).toHaveCount(3);
   expect(await sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "maintenance-tab-phone");
   await panel(page).getByRole("button", { name: "Add task" }).click();

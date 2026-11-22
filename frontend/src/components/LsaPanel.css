@@ -113,7 +113,6 @@
 .lsa-full { width: 100%; box-sizing: border-box; }
 
 /* The Maintenance tab (LsaPanel variant "maintenance", MaintenanceTask.jsx). */
-.mt-below { display: inline-flex; align-items: center; gap: 6px; font-size: 0.9em; white-space: nowrap; }
 .mt-add { display: inline-flex; align-items: center; gap: 4px; }
 .mt-pane { max-width: 640px; }
 .mt-fields { display: flex; flex-direction: column; gap: 10px; margin: 10px 0; }

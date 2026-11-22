@@ -29,6 +29,20 @@ on every third month. A layer has its own name and tasks, but its lines go on
 the weekly visit's work order that day, so there's still one work order per
 visit.
 
+## Every task here and below
+
+The **Tasks** view of the **Maintenance** tab lists every maintenance task on
+the row you picked **and on every position below it**, at any depth: pick the
+top of an asset to see its whole programme, or a pump to see the pump's. A row
+with no tasks of its own still lists the ones below it. Each task says where it
+lives: the **Position** column gives the position's name and, under it, what it
+sits in (*Pump 2 › Drive motor*), so two positions with the same name can be
+told apart. The row's own tasks come first, marked **This position**, then the
+rest by where they are; the count beside the search says how many are on the
+row itself. Search, sort, **Columns…** and **Export CSV** work on the whole
+list, and searching for a position finds the tasks inside it too. Retired
+tasks aren't shown.
+
 ## See the tasks here
 
 Open **Assets → Explorer**, pick a position or a location, choose the

@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { costChangedText, taskCostLine } from "./taskCosts.js";
 import { TASK_COST_FIELD, taskCostWords } from "./rcmIntervals.js";
-import { MAINTENANCE_COLUMNS, TASK_COLUMNS, maintenanceOrder, cellText, costFoot, costWhere, fromText, money, searchTasks, sortTasks, tasksHere } from "./lsaTab.js";
+import { hereCount, whereNote as positionNote, wherePath } from "./subtree.js";
+import { MAINTENANCE_COLUMNS, TASK_COLUMNS, maintenanceOrder, cellText, costFoot, costWhere, fromText, money, searchTasks, sortTasks } from "./lsaTab.js";
 
 const typed = { amount: 180, source: "typed", typed: 180, lsa: { amount: 120, complete: true, missing_rates: [], missing_prices: [] } };
 const lsa = { amount: 449.5, source: "lsa", typed: null, lsa: { amount: 449.5, labour_cost: 325, materials_cost: 124.5, complete: false, missing_rates: [], missing_prices: ["Gasket"] } };
@@ -52,8 +53,22 @@ test("a cost says where it came from and what's missing", () => {
   assert.equal(costFoot([{ cost: none }]), "No costs yet.");
 });
 
-test("the Maintenance tab shows the row's own tasks unless what's inside is included", () => {
-  const tasks = [{ id: "a", subject: { id: "pump" } }, { id: "b", subject: { id: "motor" } }];
-  assert.deepEqual(tasksHere(tasks, "pump").map((t) => t.id), ["a"]);
-  assert.deepEqual(tasksHere(tasks, "pump", true).map((t) => t.id), ["a", "b"]);
+test("the Maintenance tab rolls up every task below the row: its own first, then by path", () => {
+  const tasks = [
+    { id: "d", name: "Grease", subject: { id: "m2", name: "Drive motor", within: "Station › Pump 2" } },
+    { id: "b", name: "Check oil", subject: { id: "m1", name: "Drive motor", within: "Station › Pump 1" } },
+    { id: "a", name: "Walk round", subject: { id: "station", name: "Station", within: "" } },
+    { id: "c", name: "Align", subject: { id: "p1", name: "Pump 1", within: "Station" } },
+  ];
+  // No sort picked: the row's own task first, then the rest by their path (twins beside their parents).
+  assert.deepEqual(sortTasks(tasks, [], { here: "station" }).map((t) => t.id), ["a", "c", "b", "d"]);
+  // A sort picked wins; the row's own tasks aren't pinned then.
+  assert.deepEqual(sortTasks(tasks, [{ col: "task", dir: 1 }], { here: "p1" }).map((t) => t.id), ["c", "b", "d", "a"]);
+  // Each row says where it is; the row's own say so.
+  assert.equal(positionNote(tasks[2], "station"), "This position");
+  assert.equal(positionNote(tasks[0], "station"), "Station › Pump 2");
+  assert.equal(hereCount(tasks, "station"), "1");
+  assert.equal(wherePath(tasks[1]), "Station › Pump 1 › Drive motor");
+  // The path is searchable: "pump 2" finds the motor inside it.
+  assert.deepEqual(searchTasks(tasks, "pump 2").map((t) => t.id), ["d"]);
 });

@@ -735,3 +735,44 @@ def test_task_table_lists_every_task_below_with_its_failure_mode_and_package(m):
     assert len(m.task_table(position_id=plant["lagoon"])["tasks"]) == len(plant["weekly"]) + 10 + 3 + 1
     with pytest.raises(Invalid, match="position_id or location_id"):
         m.task_table()
+
+
+def test_task_table_rolls_up_every_level_below_in_one_read(m):
+    """The Explorer's Maintenance tab: a row shows its own tasks and every task on the positions
+    below it, at any depth, each saying where it sits (twins told apart); a row with no tasks of its
+    own still lists those below; another asset's tasks and retired tasks stay out."""
+    station = m.create_position("Station")["id"]
+    pumps = [m.create_position(f"Pump {i}", parent_id=station)["id"] for i in (1, 2)]
+    motors = [m.create_position("Drive motor", parent_id=p)["id"] for p in pumps]
+    bearing = m.create_position("Bearing", parent_id=motors[0])["id"]
+    walk = m.create_task(station, "Walk round", 1, "weeks")["id"]
+    checks = [m.create_task(mo, "Check the motor", 3, "months")["id"] for mo in motors]
+    grease = m.create_task(bearing, "Grease", 6, "months")["id"]
+    gone = m.create_task(pumps[1], "Old check", 1, "months")["id"]
+    m.retire_task(gone, "replaced")
+    other = m.create_position("Other site")["id"]
+    m.create_task(other, "Not ours", 1, "weeks")
+
+    rows = {r["id"]: r for r in m.task_table(position_id=station)["tasks"]}
+    assert set(rows) == {walk, *checks, grease}
+    assert rows[grease]["subject"]["within"] == "Pump 1 › Drive motor"
+    assert [rows[c]["subject"]["within"] for c in checks] == ["Station › Pump 1", "Station › Pump 2"]
+    # A row with no tasks of its own: everything below it, at any depth.
+    below = m.task_table(position_id=pumps[0])["tasks"]
+    assert {r["id"] for r in below} == {checks[0], grease}
+    assert m.task_table(position_id=pumps[1])["total"] == 1
+    # The shared helper: the node and everything below, cut to the asset opened (?root=).
+    assert m.subtree_ids(station) == {station, *pumps, *motors, bearing}
+    assert m.subtree_ids(pumps[0], within=station) == {pumps[0], motors[0], bearing}
+    with pytest.raises(Invalid, match="isn't inside the asset opened"):
+        m.subtree_ids(other, within=station)
+    with pytest.raises(Invalid, match="isn't inside the asset opened"):
+        m.task_table(position_id=other, within=station)
+    # A place picked with one asset open: only that asset's positions there.
+    site = m.create_location("Yard")["id"]
+    m.update_position(station, location_id=site)
+    m.update_position(other, location_id=site)
+    m.create_task(other, "Other's yard check", 1, "weeks")
+    at = {r["subject"]["id"] for r in m.task_table(location_id=site, within=station)["tasks"]}
+    assert other not in at and station in at
+    assert other in {r["subject"]["id"] for r in m.task_table(location_id=site)["tasks"]}
