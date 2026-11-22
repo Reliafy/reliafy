@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import RowMenu from "./RowMenu.jsx";
+import ColumnFilter from "./ColumnFilter.jsx";
 import TreeControlsMenu from "./TreeControlsMenu.jsx";
 import { Chevron, Highlight, PinIcon } from "./OutlineBits.jsx";
 import { NotesMark, Cell, CellEditor, LevelIcon, PhoneStatus, cellHint, cellTip, phoneLine } from "./RcmWorksheet.jsx";
@@ -85,7 +86,8 @@ function fitTable(table, room) {
   const cols = fold ? table.cols.map((c) => (c.id === "task" ? TASK_WITH_INTERVAL : c)) : table.cols;
   // The Task cell with the interval in it takes the Interval column's room too.
   const base = fold ? { ...table.widths, task: table.widths.task + (table.intervalW || 0) } : table.widths;
-  const widths = room == null ? base : fitWidths(cols.map((c) => c.id), base, room - table.treeW);
+  const mins = cols.some((c) => c.min) ? Object.fromEntries(cols.filter((c) => c.min).map((c) => [c.id, c.min])) : null;
+  const widths = room == null ? base : fitWidths(cols.map((c) => c.id), base, room - table.treeW, mins);
   return { ...table, cols, widths, total: table.treeW + cols.reduce((t, c) => t + widths[c.id], 0) };
 }
 
@@ -315,8 +317,11 @@ const causeTip = (r) => (r.ref.inside === false
   : `Caused by: ${r.ref.text} (on ${r.ref.on}). Click to go there.`);
 
 // The tree's own part of a row: indent, arrow, icon, name, markers.
-function TreeBit({ r, v, open, phone, query, rcm, table, pinRoot, onGoto, info = null }) {
+function TreeBit({ r, v, open, phone, query, rcm, table, pinRoot, onGoto, info = null, pick = null }) {
   const has = r.kids.length > 0;
+  // A row that can be picked with others (table.multi: the Maintenance tab's tasks): its box, for
+  // touch and the keyboard as well as Ctrl/⌘- and Shift-click.
+  const multi = pick && pick.can(r) ? pick : null;
   const inner = r.kids.length;
   const indent = Math.min(v.depth, phone ? 8 : 30) * 14;
   return (
@@ -325,6 +330,10 @@ function TreeBit({ r, v, open, phone, query, rcm, table, pinRoot, onGoto, info =
       {has ? (
         <span className={"tp-chev" + (open ? " open" : "")} aria-hidden="true"><Chevron /></span>
       ) : <span className="tp-chev-sp" />}
+      {multi && (
+        <input type="checkbox" className="tt-pick" tabIndex={-1} checked={multi.picked.has(r.key)} aria-label={`Select ${label(r)}`}
+               onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} onChange={() => multi.onToggle(r.key)} />
+      )}
       <RowIcon r={r} />
       {pinRoot && <span className="tp-pinmark" title={`Pinned: ${pinRoot.path}`}><PinIcon size={13} /><span className="sr-only">Pinned: </span></span>}
       {isRcmRow(r) && <span className="sr-only">{LEVEL_OF[r.type]?.label}: </span>}
@@ -381,9 +390,14 @@ function dropClass(drag, key) {
 function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, underPin = false, phone, query, onToggle, onPick, rcm, table, onMenu, menuOpen, rowW, pinRoot }) {
   const has = r.kids.length > 0;
   const drag = table && !phone ? table.drag : null;
+  const multi = table?.multi || null;
+  const picked = !!drag?.picked?.has(r.key) || !!multi?.picked?.has(r.key);
+  // A long press on a phone opens the row's menu, as a right-click does (iOS sends no contextmenu).
+  const press = useRef(null);
+  const pressed = useRef(false);
   const movable = !!drag && !pinned && drag.canDrag(r);
   const cls = "tp-row" + (focused ? " focus" : "") + (dim || r.ref?.via ? " dim" : "") + (pinned ? " pin" : "") + (pinGap ? " pin-gap" : "") + (heading(r) ? " grp" : "")
-    + (table ? ` tt tt-${r.type}` : "") + (menuOpen ? " menu-open" : "") + (drag?.picked?.has(r.key) ? " picked" : "")
+    + (table ? ` tt tt-${r.type}` : "") + (menuOpen ? " menu-open" : "") + (picked ? " picked" : "")
     + (movable ? " movable" : "") + dropClass(drag, r.key) + (drag?.dragging?.has(r.key) ? " dragged" : "")
     // A row whose pinned copy is on show at the top: hidden under it, so no half of it peeks
     // out below the pins as a ghost (kept when it has the focus, for the keyboard).
@@ -398,11 +412,20 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
     "aria-setsize": pinned ? undefined : v.size,
     "aria-posinset": pinned ? undefined : v.pos,
     "aria-expanded": pinned || !has ? undefined : open,
-    "aria-selected": pinned ? undefined : focused || (drag?.picked?.has(r.key) ? true : undefined),
+    "aria-selected": pinned ? undefined : focused || (picked ? true : undefined),
     tabIndex: pinned ? undefined : focused ? 0 : -1,
     style: { top: pinned ? undefined : top, height, width: table && !phone ? table.total : rowW },
     onClick: (e) => {
+      if (pressed.current) { pressed.current = false; return; }
       if (e.target.closest("input, select, a, button.rw-todo-btn, .tt-more, .tp-unpin")) return;
+      // Rows picked together (table.multi): Shift-click a range, Ctrl/⌘-click one more or one
+      // fewer; neither opens anything. A plain click picks the row alone and goes on as usual.
+      if (multi && !pinned && (e.shiftKey || e.ctrlKey || e.metaKey) && !e.target.closest(".tp-chev")) {
+        e.preventDefault();
+        multi.onClick(r.key, e);
+        return;
+      }
+      if (multi && !e.target.closest(".tp-chev")) multi.onClick(r.key, e);
       // Failure modes picked with Shift / Ctrl / Cmd-click, to drag (or move) together.
       if (drag && r.type === "mode" && (e.shiftKey || e.ctrlKey || e.metaKey)) {
         e.preventDefault();
@@ -436,6 +459,21 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
       const kb = e.button !== 2 || (!e.clientX && !e.clientY);
       onMenu(r.key, kb ? cornerOf(e.currentTarget) : { x: e.clientX, y: e.clientY }, { keyboard: kb });
     } : undefined,
+    ...(phone && onMenu && !pinned ? {
+      onTouchStart: (e) => {
+        if (e.touches.length !== 1 || e.target.closest("input, button, a")) return;
+        const { clientX: x, clientY: y } = e.touches[0];
+        clearTimeout(press.current);
+        press.current = setTimeout(() => {
+          pressed.current = true;
+          onMenu(r.key, { x, y }, { keyboard: false });
+          setTimeout(() => { pressed.current = false; }, 600);
+        }, 500);
+      },
+      onTouchMove: () => clearTimeout(press.current),
+      onTouchEnd: () => clearTimeout(press.current),
+      onTouchCancel: () => clearTimeout(press.current),
+    } : {}),
   };
   const more = onMenu && <MoreButton r={r} open={!!menuOpen} onMenu={onMenu} />;
   const unpin = pinRoot && <UnpinButton pinRoot={pinRoot} />;
@@ -448,7 +486,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
     return (
       <div {...common}>
         <div className="tt-l1">
-          <TreeBit r={r} v={v} open={open} phone query={query} rcm={rcm} table pinRoot={pinRoot} onGoto={table.onGoto} />
+          <TreeBit r={r} v={v} open={open} phone query={query} rcm={rcm} table pick={table?.multi} pinRoot={pinRoot} onGoto={table.onGoto} />
           {status && <span className="tt-st">{status}</span>}
           {unpin}{more}
         </div>
@@ -464,7 +502,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
     return (
       <div {...common}>
         <div className="tt-l1">
-          <TreeBit r={r} v={v} open={open} phone query={query} rcm={rcm} table pinRoot={pinRoot} onGoto={table.onGoto}
+          <TreeBit r={r} v={v} open={open} phone query={query} rcm={rcm} table pick={table?.multi} pinRoot={pinRoot} onGoto={table.onGoto}
                    info={<NotesMark r={r} />} />
           {(isRcmRow(r) || (table.fmea && r.type === "pos")) && <span className="tt-st"><PhoneStatus r={cellRow(r)} fmea={!!table.fmea} /></span>}
           {unpin}{more}
@@ -481,7 +519,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
     return (
       <div {...common}>
         <div className="tt-tree" role="rowheader" style={{ width: table.treeW }}>
-          <TreeBit r={r} v={v} open={open} query={query} rcm={rcm} table onGoto={table.onGoto} />{more}
+          <TreeBit r={r} v={v} open={open} query={query} rcm={rcm} table pick={table?.multi} onGoto={table.onGoto} />{more}
         </div>
         {/* No columns (a pane open beside the tree): no roll-up cell either. A width under zero
             isn't applied, so the text kept its last (wide) one, the table kept its sideways
@@ -521,7 +559,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
         {movable && editCol !== "name" && <span className="tt-grip" aria-hidden="true" style={{ left: Math.max(0, Math.min(v.depth, 30) * 14 - 13) }}><GripIcon /></span>}
         {editCol === "name"
           ? <CellEditor col={NAME_COLUMN} r={cr} onCommit={(raw) => table.onCommit(r, "name", raw)} onCancel={table.onCancel} />
-          : <><TreeBit r={r} v={v} open={open} query={query} rcm={rcm} table onGoto={table.onGoto}
+          : <><TreeBit r={r} v={v} open={open} query={query} rcm={rcm} table pick={table?.multi} onGoto={table.onGoto}
                        info={<NotesMark r={r} />} />{more}</>}
       </div>
       {table.hint === r.key && editCol == null ? (
@@ -631,6 +669,8 @@ export default function TreePane({
   const itemsFor = (key, { keyboard = true } = {}) => (rowMenu && display.rows.has(key) ? rowMenu.actions(display.rows.get(key), { keyboard }) : []);
   const openMenu = (key, at, { keyboard = false } = {}) => {
     if (!itemsFor(key, { keyboard }).length) return;
+    // A row outside the rows picked together becomes the one picked (its menu acts on it alone).
+    table?.multi?.onMenu?.(key);
     if (key !== focus) onPick(key, {});
     setRowOpen({ key, at, keyboard });
   };
@@ -653,6 +693,13 @@ export default function TreePane({
     // A reference row (a failure below that causes the one above): Enter or
     // Space goes to the real row, Delete unlinks it.
     const fr = focus != null ? display.rows.get(focus) : null;
+    // Space on a row that's picked with others (table.multi) adds it or takes it out.
+    if (fr && table?.multi?.can(fr) && e.key === " " && !e.ctrlKey && !e.metaKey && !e.altKey
+        && !e.target.closest("input, select, textarea, button, a, [contenteditable='true']")) {
+      e.preventDefault();
+      table.multi.onToggle(fr.key);
+      return;
+    }
     if (fr?.type === "cause" && rowMenu && !e.ctrlKey && !e.metaKey && !e.altKey && !e.target.closest("input, select, textarea, button, a, [contenteditable='true']")) {
       const act = e.key === "Enter" || e.key === " " ? "go" : e.key === "Delete" ? "unlink" : null;
       if (act) {
@@ -861,6 +908,14 @@ export default function TreePane({
       </button>
     </span>
   ) : branchNote ? <span className="tt-pinned-note" role="status">{branchNote}</span> : null;
+  // A column filter on (table.filter): the tree column's header says so, with a one-click clear.
+  const tfilter = table?.filter || null;
+  const filterHead = tfilter?.words ? (
+    <span className="tt-filtered" role="status">
+      <span className="tt-filtered-nm" title={tfilter.words}>{tfilter.words}</span>
+      <button type="button" onClick={tfilter.onClear} aria-label="Clear the filters" title="Show every row again">Clear</button>
+    </span>
+  ) : null;
   // The two slim rows over the tree (a wide screen, both tabs): the tree's
   // title, counts and ⋯ over the tree column, beside the panel's heading (the
   // way up over the row's name, and its actions); then the search box over the
@@ -883,6 +938,12 @@ export default function TreePane({
       {titleRow}
       {phoneTabs}
       {search}
+      {tfilter && (
+        <div className="tt-filterline">
+          <ColumnFilter wide label="Filter" facets={tfilter.facetsAll()} chosen={tfilter.chosen} onChange={tfilter.onChange} onClear={tfilter.onClear} />
+          {filterHead}
+        </div>
+      )}
       {notice}
       {branchNote && !branch ? <p className="tp-status" role="status">{branchNote}</p> : status}
     </div>
@@ -899,7 +960,8 @@ export default function TreePane({
       <div className="tt-h tt-h-tree" role={wideTable ? "columnheader" : undefined} style={{ width: wideTable ? table.treeW : width }}
            aria-label={wideTable && pinHead ? table.treeHead || TREE_HEAD : undefined}
            title={wideTable && !pinHead && !table.treeHead ? TREE_HEAD_TIP : undefined}>
-        {pinHead || (wideTable ? table.treeHead || TREE_HEAD : treeLabel || title)}
+        {pinHead || (wideTable && filterHead ? null : wideTable ? table.treeHead || TREE_HEAD : treeLabel || title)}
+        {wideTable && filterHead}
       </div>
       {wideTable && table.cols.map((c) => {
         // With `onSort` (the FME(C)A tab) a header with something to sort by
@@ -915,7 +977,11 @@ export default function TreePane({
                       aria-label={`${c.label}: sort${sorted === -1 ? " lowest first" : sorted === 1 ? ": back to the worksheet's order" : " highest first"}`}>
                 {c.label}{sorted ? <span className="tt-sortarrow" aria-hidden="true">{sorted === -1 ? "▼" : "▲"}</span> : null}
               </button>
-            ) : c.label}
+            ) : tfilter && tfilter.facetsFor(c.id).length ? <span className="tt-h-lbl">{c.label}</span> : c.label}
+            {tfilter && tfilter.facetsFor(c.id).length > 0 && (
+              <ColumnFilter label={c.label} facets={tfilter.facetsFor(c.id)} chosen={tfilter.chosen} onChange={tfilter.onChange}
+                            onClear={() => tfilter.onClearCol(c.id)} />
+            )}
           </div>
         );
       })}
@@ -930,7 +996,7 @@ export default function TreePane({
         {railed ? <div className="tp-railcol" style={{ width: PANE.rail }} /> : (
         <div className="tp-scroll" ref={scroller} onScroll={() => { onScroll(); record(); if (wideTable) paintShade(); }} onKeyDown={keys}
              role={table ? "treegrid" : "tree"} aria-label={table ? `${treeLabel || title} and their ${table.what || "RCM"}` : treeLabel || title}
-             aria-multiselectable={table?.drag?.picked?.size ? "true" : "false"}
+             aria-multiselectable={table?.drag?.picked?.size || table?.multi ? "true" : "false"}
              style={wide && !table ? { width: width + gutter } : expanded ? { width: table.treeW + SCROLLBAR_W } : undefined}>
           {columnHeads}
           {pins.length > 0 && (

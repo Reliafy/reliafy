@@ -71,7 +71,11 @@ holding four more bearings.
 
 A year's demand isn't the same as the stock to keep. What you need on the shelf
 is enough to cover the time it takes a new part to arrive. The **Spares: how
-many to hold** card under the chart works that out on a forecast of your own:
+many to hold** card under the chart works that out on a forecast of your own. Use it
+for a fleet of individual items with known ages and a life model, with a lead
+time. For a stream of replacements counted as one process, such as a fleet's
+replacements against fleet hours, use **Stock to hold** in the Calculator of a
+[repairable model](/guides/recurrent-events) instead:
 
 - **Lead time** — how long a reorder takes to arrive, in the forecast's periods.
   It's the one field you must fill in. The line under the fields reads it back

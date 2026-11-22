@@ -283,7 +283,9 @@ export default function RecurrentNewPage() {
   const askEnd = !map.tr;
   const endTyped = askEnd ? recordEnd : "";
   const endIssue = recordEndIssue(endTyped);
-  const mapIssues = missing ? [] : recurrentIssues(map, windows, endTyped);
+  // The dataset's own end of record (its reading) is the fit's end of test when none is typed here.
+  const datasetEnd = askEnd && reading?.record_end > 0 ? reading.record_end : null;
+  const mapIssues = missing ? [] : recurrentIssues(map, windows, endTyped, datasetEnd);
   const blocking = mapIssues.filter((i) => !i.note);
   const readingValid = !!derived && !missing && blocking.length === 0;
   const fitBlock = !readingValid
@@ -509,11 +511,13 @@ export default function RecurrentNewPage() {
             {askEnd && (
               <div style={{ width: 360, maxWidth: "100%" }}>
               <Field label="When did the test end?" optional error={endIssue} as="fieldset"
-                     help="The time the test or record stopped, for every system without an end of record of its own. Leave it empty if it stopped at the last failure.">
+                     help={datasetEnd
+                       ? `The dataset's record ends at ${datasetEnd.toLocaleString("en-GB")}${unit ? ` ${String(unit).toLowerCase()}` : ""}; leave this empty to use that, or type another end for this fit.`
+                       : "The time the test or record stopped, for every system without an end of record of its own. Leave it empty if it stopped at the last failure."}>
                 <InputGroup label="When the test ended, and its unit">
                   <TextInput type="number" inputMode="decimal" min="0" step="any" value={recordEnd}
                              onChange={(e) => setRecordEnd(e.target.value)} aria-label="When the test ended"
-                             placeholder="e.g. 1000" />
+                             placeholder={datasetEnd ? String(datasetEnd) : "e.g. 1000"} />
                   {unit && <Addon>{String(unit).toLowerCase()}</Addon>}
                 </InputGroup>
               </Field>
