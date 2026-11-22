@@ -90,7 +90,8 @@ test("the row's height in the stylesheet matches the chart component's", () => {
   const rules = css.split("\n").filter((line) => line.includes(".plot-dl-own"));
   assert.ok(rules.length >= 3, "the .plot-dl-own rules are in index.css");
   for (const rule of rules.filter((line) => line.includes("{"))) {
-    assert.match(rule, new RegExp(`:\\s*${DOWNLOAD_ROW}px;`), rule);
+    // In px, or as the space token of that size (space-N is N x 4px).
+    assert.match(rule, new RegExp(`:\\s*(${DOWNLOAD_ROW}px|var\\(--space-${DOWNLOAD_ROW / 4}\\));`), rule);
   }
   // The buttons over the chart are DOWNLOAD_OVER tall.
   assert.match(css, new RegExp(`\\.plot-dl-btn \\{\\s*height: ${DOWNLOAD_OVER}px;`));
