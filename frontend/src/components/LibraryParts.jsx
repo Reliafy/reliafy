@@ -14,7 +14,7 @@ import Modal from "./Modal.jsx";
 import ProTag from "./ProTag.jsx";
 import { LibrariesProDialog, LIBRARIES_PRO_TITLE, useLibrariesLocked } from "./LibrariesPro.jsx";
 import Field from "./ui/Field.jsx";
-import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
+import { Checkbox, Select, TextArea, TextInput } from "./ui/Controls.jsx";
 import { saveErrorText } from "../confirm.js";
 import {
   familyName, isComponentId, isLife, lifeWords, rangeText, sig,
@@ -392,15 +392,13 @@ function AddToLibrary({ modelId = null, modelName = "", collection = "models", d
           {datasetId && models.length > 0 && (
             <Field as="fieldset" className="lib-model-pick" label="With its models" help="Each ticked model goes in as its own entry, so the next project gets the fit as well as the data.">
               {models.map((m) => (
-                <label key={m.id} className="lib-model-choice">
-                  <input type="checkbox" checked={withModels.has(m.id)} disabled={busy}
-                         onChange={(e) => setWithModels((cur) => {
-                           const next = new Set(cur);
-                           if (e.target.checked) next.add(m.id); else next.delete(m.id);
-                           return next;
-                         })} />
-                  {" "}{m.name}
-                </label>
+                <Checkbox key={m.id} className="lib-model-choice" checked={withModels.has(m.id)} disabled={busy}
+                          onChange={(e) => setWithModels((cur) => {
+                            const next = new Set(cur);
+                            if (e.target.checked) next.add(m.id); else next.delete(m.id);
+                            return next;
+                          })}
+                          label={m.name} />
               ))}
             </Field>
           )}

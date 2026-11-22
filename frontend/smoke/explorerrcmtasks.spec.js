@@ -16,6 +16,7 @@
 // With SMOKE_SHOTS_DIR set, it also saves screenshots of the details with
 // several tasks and of the table rows, at 1280 and 400 px (for the pull request).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
+import { choose, expectChosen, optionLabels } from "./select.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -96,7 +97,7 @@ test("a failure mode's tasks are rows of the tree; add one, use an existing one,
   await expect(lines(tasks).first()).toContainText(`Weekly pH check ${tag}`);
   await expect(lines(tasks).first()).toContainText("every 1 week");
   const kindChip = tasks.getByRole("combobox", { name: `Kind of “Weekly pH check ${tag}”` });
-  await expect(kindChip).toHaveValue("on_condition");
+  await expectChosen(kindChip, "on_condition");
   await expect(kindChip).toHaveAttribute("title", /^First choice: /);
   await expect(tasks.locator(".rim-cards")).toHaveCount(0);
   await expect(tasks.getByRole("radiogroup", { name: "Which task is worth doing?" }).getByRole("radio", { name: /Task\(s\) worth doing/ }))
@@ -116,7 +117,7 @@ test("a failure mode's tasks are rows of the tree; add one, use an existing one,
   await expect(panel(page).getByRole("textbox", { name: "Instructions" })).toHaveCount(0);
   await expect(panel(page).getByRole("region", { name: "Notes and rationale" })).toHaveCount(0);
   // Its kind is a small chip here too, changed on the task.
-  await expect(section(page, "Kind").getByRole("combobox", { name: `Kind of “Weekly pH check ${tag}”` })).toHaveValue("on_condition");
+  await expectChosen(section(page, "Kind").getByRole("combobox", { name: `Kind of “Weekly pH check ${tag}”` }), "on_condition");
   // How often, as boxes where the words are; the event's fields only when asked for.
   await expect(section(page, "Interval").getByRole("spinbutton", { name: "Interval" })).toHaveValue("1");
   await expect(section(page, "Interval").getByRole("button", { name: "Raise it on an event instead…" })).toBeVisible();
@@ -154,7 +155,7 @@ test("a failure mode's tasks are rows of the tree; add one, use an existing one,
   await expect(add.getByText("Enter how often: an interval above 0.")).toBeVisible();
   expect(writes).toBe(0);
   await add.getByRole("spinbutton", { name: "Interval" }).fill("24");
-  await add.getByRole("combobox", { name: "Interval unit" }).selectOption("months");
+  await choose(add.getByRole("combobox", { name: "Interval unit" }), "months");
   await add.getByRole("spinbutton", { name: "Interval" }).press("Enter");
   expect(writes).toBe(1);
   await expect(dialog(page, "Add a task")).toHaveCount(0); // never a dialog
@@ -190,8 +191,8 @@ test("a failure mode's tasks are rows of the tree; add one, use an existing one,
   await expect(lines(tasks).nth(0)).toContainText("every 1 week");
   await expect(lines(tasks).nth(1)).toContainText(`Replace the dosing pump ${tag}`);
   await expect(lines(tasks).nth(1)).toContainText("every 36 months");
-  await expect(tasks.getByRole("combobox", { name: `Kind of “Weekly pH check ${tag}”` })).toHaveValue("on_condition");
-  await expect(tasks.getByRole("combobox", { name: `Kind of “Replace the dosing pump ${tag}”` })).toHaveValue("fixed_interval");
+  await expectChosen(tasks.getByRole("combobox", { name: `Kind of “Weekly pH check ${tag}”` }), "on_condition");
+  await expectChosen(tasks.getByRole("combobox", { name: `Kind of “Replace the dosing pump ${tag}”` }), "fixed_interval");
   // One line per task, the columns aligned: kind, name, how often (no "Then, if found" here).
   const tops = await lines(tasks).evaluateAll((els) => els.map((li) => [...li.children].map((c) => Math.round(c.getBoundingClientRect().left))));
   expect(tops[0].slice(0, 3)).toEqual(tops[1].slice(0, 3));
@@ -206,8 +207,10 @@ test("a failure mode's tasks are rows of the tree; add one, use an existing one,
   await add.getByRole("radiogroup", { name: "New or existing task" }).getByRole("radio", { name: "Existing task" }).click();
   const pick = add.getByRole("combobox", { name: "Existing task" });
   await expect(pick).toBeVisible();
-  await expect(pick.locator("option")).toContainText([/Choose a task/, new RegExp(`Backwash the filter ${tag} · every 1 month`)]);
-  await pick.selectOption({ label: await pick.locator("option").nth(1).textContent() });
+  const picks = await optionLabels(pick);
+  expect(picks[0]).toMatch(/Choose a task/);
+  expect(picks[1]).toMatch(new RegExp(`Backwash the filter ${tag} · every 1 month`));
+  await choose(pick, { label: picks[1] });
   await add.getByRole("button", { name: "Link task" }).click();
   await expect(titleOf(page)).toHaveText(`Backwash the filter ${tag}`);
   await expect(chipsOf(page)).toContainText("Failure finding");
@@ -231,7 +234,7 @@ test("a failure mode's tasks are rows of the tree; add one, use an existing one,
   await add.getByRole("radiogroup", { name: "Kind of task" }).getByRole("radio", { name: /Fixed interval/ }).click();
   await add.getByRole("textbox", { name: "Task" }).fill(`Deep clean ${tag}`);
   await add.getByRole("spinbutton", { name: "Interval" }).fill("12");
-  await add.getByRole("combobox", { name: "Interval unit" }).selectOption("months");
+  await choose(add.getByRole("combobox", { name: "Interval unit" }), "months");
   await add.getByRole("spinbutton", { name: "Interval" }).press("Enter");
   await expect(titleOf(page)).toHaveText(`Deep clean ${tag}`);
   // Its row menu: Open… and Retire the task… (it serves only this mode).
@@ -308,12 +311,12 @@ test("one task for several modes: a row under each, adopted by a tap, read-only 
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(chipsOf(page)).toContainText("On condition");
   const sharedKind = tasks.getByRole("combobox", { name: `Kind of “Weekly pH check ${tag}”` });
-  await expect(sharedKind.locator("option")).toHaveText(["On condition", "Fixed interval", "Failure finding"]);
-  await sharedKind.selectOption("failure_finding");
+  expect(await optionLabels(sharedKind)).toEqual(["On condition", "Fixed interval", "Failure finding"]);
+  await choose(sharedKind, "failure_finding");
   await expect(chipsOf(page)).toContainText("Failure finding");
   await expect(lines(tasks)).toHaveCount(1);
   await expect(lines(tasks).first()).toContainText(`Weekly pH check ${tag}`);
-  await expect(tasks.getByRole("combobox", { name: `Kind of “Weekly pH check ${tag}”` })).toHaveValue("failure_finding");
+  await expectChosen(tasks.getByRole("combobox", { name: `Kind of “Weekly pH check ${tag}”` }), "failure_finding");
   await expect(tasks.getByRole("heading", { name: "Tasks linked before the decision" })).toHaveCount(0);
   // The row menu's Change the decision… (the panel never opens the dialog): the shared interval read-only, and why.
   await saltRow.locator(".tp-nm").click();
@@ -428,7 +431,7 @@ test("Calculate… in an on-condition task's details: the P-F interval alone, co
   await expect(calc.getByText("the task must make the risk tolerable whatever it costs", { exact: false })).toBeVisible();
   await expect(calc.getByRole("spinbutton", { name: "Cost of a check ($)" })).toHaveCount(0);
   await calc.getByRole("spinbutton", { name: "P-F interval" }).fill("10");
-  await calc.getByRole("combobox", { name: "P-F interval unit" }).selectOption("weeks");
+  await choose(calc.getByRole("combobox", { name: "P-F interval unit" }), "weeks");
   await expect(calc.getByText("Assumed: every check finds a warning that's there.", { exact: false })).toBeVisible();
   await calc.getByRole("button", { name: "Work it out" }).click();
   await expect(calc.locator(".ivc-answer")).toHaveText("Check every 5 weeks: half the P-F interval of 10 weeks.");
@@ -481,7 +484,7 @@ test("a task's first due date: set on Add a task (behind a link), shown and chan
   await expect(add.getByLabel("First due")).toHaveCount(0);
   await add.getByRole("textbox", { name: "Task" }).fill(`Raise the acid dose for summer ${tag}`);
   await add.getByRole("spinbutton", { name: "Interval" }).fill("12");
-  await add.getByRole("combobox", { name: "Interval unit" }).selectOption("months");
+  await choose(add.getByRole("combobox", { name: "Interval unit" }), "months");
   await add.getByRole("button", { name: "Set when it's first due…" }).click();
   await add.getByLabel("First due").fill(`${year}-10-01`);
   await add.getByRole("button", { name: "Save" }).click();

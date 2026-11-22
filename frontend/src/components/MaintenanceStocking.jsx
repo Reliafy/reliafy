@@ -10,6 +10,7 @@ import { formatNumber } from "../format.js";
 import { money, periodLabels } from "../maintenanceForecast.js";
 import { SERVICE_LEVELS, levelText, overText, riskText, saveText, stockingCsv, windowText } from "../sparesPlan.js";
 import { orderLines, splitText } from "../sparesYear.js";
+import { Checkbox, Select } from "./ui/Controls.jsx";
 
 const blank = (v) => v === null || v === undefined || v === "";
 const num = (v) => (blank(v) ? null : Number(v));
@@ -35,15 +36,13 @@ function PartStockingModal({ spare, onClose, onDone }) {
                placeholder="30 assumed" onChange={set("lead_time_days")} />
       </Field>
       <Field label="Service level (chance of no stock-out)">
-        <select value={f.service_level} onChange={set("service_level")}>
+        <Select value={f.service_level} onChange={set("service_level")}>
           <option value="">Default (95%)</option>
           {SERVICE_LEVELS.map((l) => <option key={l} value={l}>{levelText(l)}</option>)}
-        </select>
+        </Select>
       </Field>
-      <label className="maint-row" style={{ gap: "0.4rem", marginTop: 0 }}>
-        <input type="checkbox" checked={f.repairable} onChange={(e) => setF({ ...f, repairable: e.target.checked })} />
-        Repairable: failed ones are repaired and come back
-      </label>
+      <Checkbox checked={f.repairable} onChange={(e) => setF({ ...f, repairable: e.target.checked })}
+                label="Repairable: failed ones are repaired and come back" />
       {f.repairable && (
         <Field label="Repair turnaround (days)">
           <input type="number" inputMode="decimal" min="0" step="any" value={f.turnaround_days}
@@ -80,10 +79,10 @@ export function ClassStocking({ data, name, serviceLevel, reviewDays, onOptions,
       <h3 className="maint-sub">Stock to hold</h3>
       <div className="maint-row" style={{ marginTop: 0, flexWrap: "wrap", gap: "0.5rem" }}>
         <label className="lib-date" htmlFor="stock-sl">Service level</label>
-        <select id="stock-sl" value={serviceLevel || ""} onChange={(e) => onOptions({ serviceLevel: e.target.value })}>
+        <Select id="stock-sl" value={serviceLevel || ""} onChange={(e) => onOptions({ serviceLevel: e.target.value })}>
           <option value="">Each part’s own (default 95%)</option>
           {SERVICE_LEVELS.map((l) => <option key={l} value={l}>{levelText(l)} for every part</option>)}
-        </select>
+        </Select>
         <label className="lib-date" htmlFor="stock-review">Stock checked every</label>
         <input id="stock-review" type="number" inputMode="decimal" min="0" step="any" value={review}
                placeholder="0" style={{ width: "4.5rem" }} onChange={(e) => setReview(e.target.value)}
@@ -123,9 +122,9 @@ export function ClassStocking({ data, name, serviceLevel, reviewDays, onOptions,
           {rows.length > 1 && (
             <p className="maint-row lib-date" style={{ gap: "0.4rem" }}>
               <label htmlFor="stock-part">Part</label>
-              <select id="stock-part" value={chosen.part.id} onChange={(e) => setPick(e.target.value)}>
+              <Select id="stock-part" value={chosen.part.id} onChange={(e) => setPick(e.target.value)}>
                 {rows.map((s) => <option key={s.part.id} value={s.part.id}>{s.part.part_number} {s.part.name}</option>)}
-              </select>
+              </Select>
             </p>
           )}
           <p data-testid="spares-summary">{chosen.stocking.summary}</p>

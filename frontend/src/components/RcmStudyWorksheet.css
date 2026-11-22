@@ -402,7 +402,7 @@
 .rsw-fin input:focus, .rsw-fin textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
 .rsw-fin [aria-invalid="true"] { border-color: var(--danger); }
 .rsw-fin textarea { resize: vertical; min-height: 56px; }
-.rsw-field select { max-width: 100%; }
+.rsw-field select, .rsw-field .sel-trigger { max-width: 100%; }
 .rsw-fval { font-size: var(--fs-14); overflow-wrap: anywhere; }
 .rsw-fhelp { font-size: var(--fs-12); color: var(--text-secondary); }
 .rsw-ferr { font-size: var(--fs-12); color: var(--danger-text); font-weight: 600; }

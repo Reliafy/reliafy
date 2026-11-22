@@ -13,11 +13,10 @@
 .tm-edit > .link { align-self: flex-start; min-height: 32px; }
 .tm-label { display: flex; flex-direction: column; gap: 4px; }
 .tm-label > span { font-size: var(--fs-13); font-weight: 500; color: var(--text-secondary); }
-.tm-field select, .tm-task select { max-width: 100%; min-height: 32px; }
+.tm-field select, .tm-task select, .tm-field .sel-trigger, .tm-task .sel-trigger { max-width: 100%; min-height: 32px; }
 .tm-opt { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; min-height: 32px; cursor: pointer; }
-.tm-opt input[type="radio"] { width: 18px; height: 18px; margin: 0; flex: none; }
-.tm-opt > span { flex: 1 1 12rem; min-width: 0; }
-.tm-enter > span:first-of-type { flex: 0 0 auto; }
+.tm-opt > .check-label { flex: 1 1 12rem; min-width: 0; }
+.tm-enter > .check-label { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
 .tm-sub { margin: 2px 0 6px 26px; }
 .tm-num { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .tm-num input[type="number"] { width: 7rem; min-height: 32px; }
@@ -29,5 +28,5 @@
 }
 @media (max-width: 480px) {
   .tm-sub { margin-left: 0; }
-  .tm-field select, .tm-task select { width: 100%; }
+  .tm-field select, .tm-task select, .tm-field .sel-trigger, .tm-task .sel-trigger { width: 100%; }
 }

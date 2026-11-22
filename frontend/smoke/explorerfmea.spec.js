@@ -9,6 +9,7 @@
 // Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy } from "./health.js";
 import { openColumns } from "./explorer.js";
+import { expectChosen } from "./select.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -225,7 +226,7 @@ test("RCM: a mode written on the FME(C)A tab shows under \"No functional failure
   await page.getByRole("menu", { name: /^Actions for No functional failure yet/ }).getByRole("menuitem", { name: "Assign to a functional failure…" }).click();
   const dlg = page.getByRole("dialog", { name: "Assign to a functional failure" });
   await expect(dlg).toBeVisible();
-  await expect(dlg.getByRole("combobox")).toHaveValue(p.ff.id);
+  await expectChosen(dlg.getByRole("combobox"), p.ff.id);
   await dlg.getByRole("button", { name: "Assign" }).click();
   await expect(dlg).toHaveCount(0);
   await expect(group).toHaveCount(0);

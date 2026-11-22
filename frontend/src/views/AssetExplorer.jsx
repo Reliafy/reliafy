@@ -1,3 +1,4 @@
+import { useUnsavedRef } from "../useUnsavedSignal.js";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { madeTask } from "../taskStart.js";
 import { VIEW_PARAMS } from "../measurementsTab.js";
@@ -21,9 +22,10 @@ import {
   NEW_MISSION, changedPhases, graftMissions, isMissionRow, isPhaseRow, missionKey, missionParam, missionRowActions, movePhase, openForMissions,
   parseMissionParam, phaseKey, positionMissionActions, rollupText as missionRollup, headRollupText as missionHeadRollup, withNewPhase, withoutPhase,
 } from "../explorerMissions.js";
+import TaskOptimisePane from "../components/TaskOptimisePane.jsx";
 import { ForecastPane, PackagePane, TASK_COLUMNS, TASK_TREE_HEAD, TaskCell, TaskSide, taskPhoneRow, useTreeTasks } from "../components/TaskTreeTable.jsx";
 import {
-  TASK_ADD_TO, TASK_CLEAR, TASK_FORECAST, TASK_OPEN, TASK_PACKAGE, anyFilter, commonHolder, facetValues, facetsOf, filterTasks, filterWords, forecastItem,
+  TASK_ADD_TO, TASK_CLEAR, TASK_FORECAST, TASK_OPEN, TASK_OPTIMISE, TASK_PACKAGE, anyFilter, commonHolder, facetValues, facetsOf, filterTasks, filterWords, forecastItem,
   graftTasks, isTaskRow, keepShown, openForTasks, pickTasks, rollupText as taskRollup, shownTasks, taskKey, taskRowActions,
 } from "../explorerTasks.js";
 import CovariateBindPane from "../components/CovariateBindPane.jsx";
@@ -105,8 +107,8 @@ import { keepLevel } from "../outlineTree.js";
 import { canPin, crumbAction, inBranch, levelMatches, pinCoversAll, pinDisplay, pinPath, pinTarget } from "../treePin.js";
 import { EXPLORER_LABEL } from "../navigation.js";
 import { ASSETS_LIST_PATH, explorerCarry } from "../maintenanceAssets.js";
-import { addsFirst, isolateItems, liveKids, lsaLead, maintenanceLead, moveTargets, showsAddRow, summaryActions, tabMenu as menuOnTab, viewOnlyReason, withAssetMoves, withPin } from "../treeRowMenu.js";
-import { canIsolate, depthWords, isolateIncompleteItem, isolateIncompleteOpen, isolateOpen, levelsBelow } from "../treeIsolate.js";
+import { addsFirst, focusNoun, isolateItems, liveKids, lsaLead, maintenanceLead, moveTargets, showsAddRow, summaryActions, tabMenu as menuOnTab, viewOnlyReason, withAssetMoves, withPin } from "../treeRowMenu.js";
+import { canIsolate, depthWords, focusFrom, focusShown, isolateIncompleteItem, isolateIncompleteOpen, isolateOpen, levelsBelow } from "../treeIsolate.js";
 import { removeTaskFromMode } from "../components/RcmModeTasks.jsx";
 import { MoveModal, RenameModal } from "../components/TreeRowModals.jsx";
 import { DeleteRcmModal, DeleteTreeModal } from "../components/DeleteTree.jsx";
@@ -124,6 +126,7 @@ import LoadFailed from "../components/LoadFailed.jsx";
 import "./AssetExplorer.css";
 import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { classFields, classKey } from "../positionClass.js";
+import Loading from "../components/ui/Loading.jsx";
 
 // The new-position (or new-location) dialog opened from the tree's last row:
 // at the top level, whatever row is picked.
@@ -377,7 +380,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // fresh. `paneDirty`: whether anything in it has been changed
   // (leaving it for another row asks first only then).
   const [paneSeed, setPaneSeed] = useState(null);
-  const paneDirty = useRef(false);
+  const paneDirty = useUnsavedRef("explorer-pane"); // also the update bar's unsaved signal
   const paneSaving = useRef(false);
   const paneHeading = useRef(null);
   const { full, toggle: toggleFull } = useFullScreen(frame, { returnFocus: fullBtn });
@@ -473,6 +476,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // A position an FMEA / RCM worksheet is being imported onto ({id, name}).
   const [sheetFor, setSheetFor] = useState(null);
   const [rcmFocus, setRcmFocus] = useState(null); // a function, failure or mode picked (its position is selected)
+  // A row's Focus here / Focus › on now, by arrangement ({key, name, before}: what was open before,
+  // for Clear focus; treeIsolate.js focusFrom). The tree pane and the tab's tree-table are one tree,
+  // so a focus shows on every tab of that arrangement. It never pins.
+  const [focusBy, setFocusBy] = useState({});
   const [notesAt, setNotesAt] = useState(null); // a function's notes asked for in full: {key, at}
   const [panel, setPanel] = useState(false); // its details beside the table
   const [missionAddRule, setMissionAddRule] = useState(null); // a phase row whose details open on Add node status rule
@@ -846,6 +853,17 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setPanel(true);
   }, [viewParam, display]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // A link to a failure mode on the RCM tab (?fm=: the forecast's What to enter): its row picked and
+  // its details open beside the table (its failure cost, its decision), once it's in the tree.
+  const fmParam = rcmOn ? params.get("fm") : null;
+  const fmShown = useRef(null);
+  useEffect(() => {
+    if (!fmParam || fmShown.current === fmParam || !display.rows.has(fmParam)) return;
+    fmShown.current = fmParam;
+    reveal(fmParam);
+    setPanel(true);
+  }, [fmParam, display]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const openAfter = useRef(null);
   useEffect(() => {
     const key = openAfter.current;
@@ -1057,7 +1075,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const paneQuery = paneFromQuery(params);
   const paneAt = modelsOn || missionsOn ? paneQuery
     : (measOn || tab === "summary") && paneQuery?.kind === "plan" ? paneQuery
-      : tasksOn && paneQuery?.kind === "forecast" ? paneQuery : null;
+      : tasksOn && (paneQuery?.kind === "forecast" || paneQuery?.kind === "optimise") ? paneQuery : null;
   const paneRow = paneAt && whole.rows.has(paneAt.id) ? whole.rows.get(paneAt.id) : null;
   const panePosition = paneRow?.type === "pos"
     ? { id: paneRow.key, name: paneRow.ref.name || "(no name)", ...classFields(paneRow.ref) } : null;
@@ -1341,9 +1359,20 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const pinItem = (r) => (canPin(r, mode)
     ? [r.key === pinKey ? { id: "unpin", label: "Show whole tree" } : { id: "pin", label: "Pin this branch" }] : []);
   // On the RCM tab a row can go five levels deep (down to the tasks): its menu offers them.
+  const focusOn = focusShown(focusBy[mode], display);
   const isolateItem = (r) => isolateItems(display.rows.get(r.key) || r, {
     can: canIsolate(display.rows.get(r.key) || r, mode, canPin), levels: tableOn && !fmeaOn ? levelsBelow(display, r.key) : 0,
+    focused: !!focusOn, noun: focusNoun(tab, { tasks: tasksOn }),
   });
+  const dropFocus = () => setFocusBy((f) => (f[mode] ? { ...f, [mode]: null } : f));
+  // Clear focus: what was open before the first Focus, back again (the rows picked stay picked).
+  const clearFocus = () => {
+    if (!focusOn) return;
+    setOpenSet(new Set(focusOn.before));
+    dropFocus();
+    if (focus != null) setScrollTo({ key: focus, at: Date.now() });
+    announce("Focus cleared: the tree is open as it was before.");
+  };
   // Isolate: the rest of the tree closed, this row opened `depth` levels
   // below it, picked and brought into view; said to screen readers.
   // Focus on incomplete rows: the way to what's still to finish under this row
@@ -1360,6 +1389,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       return;
     }
     setLevelBy((l) => ({ ...l, [mode]: null }));
+    setFocusBy((f) => ({ ...f, [mode]: focusFrom(f[mode], row.key, `incomplete rows under ${name}`, open) }));
     setOpenSet(next);
     const first = found[0];
     setRcmFocus(first.key);
@@ -1372,8 +1402,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (!row) return;
     const next = isolateOpen(display, open, r.key, depth);
     setLevelBy((l) => ({ ...l, [mode]: null }));
+    setFocusBy((f) => ({ ...f, [mode]: focusFrom(f[mode], row.key, row.ref.name || row.ref.text || "(no name)", open) }));
     setOpenSet(next);
-    if (isRcmRow(row)) {
+    if (isRcmRow(row) || isModelRow(row) || isMissionRow(row)) {
       setRcmFocus(row.key);
       setSelected((x) => ({ ...x, [mode]: positionOf(row) }));
     } else {
@@ -1845,6 +1876,16 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setTimeout(() => detailsHeading.current?.focus({ preventScroll: true }), 0);
   };
   const openForecast = (r) => leavePane().then((ok) => ok && openPane("forecast", { id: r.key, name: r.ref.name || "(no name)" }));
+  // Optimise… on a task (its row's ⋯, or its panel): how often to do it, in the table area beside the
+  // tree (?optimise=<task id>&on=<its position>).
+  const openOptimise = (taskId, positionId) => leavePane().then((ok) => {
+    const at = whole.rows.get(positionId);
+    if (!ok || !at) return;
+    setPkgPane(null);
+    openPane("optimise", { id: positionId, name: at.ref?.name || "(no name)" }, {
+      rbd: taskId, query: (q) => { for (const k of ["mtask", "addtask", "rates"]) q.delete(k); },
+    });
+  });
   // The tasks a task row's menu acts on: the ones picked together when it's one of them, else itself.
   const tasksFor = (r) => (tpicked.has(r.key) && tpicked.size > 1 ? [...tpicked] : [r.key])
     .map((k) => display.rows.get(k)).filter(isTaskRow);
@@ -1895,11 +1936,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       // The Measurements tab: a measurement row's own (Open, Record…, Edit…, Move…, Retire…);
       // a position's: its adds (a measuring point, a setting, a consumable, a sensor channel), a
       // line, then the Summary menu, with isolating and pinning.
-      if (modelsOn && isModelRow(r)) return modelRowActions(r, { viewOnly });
+      if (modelsOn && isModelRow(r)) return withPin(modelRowActions(r, { viewOnly }), isolateItem(r));
       // The Missions tab: a mission's own (Add a phase, Open, Show the RBD, Delete…), a phase's (Open…,
       // Move earlier / later, Delete…); a position's: add a mission to its RBD (or build one), then
       // Rename…, Focus ›, Pin this branch.
-      if (missionsOn && isMissionRow(r)) return missionRowActions(r, { viewOnly });
+      if (missionsOn && isMissionRow(r)) return withPin(missionRowActions(r, { viewOnly }), isolateItem(r));
       // The Maintenance tab: a task's own (Open…); a level's: Add task…, Forecast… (a position on an
       // asset), then Rename…, Focus ›, Pin this branch.
       if (tasksOn && isTaskRow(r)) return taskRowActions(r, { tasks: tasksFor(r).map((x) => x.ref.task), canPackage: !designScope && !viewOnly });
@@ -1947,6 +1988,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       if (id === "maint-add-task") return addTaskAt(r);
       if (id === TASK_OPEN) return openTaskRow(r);
       if (id === TASK_FORECAST) return openForecast(r);
+      if (id === TASK_OPTIMISE) return openOptimise(r.ref.task.id, r.ref.position_id);
       if (id === TASK_PACKAGE) return openPackaging("new", r);
       if (id === TASK_ADD_TO) return openPackaging("add", r);
       if (id === TASK_CLEAR) return setTpicked(new Set());
@@ -1967,6 +2009,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       else if (id === "pin") pinTo(r.key, { select: true });
       else if (id.startsWith("isolate:")) isolateAt(r, id === "isolate:all" ? "all" : Number(id.slice(8)));
       else if (id === "isolate-incomplete") isolateIncomplete(r);
+      else if (id === "focus-clear") clearFocus();
       else if (id === "unpin") unpin();
       else if (id === "add-fn") runAdd({ ref: { add: "fn", position_id: r.key } });
       // Adding inside a row: its details open on that list's add row (a new row typed in place).
@@ -2207,6 +2250,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
 
   // The levels: after closing, the pick moves up to the row it's hidden in.
   const setLevel = (n) => {
+    dropFocus(); // a level chosen for the whole tree: no focus any more
     setLevelBy((l) => ({ ...l, [mode]: n }));
     let next = levelSet(display, n);
     if (filter) next = new Set([...next].filter((k) => filter.keep.has(k)));
@@ -2267,6 +2311,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setChips([]);
     setRpnRaw("");
     if (pinKey || (level !== DEFAULT_LEVEL && typeof level === "number")) {
+      dropFocus();
       setLevelBy((l) => ({ ...l, [mode]: DEFAULT_LEVEL }));
       setOpenBy((o) => ({ ...o, [mode]: levelSet(whole, DEFAULT_LEVEL) }));
     }
@@ -2400,7 +2445,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   ) : error ? (
     <LoadFailed className="td-error" onRetry={load} what="Couldn't load the tree." error={error.text} />
   ) : !data ? (
-    <div className="card empty">Loading…</div>
+    <Loading card />
   ) : nothing ? (
     <div className="card empty section-empty">
       <h2>{EMPTY[mode]?.[0] || "No positions yet"}</h2>
@@ -2947,6 +2992,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       <TaskSide holder={sideHolder} taskId={taskRow ? taskRow.ref.task.id : null} taskName={taskRow ? taskRow.ref.task.name : ""} rates={ratesOn} phone={phone}
                 expanded={wideDetails} onExpand={expandDetails} onCollapse={collapseDetails}
                 headingRef={detailsHeading} onClose={closeTaskSide}
+                onOptimise={taskRow && !viewOnly ? () => openOptimise(taskRow.ref.task.id, taskRow.ref.position_id) : null}
                 onChanged={() => ptasks.load()}
                 onDone={(text) => {
                   if (text) say(text);
@@ -2984,7 +3030,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                onRebuild={seed?.start?.rebuild && seed.link && !viewOnly ? () => buildRbd(panePosition, seed.link) : null}
                phone={phone} headingRef={paneHeading} onClose={closeRbd}
                onDirty={(d) => { paneDirty.current = d; }}
-               onSaved={(id) => {
+               onSaved={(id, { auto = false } = {}) => {
+                 // An autosave changes nothing the tree lists.
+                 if (auto) return;
                  pmodels.load();
                  if (missionsOn) pmissions.load();
                  // Save as new: the copy is what's open now, as on the RBD's page.
@@ -3038,6 +3086,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                       onChanged={(text) => { say(text); load(); }}
                       onRebuild={builtRbdLink(pmodels.links, panePosition.id) && !viewOnly
                         ? () => askRebuild(panePosition, builtRbdLink(pmodels.links, panePosition.id)) : null} />
+    </div>
+  ) : paneKind === "optimise" && paneAt.optimise ? (
+    <div className="rw tt-side">
+      <TaskOptimisePane key={paneAt.optimise} position={panePosition} phone={phone} headingRef={paneHeading}
+                        task={{ id: paneAt.optimise, name: whole.rows.get(taskKey(paneAt.optimise))?.ref?.task?.name || "" }}
+                        onClose={() => closePane()} onUsed={(text) => { say(text); ptasks.load(); }} />
     </div>
   ) : paneKind === "forecast" ? (
     <div className="rw tt-side">
@@ -3165,6 +3219,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         onToggle={toggle}
         onLevel={setLevel}
         onCloseAll={() => {
+          dropFocus();
           setLevelBy((l) => ({ ...l, [mode]: 0 }));
           setOpenSet(new Set());
         }}
@@ -3221,6 +3276,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
           key: pinKey, name: whole.rows.get(pinKey).ref.name || "(no name)", path: pinPath(whole, pinKey), onUnpin: () => unpin(),
         } : null}
         branchNote={pinNote}
+        focused={focusOn ? { name: focusOn.name, onClear: clearFocus } : null}
         arrangeLocked={measOn ? `Measurements hang under their positions, so ${tabPlace("measurements")} shows the positions tree`
           : modelsOn ? `Models hang under their positions, so ${tabPlace("models")} shows the positions tree`
           : missionsOn ? `Missions belong to positions, so ${tabPlace("missions")} shows the positions tree`

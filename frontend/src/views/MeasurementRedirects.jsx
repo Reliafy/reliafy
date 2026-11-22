@@ -4,6 +4,7 @@ import { getMeasurementPoint, listSignalChannels } from "../api.js";
 import LoadFailed from "../components/LoadFailed.jsx";
 import { explorerPath } from "../assetTree.js";
 import { measurementAddress } from "../measurementsTab.js";
+import Loading from "../components/ui/Loading.jsx";
 
 // The earlier addresses of a measuring point's and a sensor channel's own
 // pages (/asset-register/points/:id, /asset-register/channels/:id). Both now
@@ -38,7 +39,7 @@ function Resolve({ read, kind, missing }) {
       </div>
     );
   }
-  return <div className="app"><div className="card empty">Loading…</div></div>;
+  return <div className="app"><Loading card /></div>;
 }
 
 const readPoint = (id) => getMeasurementPoint(id);
