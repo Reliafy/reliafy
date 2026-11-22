@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
-  createSubjectTask, getMaintenancePosition, getTaskLsa, linkTaskFailureMode, listTradeRates, retireMaintenanceTask,
+  createSubjectTask, getMaintenancePosition, getTaskIntervalBasis, getTaskLsa, linkTaskFailureMode, listTradeRates, retireMaintenanceTask,
   setTradeRate, unlinkTaskFailureMode, updateMaintenanceTask,
 } from "../api.js";
 import { fmtDate, today as workspaceToday, useSendOnce } from "./MaintenanceParts.jsx";
@@ -20,6 +20,7 @@ import { AGE_NOTE, lengthNote, tooLong } from "../maintenanceText.js";
 import { explorerHere } from "../products.js";
 import { workspaceCurrency } from "../money.js";
 import TaskTwins from "./TaskTwins.jsx";
+import { every } from "../taskOptimise.js";
 import { restorationBody, restorationForm, restorationProblem, RESTORE_CHOICES } from "../taskRestoration.js";
 
 // A task on the Explorer's Maintenance tab, in the panel beside the tree (never a dialog):
@@ -97,7 +98,8 @@ function DueBasis({ task }) {
   );
 }
 
-export default function MaintenanceTask({ row, taskId = null, taskName = "", head = null, headingRef = null, uses = null, onBack, onDone }) {
+export default function MaintenanceTask({ row, taskId = null, taskName = "", head = null, headingRef = null, uses = null, onBack, onDone,
+  onOptimise = null }) {
   const location = useLocation();
   const confirm = useConfirm();
   const adding = !taskId;
@@ -249,10 +251,12 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
                count={nameNote && !nameNote.over ? nameNote.text : null}>
           <TextInput autoFocus={adding} value={f.name} onChange={set("name")} placeholder="e.g. Inspect the guard" />
         </Field>
-        <Section title="How often" className="ruled mt-sec">
+        <Section title="How often" className="ruled mt-sec"
+                 action={onOptimise ? { label: "Optimise…", onClick: onOptimise, ariaLabel: `Optimise how often to do ${task.name}`, disabled: send.busy } : null}>
           <HowOften value={f.how} onChange={setHow} units={units} withAlso disabled={send.busy} problem={howProblem}
                     dates={shown.dates} datesLead={shown.lead} datesAfter={shown.after} datesNote={shown.note} />
           {task && <DueBasis task={task} />}
+          {task && <RestsOn taskId={task.id} onOptimise={onOptimise} />}
         </Section>
         <Section title="What kind of task" className="ruled mt-sec">
           <Field label="What kind of task" labelHidden>
@@ -325,6 +329,34 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
   );
 }
 
+// What the task's interval rests on (an Optimise saved as its evidence): the model, linked, and a
+// word when that model has been refitted since, so its optimum may have moved (never changed by itself).
+function RestsOn({ taskId, onOptimise }) {
+  const [rows, setRows] = useState([]);
+  useEffect(() => {
+    let live = true;
+    getTaskIntervalBasis(taskId).then((d) => live && setRows(d.rests_on || []), () => live && setRows([]));
+    return () => { live = false; };
+  }, [taskId]);
+  if (!rows.length) return null;
+  return (
+    <div className="mt-rests" role="note">
+      {rows.map((r) => (
+        <p key={r.failure_mode_id} className="field-help">
+          {r.use ? `Every ${every(r.use.value, r.use.unit)}` : "Its interval"} rests on{" "}
+          {r.model && !r.model.gone ? <Link to={r.model.path}>{r.model.name}</Link> : <Link to={`/strategy/analyses/${encodeURIComponent(r.analysis.id)}`}>{r.analysis.name}</Link>}
+          {rows.length > 1 ? ` (${r.mode})` : ""}.
+          {r.moved && (
+            <span className="mt-moved"> ! The model has been refitted since: its optimum may have moved.
+              {onOptimise && <> <button type="button" className="link" onClick={onOptimise}>Re-optimise…</button></>}
+            </span>
+          )}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 // Long guidance folded under one short line (progressive disclosure): the line says what's inside.
 function More({ summary, children }) {
   return (
@@ -372,6 +404,12 @@ function RestorationFields({ f, setF, task, problem }) {
           : `An overhaul that takes away ${f.restores || "X"}% of ${f.restoreKind === "kijima1" ? "the age gained since the last task" : "its whole age"}: 100% is as good as new, 0% as old as before.`}
         {f.replaceEvery !== "" && f.replacementCost === "" ? " With no replacement cost, a replacement is charged nothing until you set one." : ""}
       </p>
+      {r?.source === "assumed" && (
+        <p className="field-help" role="note">
+          Not set yet: taken as restoring none of its age, as servicing work (greasing, cleaning, adjusting) usually
+          does, so the forecast counts no failures off for it. Choose As new if it replaces or fully restores the item.
+        </p>
+      )}
       {r?.source === "decision" && (
         <p className="field-help" role="note">
           Its failure modes&apos; decisions set this for themselves ({r.by_mode.map((x) => `${x.text}: ${x.words}`).join("; ")}).

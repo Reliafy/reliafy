@@ -1,6 +1,6 @@
 import { useState } from "react";
 import Modal from "./Modal.jsx";
-import { Checkbox } from "./ui/Controls.jsx";
+import { Checkbox, Select } from "./ui/Controls.jsx";
 
 // A repairable diagram's repair crews, maintenance groups and safety function
 // (#156, #157). Stored on the graph as
@@ -86,9 +86,9 @@ export default function RbdCrewsModal({ initial = {}, groupNames = [], onClose, 
               <div className="param-fields">
                 <label className="param-field rbd-cost-field">
                   <span>Target SIL</span>
-                  <select value={sil} onChange={(e) => setSil(e.target.value)} aria-label="Target SIL">
+                  <Select value={sil} onChange={(e) => setSil(e.target.value)} aria-label="Target SIL">
                     {SILS.map((s) => <option key={s} value={s}>{s ? `SIL ${s}` : "None"}</option>)}
-                  </select>
+                  </Select>
                 </label>
               </div>
               <p className="hint">

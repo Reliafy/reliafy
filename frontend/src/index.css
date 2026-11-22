@@ -2251,8 +2251,8 @@ select.ctl { padding-right: 30px; }
 .ctl-group > .ctl:first-child { border-radius: var(--radius-md) 0 0 var(--radius-md); }
 .ctl-group > .ctl:last-child { border-radius: 0 var(--radius-md) var(--radius-md) 0; }
 .ctl-group > * + * { border-left: 1px solid var(--border); }
-.ctl-group > select.ctl { flex: 0 1 auto; min-width: 5.5rem; }
-.ctl-group > .ctl:not(select) { min-width: 3.5rem; }
+.ctl-group > :is(select, .sel-trigger).ctl { flex: 0 1 auto; min-width: 5.5rem; }
+.ctl-group > .ctl:not(select, .sel-trigger) { min-width: 3.5rem; }
 .ctl-group > .ctl-unit { flex: 0 1 4.5rem; background-color: var(--bg-subtle); color: var(--text); }
 /* DateTimeInput.jsx: a date as "22 Nov 2026" and a time as "16:00", whatever the browser's language. */
 .ctl-group.dti { display: inline-flex; width: fit-content; position: relative; }
@@ -5369,12 +5369,13 @@ select:disabled {
   background: var(--bg-canvas);
 }
 
-.login-field select {
+.login-field select, .login-field .sel-trigger {
   border-radius: var(--radius-md);
   padding: 9px 32px 9px 12px;
   font-size: var(--fs-14);
   background-color: var(--bg-canvas);
 }
+.login-field .sel-trigger { padding-right: 12px; }
 
 .login-field input:focus {
   outline: none;
@@ -6737,7 +6738,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .api-docs-menu a.active { color: var(--accent-text); background: var(--accent-subtle); font-weight: 600; }
 .api-docs-select { display: none; }
 .api-docs-select span { font-size: var(--fs-13); color: var(--text-secondary); }
-.api-docs-select select { flex: 1; min-width: 0; font-size: var(--fs-14); }
+.api-docs-select select, .api-docs-select .sel-trigger { flex: 1; min-width: 0; font-size: var(--fs-14); }
 .api-docs-cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -7995,7 +7996,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   color: var(--text);
   background: var(--bg-surface);
 }
-.decision-step select {
+.decision-step select, .decision-step .sel-trigger {
   border-radius: var(--radius-md);
   padding: 6px 30px 6px 10px;
   min-height: 34px;
@@ -8003,6 +8004,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   line-height: var(--lh-14);
   background-color: var(--bg-surface);
 }
+.decision-step .sel-trigger { padding-right: 9px; }
 .login-field textarea:focus,
 .decision-step input:focus,
 .decision-step textarea:focus {
@@ -8215,21 +8217,25 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   gap: 8px;
   font-family: inherit;
   font-size: var(--fs-13);
+  line-height: var(--lh-13);
+  font-weight: 400; /* a value is read, like a text box's (buttons are 500) */
   color: var(--text);
   background: var(--bg-surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
-  padding: 7px 10px;
+  min-height: var(--control-md);
+  padding: 5px 9px 5px var(--space-3);
   cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s;
   text-align: left;
   min-width: 0;
+  max-width: 100%;
   box-shadow: none;
 }
-.sel-trigger:hover:not(.sel-embedded) {
-  border-color: var(--accent);
-  background: var(--accent-wash);
-}
+/* In a form (ui/Controls' Select): the text size of the inputs beside it. */
+.sel-trigger.ctl-sel { font-size: var(--fs-14); line-height: var(--lh-14); }
+.sel-trigger:hover:not(.sel-embedded):not(:disabled) { border-color: var(--border-control-hover); }
+.sel-trigger[aria-invalid="true"] { border-color: var(--danger); background-color: var(--danger-bg); }
 .sel-trigger.open,
 .sel-trigger:focus-visible {
   outline: none;
@@ -8238,6 +8244,8 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 .sel-trigger:disabled { cursor: not-allowed; color: var(--text-secondary); background: var(--bg-subtle); }
 .sel-label {
+  flex: 1 1 auto;
+  min-width: 0; /* shrinks to an ellipsis instead of widening the trigger past its box */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -8298,6 +8306,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 /* A long list (a tree of positions) never runs off a phone's screen; the position picker fills its field. */
 .sel-menu { max-width: calc(100vw - 32px); }
 .sel-trigger.position-picker { width: 100%; }
+.sel-trigger.nav-workspace-select { font-weight: 500; } /* the workspace switcher reads as a control in the bar */
 .sel-group {
   padding: 8px 12px 4px;
   font-size: var(--fs-12);
@@ -8312,6 +8321,10 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 }
 .sel-check { display: inline-flex; color: var(--accent-text); flex-shrink: 0; }
 .sel-check svg { width: 13px; height: 13px; }
+/* A finger-sized row on a phone (control-lg); the search box's 16px text comes from the touch block. */
+@media (max-width: 720px) {
+  .sel-option { min-height: var(--control-lg); }
+}
 
 /* Embedded variant: fused into a bordered parent (column mapper fields). */
 .sel-trigger.sel-embedded {
@@ -8750,7 +8763,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .rbd-asof-table { margin-bottom: 0; }
 .rbd-asof-source { display: block; max-width: 280px; font-size: var(--fs-12); line-height: var(--lh-12); color: var(--text-secondary); white-space: normal; }
 .rbd-asof-source.is-caveat { color: var(--warning-text); }
-.rbd-asof-table select, .rbd-asof-table input {
+.rbd-asof-table select, .rbd-asof-table input, .rbd-asof-table .sel-trigger {
   background: var(--bg-surface); border: 1px solid var(--border-control); border-radius: var(--radius-md); color: var(--text);
   padding: 3px 6px; font: inherit; font-size: var(--fs-13);
 }

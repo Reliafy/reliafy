@@ -1,9 +1,31 @@
 # Changelog
 
+## 0.12.6 (unreleased)
+
+Needs a server on the same release.
+
+- **What a failure costs**: `maintenance failure_modes.update` takes `failure_cost`, `downtime_hours`
+  and `downtime_rate` (`clear` unsets them), and `maintenance reliability.set_class_costs` takes
+  `downtime_hours` and `downtime_rate`: each figure is the failure mode's own, else its class's.
+  `reliafy maintenance failure_modes.update --failure-mode-id … --failure-cost 900 --downtime-hours 4`.
+- **The forecast's cost split**: `maintenance get.forecast` rows and totals carry `labour_cost`,
+  `materials_cost`, `other_planned_cost`, `unplanned_cost`, `downtime_hours`, `downtime_cost` and
+  `total_cost`, with `cost_basis`, and `prompts` lists what to enter (failure modes with no failure
+  cost, checks with no P-F interval, tasks with no modelled effect).
+
 ## 0.12.5 (unreleased)
 
 Needs a server on the same release.
 
+- **Optimise a task**: `maintenance rcm.optimise_task` works out how often to do a maintenance task
+  from the life model of each failure mode it prevents, as the app's Optimise… does: the
+  cost-optimal replacement age with its range across the model's 90% parameter bounds, half the
+  P-F interval, or the failure-finding interval for a target. `model_type` + `model_id`,
+  `planned_cost`, `unplanned_cost`, `pf_interval`, `pf_unit`, `act_time` and
+  `target_unavailability` change what it starts from; `use=true` sets the task's interval, saves
+  the calculation as the mode's evidence and adds a line to its notes. The REST twin
+  (`POST /api/v1/maintenance/rcm.optimise_task`) and the CLI (`reliafy maintenance rcm.optimise_task`)
+  take it too.
 - **Availability at a time**: `analyse rbd` on a repairable diagram takes `times` (the same
   argument as for a non-repairable one): `exact.at_times` gives, for each time, the availability
   at that moment, the average availability from 0 to it, and the expected failures and downtime by

@@ -17,6 +17,7 @@ import { DESCRIPTION_HINT, tooLong } from "../maintenanceText.js";
 import { classesPath } from "../redirects.js";
 import LoadFailed from "./LoadFailed.jsx";
 import Loading from "./ui/Loading.jsx";
+import { Select } from "./ui/Controls.jsx";
 
 // ---- on a location, position or item ----------------------------------------------------------
 
@@ -133,10 +134,10 @@ function ConditionModal({ target, view, entry, onClose, onDone }) {
           {register === null ? <Loading inline /> : register.length === 0 ? (
             <span className="lib-date">The register is empty: add conditions on the <Link to={classesPath()}>Classes</Link> page first.</span>
           ) : (
-            <select autoFocus value={conditionId} onChange={(e) => setConditionId(e.target.value)}>
+            <Select autoFocus value={conditionId} onChange={(e) => setConditionId(e.target.value)}>
               <option value="">Choose…</option>
               {options.map((c) => <option key={c.id} value={c.id}>{c.display}{c.unit ? ` (${c.unit})` : ""}</option>)}
-            </select>
+            </Select>
           )}
         </Field>
       )}
@@ -298,10 +299,10 @@ function ConditionPanel({ id, data, onChanged, onRetired, onAddChild }) {
 
 function ConditionPicker({ conditions, value, onChange, emptyLabel = "None", exclude }) {
   return (
-    <select value={value || ""} onChange={(e) => onChange(e.target.value || null)}>
+    <Select value={value || ""} onChange={(e) => onChange(e.target.value || null)}>
       <option value="">{emptyLabel}</option>
       {(conditions || []).filter((c) => !exclude?.has(c.id)).map((c) => <option key={c.id} value={c.id}>{c.display}</option>)}
-    </select>
+    </Select>
   );
 }
 
@@ -309,10 +310,10 @@ function KindFields({ f, setF }) {
   return (
     <>
       <Field label="Kind">
-        <select value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value, unit: e.target.value === "value" ? f.unit : "" })}>
+        <Select value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value, unit: e.target.value === "value" ? f.unit : "" })}>
           <option value="presence">Applies or not (e.g. Outdoor)</option>
           <option value="value">A value (e.g. Ambient temperature)</option>
-        </select>
+        </Select>
       </Field>
       {f.kind === "value" && (
         <Field label="Unit (optional)"><input value={f.unit} placeholder="e.g. °C, %RH, ppt" maxLength={20}

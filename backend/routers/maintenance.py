@@ -441,19 +441,24 @@ def add_failure_mode(position_id: str, body: dict = Body(...), m: Maintenance = 
 
 @router.patch("/failure-modes/{mode_id}")
 def update_failure_mode(mode_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """The mode's words and RCM analysis (text, function, failure, consequence, effects, notes) and its
+    """The mode's words and RCM analysis (text, function, failure, consequence, effects, notes), its
     FME(C)A fields (fmea.FIELDS: severity, occurrence, detection, cause, the effects, the recommended
-    action, the criticality figures; null clears one). With any FME(C)A field the answer carries rpn, ap
-    and cm."""
+    action, the criticality figures; null clears one) and what a failure costs (failure_cost,
+    downtime_hours, downtime_rate; null clears one: failure_costs.py). With any FME(C)A field the answer
+    carries rpn, ap and cm; with a cost, costs."""
     from backend.maintenance import fmea
 
     def go():
+        from backend.maintenance import failure_costs
+
         words = {k: body[k] for k in ("text", "function", "failure", "consequence", "effects", "notes") if k in body}
         scores = {k: body[k] for k in fmea.FIELDS if k in body}
-        out = m.update_failure_mode(mode_id, **words) if words or not scores else None
+        costs = {k: body[k] for k in failure_costs.FIELDS if k in body}
+        out = m.update_failure_mode(mode_id, **words) if words or not (scores or costs) else None
         if scores:
-            scored = m.score_failure_mode(mode_id, scores)
-            return {**(out or m._mode_view(m._get(mode_id, "FailureMode"))), **scored}
+            out = {**(out or m._mode_view(m._get(mode_id, "FailureMode"))), **m.score_failure_mode(mode_id, scores)}
+        if costs:
+            out = {**(out or m._mode_view(m._get(mode_id, "FailureMode"))), "costs": m.set_mode_costs(mode_id, **costs)}
         return out
     return _run(go)
 
@@ -809,6 +814,13 @@ def unlink_task_failure_mode(task_id: str, mode_id: str, m: Maintenance = Depend
     return _run(m.unlink_task, task_id, mode_id)
 
 
+@router.get("/failure-modes/{mode_id}/costs")
+def failure_mode_costs(mode_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """What one failure of the mode costs: its own figures, its class's, and those in force (each the
+    mode's own, else its class's: failure_costs.py)."""
+    return _run(m.mode_costs, mode_id)
+
+
 @router.delete("/failure-modes/{mode_id}")
 def retire_failure_mode(mode_id: str, cascade: bool = False, dry_run: bool = False,
                         m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
@@ -1109,6 +1121,71 @@ def failure_mode_interval_inputs(mode_id: str, task_id: str | None = None, sessi
     return _run(go)
 
 
+# ---- Optimise… on a task: how often, from the life model of the modes it prevents ------------
+# (task_optimise.py). Exact calculations, free on every plan, like the task card's calculators.
+
+_OPTIMISE_KEYS = ("failure_mode_id", "model_type", "model_id", "planned_cost", "unplanned_cost", "pf_interval",
+                  "pf_unit", "act_time", "target_unavailability")
+
+
+def _optimise_args(body: dict) -> dict:
+    unknown = sorted(set(body) - set(_OPTIMISE_KEYS))
+    if unknown:
+        from backend.maintenance.task_optimise import OptimiseError
+
+        raise OptimiseError(f"Unknown input: {', '.join(unknown)}. It takes {', '.join(_OPTIMISE_KEYS)}.")
+    args = {k: body.get(k) for k in _OPTIMISE_KEYS if k not in ("model_type", "model_id")}
+    if body.get("model_id"):
+        args["model"] = {"type": body.get("model_type") or "model", "id": body["model_id"]}
+    return args
+
+
+@router.post("/tasks/{task_id}/optimise")
+def optimise_task(task_id: str, body: dict = Body(default={}), session=Depends(get_session),
+                  ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """How often to do this task, for each failure mode it prevents, from that mode's life model: the
+    cost-optimal replacement age (a replace or restore task, with its range across the model's 90%
+    parameter bounds), half the P-F interval (a condition check) or the failure-finding interval for a
+    target (a hidden function). model_type + model_id, the costs, pf_interval (+ pf_unit, act_time) or
+    target_unavailability change what it starts from; with failure_mode_id, for that mode only. Reads only."""
+    from backend.maintenance import task_optimise as to
+
+    return _run(lambda: to.optimise(m, session, ctx.read_owners, ctx.hidden, task_id, **_optimise_args(body or {})))
+
+
+@router.post("/tasks/{task_id}/optimise/use")
+def optimise_task_use(task_id: str, body: dict = Body(default={}), session=Depends(get_session),
+                      ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """Optimise's "Use every N": the task takes the interval worked out for failure_mode_id (left out when
+    it prevents one), the calculation is saved as a strategy analysis and linked as the mode's evidence,
+    and a line on it goes in the mode's notes. Takes the same inputs as /optimise."""
+    from backend.maintenance import task_optimise as to
+
+    return _run(lambda: to.use(m, session, ctx.read_owners, ctx.hidden, ctx.write_owner, task_id,
+                               **_optimise_args(body or {})))
+
+
+@router.get("/tasks/{task_id}/interval-basis")
+def task_interval_basis(task_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                        m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """What this task's interval rests on, mode by mode: the Optimise analysis that set it, its model,
+    and whether that model has been refitted since (moved: its optimum may have moved)."""
+    from backend.maintenance import task_optimise as to
+
+    return _run(to.basis, m, session, ctx.read_owners, ctx.hidden, task_id)
+
+
+@router.get("/model-tasks")
+def model_tasks(model_ids: str = "", session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The tasks whose interval Optimise rests on each model (model_ids, comma-separated): {model id:
+    [{task_id, name, interval, unit, failure_mode_id, mode, position_id, analysis_id, moved}]}."""
+    from backend.maintenance import task_optimise as to
+
+    ids = [x for x in model_ids.split(",") if x][:50]
+    return _run(lambda: {"tasks": to.tasks_set_by(m, session, ctx.read_owners, ctx.hidden, ids)})
+
+
 @router.patch("/tasks/{task_id}")
 def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """Set when it was last done (a plan input; "none" clears it), and/or change its name, interval or unit, when it next falls due
@@ -1255,7 +1332,7 @@ def get_class(position_class: str, m: Maintenance = Depends(maintenance)) -> JSO
 @router.put("/classes/costs")
 def set_class_costs(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.set_class_costs, body.get("position_class"), body.get("planned_cost"), body.get("failure_cost"),
-                body.get("availability_target"))
+                body.get("availability_target"), body.get("downtime_hours", ...), body.get("downtime_rate", ...))
 
 
 @router.put("/classes/replacement-cost")

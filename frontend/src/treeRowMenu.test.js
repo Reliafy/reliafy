@@ -91,18 +91,21 @@ test("Move to…: every position or location but the row itself and what's insid
   assert.deepEqual(moveTargets(null, "x"), []);
 });
 
-test("Isolate: a submenu of levels; just Isolate on a row with nothing inside; nothing where it can't", () => {
+test("Focus: Focus here (every level), then Focus › levels; just Focus here with nothing inside; Clear focus while one is on", () => {
   const items = isolateItems({ key: "a", kids: ["b"] }, { can: true });
-  assert.equal(items.length, 1);
-  assert.equal(items[0].label, "Focus");
-  assert.deepEqual(items[0].items.map((i) => [i.id, i.label]), [
-    ["isolate:1", "With 1 level open"], ["isolate:2", "With 2 levels open"], ["isolate:3", "With 3 levels open"], ["isolate:all", "With everything open"],
+  assert.deepEqual(items.map((i) => [i.id, i.label]), [["isolate:all", "Focus here"], ["isolate", "Focus"]]);
+  assert.deepEqual(items[1].items.map((i) => [i.id, i.label]), [
+    ["isolate:1", "With 1 level open"], ["isolate:2", "With 2 levels open"], ["isolate:3", "With 3 levels open"],
   ]);
-  assert.deepEqual(isolateItems({ key: "m", kids: [] }, { can: true }), [{ id: "isolate:1", label: "Focus" }]);
+  assert.deepEqual(isolateItems({ key: "m", kids: [] }, { can: true }), [{ id: "isolate:1", label: "Focus here" }]);
   assert.deepEqual(isolateItems({ key: "a", kids: ["b"] }, { can: false }), []);
+  // A focus on: Clear focus after them, on every row (even one that can't be focused itself).
+  assert.deepEqual(isolateItems({ key: "a", kids: ["b"] }, { can: true, focused: true }).map((i) => i.id), ["isolate:all", "isolate", "focus-clear"]);
+  assert.deepEqual(isolateItems({ key: "m", kids: [] }, { can: true, focused: true }).map((i) => i.label), ["Focus here", "Clear focus"]);
+  assert.deepEqual(isolateItems({ key: "h", kids: ["x"] }, { can: false, focused: true }), [{ id: "focus-clear", label: "Clear focus" }]);
   // Before Delete, with Pin this branch after it.
   const skim = summaryActions({ key: "a", type: "pos", kids: ["b"], ref: {} }, { mode: "positions" });
-  assert.deepEqual(withPin(skim, [...items, { id: "pin" }]).map((i) => i.id), ["tree-new", "report-new", "event-log", "tree-rename", "tree-move", "tree-export", "isolate", "pin", "tree-delete"]);
+  assert.deepEqual(withPin(skim, [...items, { id: "pin" }]).map((i) => i.id), ["tree-new", "report-new", "event-log", "tree-rename", "tree-move", "tree-export", "isolate:all", "isolate", "pin", "tree-delete"]);
 });
 
 test("Add failure report…: positions only (a report sits at a position), greyed when the team is view only", () => {

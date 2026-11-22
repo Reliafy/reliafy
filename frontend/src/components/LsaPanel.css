@@ -92,9 +92,9 @@
 .lsa-hint { margin: 0 0 var(--space-2); }
 .lsa-rows { list-style: none; margin: 0 0 var(--space-1); padding: 0; }
 .lsa-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-2); padding: var(--space-1) 0; }
-.lsa-row input, .lsa-row select, .lsa-duration input { min-width: 0; box-sizing: border-box; }
+.lsa-row input, .lsa-row select, .lsa-duration input, .lsa-row .sel-trigger { min-width: 0; box-sizing: border-box; }
 .lsa-wide { flex: 1 1 11.25rem; }
-.lsa-row select { flex: 1 1 10rem; max-width: 100%; }
+.lsa-row select, .lsa-row .sel-trigger { flex: 1 1 10rem; max-width: 100%; }
 .lsa-num { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--fs-13); white-space: nowrap; }
 .lsa-num input { width: 4.5rem; }
 .lsa-qty { width: 4.5rem; }
@@ -107,7 +107,7 @@
 .lsa-cell-label { font-size: var(--fs-12); line-height: var(--lh-16); font-weight: 500; color: var(--text-secondary); white-space: nowrap; }
 .lsa-cell.lsa-num { display: flex; align-items: stretch; }
 .lsa-cell.lsa-num input { width: 5.5rem; }
-.lsa-cell.lsa-wide input, .lsa-cell.lsa-wide select { width: 100%; max-width: none; }
+.lsa-cell.lsa-wide input, .lsa-cell.lsa-wide select, .lsa-cell.lsa-wide .sel-trigger { width: 100%; max-width: none; }
 .lsa-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(11.25rem, 1fr)); gap: var(--space-2) var(--space-3); }
 .lsa-field { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--fs-13); min-width: 0; }
 .lsa-field input { min-width: 0; }
@@ -129,9 +129,9 @@
 .rw-panel.is-expanded > .mt-form > .rw-pbody { gap: var(--space-4); }
 .rw-pbody.mt-pane { max-width: none; gap: var(--space-4); }
 /* One control height (control-md; control-lg on a phone) for every input, select and button. */
-.mt-form .ctl, .mt-form .sel-trigger, .mt-form .how-often :is(input, select) { min-height: var(--control-md); }
+.mt-form .ctl, .mt-form .sel-trigger, .mt-form .how-often :is(input, select, .sel-trigger) { min-height: var(--control-md); }
 .mt-form .rw-panel-acts button { min-height: var(--control-md); }
-.mt-form select.ctl { padding-block: var(--space-1); }
+.mt-form select.ctl, .mt-form .sel-trigger.ctl { padding-block: var(--space-1); }
 .mt-sec > .field + .field, .mt-sec > .field + .mt-restore-row, .mt-sec > .mt-restore-row + .field { margin-top: var(--space-1); }
 .mt-sec .ctl { width: 100%; }
 .mt-modes { gap: 0; }
@@ -139,6 +139,8 @@
 /* The kind picker (Select.jsx) as a control: the same box, text and weight as the inputs. */
 .mt-form .sel-trigger { font-size: var(--fs-14); line-height: var(--lh-14); font-weight: 400; border-color: var(--border-control); padding: var(--space-1) var(--space-3); }
 .mt-due-basis { display: flex; flex-direction: column; gap: var(--space-1); }
+.mt-rests { display: flex; flex-direction: column; gap: var(--space-1); }
+.mt-rests .mt-moved { color: var(--warning-text); }
 /* Long guidance folded under a short line ("›" turns when open). */
 .mt-more > summary {
   display: inline-flex; align-items: center; gap: var(--space-1); cursor: pointer; list-style: none;
@@ -162,7 +164,7 @@
 }
 .mt-acts-main { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 @media (max-width: 720px) {
-  .mt-form .ctl, .mt-form .sel-trigger, .mt-form .how-often :is(input, select), .mt-form .rw-panel-acts button { min-height: var(--control-lg); }
+  .mt-form .ctl, .mt-form .sel-trigger, .mt-form .how-often :is(input, select, .sel-trigger), .mt-form .rw-panel-acts button { min-height: var(--control-lg); }
   .rw-panel.sheet .rw-panel-acts.mt-acts { bottom: calc(-1 * (var(--space-4) + env(safe-area-inset-bottom, 0px)));
     margin-bottom: calc(-1 * (var(--space-4) + env(safe-area-inset-bottom, 0px)));
     padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom, 0px)); }

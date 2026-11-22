@@ -24,7 +24,7 @@
   font-size: var(--fs-13);
 }
 
-.rbd-runs-filter select {
+.rbd-runs-filter select, .rbd-runs-filter .sel-trigger {
   min-height: 36px;
   max-width: 100%;
   font-size: var(--fs-14);
@@ -61,7 +61,7 @@
   .rbd-runs-ci {
     display: block;
   }
-  .rbd-runs-filter select {
+  .rbd-runs-filter select, .rbd-runs-filter .sel-trigger {
     min-height: 44px;
     max-width: 60vw;
   }

@@ -874,7 +874,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
       if (e.key !== "c" && e.key !== "C") return;
       if (e.metaKey || e.ctrlKey || e.altKey || !ownsKey(e)) return;
       const el = e.target;
-      if (el?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el?.tagName)) return;
+      if (el?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el?.tagName) || el?.closest?.(".sel-trigger, .sel-menu")) return;
       e.preventDefault();
       connectSelected();
     };
@@ -1618,7 +1618,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     const onKey = (e) => {
       if (e.key !== "F2" || !ownsKey(e)) return;
       const el = e.target;
-      if (el?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el?.tagName)) return;
+      if (el?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el?.tagName) || el?.closest?.(".sel-trigger, .sel-menu")) return;
       const chosen = liveRef.current.nodes.filter((n) => n.selected && n.type !== "input" && n.type !== "output");
       // One block selected, or of several the one clicked last.
       const last = clickOrder.current.ids[clickOrder.current.ids.length - 1];

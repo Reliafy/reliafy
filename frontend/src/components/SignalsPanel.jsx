@@ -21,6 +21,7 @@ import { usePanelMenu } from "../panelMenu.js";
 import { tabPlace } from "../explorerTabs.js";
 import "./SignalsPanel.css";
 import Loading from "./ui/Loading.jsx";
+import { Select } from "./ui/Controls.jsx";
 
 const flag = (key, fallback = false) => {
   try {
@@ -142,9 +143,9 @@ function ChannelList({ target, what, onStored, quiet = false, addAsk = 0 }) {
         <div className="sg-bar">
           {list.length > 1 ? (
             <label className="sg-field">Channel
-              <select value={channel.id} onChange={(e) => setPicked(e.target.value)}>
+              <Select value={channel.id} onChange={(e) => setPicked(e.target.value)}>
                 {list.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              </Select>
             </label>
           ) : <strong className="sg-name">{channel.name}</strong>}
           <button type="button" className="secondary sm" onClick={() => setAdding(true)}>Add a channel</button>
@@ -554,20 +555,20 @@ export function ChannelView({ summary, all, onChanged, focusBands = false }) {
             <h3 className="sg-h">Spectrum</h3>
             {axes.length > 1 && (
               <label className="sg-field">Axis
-                <select value={axis} onChange={(e) => setAxis(e.target.value)}>{axes.map((a) => <option key={a}>{a}</option>)}</select>
+                <Select value={axis} onChange={(e) => setAxis(e.target.value)}>{axes.map((a) => <option key={a}>{a}</option>)}</Select>
               </label>
             )}
             <label className="sg-field">Add a snapshot
-              <select value="" onChange={(e) => e.target.value && setPicked((p) => (p.includes(e.target.value) ? p : [...p, e.target.value].slice(-8)))}>
+              <Select value="" onChange={(e) => e.target.value && setPicked((p) => (p.includes(e.target.value) ? p : [...p, e.target.value].slice(-8)))}>
                 <option value="">Choose…</option>
                 {[...withSpectrum].reverse().map((s) => <option key={s.id} value={s.id}>{fmtWhen(s.t)}{s.running === false ? " (stopped)" : ""}</option>)}
-              </select>
+              </Select>
             </label>
             <label className="sg-field">Baseline
-              <select value={baseline || ""} onChange={(e) => setBaseline(e.target.value || null)}>
+              <Select value={baseline || ""} onChange={(e) => setBaseline(e.target.value || null)}>
                 <option value="">None</option>
                 {withSpectrum.map((s) => <option key={s.id} value={s.id}>{fmtWhen(s.t)}</option>)}
-              </select>
+              </Select>
             </label>
           </div>
           <div className="sg-toggles">
@@ -613,10 +614,10 @@ export function ChannelView({ summary, all, onChanged, focusBands = false }) {
           <div className="sg-bar">
             <h3 className="sg-h">Level over time</h3>
             <label className="sg-field">Band
-              <select value={bandSel} onChange={(e) => setBandSel(e.target.value)}>
+              <Select value={bandSel} onChange={(e) => setBandSel(e.target.value)}>
                 <option value="preview">{range ? "The range picked above (not saved)" : "Pick a range above"}</option>
                 {bands.map((b) => <option key={b.point_id} value={b.point_id}>{b.name}</option>)}
-              </select>
+              </Select>
             </label>
           </div>
           {bandSeries && bandSeries.length > 0 ? (
@@ -716,10 +717,10 @@ function BandForm({ range, setRange, rpm, onSave, axis, xUnit }) {
       <label className="sg-field">Name<input value={name} onChange={(e) => setName(e.target.value)} placeholder={suggested || "Band name"} maxLength={200} /></label>
       {rpm && !orders ? (
         <label className="sg-field">Follow
-          <select value={unit} onChange={(e) => setUnit(e.target.value)}>
+          <Select value={unit} onChange={(e) => setUnit(e.target.value)}>
             <option value="Hz">These Hz</option>
             <option value="orders">Running speed ({fmt(rpm, 4)} rpm)</option>
-          </select>
+          </Select>
         </label>
       ) : null}
       <button type="submit" disabled={!valid || busy}>{busy ? "Saving…" : "Watch this range"}</button>
@@ -744,9 +745,9 @@ function Player({ times, withSpectrum, head, playing, loop, setLoop, speed, setS
              aria-label="Snapshot" aria-valuetext={fmtWhen(withSpectrum[shown].t)} />
       <output className="sg-date" aria-live="off">{fmtWhen(withSpectrum[shown].t)}</output>
       <label className="sg-field sg-inline">Speed
-        <select value={speed} onChange={(e) => setSpeed(Number(e.target.value))}>
+        <Select value={speed} onChange={(e) => setSpeed(Number(e.target.value))}>
           {SPEEDS.map((s) => <option key={s} value={s}>{s}×</option>)}
-        </select>
+        </Select>
       </label>
       <Switch className="sg-check" checked={loop} onChange={setLoop} label="Loop" />
       <Switch className="sg-check" checked={fade} onChange={setFade} label="Smooth transition (display only)" />
@@ -768,7 +769,7 @@ function ScalarSeries({ ch, axis, axes, setAxis }) {
       <div className="sg-bar">
         <h3 className="sg-h">Readings</h3>
         {axes.length > 1 && (
-          <label className="sg-field">Axis<select value={axis} onChange={(e) => setAxis(e.target.value)}>{axes.map((a) => <option key={a}>{a}</option>)}</select></label>
+          <label className="sg-field">Axis<Select value={axis} onChange={(e) => setAxis(e.target.value)}>{axes.map((a) => <option key={a}>{a}</option>)}</Select></label>
         )}
       </div>
       <Plot data={[{ type: "scatter", mode: "lines+markers", x: rows.map((r) => r.t), y: rows.map((r) => r.v),
@@ -812,10 +813,10 @@ function ChannelSettings({ ch, all, onSaved }) {
           <input type="number" inputMode="decimal" min="0" step="any" value={rpm} onChange={(e) => setRpm(e.target.value)} />
         </label>
         <label className="sg-field">Or take the speed from
-          <select value={src} onChange={(e) => setSrc(e.target.value)}>
+          <Select value={src} onChange={(e) => setSrc(e.target.value)}>
             <option value="">No speed channel</option>
             {speedChannels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          </Select>
         </label>
         <button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
         {err && <p className="sg-note sg-bad" role="alert">{err}</p>}

@@ -65,6 +65,7 @@ import { countIsOld, countedText } from "../sparesYear.js";
 import { itemTreePath, productPath } from "../products.js";
 import { DateInput } from "../components/ui/DateTimeInput.jsx";
 import Loading from "../components/ui/Loading.jsx";
+import { Select } from "../components/ui/Controls.jsx";
 
 const crumbs = [{ label: "Assets", to: "/asset-register" }];
 
@@ -94,10 +95,10 @@ export function NewItemModal({ locations, locationId = null, onClose, onDone }) 
         <input value={serial} onChange={(e) => setSerial(e.target.value)} placeholder="e.g. SK-0042" />
       </Field>
       <Field label="Where it is">
-        <select value={where} onChange={(e) => setWhere(e.target.value)}>
+        <Select value={where} onChange={(e) => setWhere(e.target.value)}>
           <option value="">Nowhere yet (no home)</option>
           {locations.map((l) => <option key={l.id} value={l.id}>{l.parent ? `${l.parent.name} › ` : ""}{l.name}</option>)}
-        </select>
+        </Select>
       </Field>
     </FormModal>
   );
@@ -133,10 +134,10 @@ export function NewLocationModal({ locations, parentId = null, asset = false, de
       </Field>
       {!asset && (
         <Field label="Inside">
-          <select value={parent} onChange={(e) => setParent(e.target.value)}>
+          <Select value={parent} onChange={(e) => setParent(e.target.value)}>
             <option value="">{designOf ? `None (the top of ${layoutName || "the product"}'s layout)` : "None (top level: an asset)"}</option>
             {locations.map((l) => <option key={l.id} value={l.id}>{l.parent ? `${l.parent.name} › ` : ""}{l.name}</option>)}
-          </select>
+          </Select>
         </Field>
       )}
     </FormModal>
@@ -493,7 +494,7 @@ export function ClassesPanel({ here = [], scopeName = "", all = false, onAll, op
 // `name`: the class's key (what the reads take); `label`: the class as shown.
 function ClassPanel({ name, label = name, unit = "days", onUnit, onChanged }) {
   const [c, setC] = useState(null);
-  const [costs, setCosts] = useState({ planned_cost: "", failure_cost: "", availability_target: "" });
+  const [costs, setCosts] = useState({ planned_cost: "", failure_cost: "", availability_target: "", downtime_hours: "", downtime_rate: "" });
   const [distribution, setDistribution] = useState("weibull");
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
@@ -504,6 +505,7 @@ function ClassPanel({ name, label = name, unit = "days", onUnit, onChanged }) {
       setCosts({
         planned_cost: d.costs?.planned_cost ?? "", failure_cost: d.costs?.failure_cost ?? "",
         availability_target: d.costs?.availability_target ?? "",
+        downtime_hours: d.costs?.downtime_hours ?? "", downtime_rate: d.costs?.downtime_rate ?? "",
       });
     }).catch((e) => setError(e.message));
   }, [name]);
@@ -530,8 +532,13 @@ function ClassPanel({ name, label = name, unit = "days", onUnit, onChanged }) {
         <div className="rcm-form">
           <Field label="A planned replacement costs"><input type="number" inputMode="decimal" min="0" step="any" value={costs.planned_cost}
                  onChange={(e) => setCosts({ ...costs, planned_cost: e.target.value })} /></Field>
-          <Field label="A failure costs (repair, downtime, damage)"><input type="number" inputMode="decimal" min="0" step="any" value={costs.failure_cost}
+          <Field label="A failure costs to put right (repair, parts, damage)"><input type="number" inputMode="decimal" min="0" step="any" value={costs.failure_cost}
                  onChange={(e) => setCosts({ ...costs, failure_cost: e.target.value })} /></Field>
+          <Field label="A failure keeps it out of use (hours)" help="The default for its positions' failure modes; a mode's own figure wins.">
+            <input type="number" inputMode="decimal" min="0" step="any" value={costs.downtime_hours}
+                   onChange={(e) => setCosts({ ...costs, downtime_hours: e.target.value })} /></Field>
+          <Field label="An hour out of use costs" optional><input type="number" inputMode="decimal" min="0" step="any" value={costs.downtime_rate}
+                 onChange={(e) => setCosts({ ...costs, downtime_rate: e.target.value })} /></Field>
           <Field label="Hidden functions must be available (e.g. 0.99)"><input type="number" inputMode="decimal" min="0" max="1" step="any"
                  value={costs.availability_target} onChange={(e) => setCosts({ ...costs, availability_target: e.target.value })} /></Field>
         </div>
@@ -540,15 +547,15 @@ function ClassPanel({ name, label = name, unit = "days", onUnit, onChanged }) {
           {units.length > 1 && (
             <label className="lib-date" style={{ display: "inline-flex", gap: "0.4rem", alignItems: "center" }}>
               Count lives in
-              <select value={unit} onChange={(e) => onUnit?.(e.target.value)}>
+              <Select value={unit} onChange={(e) => onUnit?.(e.target.value)}>
                 {[...new Set([...units, unit])].map((u) => <option key={u} value={u}>{unitLabel(u)}</option>)}
-              </select>
+              </Select>
             </label>
           )}
-          <select value={distribution} onChange={(e) => setDistribution(e.target.value)}>
+          <Select value={distribution} onChange={(e) => setDistribution(e.target.value)}>
             <option value="weibull">Weibull</option><option value="best">Best fit</option>
             <option value="lognormal">Lognormal</option><option value="exponential">Exponential</option>
-          </select>
+          </Select>
           <button onClick={fit} disabled={busy === "fit" || c.failures < 2}>
             {busy === "fit" ? "Fitting…" : model ? "Refit the non-repairable model" : "Fit a non-repairable model"}
           </button>
@@ -625,9 +632,9 @@ function EconomicsCard({ name, label = name, modelUnit = "days" }) {
       <div className="maint-row" style={{ marginTop: 0 }}>
         <span className="lib-date">What if every</span>
         <input type="number" inputMode="decimal" min="0" step="any" value={whatIf} style={{ width: "5rem" }} onChange={(e) => setWhatIf(e.target.value)} />
-        <select value={unit} onChange={(e) => setUnit(e.target.value)}>
+        <Select value={unit} onChange={(e) => setUnit(e.target.value)}>
           {[...(byUse ? [modelUnit] : []), "days", "weeks", "months", "years"].map((u) => <option key={u} value={u}>{u}</option>)}
-        </select>
+        </Select>
         <span className="lib-date">over</span>
         <input type="number" inputMode="numeric" min="1" max="100" value={years} style={{ width: "4rem" }} onChange={(e) => setYears(e.target.value)} />
         <span className="lib-date">years at</span>
@@ -691,10 +698,10 @@ export function ForecastCard({ name, label = name, show = "all", note = null }) 
         <span className="lib-date">Next</span>
         <input type="number" inputMode="numeric" min="1" max={most} value={periods} style={{ width: "4.5rem" }}
                aria-label="How many periods" onChange={(e) => setPeriods(e.target.value)} />
-        <select value={period} aria-label="Period"
+        <Select value={period} aria-label="Period"
                 onChange={(e) => { setPeriod(e.target.value); setPeriods({ month: 12, quarter: 4, year: 3 }[e.target.value]); }}>
           {FORECAST_PERIODS.map((p) => <option key={p.id} value={p.id}>{p.label.toLowerCase()}</option>)}
-        </select>
+        </Select>
         <button className="secondary" onClick={load}>Forecast</button>
       </div>
       {error && <div className="card error">{error}</div>}
@@ -1032,10 +1039,10 @@ export function StockModal({ part, locations, onClose, onDone }) {
                  onDone();
                }}>
       <Field label="Location">
-        <select value={loc} onChange={(e) => setLoc(e.target.value)}>
+        <Select value={loc} onChange={(e) => setLoc(e.target.value)}>
           <option value="">{locations.length ? "Choose…" : "Add a location first"}</option>
           {locations.map((l) => <option key={l.id} value={l.id}>{l.parent ? `${l.parent.name} › ` : ""}{l.name}</option>)}
-        </select>
+        </Select>
       </Field>
       <SegmentedControl label="What happened" value={mode} onChange={(v) => { setMode(v); setQty(""); }}
                         options={[{ value: "move", label: "Received or issued" }, { value: "count", label: "Counted" }]} />

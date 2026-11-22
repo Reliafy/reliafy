@@ -383,8 +383,11 @@ FAILURE_MODES: Table = {
         mode on a position: how it fails ('Bearing worn'); functional_failure_id puts it under one of the
         position's functional failures, function_id directly under a function (no functional failure yet).
         Failures and tasks then name it by id."""),
-    "update": ("failure_mode_id", "text effects notes function failure consequence", """Edit one (editing an
-        ad-hoc mode confirms it). effects and notes are its RCM analysis."""),
+    "update": ("failure_mode_id", "text effects notes function failure consequence failure_cost downtime_hours "
+               "downtime_rate clear", """Edit one (editing an ad-hoc mode confirms it). effects and notes are its
+        RCM analysis. failure_cost (one failure, all repairs), downtime_hours (out of use per failure) and
+        downtime_rate (an hour out of use): what the forecast and Optimise charge a failure; a figure not set takes
+        the position class's. clear: those figures to unset."""),
     "score": ("failure_mode_id", "severity occurrence detection cause effect_local effect_next effects "
               "detection_method recommended_action action_owner action_due action_status failure_rate time_unit "
               "rate_source mode_ratio loss_probability operating_time severity_class clear", """Its FME(C)A:
@@ -730,10 +733,11 @@ STRUCTURE_ACTIONS = ("add_component", "update_component", "remove_component", "s
 
 RELIABILITY: Table = {
     "set_class_costs": ("position_class", "planned_cost failure_cost availability_target replacement_cost "
-                        "clear_replacement_cost", """What a planned replacement and a failure cost for a position
-        class (same currency), and the availability a hidden function must reach (e.g. 0.99): proposed
-        intervals are optimised against them. replacement_cost: the default for items with none of their
-        own. Returns the class."""),
+                        "clear_replacement_cost downtime_hours downtime_rate", """What a planned replacement and a
+        failure cost for a position class (same currency), and the availability a hidden function must reach
+        (e.g. 0.99): proposed intervals are optimised against them. replacement_cost: the default for items with
+        none of their own. downtime_hours (out of use per failure) and downtime_rate (an hour out of use): the
+        default for its positions' failure modes (a mode's own figure wins). Returns the class."""),
     "fit_class_model": ("position_class", "distribution unit", """Pro. Fit a life distribution (weibull default, best,
         lognormal, exponential, gamma) to every fitment of the class's positions, save it as a model and
         propose task intervals from it and the costs. Needs at least 2 failures (exponential: 1, a constant
@@ -893,6 +897,16 @@ RCM: Table = {
         the target. A model in a unit of use (cycles, flight hours) answers in it, with a target and no costs.
         save_evidence true, with failure_mode_id (task_id optional): as pf_interval's. With task_id and demand_rate
         but no test_cost, the task's own cost is used (task_cost_used)."""),
+    "optimise_task": ("task_id", "failure_mode_id model_type model_id planned_cost unplanned_cost pf_interval pf_unit "
+                                 "act_time target_unavailability use", """The app's Optimise… on a task: how
+        often to do it, for each failure mode it prevents, from that mode's life model (the one an earlier
+        Optimise used, the decision's evidence or the position's model; model_type model or degradation_model
+        + model_id to choose). Replace or restore: the cost-optimal age with its range across the model's 90%
+        parameter bounds (planned_cost defaults to the task's cost, unplanned_cost to the one saved before or
+        its class's); condition check: half the P-F interval (pf_interval, pf_unit, act_time); hidden
+        function: the test interval for target_unavailability (default 0.01). Each mode's use is the interval
+        in the task's unit. use true (with failure_mode_id when it prevents several): sets the task's
+        interval, saves the calculation as the mode's evidence and adds a line to its notes."""),
 }
 
 
@@ -1838,8 +1852,15 @@ def register() -> None:
                                   mode_ratio: float | None = None, loss_probability: float | None = None,
                                   operating_time: float | None = None,
                                   severity_class: Literal["I", "II", "III", "IV"] | None = None,
+                                  failure_cost: Annotated[float | None, Field(ge=0, description=(
+                                      "update: what one failure costs to put right."))] = None,
+                                  downtime_hours: Annotated[float | None, Field(ge=0, description=(
+                                      "update: hours out of use per failure."))] = None,
+                                  downtime_rate: Annotated[float | None, Field(ge=0, description=(
+                                      "update: what an hour out of use costs."))] = None,
                                   clear: Annotated[list[str] | None, Field(description=(
-                                      "score: FME(C)A fields to unset (severity, cause, action...)."))] = None
+                                      "score: FME(C)A fields to unset (severity, cause, action...); update: "
+                                      "failure_cost, downtime_hours, downtime_rate."))] = None
                                   ) -> dict[str, Any]:
         """Failure modes and a position's RCM: functions › performance standards › functional failures (each
         breaching one standard, or the whole function) › failure modes, each with its decision. Read it with
@@ -1850,7 +1871,20 @@ def register() -> None:
             return run(m.add_failure_mode, position_id, text, function or "", failure or "", consequence or "",
                        functional_failure_id, function_id)
         if action == "update":
-            return run(m.update_failure_mode, failure_mode_id, text, function, failure, consequence, effects, notes)
+            from backend.maintenance import failure_costs
+
+            costs = {k: v for k, v in (("failure_cost", failure_cost), ("downtime_hours", downtime_hours),
+                                       ("downtime_rate", downtime_rate)) if v is not None}
+            costs.update({k: None for k in clear or [] if k in failure_costs.FIELDS})
+
+            def go():
+                words = (text, function, failure, consequence, effects, notes)
+                out = m.update_failure_mode(failure_mode_id, *words) if any(w is not None for w in words) or not costs \
+                    else m._mode_view(m._get(failure_mode_id, "FailureMode"))
+                if costs:
+                    out = {**out, "costs": m.set_mode_costs(failure_mode_id, **costs)}
+                return out
+            return run(go)
         if action == "score":
             from backend.maintenance import fmea
 
@@ -2597,6 +2631,10 @@ def register() -> None:
                                 planned_cost: float | None = None, failure_cost: float | None = None,
                                 availability_target: float | None = None, replacement_cost: ReplacementCost = None,
                                 clear_replacement_cost: bool | None = None,
+                                downtime_hours: Annotated[float | None, Field(ge=0, description=(
+                                    "set_class_costs: hours out of use per failure."))] = None,
+                                downtime_rate: Annotated[float | None, Field(ge=0, description=(
+                                    "set_class_costs: what an hour out of use costs."))] = None,
                                 distribution: Literal["weibull", "best", "lognormal", "exponential", "gamma"] | None
                                 = None,
                                 unit: Annotated[str | None, Field(description=(
@@ -2610,6 +2648,9 @@ def register() -> None:
             def go():
                 if (planned_cost, failure_cost, availability_target) != (None, None, None):
                     m.set_class_costs(position_class, planned_cost, failure_cost, availability_target)
+                if (downtime_hours, downtime_rate) != (None, None):
+                    m.set_class_downtime(position_class, ... if downtime_hours is None else downtime_hours,
+                                         ... if downtime_rate is None else downtime_rate)
                 if replacement_cost is not None or clear_replacement_cost:
                     m.set_class_replacement_cost(position_class, None if clear_replacement_cost else replacement_cost)
                 return m.position_class(position_class)
@@ -2988,16 +3029,33 @@ def register() -> None:
                         demand_rate: float | None = None, consequence_cost: float | None = None,
                         unit: str | None = None, current_interval: float | None = None,
                         current_unit: str | None = None, failure_mode_id: str | None = None,
-                        task_id: str | None = None, save_evidence: bool | None = None) -> dict[str, Any]:
+                        task_id: str | None = None, save_evidence: bool | None = None,
+                        model_type: Literal["model", "degradation_model"] | None = None,
+                        planned_cost: float | None = None, unplanned_cost: float | None = None,
+                        use: bool | None = None) -> dict[str, Any]:
         """The interval calculators on an RCM task card: on condition (the P-F calculator) and failure finding.
         save_evidence (with failure_mode_id; task_id: which of its tasks, else its first of the kind): use the
-        answer as the app's "Use" does (rcm_apply_interval)."""
+        answer as the app's "Use" does (rcm_apply_interval). optimise_task: the app's Optimise… on a task
+        (task_optimise.py)."""
         from backend.mcp_server import _owners
         from backend.services import models as models_service
         from backend.services import rcm_intervals
         from backend.services.strategy import StrategyError
 
         m = m_for(ctx)  # Maintenance users only, like the rest of the tool
+        if action == "optimise_task":
+            from backend.maintenance import task_optimise
+            from backend.mcp_server import _require_scope
+
+            owners = _owners(_caller(ctx)["uid"])
+            args = {"failure_mode_id": failure_mode_id, "planned_cost": planned_cost, "unplanned_cost": unplanned_cost,
+                    "pf_interval": pf_interval, "pf_unit": pf_unit, "act_time": act_time,
+                    "target_unavailability": target_unavailability,
+                    "model": {"type": model_type or "model", "id": model_id} if model_id else None}
+            if not use:
+                return run(task_optimise.optimise, m, _db(), owners, frozenset(), task_id, **args)
+            _require_scope(ctx, "write")  # the call writes: a read-only token can't
+            return run(task_optimise.use, m, _db(), owners, frozenset(), _caller(ctx)["uid"], task_id, **args)
         if save_evidence and not failure_mode_id:
             raise ToolError("save_evidence needs failure_mode_id: the failure mode whose task takes the interval.")
         # The task's own cost (its position's figure, task_costs.py) where a priced call leaves it out:
