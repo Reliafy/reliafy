@@ -201,6 +201,15 @@ hours), tasks, labour_hours (from each task's LSA labour), planned_cost (each ta
 and failure_cost (expected), with failures_range / cost_range when one model is forecast, and due: the tasks \
 done that period. totals: the same for the whole forecast, with its range. Ranges are 90%: the 5th to 95th \
 percentile of outcomes; with several positions the total's range assumes they fail independently.
+- Cost split (rows and totals): planned_cost = labour_cost + materials_cost (each task's LSA lines) + \
+other_planned_cost (a typed cost its LSA doesn't explain); unplanned_cost (= failure_cost) = failures x what a \
+failure costs (failure_cost + downtime_hours x downtime_rate, on the failure mode, else its position class: \
+failure_modes.update, reliability.set_class_costs); downtime_hours, downtime_cost; total_cost; total_complete \
+false when a life forecast has no failure cost. cost_basis says what each rests on.
+- prompts: what to enter for the forecast to count more, each with a link: no_failure_cost (failure modes), \
+no_pf (on-condition checks with no P-F calculation as evidence), no_effect (tasks with no modelled effect on \
+failures, and why). A fixed-interval task with no restoration set is as new, except servicing work by its \
+name (grease, clean, adjust...): restores none, shown as assumed.
 - tasks: each task's dates (each assumed done on its due date: an interval counts again from then, a pattern \
 keeps its dates; a date set by hand comes first; overdue shows at the start) and rests_on: on the calendar, or \
 the hours map it went by. hours_basis says where the position's hours come from: its operating plan (own or \

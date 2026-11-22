@@ -494,7 +494,7 @@ export function ClassesPanel({ here = [], scopeName = "", all = false, onAll, op
 // `name`: the class's key (what the reads take); `label`: the class as shown.
 function ClassPanel({ name, label = name, unit = "days", onUnit, onChanged }) {
   const [c, setC] = useState(null);
-  const [costs, setCosts] = useState({ planned_cost: "", failure_cost: "", availability_target: "" });
+  const [costs, setCosts] = useState({ planned_cost: "", failure_cost: "", availability_target: "", downtime_hours: "", downtime_rate: "" });
   const [distribution, setDistribution] = useState("weibull");
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
@@ -505,6 +505,7 @@ function ClassPanel({ name, label = name, unit = "days", onUnit, onChanged }) {
       setCosts({
         planned_cost: d.costs?.planned_cost ?? "", failure_cost: d.costs?.failure_cost ?? "",
         availability_target: d.costs?.availability_target ?? "",
+        downtime_hours: d.costs?.downtime_hours ?? "", downtime_rate: d.costs?.downtime_rate ?? "",
       });
     }).catch((e) => setError(e.message));
   }, [name]);
@@ -531,8 +532,13 @@ function ClassPanel({ name, label = name, unit = "days", onUnit, onChanged }) {
         <div className="rcm-form">
           <Field label="A planned replacement costs"><input type="number" inputMode="decimal" min="0" step="any" value={costs.planned_cost}
                  onChange={(e) => setCosts({ ...costs, planned_cost: e.target.value })} /></Field>
-          <Field label="A failure costs (repair, downtime, damage)"><input type="number" inputMode="decimal" min="0" step="any" value={costs.failure_cost}
+          <Field label="A failure costs to put right (repair, parts, damage)"><input type="number" inputMode="decimal" min="0" step="any" value={costs.failure_cost}
                  onChange={(e) => setCosts({ ...costs, failure_cost: e.target.value })} /></Field>
+          <Field label="A failure keeps it out of use (hours)" help="The default for its positions' failure modes; a mode's own figure wins.">
+            <input type="number" inputMode="decimal" min="0" step="any" value={costs.downtime_hours}
+                   onChange={(e) => setCosts({ ...costs, downtime_hours: e.target.value })} /></Field>
+          <Field label="An hour out of use costs" optional><input type="number" inputMode="decimal" min="0" step="any" value={costs.downtime_rate}
+                 onChange={(e) => setCosts({ ...costs, downtime_rate: e.target.value })} /></Field>
           <Field label="Hidden functions must be available (e.g. 0.99)"><input type="number" inputMode="decimal" min="0" max="1" step="any"
                  value={costs.availability_target} onChange={(e) => setCosts({ ...costs, availability_target: e.target.value })} /></Field>
         </div>

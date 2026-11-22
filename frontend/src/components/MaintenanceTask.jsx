@@ -404,6 +404,12 @@ function RestorationFields({ f, setF, task, problem }) {
           : `An overhaul that takes away ${f.restores || "X"}% of ${f.restoreKind === "kijima1" ? "the age gained since the last task" : "its whole age"}: 100% is as good as new, 0% as old as before.`}
         {f.replaceEvery !== "" && f.replacementCost === "" ? " With no replacement cost, a replacement is charged nothing until you set one." : ""}
       </p>
+      {r?.source === "assumed" && (
+        <p className="field-help" role="note">
+          Not set yet: taken as restoring none of its age, as servicing work (greasing, cleaning, adjusting) usually
+          does, so the forecast counts no failures off for it. Choose As new if it replaces or fully restores the item.
+        </p>
+      )}
       {r?.source === "decision" && (
         <p className="field-help" role="note">
           Its failure modes&apos; decisions set this for themselves ({r.by_mode.map((x) => `${x.text}: ${x.words}`).join("; ")}).

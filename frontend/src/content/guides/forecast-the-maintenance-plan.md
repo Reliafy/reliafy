@@ -28,13 +28,15 @@ level with the tree still beside it. Choose **Months**, **Quarters** or
 
 The answer comes first, in a sentence:
 
-> To 30 Nov 2027: **58** tasks, about **46** labour hours; **0.62** failures
-> expected (0 to 1, 90% range), about **$2,990**.
+> To 30 Nov 2027: **58** tasks, about **46** labour hours, **$2,800** planned;
+> **0.62** failures expected (0 to 1, 90% range), about **$2,990**; about
+> **$5,790** in all (**$2,800** planned, **$2,990** unplanned).
 
 Under it, a line says where the hours came from (the operating plan, or the
 hours counter's recent rate). Then a table by month, quarter or year:
 **Operating hours**, **Tasks**, **Labour hours**, **Planned cost**, **Expected
-failures**, **Failure cost**, and **Besides the routine**, which names the jobs that fall
+failures**, **Unplanned cost**, **Downtime** (when a failure's downtime is set),
+**Total cost**, and **Besides the routine**, which names the jobs that fall
 due only a few times in the forecast (a service, an overhaul), with their dates,
 so the weekly round doesn't fill every row. Hover a column's heading to see what it rests
 on. The table scrolls inside its card on a phone. Ranges are 90% of outcomes
@@ -68,8 +70,50 @@ weren't, with the reason. A life model that was typed in, not fitted from data,
 is flagged as a placeholder.
 
 Other folds: **Tasks on dates** lists every task with its dates and cost each
-time; **By position** splits the answer by what's inside; **Left out** names
-everything not forecast.
+time; **By position** splits the answer by what's inside; **Cost by kind** splits
+the cost (below); **Left out** names everything not forecast.
+
+## Planned and unplanned cost
+
+The cost to come is in two parts, each saying what it rests on:
+
+- **Planned:** each task's cost each time, times the times it falls due.
+  **Cost by kind** splits it into **Labour** (the task's LSA labour at the
+  trade rates) and **Parts and consumables** (its LSA lines). A cost typed on a
+  task that its LSA doesn't explain is **Other planned**.
+- **Unplanned:** the expected failures times what one failure costs: its
+  repair, plus the hours it keeps the asset out of use times the cost of an
+  hour out of use.
+
+**What a failure costs** is entered on the failure mode, on the **RCM** tab:
+pick the failure mode, and under its consequence fill in **A failure costs**,
+**Out of use per failure** and, if an hour out of use costs something on top,
+**An hour out of use costs**. A figure left empty takes the one set on the
+position's class, shown in the box. A life that covers several failure modes
+takes the costliest of them, and says so. With no failure cost anywhere, the
+failures still show, but the unplanned cost leaves them out and the total
+shows **+ ?**.
+
+## What to enter
+
+When something would make the forecast count more, **What to enter** lists it,
+each with a link straight to where you enter it:
+
+- **Failure modes with no failure cost:** open the failure mode and enter what
+  one failure costs.
+- **Checks with no P-F interval:** an on-condition check counts once its
+  failure mode's decision has a P-F calculation as its evidence (the check
+  interval calculator saves one).
+- **Tasks with no modelled effect on failures:** their cost counts, but the
+  failures are as they would be without them. A task's line says why: it serves
+  no failure mode, its failure mode has no life model, or it restores none of
+  the item's age.
+
+A fixed-interval task with nothing set for what it leaves the item as is taken
+as a renewal (as good as new), except servicing work, whose name starts with
+greasing, cleaning, adjusting, tightening and the like: that is taken to
+restore none of the age. The task's **What it leaves the item as** says when
+it's assumed, and you can change it there or on the failure mode's decision.
 
 ## Compare two plans
 
@@ -87,8 +131,12 @@ Two plans for the same equipment give different failures, not only different
 costs. A ride-on mower on its maker's 25-hour plan, where the spark plugs are
 only inspected, expects about 3.3 breakdowns per 600 operating hours. On a
 50-hour plan that replaces the plugs every 100 hours, it expects about 1.5.
-Read the **Expected failures** and **Failure cost** columns beside **Planned
-cost**: a plan that does less work costs less in tasks and more in failures.
+Read the **Expected failures** and **Unplanned cost** columns beside **Planned
+cost**, and **Total cost** for both: a plan that does less work costs less in
+tasks and more in failures. With a failure cost of $900 a spark plug and $900 a
+spindle bearing, the 25-hour plan's failures cost about $2,900 per 600 hours
+in the long run, and the 50-hour plan's about $1,400. A new mower fails less in
+its first year than in the long run, so the first year's figures are lower.
 
 The change is real while you try it, so put it back when you've read the
 answer. A saved side by side of two plans isn't in the app yet.

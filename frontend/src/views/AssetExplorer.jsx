@@ -852,6 +852,17 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setPanel(true);
   }, [viewParam, display]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // A link to a failure mode on the RCM tab (?fm=: the forecast's What to enter): its row picked and
+  // its details open beside the table (its failure cost, its decision), once it's in the tree.
+  const fmParam = rcmOn ? params.get("fm") : null;
+  const fmShown = useRef(null);
+  useEffect(() => {
+    if (!fmParam || fmShown.current === fmParam || !display.rows.has(fmParam)) return;
+    fmShown.current = fmParam;
+    reveal(fmParam);
+    setPanel(true);
+  }, [fmParam, display]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const openAfter = useRef(null);
   useEffect(() => {
     const key = openAfter.current;
