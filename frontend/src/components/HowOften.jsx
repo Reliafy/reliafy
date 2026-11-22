@@ -1,6 +1,7 @@
 import { formatDate } from "../dates.js";
 import { MONTH_NAMES, NTH_CHOICES, WEEKDAY_NAMES, isCalendar, patternOf, patternsFor, unitWord } from "../howOften.js";
 import "./HowOften.css";
+import { Select } from "./ui/Controls.jsx";
 
 // "How often": one control for a task and for a work package (howOften.js holds the logic).
 // It reads as a sentence with pickers, and wraps on a phone:
@@ -39,31 +40,31 @@ export default function HowOften({ value, onChange, units, withAlso = false, pat
           <span className="ho-word">Every</span>
           <input className="ctl ho-num" type="number" inputMode="decimal" min="0" step="any" value={value.every}
                  onChange={set("every")} disabled={disabled} aria-label="How many" />
-          <select className="ctl" value={value.unit} onChange={set("unit")} disabled={disabled} aria-label="Unit">
+          <Select value={value.unit} onChange={set("unit")} disabled={disabled} aria-label="Unit">
             {units.map((u) => <option key={u} value={u}>{unitWord(u, n)}</option>)}
-          </select>
+          </Select>
         </span>
         {offered.length > 1 && (
           <>
             <span className="ho-word">on</span>
             {value.unit === "weeks" ? (
-              <select className="ctl" value={pattern === "weekday" ? value.weekday : "none"} disabled={disabled} aria-label="Day of the week"
+              <Select value={pattern === "weekday" ? value.weekday : "none"} disabled={disabled} aria-label="Day of the week"
                       onChange={(e) => onChange({ ...value, pattern: e.target.value === "none" ? "none" : "weekday",
                         weekday: e.target.value === "none" ? value.weekday : e.target.value })}>
                 <option value="none">any day (counted on)</option>
                 {WEEKDAY_NAMES.map((d) => <option key={d} value={d}>{d}</option>)}
-              </select>
+              </Select>
             ) : (
-              <select className="ctl" value={onValue} onChange={setOn} disabled={disabled} aria-label="Which day">
+              <Select value={onValue} onChange={setOn} disabled={disabled} aria-label="Which day">
                 <option value="none">{value.unit === "years" ? "the same date" : "the same day of the month"}</option>
                 {NTH_CHOICES.map(([v, w]) => <option key={v} value={`nth:${v}`}>{w}</option>)}
                 <option value="day">a date</option>
-              </select>
+              </Select>
             )}
             {pattern === "nth" && (
-              <select className="ctl" value={value.weekday} onChange={set("weekday")} disabled={disabled} aria-label="Day of the week">
+              <Select value={value.weekday} onChange={set("weekday")} disabled={disabled} aria-label="Day of the week">
                 {WEEKDAY_NAMES.map((d) => <option key={d} value={d}>{d}</option>)}
-              </select>
+              </Select>
             )}
             {pattern === "day" && (
               <label className="ho-inline">day
@@ -74,9 +75,9 @@ export default function HowOften({ value, onChange, units, withAlso = false, pat
             {value.unit === "years" && pattern !== "none" && (
               <>
                 <span className="ho-word">of</span>
-                <select className="ctl" value={value.month} onChange={set("month")} disabled={disabled} aria-label="Month">
+                <Select value={value.month} onChange={set("month")} disabled={disabled} aria-label="Month">
                   {MONTH_NAMES.map((mo, i) => <option key={mo} value={String(i + 1)}>{mo}</option>)}
-                </select>
+                </Select>
               </>
             )}
           </>
@@ -88,9 +89,9 @@ export default function HowOften({ value, onChange, units, withAlso = false, pat
             <span className="ho-word">or every</span>
             <input className="ctl ho-num" type="number" inputMode="decimal" min="0" step="any" value={value.also} placeholder="—"
                    onChange={set("also")} disabled={disabled} aria-label="Second limit (optional)" />
-            <select className="ctl" value={value.alsoUnit} onChange={set("alsoUnit")} disabled={disabled} aria-label="Second limit's unit">
+            <Select value={value.alsoUnit} onChange={set("alsoUnit")} disabled={disabled} aria-label="Second limit's unit">
               {units.map((u) => <option key={u} value={u}>{unitWord(u, Number(value.also) || 2)}</option>)}
-            </select>
+            </Select>
           </span>
           <span className="ho-word">whichever comes first <span className="ho-opt">optional</span></span>
         </div>

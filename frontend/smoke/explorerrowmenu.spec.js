@@ -15,6 +15,7 @@
 // With SMOKE_SHOTS_DIR set, it also saves screenshots there (for the pull request).
 import { test, expect, open, expectHealthy } from "./health.js";
 import { phoneTree } from "./explorer.js";
+import { choose, expectChosen, optionLabels } from "./select.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -121,12 +122,12 @@ test("Summary row menu: new inside, rename, move to…, delete, pin; the server'
   await menu.getByRole("menuitem", { name: "Move to…" }).click();
   dialog = page.getByRole("dialog", { name: `Move “Menu circulation ${tag}”` });
   const picker = dialog.getByRole("combobox");
-  const options = await picker.locator("option").allTextContents();
+  const options = await optionLabels(picker);
   expect(options.some((o) => o.includes(`Menu pump ${tag}`))).toBe(false);
   expect(options.some((o) => o.trim() === `Menu circulation ${tag}`)).toBe(false);
   expect(options.some((o) => o.includes(`Menu pool ${tag} (where it is now)`))).toBe(true);
   await expect(dialog.getByRole("button", { name: "Move" })).toBeDisabled(); // where it is now: nothing to do
-  await picker.selectOption(p.heat.id);
+  await choose(picker, p.heat.id);
   await expect(dialog.getByRole("button", { name: "Move" })).toBeEnabled();
   await shot(page, "rowmenu-2-move-to-picker-1280");
   await dialog.getByRole("button", { name: "Move" }).click();
@@ -145,7 +146,7 @@ test("Summary row menu: new inside, rename, move to…, delete, pin; the server'
   menu = await menuOf(page, `Menu heating ${tag}`);
   await menu.getByRole("menuitem", { name: "Move to…" }).click();
   dialog = page.getByRole("dialog", { name: `Move “Menu heating ${tag}”` });
-  await dialog.getByRole("combobox").selectOption(""); // the top level
+  await choose(dialog.getByRole("combobox"), ""); // the top level
   await expect(dialog.getByRole("button", { name: "Move" })).toBeEnabled();
   await dialog.getByRole("button", { name: "Move" }).click();
   await expect(dialog).toContainText("A position can't sit inside itself.");
@@ -192,7 +193,7 @@ test("Locations: a location's menu has new inside, rename, move and delete; at 4
   await expect(menu.getByRole("menuitem")).toHaveText(["New position here", "New location inside", "Rename…", "Move to…", "Make this its own asset…", "Focus here", "Pin this branch", "Delete…"]);
   await menu.getByRole("menuitem", { name: "Move to…" }).click();
   const dialog = page.getByRole("dialog", { name: `Move “Menu shed ${tag}”` });
-  await dialog.getByRole("combobox").selectOption(p.store.id);
+  await choose(dialog.getByRole("combobox"), p.store.id);
   await dialog.getByRole("button", { name: "Move" }).click();
   await expect(dialog).toHaveCount(0);
   await expect(row(page, `Menu shed ${tag}`)).toHaveAttribute("aria-selected", "true");
@@ -200,7 +201,7 @@ test("Locations: a location's menu has new inside, rename, move and delete; at 4
   menu = await menuOf(page, `Menu shed ${tag}`);
   await menu.getByRole("menuitem", { name: "New location inside" }).click();
   const create = page.getByRole("dialog", { name: "New location" });
-  await expect(create.getByRole("combobox")).toHaveValue(p.shed.id);
+  await expectChosen(create.getByRole("combobox"), p.shed.id);
   await create.getByRole("button", { name: "Cancel" }).click();
 
   // A phone: the ⋯ button opens the same menu; nothing scrolls sideways.

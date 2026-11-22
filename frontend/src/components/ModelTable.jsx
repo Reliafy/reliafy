@@ -194,7 +194,7 @@ export function ModelSide({ r, phone, expanded, onExpand, onCollapse, onClose, h
   return (
     <aside className={"rw-panel mt-panel ml-panel" + (phone ? " sheet" : "") + (expanded ? " is-expanded" : "")} aria-label="Details"
            onKeyDown={(e) => {
-             if (e.key !== "Escape" || e.defaultPrevented || e.target.closest("input, textarea, select")) return;
+             if (e.key !== "Escape" || e.defaultPrevented || e.target.closest("input, textarea, select, .sel-trigger, .sel-menu")) return;
              e.stopPropagation();
              if (expanded) onCollapse(); else onClose();
            }}>

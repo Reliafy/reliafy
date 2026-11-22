@@ -3,6 +3,7 @@
 // setting's prefilled with its value. Record saves one now; closing records the
 // rest, and the setting's history names the work order.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
+import { choose } from "./select.js";
 
 const M = "/api/maintenance";
 
@@ -39,7 +40,7 @@ test("a work order records a reading now and a new setting when it closes", asyn
   // Ticking a checklist line or a Record reloads the work order: a value being typed stays.
   await expect(setting).toHaveValue("60");
   await expect(page.getByText("Closing also records the value filled in under Readings and settings.")).toBeVisible();
-  await page.getByLabel("What was done").selectOption("other");
+  await choose(page.getByLabel("What was done"), "other");
   await page.getByRole("button", { name: "Close work order" }).click();
   await expect(section.locator(".maint-list li")).toContainText([`Chlorinator ${tag} set to 60% (from 45%)`]);
   await expectHealthy(page, problems, { label: "work order with readings" });

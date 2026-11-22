@@ -94,7 +94,7 @@ export default function useOutlineNav({
   };
 
   const onKey = (e) => {
-    if (e.target.closest("input, select, textarea, [contenteditable='true']")) return;
+    if (e.target.closest("input, select, .sel-trigger, .sel-menu, textarea, [contenteditable='true']")) return;
     // Space on a button or link in a row presses it, as everywhere.
     if (e.key === " " && e.target.closest("button, a")) return;
     if (!list.length) return;
