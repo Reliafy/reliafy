@@ -15,8 +15,8 @@ The tree pane and a tab's table are the same tree, not two: what's open, the row
 Two different things, in every row's menu (`ContextMenu`) on every tab, with the same words:
 
 - **Focus here** — this row opened at every level below it, so everything in it shows (every task, failure mode, measuring point or model in that branch), and every other branch closed. The closed branches stay on show: nothing is hidden.
-- **The words** name what the open tab shows: Focus tasks (Maintenance), Focus failure modes (RCM, FME(C)A), Focus measurements, Focus models, Focus missions; Focus here on the plain tree or a tab with no table of its own. Focus › follows ("Focus tasks ›").
-- **Focus ›** — the same, opened only 1, 2 or 3 levels ("With 1 level open", …; on the RCM tab 4 and 5 too where the rows go that deep). A row with nothing inside it has only Focus here.
+- **The words** name what the open tab shows: Focus tasks (Maintenance), Focus failure modes (RCM, FME(C)A), Focus measurements, Focus models, Focus missions; Focus here on the plain tree or a tab with no table of its own. Focus to a depth › is the same on every tab.
+- **Focus to a depth ›** — a submenu, the same on every tab: opened only 1, 2 or 3 levels ("1 level", "2 levels", …; on the RCM tab 4 and 5 too where the rows go that deep). A row with nothing inside it has only Focus here.
 - **Pin this branch** — the tree starts at this row: everything above and beside it leaves the tree, the address says so (`?pin=`), and Back undoes it. "Show whole tree" undoes it too.
 
 Focus never pins, and never changes the address. After a focus, rows open and close by hand as usual.

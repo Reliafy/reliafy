@@ -163,15 +163,21 @@ test("the undo keys: Ctrl/⌘-Z, Ctrl/⌘-Shift-Z and Ctrl-Y", () => {
 });
 
 test("leaving: asks only when changes would be lost", async () => {
-  const { leaveLosesChanges, unloadShouldAsk } = await import("./rbdAutosave.js");
+  const { leaveLosesChanges, unloadShouldAsk, unloadAction } = await import("./rbdAutosave.js");
   // Autosave off: unsaved changes are lost on leaving.
   assert.equal(leaveLosesChanges({ dirty: true, autosave: false, saveState: "idle" }), true);
   assert.equal(leaveLosesChanges({ dirty: false, autosave: false, saveState: "idle" }), false);
   // On: the pending save is flushed, nothing to ask; unless the last save failed.
   assert.equal(leaveLosesChanges({ dirty: true, autosave: true, saveState: "pending" }), false);
   assert.equal(leaveLosesChanges({ dirty: true, autosave: true, saveState: "failed" }), true);
-  // Closing the tab while a save waits or runs: the browser's prompt gives it time.
-  assert.equal(unloadShouldAsk({ dirty: true, autosave: true, saveState: "pending" }), true);
+  // Closing the tab while a save waits or runs: it is sent at once (keepalive); no prompt.
+  assert.equal(unloadShouldAsk({ dirty: true, autosave: true, saveState: "pending" }), false);
+  assert.equal(unloadAction({ dirty: true, autosave: true, saveState: "pending", bodyBytes: 500 }), "send");
+  assert.equal(unloadAction({ dirty: true, autosave: true, saveState: "saving", bodyBytes: 500 }), "send");
+  assert.equal(unloadAction({ dirty: false, autosave: true, saveState: "idle" }), "none");
+  // Too big to send as the page goes, or the save failed: ask.
+  assert.equal(unloadAction({ dirty: true, autosave: true, saveState: "pending", bodyBytes: 90000 }), "ask");
+  assert.equal(unloadAction({ dirty: true, autosave: true, saveState: "failed", bodyBytes: 500 }), "ask");
   assert.equal(unloadShouldAsk({ dirty: false, autosave: true, saveState: "idle" }), false);
   assert.equal(unloadShouldAsk({ dirty: true, autosave: false, saveState: "idle" }), true);
 });
