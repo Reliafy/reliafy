@@ -212,3 +212,24 @@ def test_an_interval_with_no_unit_is_checked_in_the_tasks_unit(m, db):
     [got] = graph["positions"][0]["functions"][0]["failures"][0]["modes"]
     assert got["decision"]["status"] == "supported" and graph["rollup"]["supported"] == 1
     _rebuilds_the_same(m)
+
+
+def test_an_interval_far_from_its_cost_optimum_is_counted_amber_not_contradicted(m, db):
+    """A fixed-interval task at over twice its cost-optimal age reads
+    longer_than_evidence: counted in its own rollup bucket (not contradicted) and
+    listed as evidence to look at, its summary giving both intervals."""
+    from backend.services.samples import SAMPLE_OWNER
+
+    owners = [ORG, SAMPLE_OWNER]
+    pid = m.create_position("Bearing")["id"]
+    ff = m.add_functional_failure(m.add_function(pid, "Turn")["id"], "Seized")
+    mode = m.add_failure_mode(pid, "Bearing fatigue", functional_failure_id=ff["id"])
+    m.decide_failure_mode(mode["id"], "operational", {
+        "outcome": "fixed_interval", "interval": 580, "interval_unit": "days",
+        "evidence": {"type": "strategy_analysis", "id": "sample-strategy-bearing-replacement"}})
+    graph = rcm_graph.resolve(db, m.rcm_worksheet(pid, "this"), owners)
+    [got] = graph["positions"][0]["functions"][0]["failures"][0]["modes"]
+    assert got["decision"]["status"] == "longer_than_evidence"
+    assert "far longer than the cost-optimal interval" in got["decision"]["summary"]
+    assert graph["rollup"]["longer_than_evidence"] == 1 and graph["rollup"]["contradicted"] == 0
+    assert [r["id"] for r in rcm_graph.gaps(graph)["evidence_to_check"]] == [mode["id"]]

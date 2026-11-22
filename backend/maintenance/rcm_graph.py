@@ -220,7 +220,7 @@ def evidence_refs(decision) -> list[tuple[str, str]]:
 # What an RCM still needs, as short lists (an agent's "which modes have no
 # task?", the RCM tab's chips): from a resolved worksheet (resolve above).
 GAPS_LIMIT = 200
-_CHECK = ("contradicted", "inconclusive", "stale")
+_CHECK = ("contradicted", "inconclusive", "stale", *rcm_decisions.INTERVAL_DIFFERS)
 
 
 def gaps(sheet: dict, limit: int = GAPS_LIMIT) -> dict:

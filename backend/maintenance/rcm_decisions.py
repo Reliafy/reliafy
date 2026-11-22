@@ -784,7 +784,8 @@ def blank_rollup() -> dict:
     """A rollup's counts. needs_review: decided, but against the decision rules
     (review above), so not counted as all decided."""
     return {"modes": 0, "decided": 0, "supported": 0, "contradicted": 0,
-            "inconclusive": 0, "unevidenced": 0, "stale": 0, "partly": 0, "needs_review": 0}
+            "inconclusive": 0, "unevidenced": 0, "stale": 0, "partly": 0, "needs_review": 0,
+            SHORTER_THAN_EVIDENCE: 0, LONGER_THAN_EVIDENCE: 0}
 
 
 def rollup_state(rollup: dict) -> str:
@@ -918,7 +919,7 @@ def _resolve_combination(decision: dict, fetch) -> dict:
         return _member_words(m, members).capitalize()
 
     out: dict = {"outcomes": members}
-    for status in ("contradicted", "stale", "inconclusive"):
+    for status in ("contradicted", "stale", "inconclusive", *INTERVAL_DIFFERS):
         hit = next((m for m in counted if m["status"] == status), None)
         if hit is not None:
             out |= {"status": status, "reason": f"{word(hit)} task: {hit.get('summary') or hit.get('reason') or ''}"}
@@ -1049,8 +1050,12 @@ def _resolve_decision(decision: dict, fetch) -> dict:
         checked = _check_replacement(artifact, want_beneficial=True, conv=conv)
         if checked.get("status") == "supported":
             r = artifact.results or {}
-            checked = _far_shorter(checked, decision, r.get("optimal_time"), r.get("unit"), "the cost-optimal interval")
-            checked = _far_longer(checked, decision, r.get("optimal_time"), r.get("unit"), "the cost-optimal interval")
+            # Far from the cost-optimal age is a fact about the interval, not a verdict on
+            # the decision: its own neutral status, with both intervals in the summary.
+            checked = _far_shorter(checked, decision, r.get("optimal_time"), r.get("unit"), "the cost-optimal interval",
+                                   status=SHORTER_THAN_EVIDENCE)
+            checked = _far_longer(checked, decision, r.get("optimal_time"), r.get("unit"), "the cost-optimal interval",
+                                  status=LONGER_THAN_EVIDENCE)
         return {**base, **_with_conversion(checked, decision,
                                            (artifact.results or {}).get("unit"),
                                            (artifact.results or {}).get("optimal_time"))}
@@ -1144,12 +1149,21 @@ def _task_share(decision: dict, interval, evidence_unit):
     return task / (supported * conv["factor"])
 
 
-def _far_shorter(result: dict, decision: dict, interval, evidence_unit, what: str) -> dict:
+#: A fixed-interval task far from its cost-optimal age (under half, or over twice, it):
+#: amber, not red. The interval differs from what the evidence supports; whether that's
+#: wrong (a warranty, a shutdown plan, a safety margin) is the analyst's call.
+SHORTER_THAN_EVIDENCE = "shorter_than_evidence"
+LONGER_THAN_EVIDENCE = "longer_than_evidence"
+INTERVAL_DIFFERS = (SHORTER_THAN_EVIDENCE, LONGER_THAN_EVIDENCE)
+
+
+def _far_shorter(result: dict, decision: dict, interval, evidence_unit, what: str,
+                 status: str = "contradicted") -> dict:
     """A supported check made plain when the task's interval is far shorter than the
     evidence supports (under :data:`FAR_SHORTER` of it): both intervals, how many
-    times as often the task is done, then what the evidence found. Contradicted, as
-    an interval longer than supported is: the evidence doesn't back the interval set.
-    Anything else is returned as it is."""
+    times as often the task is done, then what the evidence found. ``status``:
+    contradicted (a calculated interval: the evidence doesn't back the interval set),
+    or shorter_than_evidence (a cost-optimal age). Anything else is returned as it is."""
     share = _task_share(decision, interval, evidence_unit)
     if result.get("status") != "supported" or share is None or share >= FAR_SHORTER:
         return result
@@ -1159,16 +1173,17 @@ def _far_shorter(result: dict, decision: dict, interval, evidence_unit, what: st
     ev_s = with_unit(fmt_num(float(interval)), unit_in_text(ev_unit))
     times_s = f"{round(1 / share):,}"  # at least 2: the share is under a half
     found = result.get("summary") or ""
-    return {**result, "status": "contradicted", "interval_share": round(share, 4),
+    return {**result, "status": status, "interval_share": round(share, 4),
             "summary": f"The task is set every {set_s}, far shorter than {what} its evidence supports, about "
                        f"{ev_s}: it is done about {times_s} times as often as the evidence needs. {found}".strip()}
 
 
-def _far_longer(result: dict, decision: dict, interval, evidence_unit, what: str) -> dict:
+def _far_longer(result: dict, decision: dict, interval, evidence_unit, what: str,
+                status: str = LONGER_THAN_EVIDENCE) -> dict:
     """The mirror of :func:`_far_shorter`, for a fixed-interval task against its
     cost-optimal age (the calculators flag any interval longer than theirs already):
     a task set at more than 1 / :data:`FAR_SHORTER` times the interval its evidence
-    supports reads contradicted, with both intervals and how many times as long it is,
+    supports reads ``status`` (longer_than_evidence), with both intervals and how many times as long it is,
     then what the evidence found. Anything else is returned as it is."""
     share = _task_share(decision, interval, evidence_unit)
     if result.get("status") != "supported" or share is None or share <= 1 / FAR_SHORTER:
@@ -1180,7 +1195,7 @@ def _far_longer(result: dict, decision: dict, interval, evidence_unit, what: str
     times = round(share)  # at least 2: the share is over 2
     times_s = "twice" if times == 2 else f"{times:,} times"
     found = result.get("summary") or ""
-    return {**result, "status": "contradicted", "interval_share": round(share, 4),
+    return {**result, "status": status, "interval_share": round(share, 4),
             "summary": f"The task is set every {set_s}, far longer than {what} its evidence supports, about "
                        f"{ev_s}: about {times_s} as long as the evidence supports. {found}".strip()}
 

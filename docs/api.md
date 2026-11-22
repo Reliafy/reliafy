@@ -188,7 +188,10 @@ entry can link its own `evidence` where one piece can't cover them all:
 The read's `status` is then `supported` (or `linked`) when every scheduled
 task is evidenced, `partly` when some are ("Partly evidenced: the
 fixed-interval task has none."), `unevidenced` when none are, or the worst
-task's (`contradicted`, `stale`, `inconclusive`, named in `reason`). Each entry
+task's (`contradicted`, `stale`, `inconclusive`, `shorter_than_evidence`,
+`longer_than_evidence`, named in `reason`). A fixed-interval task at under half its
+cost-optimal interval reads `shorter_than_evidence`, at over twice it
+`longer_than_evidence`: a fact for the analyst, not a verdict. Each entry
 of `decision.outcomes` carries its own check (`status`, `reason` or `summary`,
 `evidence_from`: `own` or `decision`).
 

@@ -3155,7 +3155,7 @@ function rollupOf(rcm, positionId, whole = null) {
   const server = (rcm.positions || []).find((p) => p.id === positionId)?.rollup;
   if (server) return server;
   const s = whole?.rows?.get(positionId)?.rsum;
-  return s ? { supported: s.supported || 0, contradicted: s.contradicted || 0, inconclusive: s.unsure || 0, stale: s.stale || 0 } : null;
+  return s ? { supported: s.supported || 0, contradicted: s.contradicted || 0, inconclusive: s.unsure || 0, stale: s.stale || 0, shorter_than_evidence: s.differs || 0 } : null;
 }
 
 // Is the window narrower than NARROW_TABLE (fewer usual columns in the RCM

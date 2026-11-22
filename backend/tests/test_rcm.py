@@ -201,7 +201,8 @@ def test_unit_mismatch_blocks_support(session):
 def test_interval_far_shorter_than_the_evidence_supports_says_so(session):
     """An interval far shorter than its evidence supports isn't "supported": the check
     gives both intervals and how many times as often the task is done. Oil changed
-    every 25 h against a cost-optimal change at about 101 h reads contradicted; 100 h
+    every 25 h against a cost-optimal change at about 101 h reads shorter_than_evidence
+    (amber, a fact rather than a verdict); 100 h
     and 60 h (over half of it) read supported. Longer than a P-F check interval
     allows stays contradicted as before."""
     from backend.services import strategy_store
@@ -217,7 +218,7 @@ def test_interval_far_shorter_than_the_evidence_supports_says_so(session):
                                     "evidence": {"type": "strategy_analysis", "id": oil.id}})
 
     r = fixed(25)
-    assert r["status"] == "contradicted"
+    assert r["status"] == "shorter_than_evidence"
     assert "set every 25 hours" in r["summary"] and "about 101 hours" in r["summary"]
     assert "about 4 times as often" in r["summary"]
     assert "Optimal interval ≈ 101 hours" in r["summary"]
@@ -227,7 +228,7 @@ def test_interval_far_shorter_than_the_evidence_supports_says_so(session):
     # The same check in days: 25 h is about 1 day, against 101 h (about 4.2 days).
     days = _status(session, A, {"outcome": "fixed_interval", "task": "Change oil", "interval": 1,
                                 "interval_unit": "days", "evidence": {"type": "strategy_analysis", "id": oil.id}})
-    assert days["status"] == "contradicted" and "set every 1 day," in days["summary"]
+    assert days["status"] == "shorter_than_evidence" and "set every 1 day," in days["summary"]
 
     pf = strategy_store.save_analysis(session, "belt", "on_condition_interval", {
         "pf_interval": 127, "pf_unit": "hours", "unit": "hours"}, A)
@@ -246,7 +247,7 @@ def test_interval_far_shorter_than_the_evidence_supports_says_so(session):
 
 def test_fixed_interval_far_longer_than_its_cost_optimum_says_so(session):
     """The mirror of the short side: a fixed-interval task set at more than twice its
-    cost-optimal age (about 101 h for the oil) reads contradicted, with both intervals;
+    cost-optimal age (about 101 h for the oil) reads longer_than_evidence, with both intervals;
     up to twice it stays supported."""
     from backend.services import strategy_store
 
@@ -260,7 +261,7 @@ def test_fixed_interval_far_longer_than_its_cost_optimum_says_so(session):
                                     "evidence": {"type": "strategy_analysis", "id": oil.id}})
 
     r = fixed(250)
-    assert r["status"] == "contradicted"
+    assert r["status"] == "longer_than_evidence"
     assert "set every 250 hours, far longer than the cost-optimal interval" in r["summary"]
     assert "about 101 hours: about twice as long as the evidence supports" in r["summary"]
     assert r["interval_share"] == pytest.approx(250 / oil.results["optimal_time"], rel=1e-3)

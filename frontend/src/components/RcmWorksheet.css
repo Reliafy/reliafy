@@ -275,7 +275,7 @@
 .rw-checks { display: inline-flex; gap: 6px; font-size: var(--fs-12); font-variant-numeric: tabular-nums; }
 .rw-ck { font-weight: 600; white-space: nowrap; }
 .rw-ck.contradicted { color: var(--danger-text); }
-.rw-ck.unsure { color: var(--warning-text); }
+.rw-ck.unsure, .rw-ck.differs { color: var(--warning-text); }
 .rw-ck.stale { color: var(--text-secondary); }
 .rw-ck.supported { color: var(--success-text); }
 /* A decision with no evidence linked: quiet, not a warning. */

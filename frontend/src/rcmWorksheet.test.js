@@ -5,7 +5,7 @@ import {
   addableOutcomes, cardLineText, decisionCardLines, decisionRows, decisionWithMember, decisionWithoutMember, memberEvidenceText,
   COLUMN, COLUMNS, DEFAULT_COLUMNS, FUNCTION_MAX, NAME_COLUMN, functionCount, buildRcmDisplay, checkValue, chipCounts, computeFilter,
   insideWords, intervalText, loadPrefs, savePrefs, siblingOrder, decisionBody, decisionText, hasTask, isCombination, memberEvidenceLine, memberLine, modeCounts, moreTasks, rowText, tasksOf,
-  tasksTip, LEVEL_OF, decisionWithMemberEvidence, taskRowWords, taskKindText } from "./rcmWorksheet.js";
+  tasksTip, LEVEL_OF, decisionWithMemberEvidence, taskRowWords, taskKindText, checkLabel, checkCounts, TO_LOOK_AT } from "./rcmWorksheet.js";
 
 // A house pool pump's RCM, as the server sends it back (decisions resolved).
 const RCM = [
@@ -503,4 +503,14 @@ test("step 3 as a yes/no: a first task of its own kind, and each task's kind cha
   evidence: { type: "report", id: "r1" } });
   assert.deepEqual(decisionWithKind(combo, [], "t2", "failure_finding").outcomes[1],
     { outcome: "failure_finding", task_id: "t2", evidence: { type: "working", id: "f1" }, on_found: "" });
+});
+
+test("an interval far from its cost optimum reads amber words, not Contradicted", () => {
+  assert.equal(checkLabel({ status: "shorter_than_evidence" }), "Shorter than its evidence");
+  assert.equal(checkLabel({ status: "longer_than_evidence" }), "Longer than its evidence");
+  const c = modeCounts({ decision: { status: "longer_than_evidence" } });
+  assert.equal(c.differs, 1);
+  assert.equal(c.contradicted, 0);
+  assert.deepEqual(checkCounts({ sum: { ...c, supported: 0 } }), [{ kind: "differs", n: 1, label: "interval differs" }]);
+  assert.ok(TO_LOOK_AT.has("shorter_than_evidence") && TO_LOOK_AT.has("longer_than_evidence"));
 });
