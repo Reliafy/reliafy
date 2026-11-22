@@ -196,7 +196,7 @@ function NextVisits({ pkg, today, onRaise, canRaiseAny = true }) {
   const visits = pkg.next_visits || [];
   const [busy, setBusy] = useState(false);
   // Raise the next visit's work order now, on its own (nothing else that's due).
-  const canRaise = canRaiseAny && pkg.status === "active" && !pkg.parent && visits.length > 0 && !visits[0].open_work_order;
+  const canRaise = canRaiseAny && pkg.status === "active" && !pkg.parent && visits.length > 0 && !visits[0].open_work_order && !!visits[0].on;
   return (
     <section className="card">
       <div className="maint-head maint-wrap"><h2>{!canRaiseAny ? "Planned visits" : visits[0]?.open_work_order ? "Open and next visits" : "Next visits"}</h2>
@@ -219,10 +219,11 @@ function NextVisits({ pkg, today, onRaise, canRaiseAny = true }) {
           <thead><tr><th>Visit</th><th>Tasks</th><th>What's done</th></tr></thead>
           <tbody>
             {visits.map((v) => (
-              <tr key={v.on} className="maint-plain-row">
+              <tr key={v.on || `h${v.hours}`} className="maint-plain-row">
                 <td className="maint-nowrap">
-                  {visitDay(v.on, today)}
-                  {v.hours != null && <div className="lib-date">at {Number(v.hours).toLocaleString("en-GB")} h</div>}
+                  {/* No duty and no meter rate: an hours visit is due at a reading, with no date. */}
+                  {v.on ? visitDay(v.on, today) : v.due_at}
+                  {v.on && v.hours != null && <div className="lib-date">at {Number(v.hours).toLocaleString("en-GB")} h</div>}
                   {v.open_work_order && (
                     <div>
                       <Link to={workOrderPath(v.open_work_order.id)}>#{v.open_work_order.number} open</Link>

@@ -159,3 +159,17 @@ def test_without_an_operating_plan_the_counter_rate_dates_the_visits(m, today):
     assert hours["basis"]["kind"] == "rate"
     # From today's reading (10 h), at 2 h a day: 60 h in 25 days.
     assert pkg["next_visits"][0]["hours"] == 60 and pkg["next_visits"][0]["on"] == "2026-12-22"
+
+
+def test_with_no_duty_and_no_rate_it_stays_in_hours(m):
+    """No operating plan and one reading: nothing puts its hours on dates, so its visits are
+    due at readings ("due at 50 h"), never a made-up date."""
+    x = _mower(m, plan=False)
+    pkg = _service(m, x)
+    visits = pkg["next_visits"]
+    assert [v["on"] for v in visits] == [None] * 6
+    assert [v["due_at"] for v in visits[:2]] == ["due at 50 h", "due at 100 h"]
+    assert [v["tasks"] for v in visits[:2]] == [1, 3]
+    view = m._task_view(m.s.node(m.org, x["oil"]))
+    assert view["next_due"] is None and view["due_at_reading"] == 100 and view["due_at"] == "due at 100 h"
+    assert "readings" in pkg["cadence"]["by_hours"]["note"]

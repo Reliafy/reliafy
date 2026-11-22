@@ -814,6 +814,13 @@ class HourCadence:
         last = self._last_on(day)
         return None if last is None or last[2] != self._as_date(day) else last[1]
 
+    def coming_marks(self, count: int) -> list[tuple[int, float]]:
+        """The next ``count`` marks past the latest reading (k, hours), dated or not: what an
+        hours package is due at when nothing puts its hours on dates (no duty, no rate)."""
+        now = float(self.readings[-1]["value"]) if self.readings else self.anchor_reading
+        k = max(self.first, int((now - self.anchor_reading) // self.every) + 1)
+        return [(k + i, self.anchor_reading + (k + i) * self.every) for i in range(count)]
+
     def reading_on(self, day) -> float | None:
         """The counter on ``day``: from its readings, else the anchor reading."""
         found = _reading_at(self.readings, self._as_date(day).isoformat()) if self.readings else None
@@ -9993,6 +10000,19 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         memo[key] = out
         return out
 
+    def _hours_due_at(self, root: dict, count: int) -> list[dict]:
+        """A package by operating hours whose hours can't be put on dates (no operating plan and
+        no counter rate; running_clock's rule: no duty, it stays in hours): its next visits by
+        the reading each is due at ("due at 150 h"), never a made-up date."""
+        out = []
+        for k, hours in self._cadence(root).coming_marks(count):
+            number = k + 1
+            ids = sorted(m["task_id"] for m in root.get("members") or []
+                         if (self.s.node(self.org, m["task_id"]) or {"retired": True}).get("retired") is not True
+                         and (m.get("visit_rule", "every") != "nth" or (number - 1) % int(m.get("every_nth") or 1) == 0))
+            out.append({"on": None, "hours": hours, "due_at": f"due at {hours:,.6g} h", "task_ids": ids})
+        return out
+
     def _package_next_visits(self, root: dict, count: int) -> list[dict]:
         """The top package's visits to come, for its page: the open visit first (its work
         order's tasks, its number and whether it's late), then the next ``count`` visits,
@@ -10019,6 +10039,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                        | ({"hours": self._cadence(root).hours_on(day)} if root["unit"] == "hours" else {}))
             coming += 1
             day = self._next_root_visit(root, day)
+        if root["unit"] == "hours" and coming == 0 and not wo and self._pause_now(root) is None:
+            out += self._hours_due_at(root, count)
         return [{**v, "tasks": len(v["task_ids"])} for v in out]
 
     def _later_visit(self, root: dict, pkg: dict, member: dict, after: str) -> str | None:
@@ -10068,7 +10090,15 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 nxt = self._later_visit(root, pkg, entry["member"], upcoming[-1][0])
         overdue = bool(nxt) and (date.fromisoformat(nxt) + timedelta(days=state["tolerance_days"])).isoformat() \
             < self.today()
-        return {"package": brief, "next_due": nxt, "overdue": overdue, "due_by": "package"}
+        out = {"package": brief, "next_due": nxt, "overdue": overdue, "due_by": "package"}
+        if root.get("unit") == "hours" and nxt is None:
+            # No date to put it on (no duty, no counter rate): due at a reading instead.
+            due = next((v for v in self._hours_due_at(root, 100) if task["id"] in v["task_ids"]), None)
+            if due:
+                out |= {"due_at_reading": due["hours"], "due_at": due["due_at"]}
+        elif root.get("unit") == "hours" and nxt:
+            out["due_at_reading"] = self._cadence(root).hours_on(nxt)
+        return out
 
     # -- making and changing packages --
 
