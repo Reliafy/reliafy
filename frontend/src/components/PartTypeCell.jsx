@@ -1,6 +1,7 @@
 import PartTypePicker from "./PartTypePicker.jsx";
 import "../views/Predictions.css";
 import { partTypeMode } from "../predictions.js";
+import { Checkbox } from "./ui/Controls.jsx";
 
 // One parts-list line's type, three ways: a handbook part type (the picker), a rate of the
 // user's own for a part the handbook doesn't have (a battery: shown as user-given), or "Not
@@ -44,13 +45,12 @@ export function OwnRate({ name, rate = "", onChange, onBack = null, id, disabled
 // "Not electronic": ticked, the line is left out of the total (its part type and rate cleared).
 export function NotElectronic({ name, excluded, onChange, children = "Not electronic" }) {
   return (
-    <label className="ptc-exclude" title="Not an electronic part (an airframe, a propeller): the handbook has no rate for it, so it's left out of the total and the result says so.">
-      <input type="checkbox" checked={Boolean(excluded)} aria-label={children ? undefined : `${name} is not electronic: leave it out`}
-             onChange={(e) => onChange(e.target.checked
-               ? { excluded: true, record: null, rate: "", rateMode: false }
-               : { excluded: false })} />
-      {children}
-    </label>
+    <Checkbox className="ptc-exclude" title="Not an electronic part (an airframe, a propeller): the handbook has no rate for it, so it's left out of the total and the result says so."
+              checked={Boolean(excluded)} aria-label={children ? undefined : `${name} is not electronic: leave it out`}
+              onChange={(e) => onChange(e.target.checked
+                ? { excluded: true, record: null, rate: "", rateMode: false }
+                : { excluded: false })}
+              label={children || null} />
   );
 }
 
