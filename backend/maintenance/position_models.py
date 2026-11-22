@@ -525,6 +525,9 @@ def summary(model_type: str, doc) -> dict:
             out["kind"] = r.get("distribution") or "Covariate model"
             out["covariates"] = names
             out["covariate_words"] = f"covariate model, covariates: {', '.join(names)}" if names else "covariate model"
+            if r.get("tvc"):
+                # One kind, covariate models, however fitted (Derryn, 22 Nov 2026): the data is the note.
+                out["covariate_words"] += ", fitted from readings that change over time"
             if means.get("mttf") is not None:
                 out["numbers"].append(_number("mean", "Mean life", means.get("mttf"), None, None, unit))
             if means.get("b10") is not None:
@@ -1752,7 +1755,7 @@ def _open_covariates_below(m, position_id: str, depth: int = 0) -> bool:
 
 
 def _tree_parts(m, db, owners, hidden, position_id: str, with_self: bool = False, owner_id: str | None = None,
-                unit: str | None = None, depth: int = 0):
+                unit: str | None = None, depth: int = 0, use_link: dict | None = None):
     """What Build from what's inside works from: (position, fetch, the live positions inside, the
     diagram's unit, block(child) -> (block data, note), nested placeholders).
 
@@ -1775,6 +1778,8 @@ def _tree_parts(m, db, owners, hidden, position_id: str, with_self: bool = False
         # The position's own block takes its life model (the latest), never one of its own RBDs.
         own = [x for x in m.position_models(p["id"]) if x.get("model_type") == "model" and x.get("role") != "prediction"]
         in_use[p["id"]] = own[-1] if own else None
+    if with_self and use_link is not None:
+        in_use[p["id"]] = use_link  # Add a mission on one of its model rows: that model, in use or not
     docs = {cid: fetch(x["model_type"], x["model_id"]) if x else None for cid, x in in_use.items()}
     if unit is None:
         units = Counter(canonical_unit((d.results or {}).get("unit") or "") for cid, d in docs.items()
@@ -2110,9 +2115,8 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
                 raise sv.Invalid("That RBD has gone or isn't shared with you, so a mission can't start from it.")
             if (src.graph or {}).get("network"):
                 raise sv.Invalid(f"{src.name} is a network, which a mission isn't flown on.")
-        elif not on.get("in_use"):
-            raise sv.Invalid("A mission's one block is the position's model in use: make this model the one in use first.")
         else:
+            # Any of its life or covariate models (in use or not), however it was fitted: one block.
             src = None
             kids = []  # flown on the position's own model: one block, whatever is inside it
         owner["on_link"] = on["id"]
@@ -2132,10 +2136,15 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
             owner["built_in_series"] = True
     else:
         source = "model"
-        graph, note = _one_block_graph(m, db, owners, hidden, p)
+        graph, note = _one_block_graph(m, db, owners, hidden, p, link=on)
         notes = [note] if note else []
     owner["built_from"] = source
     graph = {**graph, "mission_of": owner, "mission_name": name}
+    if source == "model" and rbd_missions.simple_block(graph) is not None:
+        # A plain life model's mission is a length from a starting age: the item's age now when one is
+        # fitted (read each time it's worked out, as the Calculator's "As of now"), else new.
+        if m.current_fitment(position_id) is not None:
+            graph[rbd_missions.START_KEY] = {"now": True}
     try:
         graph = normalize_graph(graph, resolve_saved_model=lambda mid: fetcher(db, owners, hidden)("model", mid))
         rbd = rbds_service.save_rbd(db, f"{p['name']} — {name}"[:200], graph, owner_id)
@@ -2148,16 +2157,20 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
             "series_warning": rbd_missions.series_warning(rbd.graph or graph)}
 
 
-def _one_block_graph(m, db, owners, hidden, p: dict) -> tuple[dict, str | None]:
+def _one_block_graph(m, db, owners, hidden, p: dict, link: dict | None = None) -> tuple[dict, str | None]:
     """A leaf position's mission diagram: one block, the position's own model in use (as a block
-    built from it would take it), In → block → Out. Raises Invalid when it has no model an RBD block
-    can take (never a placeholder: there would be nothing to fly)."""
+    built from it would take it), or ``link``, one of its model rows (Add a mission on that row),
+    In → block → Out. Raises Invalid when it has no model an RBD block can take (never a
+    placeholder: there would be nothing to fly)."""
     from backend.maintenance import rbd_derive
     from backend.services.rbd_graph import wrap_layout
 
     sv = _sv()
-    _, _, _, unit, block, _ = _tree_parts(m, db, owners, hidden, p["id"], with_self=True)
+    _, _, _, unit, block, _ = _tree_parts(m, db, owners, hidden, p["id"], with_self=True, use_link=link)
     fields, note = block(p)
+    if link is not None and fields is None:
+        raise sv.Invalid(note or f"{link.get('name') or 'That model'} can't fly a mission: a mission's block takes a "
+                                 "life model or a covariate model.")
     if fields is not None and ("subsystem_rbd_id" in fields or (fields.get("data") or {}).get("rbd")):
         raise sv.Invalid(f"{p['name']}'s RBD is repairable or a network, which a mission isn't flown on. Make it "
                          "non-repairable, or give the position a life model.")
@@ -2176,6 +2189,32 @@ def _one_block_graph(m, db, owners, hidden, p: dict) -> tuple[dict, str | None]:
         raise sv.Invalid(f"The mission's RBD couldn't be made: {err}") from None
     graph["nodes"] = wrap_layout(graph["nodes"])
     return graph, (note or f"One block: {p['name']}'s own model in use (it has no positions inside).")
+
+
+#: Model kinds a mission can't be flown on yet: a condition-and-life (joint) model needs its unit's
+#: readings, and a mission on one would be the chance of lasting the length given the readings so
+#: far and how they're expected to go (not built yet); competing risks and the rest aren't one life.
+def flyable_links(m, db, owners, hidden, links: list) -> list[str]:
+    """Of the model rows in ``links`` (as all_position_models gives them), the ids of those a
+    mission can be flown on as its one block: every life model (a distribution or a mixture) and
+    every covariate model, however it was fitted (proportional hazards, accelerated life, NSWC-11,
+    from readings that change over time), in use or not. RBDs are offered on their own rows."""
+    from backend.maintenance import covariate_positions
+
+    fetch = fetcher(db, owners, hidden)
+    out = []
+    for x in links:
+        if x.get("model_type") == "rbd":
+            continue
+        if covariate_positions.block_model(x) is not None:
+            out.append(x["id"])
+            continue
+        if x.get("model_type") != "model":
+            continue
+        d = fetch("model", x["model_id"])
+        if d is not None and d.kind in ("distribution", "regression"):
+            out.append(x["id"])
+    return out
 
 
 def blockable_positions(m, db, owners, hidden, links: list) -> list[str]:

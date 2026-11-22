@@ -4037,8 +4037,10 @@ export function deleteMission(rbdId, missionId) {
   return request(missionPath(rbdId, missionId), { method: "DELETE" });
 }
 // The chance of completing it, per phase, and each phase's weakest block; `phases`: unsaved edits.
-export function calculateMission(rbdId, missionId, phases = null) {
-  return request(`${missionPath(rbdId, missionId)}/calculate`, asJson("POST", phases ? { phases } : {}));
+// `start` (a plain life model's mission): an unsaved starting age, {age}, "now" or "new".
+export function calculateMission(rbdId, missionId, phases = null, { start } = {}) {
+  return request(`${missionPath(rbdId, missionId)}/calculate`,
+    asJson("POST", { ...(phases ? { phases } : {}), ...(start !== undefined ? { start } : {}) }));
 }
 
 // ---- Libraries (backend/routers/libraries.py): the user's own libraries of data and models,

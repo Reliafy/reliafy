@@ -67,3 +67,9 @@
 .mission-ph-do button { min-height: 32px; vertical-align: baseline; }
 .mission-ph-also, .mission-ph-out { margin: 0; color: var(--text-secondary); }
 .mission-grid-table tbody th .chip { margin-left: var(--space-1); font-weight: 400; }
+/* A plain life model's mission: its length and the age it starts at, then the answer. */
+.mission-simple { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3) var(--space-6); min-width: 0; }
+.mission-simple-length { display: flex; flex-direction: column; gap: var(--space-1); font-size: var(--fs-13); font-weight: 500; }
+.mission-simple-input, .mission-simple-age { display: inline-flex; align-items: center; gap: var(--space-1-5); font-weight: 400; }
+.mission-simple-input input, .mission-simple-age input { width: 8rem; min-width: 0; }
+.mission-simple-start { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-width: 0; }

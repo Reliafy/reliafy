@@ -37,7 +37,7 @@ const HISTORY_FIT = {
   recurrent: { to: "/models/recurrent/new", label: "fit a repairable model", what: "repair history" },
   degradation: { to: "/models/degradation", label: "fit a degradation model", what: "measurements" },
   time_varying: {
-    to: "/models/new", label: "fit a non-repairable model with covariates that change over time",
+    to: "/models/new", label: "fit a covariate model to readings that change over time",
     what: "stretches of life at different covariate values",
   },
 };

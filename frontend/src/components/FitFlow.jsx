@@ -997,7 +997,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
               : twoClocks
               ? `Two clocks: “${mapping.x}” and “${mapping.x2}”, so the models below use both. To fit on “${mapping.x}” alone, Change the reading, set the second clock to none and use it for this fit only: the dataset keeps both clocks.`
               : tvc
-              ? "Covariates change over time — choose a regression model. Each item's covariates follow its rows."
+              ? "Covariates change over time — choose a covariate model. Each item's covariates follow its rows."
               : hasCovariates
               ? "Covariates detected — choose a regression model (proportional-hazards or accelerated-failure-time)."
               : "Choose a parametric distribution or a non-parametric estimator."}

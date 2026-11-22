@@ -26,10 +26,10 @@ test("fit and save a Weibull model from a sample dataset", async ({ page, proble
 // Start and stop rows with a failure flag (covariates that change over time):
 // the dataset page offers the non-repairable fit, not a degradation one, and
 // it opens with the columns mapped and fits to a covariate schedule.
-test("data with covariates that change over time fits a non-repairable model", async ({ page, problems }) => {
+test("data with covariates that change over time fits a covariate model", async ({ page, problems }) => {
   await open(page, "/data/sample-ds-pump-load");
   await expect(page.getByRole("button", { name: "Fit a degradation model" })).toHaveCount(0);
-  await page.getByRole("button", { name: "Fit a non-repairable model with covariates that change over time" }).click();
+  await page.getByRole("button", { name: "Fit a non-repairable model with covariates (readings that change over time)" }).click();
   await expect(page).toHaveURL(/\/models\/new\?dataset=sample-ds-pump-load/);
   // The reading has the start and stop rows; a life model reads one life per item,
   // a regression on Z fits the covariates over time.
@@ -39,7 +39,7 @@ test("data with covariates that change over time fits a non-repairable model", a
   await page.getByRole("radio", { name: /Regression on Z/ }).click();
   await expect(page.getByText(/Covariates change over time/)).toBeVisible();
   await page.getByRole("button", { name: "Fit Weibull PH" }).click();
-  await expect(page.getByText(/Weibull PH, covariates changing over time/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/Weibull PH covariate model, fitted from readings that change over time/)).toBeVisible({ timeout: 30_000 });
   await page.getByRole("tab", { name: "Calculator" }).click();
   await expect(page.getByText("Covariate schedule").first()).toBeVisible();
   await expectHealthy(page, problems, { label: "time-varying fit", chart: true });

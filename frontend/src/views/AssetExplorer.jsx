@@ -637,12 +637,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const tforecast = useTreeForecast({ on: fcOpen, anchors: fcAnchors, root: root || tasksWithin, version: tver });
   const whole = useMemo(() => (rcmOn && rcm ? (fmeaOn ? graftFmea(base, rcm) : graftRcm(base, rcm))
     : measOn && meas.data ? graftMeasurements(base, meas.data, data?.today || new Date().toISOString().slice(0, 10), meas.fittedAt)
-      : modelsOn && pmodels.links ? (pmissions.links ? nestMissions(graftModels(base, pmodels.links, strategies), pmissions.links, pmissions.hasModel, pmissions.otherModel)
+      : modelsOn && pmodels.links ? (pmissions.links ? nestMissions(graftModels(base, pmodels.links, strategies), pmissions.links, pmissions.hasModel, pmissions.otherModel, pmissions.flyable)
         : graftModels(base, pmodels.links, strategies))
           : tasksOn && ptasks.tasks ? graftTasks(base, filterTasks(ptasks.tasks, tfilters), {
             prune: anyFilter(tfilters), packages: ptasks.packages, all: ptasks.tasks, forecasts: !tasksDesign, forecast: tforecast,
           })
-            : base), [base, rcmOn, fmeaOn, rcm, measOn, meas.data, meas.fittedAt, data?.today, modelsOn, pmodels.links, strategies, missionsOn, pmissions.links, pmissions.hasModel, pmissions.otherModel, tasksOn, ptasks.tasks, ptasks.packages, tasksDesign, tforecast, tfilters]);
+            : base), [base, rcmOn, fmeaOn, rcm, measOn, meas.data, meas.fittedAt, data?.today, modelsOn, pmodels.links, strategies, missionsOn, pmissions.links, pmissions.hasModel, pmissions.otherModel, pmissions.flyable, tasksOn, ptasks.tasks, ptasks.packages, tasksDesign, tforecast, tfilters]);
   const linkedEvidence = useMemo(() => hasLinkedEvidence(rcm), [rcm]);
   // The modes picked that are still in the tree after a read.
   useEffect(() => {
@@ -1862,10 +1862,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     try {
       const made = await createPositionMission(positionId, { name, linkId: link?.id || null });
       const ph = made.placeholders?.length ? ` ${made.placeholders.length} block${made.placeholders.length === 1 ? " is a placeholder" : "s are placeholders"}: give ${made.placeholders.length === 1 ? "it a model" : "them models"} in its RBD.` : "";
-      const from = made.built_from === "model" ? `one block, ${positionName}'s own model in use`
+      const from = made.built_from === "model" ? `one block, ${link?.model?.name || `${positionName}'s own model in use`}`
         : made.built_from === "copy" ? `a copy of ${link?.model?.name || `${positionName}'s RBD`}, wired as it is there` : `what's inside ${positionName}`;
       const series = made.series_warning ? " Its blocks are in series: check the wiring in its RBD." : "";
-      say(`Added ${made.mission.name} with an RBD of its own, built from ${from}.${ph}${series} Now give it its phases.`);
+      say(`Added ${made.mission.name} with an RBD of its own, built from ${from}.${ph}${series} Now give it ${made.mission.simple ? "its length" : "its phases"}.`);
       pmissions.load();
       pending.current = missionKey(made.rbd.id, made.mission.id);
       openMission(positionId, made.rbd.id, made.mission.id);

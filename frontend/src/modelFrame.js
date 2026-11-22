@@ -288,7 +288,8 @@ export function answerParts(result, { split = null, saved = null } = {}) {
       break;
     }
     case "regression": {
-      add(r.tvc ? `${r.distribution}, covariates changing over time` : r.distribution);
+      // One kind, covariate models (Derryn, 22 Nov 2026): fitted from readings that change over time is a note on the data.
+      add(r.tvc ? `${r.distribution} covariate model, fitted from readings that change over time` : r.distribution);
       add(strongestEffect(r));
       add(groupTestWords(r.group_test));
       const c = r.validation?.available ? r.validation.concordance : null;

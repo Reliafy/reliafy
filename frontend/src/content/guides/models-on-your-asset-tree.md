@@ -26,7 +26,10 @@ screen it may be under **⋯** at the end of the tabs). It's one tree-table: the
 tree stays in the first column; under each position are the models attached to
 it (RBDs and predictions included), before the positions inside it, and under a
 model the missions flown on it, with their phases under them (the guide
-**Missions and phases** covers them). Each model row shows:
+**Missions and phases** covers them). **Add a mission…** is on the **⋯** menu
+of every RBD, life model and covariate model, in use or not; on a life model
+with no covariates a mission is just a length from a starting age, so several
+missions of different lengths sit side by side under it. Each model row shows:
 
 - **Kind**: Weibull, exponential, lognormal, repairable, degradation, or
   condition and life.
@@ -116,7 +119,10 @@ saved model: pick it under **Accelerated life** or **Non-repairable** in
 **Assign a saved model…**. Its row shows the model as it was fitted: the life
 at its lowest tested stress, or at the average covariates of its data. The
 stress at this position isn't set here: it's set where the model is used, in
-an RBD block or a calculation.
+an RBD block, a mission's phases or a calculation. A covariate model fitted
+from readings that change over time (start and stop rows per unit) is a
+covariate model like any other: its row says it was fitted from readings that
+change over time, and it flies missions and drives blocks the same way.
 
 ## Predict the failure rate from the parts list
 

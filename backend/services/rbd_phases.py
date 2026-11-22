@@ -1099,6 +1099,9 @@ def agent_summary(result: dict) -> dict:
         out["through"] = result.get("through")
     if result.get("interval"):
         out["interval"] = result["interval"]
+    for k in ("lower_bound", "start"):  # a mission on a plain life model (rbd_missions.analyze)
+        if result.get(k):
+            out[k] = result[k]
     if result.get("bound_note") and result.get("reliability") is not None:
         out["bound_note"] = result["bound_note"]
     if result.get("method_reason"):

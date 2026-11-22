@@ -115,6 +115,9 @@ def carry(graph: dict, out: dict) -> None:
         out["mission_of"] = owner
     if graph.get("mission_name") and (graph.get("phases") or owner):
         out["mission_name"] = _name(graph["mission_name"])
+    start = parse_start(graph.get(START_KEY)) if owner else None
+    if start:
+        out[START_KEY] = start
 
 
 def mission_of(graph: dict) -> Optional[dict]:
@@ -137,6 +140,172 @@ def mission_of(graph: dict) -> Optional[dict]:
     return {"position_id": pid[:80], **({"built_in_series": True} if raw.get("built_in_series") is True else {}),
             **({"from_rbd": src[:80]} if src else {}), **({"on_link": on[:80]} if on else {}),
             **({"built_from": built} if built else {})}
+
+
+# ---- a mission on a plain life model: a length and a starting age (Derryn, 22 Nov 2026) -----------
+#
+# A mission flown on a life model with no covariates (a Weibull, a mixture…) is just a length: the
+# chance of completing it is R(age + length) / R(age), from the age the item starts it at. The
+# starting age is stored on the mission's own RBD (``graph["mission_start"]``): ``{"age": t}`` (in
+# the diagram's unit), ``{"now": true}`` (the fitted item's age now, read when it's worked out), or
+# absent (new). Phases are optional there: with one phase the mission is its length.
+
+START_KEY = "mission_start"
+#: The one-sided level of a plain mission's bound (a chance of success: its lower bound).
+SIMPLE_BOUND_LEVEL = 0.90
+_COVARIATE_KINDS = frozenset({"regression", "bound", "alt_stress", "joint", "two_clock", "phase_rates"})
+
+
+def parse_start(raw) -> Optional[dict]:
+    """A mission's starting age in its stored shape: {"age": t} (t > 0), {"now": True}, or None
+    (new). Raises :class:`MissionError`."""
+    if raw is None or raw == {} or raw == "new":
+        return None
+    if raw == "now" or (isinstance(raw, dict) and raw.get("now") is True):
+        return {"now": True}
+    age = raw.get("age") if isinstance(raw, dict) else raw
+    if isinstance(age, bool):
+        raise MissionError("The starting age must be a number of 0 or more, or “now”.")
+    try:
+        age = float(age)
+    except (TypeError, ValueError):
+        raise MissionError("The starting age must be a number of 0 or more, or “now”.") from None
+    if not age >= 0 or age == float("inf"):
+        raise MissionError("The starting age must be a number of 0 or more, or “now”.")
+    return {"age": age} if age > 0 else None
+
+
+def start_of(graph: dict) -> Optional[dict]:
+    try:
+        return parse_start((graph or {}).get(START_KEY))
+    except MissionError:
+        return None
+
+
+def simple_block(graph: dict) -> Optional[dict]:
+    """The one block of a mission flown on a plain life model (no covariates, no phases that could
+    change it): its node, or None for any other diagram."""
+    nodes = [n for n in (graph or {}).get("nodes") or [] if isinstance(n, dict)]
+    blocks = [n for n in nodes if n.get("type") not in ("input", "output")]
+    if len(blocks) != 1 or blocks[0].get("type") != "component":
+        return None
+    data = blocks[0].get("data") or {}
+    model = data.get("model") or {}
+    if data.get("rbd") or data.get("covariate_schedules") or data.get("repeat_of") or not model:
+        return None
+    if model.get("placeholder") or model.get("kind") in _COVARIATE_KINDS or model.get("covariates"):
+        return None
+    if not (model.get("distribution_id") or model.get("modelId") or model.get("saved_model_id")):
+        return None
+    return blocks[0]
+
+
+def is_simple(graph: dict, mission: Optional[dict] = None) -> bool:
+    """A mission's own RBD of one plain life block (its phases, if any, can't change it)."""
+    if not mission_of(graph) or simple_block(graph) is None:
+        return False
+    return mission is None or mission.get("id") == LEGACY_ID
+
+
+def start_state(graph: dict, age_now: Optional[dict] = None) -> tuple[Optional[dict], Optional[dict]]:
+    """(current_state, start) a plain mission flies from: its block at the stored starting age (or,
+    for "now", ``age_now``: :func:`rbd_tree_plan.block_age`'s answer). ``start`` says what was
+    used: {basis: "new" | "age" | "now", age, note?}. (None, None) for any other mission."""
+    node = simple_block(graph) if mission_of(graph) else None
+    if node is None:
+        return None, None
+    start = start_of(graph)
+    if start is None:
+        return None, {"basis": "new", "age": 0.0}
+    if start.get("age") is not None:
+        return {node["id"]: {"age": start["age"]}}, {"basis": "age", "age": start["age"]}
+    if age_now and age_now.get("age") is not None:
+        age = max(float(age_now["age"]), 0.0)
+        info = {"basis": "now", "age": age, "note": age_now.get("note")}
+        return ({node["id"]: {"age": age}} if age > 0 else None), info
+    why = (age_now or {}).get("reason") or "its age now couldn't be read here"
+    return None, {"basis": "new", "age": 0.0, "wanted": "now", "note": f"From new: {why}."}
+
+
+def _live(db, owner_id, model: dict):
+    """The fitted SurPyval model behind a block's saved model, or None (typed in, or gone)."""
+    mid = model.get("modelId") or model.get("saved_model_id")
+    if not mid:
+        return None
+    from backend.services import models as models_service
+
+    doc = models_service.get_model(db, mid, owner_id)
+    if doc is None or models_service.is_params_only(doc):
+        return None  # typed in: no fit, so nothing to bound
+    try:
+        entry = models_service.get_live_model(db, mid, owner_id)
+    except Exception:  # noqa: BLE001 - no fit to bound (said in the note)
+        return None
+    return (entry or {}).get("model")
+
+
+def conditional_lower(live, age: float, length: float, level: float = SIMPLE_BOUND_LEVEL) -> Optional[float]:
+    """The one-sided lower bound at ``level`` on R(age + length) / R(age) for a fitted parametric
+    model: the Wald bound on the log of the cumulative hazard the mission adds, log(H(age + length)
+    − H(age)), by the delta method on the fit's covariance. From new it is SurPyval's own lower
+    bound on the survival (the same bound, on log H). None where the model has no covariance."""
+    import numpy as np
+    from scipy.stats import norm
+
+    if age <= 0:
+        try:
+            got = np.ravel(live.cb(np.array([float(length)]), on="sf", alpha_ci=1.0 - level, bound="lower"))
+            return float(got[0]) if np.isfinite(got[0]) else None
+        except Exception:  # noqa: BLE001 - fall through to the delta method
+            pass
+    params = getattr(live, "params", None)
+    cov = getattr(live, "hess_inv", None)
+    dist = getattr(live, "dist", None)
+    if params is None or cov is None or dist is None:
+        return None
+    if getattr(live, "offset", False) or getattr(live, "lfp", False) or getattr(live, "zi", False):
+        return None  # a shifted, limited-failure or zero-inflated fit: its own parameters aren't all in params
+    p = np.asarray(params, dtype=float)
+    cov = np.asarray(cov, dtype=float)
+    if cov.shape != (p.size, p.size) or not np.all(np.isfinite(cov)):
+        return None
+
+    def g(q):
+        with np.errstate(all="ignore"):
+            return float(np.log(np.log(dist.sf(age, *q)) - np.log(dist.sf(age + length, *q))))
+
+    g0 = g(p)
+    if not np.isfinite(g0):
+        return None
+    jac = np.zeros(p.size)
+    for i in range(p.size):
+        h = 1e-6 * max(abs(p[i]), 1.0)
+        d = np.zeros(p.size)
+        d[i] = h
+        jac[i] = (g(p + d) - g(p - d)) / (2 * h)
+    var = float(jac @ cov @ jac)
+    if not np.isfinite(var) or var < 0:
+        return None
+    return float(np.exp(-np.exp(g0 + norm.ppf(level) * np.sqrt(var))))
+
+
+def simple_bound(db, owner_id, graph: dict, length: float, age: float) -> dict:
+    """A plain mission's 90% one-sided lower bound on its chance of completing: {lower_bound:
+    {lower, confidence, side}} or {bound_note} saying why there's none."""
+    node = simple_block(graph)
+    model = ((node or {}).get("data") or {}).get("model") or {}
+    level = SIMPLE_BOUND_LEVEL
+    pct = f"{round(level * 100)}%"
+    live = _live(db, owner_id, model)
+    lower = conditional_lower(live, age, length, level) if live is not None and length > 0 else None
+    if lower is None:
+        why = ("its parameters were typed in, so there's no fitted uncertainty to bound"
+               if live is None else "this kind of model has no covariance to bound it with")
+        return {"bound_note": f"No bound: {why}."}
+    return {"lower_bound": {"lower": lower, "confidence": level, "side": "lower"},
+            "bound_note": (f"The bound is {pct} one-sided: at least this chance of completing, at {pct} "
+                           "confidence (the fitted model's uncertainty, by the delta method on its "
+                           "cumulative hazard).")}
 
 
 def all_in_series(graph: dict) -> bool:
@@ -198,13 +367,26 @@ def _new_id(graph: dict) -> str:
             return mid
 
 
+_UNSET = object()
+
+
 def save(graph: dict, mission_id: Optional[str] = None, name: Optional[str] = None,
-         phases: Optional[list] = None) -> tuple[dict, dict]:
+         phases: Optional[list] = None, start=_UNSET) -> tuple[dict, dict]:
     """A new mission (no ``mission_id``) or changes to one: ``(graph, mission)``, the graph a new
     dict. A new one is named "Mission N" unless named. The diagram's own mission keeps living in
-    ``phases`` (its name in ``mission_name``); giving it no phases removes it. Raises
+    ``phases`` (its name in ``mission_name``); giving it no phases removes it. ``start``: a plain
+    mission's starting age (:func:`parse_start`: a number, "now", or None for new). Raises
     :class:`MissionError`."""
     graph = dict(graph or {})
+    if start is not _UNSET:
+        if mission_id != LEGACY_ID or not is_simple(graph):
+            raise MissionError("A starting age is set on a mission flown on a life model with no covariates; "
+                               "this mission's blocks start it as new.")
+        clean_start = parse_start(start)
+        if clean_start:
+            graph[START_KEY] = clean_start
+        else:
+            graph.pop(START_KEY, None)
     if graph.get("repairable"):
         raise MissionError("Missions are flown on a non-repairable diagram: in a repairable one failed blocks "
                            "are repaired, which a mission doesn't model. Make the diagram non-repairable first.")
@@ -309,6 +491,8 @@ def signature(graph: dict, phases: list) -> str:
     body = {"nodes": nodes, "edges": edges, "unit": (graph or {}).get("unit") or "",
             "conditions": (graph or {}).get("conditions") or [], "ccf": (graph or {}).get("ccf_groups") or [],
             "phases": phases}
+    if start_of(graph):  # a plain mission's starting age (absent: new, so older results still hold)
+        body["start"] = start_of(graph)
     if any(isinstance(p, dict) and p.get("standby") for p in phases or []):
         # A18 (16 Nov 2026): standby is now RePyability's true standby, so a result kept from the
         # old stand-in no longer holds (missions without standby keep theirs: same numbers).
@@ -329,9 +513,16 @@ def summary(graph: dict, mission: dict, results: Optional[dict] = None) -> dict:
            "phases": len(phases), "phase_names": [p["name"] for p in phases],
            "phase_durations": [float(p.get("duration") or 0) for p in phases],
            "duration": duration(phases), "unit": (graph or {}).get("unit") or ""}
+    if is_simple(graph, mission):
+        # A plain life model's mission: a length from a starting age (phases optional).
+        out["simple"] = True
+        out["start"] = start_of(graph) or {"new": True}
     got = (results or {}).get(mission["id"])
     if isinstance(got, dict) and got.get("signature") == signature(graph, phases):
         out["result"] = {k: got.get(k) for k in ("reliability", "method", "complete", "at", "through")}
+        for k in ("lower_bound", "start"):
+            if got.get(k):
+                out["result"][k] = got[k]
         if got.get("phases"):
             out["result"]["phases"] = list(got["phases"])
         if got.get("placeholders"):  # the blocks it rests on a placeholder for, and the figure without them
@@ -347,6 +538,9 @@ def result_record(graph: dict, phases: list, result: dict) -> dict:
     out = {"signature": signature(graph, phases), "reliability": result.get("reliability"),
            "method": result.get("method"), "complete": not result.get("needs"),
            "through": result.get("through"), "at": datetime.now(timezone.utc).isoformat()}
+    for k in ("lower_bound", "start"):
+        if result.get(k):
+            out[k] = result[k]
     if result.get("placeholders"):
         out["placeholders"] = [p["label"] for p in result["placeholders"]]
         out["without_placeholders"] = (result.get("without_placeholders") or {}).get("reliability")
@@ -659,7 +853,35 @@ def needs_message(needs: list[dict]) -> str:
 
 def analyze(db, owner_id, graph: dict, phases, covariates: Optional[dict] = None,
             inputs_for: Optional[Callable[[dict], list]] = None, weakest: bool = True,
-            current_state: Optional[dict] = None) -> dict:
+            current_state: Optional[dict] = None, age_now: Optional[dict] = None) -> dict:
+    """A mission over ``graph`` (:func:`_analyze`). A mission flown on a plain life model starts at
+    its stored starting age (``age_now``: the fitted item's age now, for a mission started "now"),
+    unless ``current_state`` is given, and adds its 90% one-sided lower bound (``lower_bound``) and
+    ``start`` (what age it flew from)."""
+    start = None
+    if is_simple(graph):
+        if current_state is None:
+            current_state, start = start_state(graph, age_now)
+        else:
+            node = simple_block(graph)
+            age = float(((current_state or {}).get(node["id"]) or {}).get("age") or 0.0)
+            start = {"basis": "given", "age": age}
+    out = _analyze(db, owner_id, graph, phases, covariates, inputs_for, weakest, current_state)
+    if start is None:
+        return out
+    out["start"] = start
+    if start.get("note"):
+        out["notes"] = [start["note"], *(out.get("notes") or [])]
+    if out.get("reliability") is not None and out.get("method") == "exact" \
+            and not ((current_state or {}).get(simple_block(graph)["id"]) or {}).get("failed"):
+        out.pop("interval", None)
+        out.update(simple_bound(db, owner_id, graph, float(out.get("duration") or 0.0), float(start["age"])))
+    return out
+
+
+def _analyze(db, owner_id, graph: dict, phases, covariates: Optional[dict] = None,
+             inputs_for: Optional[Callable[[dict], list]] = None, weakest: bool = True,
+             current_state: Optional[dict] = None) -> dict:
     """A mission over ``graph``: rbd_phases.analyze_phases's result (the chance of completing it,
     each phase's failure probability, reliability at its end and weakest block), its phases' values
     reaching the blocks. A phase still missing a value: the mission is worked out up to it,
