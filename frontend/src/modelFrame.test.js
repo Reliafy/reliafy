@@ -107,6 +107,9 @@ test("other kinds answer in their own terms", () => {
   // ... for every account: the Risk now tab it points to is always there.
   assert.deepEqual(answerParts({ kind: "joint", risk: [{ id: "P-19", risk: [0.5, 0.9999] }],
     horizons: { labels: ["30 days", "90 days"] } }, { riskNow: false }), ["highest risk: unit P-19, > 99.9% in the next 90 days"]);
+  // Every unit "> 99.9%" over 90 days: the headline ranks by and quotes the 30 days that tell them apart.
+  assert.deepEqual(answerParts({ kind: "joint", risk: [{ id: "P-04", risk: [0.73, 0.9995] }, { id: "P-19", risk: [0.91, 0.9999] }],
+    horizons: { labels: ["30 days", "90 days"] } }), ["highest risk: unit P-19, 91% in the next 30 days"]);
   const reg = answerParts({ kind: "regression", distribution: "Weibull PH", ratio_label: "hazard ratio", unit: "Hours",
     coefficients: [{ name: "temp_C", value: 0.138, ci: [0.093, 0.183] }, { name: "load", value: 0.5, ci: [-1, 2] }],
     validation: { available: true, concordance: { value: 0.868 } }, n: 32 });
