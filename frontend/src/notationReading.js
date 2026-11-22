@@ -26,7 +26,8 @@ export function readingView(text, answer) {
     return { state: "error", error: answer.error, where: answer.where || null };
   }
   const r = answer.result;
-  return { state: "ok", summary: r.summary, columns: r.columns, rows: r.rows, nRows: r.n_rows, kind: r.kind };
+  return { state: "ok", summary: r.summary, columns: r.columns, rows: r.rows, nRows: r.n_rows, kind: r.kind,
+           lifetimes: r.lifetimes || null };
 }
 
 // A reader: read(text) after ``delay`` ms of no typing, then onAnswer({ text, result } | { text, error,

@@ -205,3 +205,20 @@ def test_show_as_text_reads_a_flag_the_other_way_round_or_no_flag():
     df = pd.DataFrame({"h": [10, 20, 30], "f": [1, 1, 0]})
     assert notation.dataset_text(df, {"x": "h", "c": "f", "c_invert": True})["text"] == "10, 20, 30+"
     assert notation.dataset_text(df, {"x": "h", "all_failed": True})["text"] == "10, 20, 30"
+
+
+def test_the_live_reading_draws_the_lifetimes_the_saved_dataset_will(web):
+    typed = "120, 310, [400, 450], 620, 1000+ | (50, inf]"
+    live = web.post("/api/datasets/notation/read", json={"text": typed, "lifetimes": True}).json()
+    lt = live["lifetimes"]
+    assert lt["mode"] == "rows" and len(lt["lines"]) == 5
+    assert lt["summary"]["failed"] == 3 and lt["summary"]["window"] == 1 and lt["summary"]["late"] == 1
+    # The same lines as the dataset's own page, once saved.
+    ds = web.post("/api/datasets/notation", json={"name": "Seals LT", "text": typed, "unit": "hours"}).json()
+    saved = web.get(f"/api/datasets/{ds['id']}/lifetimes").json()
+    assert saved["lines"] == lt["lines"] and saved["summary"] == lt["summary"]
+    hist = web.post("/api/datasets/notation/read", json={"text": "P1: 120, 310, 1000+\nP2: 50, 400+",
+                                                         "lifetimes": True}).json()["lifetimes"]
+    assert hist["mode"] == "repairable" and [line["id"] for line in hist["lines"]] == ["P1", "P2"]
+    # Left out unless asked for (each keystroke stays light).
+    assert "lifetimes" not in web.post("/api/datasets/notation/read", json={"text": typed}).json()
