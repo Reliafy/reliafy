@@ -244,7 +244,8 @@ fails), fixed_interval (replace or restore on a schedule), failure_finding (chec
 (rtf_basis random: failures don't depend on age; uneconomic: prevention doesn't pay), redesign, accept. \
 evidence {type, id}: degradation_model for on_condition, strategy_analysis for fixed_interval, failure_finding \
 and rtf uneconomic, model (a non-repairable model) for rtf random; the result's status says whether it supports \
-the decision (supported, contradicted, inconclusive, unevidenced, stale; partly for a combination) and why. Any decision can instead link \
+the decision (supported, contradicted, inconclusive, unevidenced, stale; partly for a combination) and why; a task \
+set at under half the interval its analysis supports is contradicted, its summary giving both and interval_share. Any decision can instead link \
 a report (type report: a saved report's id) or a function's notes and rationale, where the working behind its \
 performance standard is written (type working: the function's id; it needs notes written): linked, not checked, so its status is linked \
 (evidence_kind report or working), or stale once it has gone. So can a record on the tree, linked the same way: \

@@ -195,3 +195,49 @@ def test_unit_mismatch_blocks_support(session):
     assert days["status"] == "supported" and "Unit mismatch" not in str(days)
     assert days["unit_conversion"] == "evidence in hours, task interval in days: converted at 1 day = 24 hours (running all the time)"
     assert "≈ 298 hours, about 12.4 days" in days["summary"], days["summary"]
+
+
+def test_interval_far_shorter_than_the_evidence_supports_says_so(session):
+    """An interval far shorter than its evidence supports isn't "supported": the check
+    gives both intervals and how many times as often the task is done. Oil changed
+    every 25 h against a cost-optimal change at about 101 h reads contradicted; 100 h
+    and 60 h (over half of it) read supported. Longer than a P-F check interval
+    allows stays contradicted as before."""
+    from backend.services import strategy_store
+
+    oil = strategy_store.save_analysis(session, "oil", "optimal_replacement", {
+        "distribution_id": "lognormal", "params": [4.840310090876535, 0.10595790857024777],
+        "planned_cost": 74.0, "unplanned_cost": 250.0, "unit": "hours"}, A)
+    assert round(oil.results["optimal_time"]) == 101
+
+    def fixed(interval):
+        return _status(session, A, {"outcome": "fixed_interval", "task": "Change oil", "interval": interval,
+                                    "interval_unit": "hours",
+                                    "evidence": {"type": "strategy_analysis", "id": oil.id}})
+
+    r = fixed(25)
+    assert r["status"] == "contradicted"
+    assert "set every 25 hours" in r["summary"] and "about 101 hours" in r["summary"]
+    assert "about 4 times as often" in r["summary"]
+    assert "Optimal interval ≈ 101 hours" in r["summary"]
+    assert r["interval_share"] == pytest.approx(25 / oil.results["optimal_time"], rel=1e-3)
+    assert fixed(100)["status"] == "supported"
+    assert fixed(60)["status"] == "supported"
+    # The same check in days: 25 h is about 1 day, against 101 h (about 4.2 days).
+    days = _status(session, A, {"outcome": "fixed_interval", "task": "Change oil", "interval": 1,
+                                "interval_unit": "days", "evidence": {"type": "strategy_analysis", "id": oil.id}})
+    assert days["status"] == "contradicted" and "set every 1 day," in days["summary"]
+
+    pf = strategy_store.save_analysis(session, "belt", "on_condition_interval", {
+        "pf_interval": 127, "pf_unit": "hours", "unit": "hours"}, A)
+
+    def check(interval):
+        return _status(session, A, {"outcome": "on_condition", "task": "Check belt", "interval": interval,
+                                    "interval_unit": "hours",
+                                    "evidence": {"type": "strategy_analysis", "id": pf.id}})
+
+    r = check(25)
+    assert r["status"] == "contradicted" and "set every 25 hours" in r["summary"]
+    assert check(50)["status"] == "supported"
+    longer = check(200)
+    assert longer["status"] == "contradicted" and "longer than" in longer["summary"]

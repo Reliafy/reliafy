@@ -34,7 +34,7 @@ from backend.services import degradation as degradation_service
 from backend.services import models as models_service
 from backend.services import strategy_store
 from backend.services.strategy import fmt_num
-from backend.units import unit_in_text
+from backend.units import unit_in_text, with_unit
 
 
 class RcmValidationError(ValueError):
@@ -1046,7 +1046,11 @@ def _resolve_decision(decision: dict, fetch) -> dict:
         if mismatch:
             return {**base, **mismatch}
         conv = _unit_conversion(decision, (artifact.results or {}).get("unit"))
-        return {**base, **_with_conversion(_check_replacement(artifact, want_beneficial=True, conv=conv), decision,
+        checked = _check_replacement(artifact, want_beneficial=True, conv=conv)
+        if checked.get("status") == "supported":
+            r = artifact.results or {}
+            checked = _far_shorter(checked, decision, r.get("optimal_time"), r.get("unit"), "the cost-optimal interval")
+        return {**base, **_with_conversion(checked, decision,
                                            (artifact.results or {}).get("unit"),
                                            (artifact.results or {}).get("optimal_time"))}
     if outcome == "on_condition":
@@ -1078,10 +1082,11 @@ def _resolve_decision(decision: dict, fetch) -> dict:
         interval = r.get("interval")
         if interval is not None:
             unit = f" {unit_in_text(r['unit'])}" if r.get("unit") else ""
-            return {**base, **_with_conversion({
+            checked = _far_shorter({
                 "status": "supported",
                 "summary": f"Check every ~{fmt_num(interval)}{unit} for {r.get('target_availability', 0):.0%} availability."},
-                decision, r.get("unit"), interval)}
+                decision, interval, r.get("unit"), "the interval that meets the availability target")
+            return {**base, **_with_conversion(checked, decision, r.get("unit"), interval)}
         return {**base, "status": "inconclusive", "reason": "The analysis has no computed interval."}
     return {**base, "status": "inconclusive", "reason": "Unrecognised decision."}
 
@@ -1107,7 +1112,55 @@ def _interval_summary(r: dict, decision: dict, longest_days, too_long: str) -> d
     days = _task_days(decision)
     if days is not None and longest_days is not None and days > longest_days * 1.0001:
         return {"status": "contradicted", "summary": f"The task's interval is longer than {too_long}. {r.get('summary') or ''}".strip()}
-    return {"status": "supported", "summary": r.get("summary") or "Interval calculated."}
+    return _far_shorter({"status": "supported", "summary": r.get("summary") or "Interval calculated."},
+                        decision, r.get("interval"), r.get("unit"), "the calculated interval")
+
+
+#: A task set at less than this share of the interval its evidence supports is flagged:
+#: done that much more often than the evidence needs, it costs work for no reduction in
+#: risk the evidence shows. Shorter than that (a 50 h service against a 63 h check
+#: interval) is ordinary rounding to a service plan.
+FAR_SHORTER = 0.5
+
+
+def _task_share(decision: dict, interval, evidence_unit):
+    """The task's interval as a share of the evidence's (``interval`` in
+    ``evidence_unit``), or None when either is missing or they can't be compared.
+    A unit missing on either side is read as the same unit, as the unit check does."""
+    try:
+        task = float(decision.get("interval"))
+        supported = float(interval)
+    except (TypeError, ValueError):
+        return None
+    if task <= 0 or supported <= 0:
+        return None
+    task_unit, ev_unit = _norm_unit(decision.get("interval_unit")), _norm_unit(evidence_unit)
+    if not task_unit or not ev_unit or task_unit == ev_unit:
+        return task / supported
+    conv = _unit_conversion(decision, evidence_unit)
+    if conv is None or not conv.get("factor"):
+        return None
+    return task / (supported * conv["factor"])
+
+
+def _far_shorter(result: dict, decision: dict, interval, evidence_unit, what: str) -> dict:
+    """A supported check made plain when the task's interval is far shorter than the
+    evidence supports (under :data:`FAR_SHORTER` of it): both intervals, how many
+    times as often the task is done, then what the evidence found. Contradicted, as
+    an interval longer than supported is: the evidence doesn't back the interval set.
+    Anything else is returned as it is."""
+    share = _task_share(decision, interval, evidence_unit)
+    if result.get("status") != "supported" or share is None or share >= FAR_SHORTER:
+        return result
+    task_unit = decision.get("interval_unit") or evidence_unit
+    ev_unit = evidence_unit or decision.get("interval_unit")
+    set_s = with_unit(fmt_num(float(decision["interval"])), unit_in_text(task_unit))
+    ev_s = with_unit(fmt_num(float(interval)), unit_in_text(ev_unit))
+    times_s = f"{round(1 / share):,}"  # at least 2: the share is under a half
+    found = result.get("summary") or ""
+    return {**result, "status": "contradicted", "interval_share": round(share, 4),
+            "summary": f"The task is set every {set_s}, far shorter than {what} its evidence supports, about "
+                       f"{ev_s}: it is done about {times_s} times as often as the evidence needs. {found}".strip()}
 
 
 def _check_on_condition_interval(decision: dict, analysis) -> dict:
