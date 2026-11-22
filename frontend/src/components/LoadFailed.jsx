@@ -31,7 +31,7 @@ export default function LoadFailed({ error, what = null, to, label, notFound, he
       {header && <PageHeader title={missing ? "Not found" : "Couldn't open this"} />}
       <div className={"card load-failed" + (missing ? "" : " error") + (className ? ` ${className}` : "")}
            role={missing ? "status" : "alert"}>
-        <p style={{ margin: 0 }}>{text}</p>
+        <p className="m-0">{text}</p>
         {to && (
           <p style={{ margin: "6px 0 0" }}>
             {missing && <>It may have been deleted, or the link may be mistyped.{" "}</>}

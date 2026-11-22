@@ -21,7 +21,7 @@
 .tvc-coef-side { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
 .tvc-reading {
   margin: 0;
-  padding: 11px 16px;
+  padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--border-subtle);
   font-size: var(--fs-14);
   line-height: var(--lh-14);
@@ -35,32 +35,32 @@
 }
 
 /* Calculator. */
-.tvc-calc .tvc-msg { margin: 0 0 0.4rem; }
-.tvc-schedule { display: flex; flex-direction: column; gap: 6px; }
+.tvc-calc .tvc-msg { margin: 0 0 var(--space-1-5); }
+.tvc-schedule { display: flex; flex-direction: column; gap: var(--space-1-5); }
 .tvc-schedule-h { font-size: var(--fs-13); font-weight: 500; color: var(--text); }
 .tvc-table-wrap { overflow-x: auto; }
 .tvc-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .tvc-table th {
-  padding: 0 6px 4px 0;
+  padding: 0 var(--space-1-5) var(--space-1) 0;
   font-size: var(--fs-12);
   font-weight: 500;
   color: var(--text-secondary);
   text-align: left;
   white-space: nowrap;
 }
-.tvc-table td { padding: 0 6px 6px 0; vertical-align: middle; }
+.tvc-table td { padding: 0 var(--space-1-5) var(--space-1-5) 0; vertical-align: middle; }
 .tvc-table td:last-child, .tvc-table th:last-child { width: 28px; padding-right: 0; }
 .tvc-table input {
   width: 100%;
   min-width: 64px;
   min-height: 36px;
-  padding: 0.35rem 0.5rem;
+  padding: var(--space-1-5) var(--space-2);
   font-size: var(--fs-14);
 }
 .tvc-table .combo-remove { margin: 0; }
-.tvc-zero { display: inline-block; padding: 0 0.5rem; font-size: var(--fs-14); color: var(--text-secondary); }
+.tvc-zero { display: inline-block; padding: 0 var(--space-2); font-size: var(--fs-14); color: var(--text-secondary); }
 .tvc-add { align-self: flex-start; }
-.tvc-pair { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 8px; }
+.tvc-pair { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: var(--space-2); }
 .tvc-pair .calc-t input { width: 100%; }
 .tvc-schedule-sub { font-weight: 400; color: var(--text-secondary); }
 
@@ -75,4 +75,4 @@
 @media (max-width: 560px) {
   .tvc-table input, .tvc-table .combo-remove, .tvc-add { min-height: 44px; }
 }
-.tvc-coef .param-ci-note { margin: 0; padding: 8px 16px 12px; font-size: var(--fs-12); color: var(--text-secondary); }
+.tvc-coef .param-ci-note { margin: 0; padding: var(--space-2) var(--space-4) var(--space-3); font-size: var(--fs-12); color: var(--text-secondary); }

@@ -126,7 +126,7 @@ export default function HelpButton({ openSlug = null }) {
               {entry ? (
                 <>
                   <ReferenceEntry entry={entry} />
-                  <p style={{ marginTop: 16 }}>
+                  <p className="mt-4">
                     <a className="guide-full-link"
                        href={publicUrl(`/reference/${entry.family.id}#${entry.id}`)}
                        target="_blank" rel="noreferrer">
@@ -137,7 +137,7 @@ export default function HelpButton({ openSlug = null }) {
               ) : guide ? (
                 <>
                   <GuideBody guide={guide} compact />
-                  <p style={{ marginTop: 16 }}>
+                  <p className="mt-4">
                     <a className="guide-full-link" href={publicUrl(`/guides/${guide.slug}`)} target="_blank" rel="noreferrer">
                       Open the full guide ↗
                     </a>

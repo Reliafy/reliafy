@@ -12,7 +12,7 @@ export default function CountModal({ initial, onClose, onSubmit }) {
       <span className="hint">
         Identical units arranged in {initial?.kind || "this block"}.
       </span>
-      <div className="row" style={{ margin: 0 }}>
+      <div className="row m-0">
         <button className="secondary" onClick={onClose}>
           Cancel
         </button>
@@ -29,7 +29,7 @@ export default function CountModal({ initial, onClose, onSubmit }) {
       onClose={onClose}
       footer={footer}
     >
-      <p className="muted-line" style={{ marginTop: 0 }}>
+      <p className="muted-line mt-0">
         Number of identical units in {initial?.kind || "this block"}.
       </p>
       <div className="param-fields">

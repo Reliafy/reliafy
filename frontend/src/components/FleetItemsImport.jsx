@@ -180,7 +180,7 @@ export default function FleetItemsImport({
         </div>
       )}
       {mode === "model" && runningUnits && (
-        <p className="muted-line" style={{ marginTop: 0 }}>
+        <p className="muted-line mt-0">
           {runningUnits.kind === "systems"
             ? "Each system in the model's data, at its age at the end of its record. An item named as a system uses that system's own history."
             : `The units the model's data records as still running (not failed), each at the age it had reached${runningUnits.name_column ? `, named from the “${runningUnits.name_column}” column` : ""}.`}

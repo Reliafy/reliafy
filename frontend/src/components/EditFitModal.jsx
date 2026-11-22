@@ -138,7 +138,7 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
       onClose={onClose}
       locked={loading}
       footer={
-        <div className="row" style={{ margin: 0, marginLeft: "auto" }}>
+        <div className="row m-0 ml-auto">
           <button className="secondary" onClick={onClose} disabled={loading}>Cancel</button>
           <button onClick={onRefit} disabled={loading || !mappingValid || !distribution || !!groupBlock}
                   title={groupBlock || (!mappingValid ? "Settle the notes beside the selectors first" : undefined)}>
@@ -147,7 +147,7 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
         </div>
       }
     >
-      <p className="muted-line" style={{ marginTop: 0 }}>
+      <p className="muted-line mt-0">
         Refits from the model's saved dataset. The model keeps its id — every
         analysis that references it will use the updated fit.
       </p>
@@ -193,7 +193,7 @@ export default function EditFitModal({ model, onClose, onUpdated }) {
             units={covUnits}
             onSetUnit={(col, u) => setCovUnits((prev) => ({ ...prev, [col]: u }))}
           />
-          <div style={{ marginTop: "0.9rem" }}>
+          <div className="mt-3">
             <DistributionStep
               options={options}
               value={distribution}

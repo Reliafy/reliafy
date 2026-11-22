@@ -337,7 +337,7 @@ export default function ShareDialog({ collection, artifactId, name, onClose }) {
         </>
       }
     >
-      <p className="muted-line" style={{ marginTop: 0 }}>
+      <p className="muted-line mt-0">
         Recipients get a read-only view — including any linked analyses this
         one relies on. They need a Reliafy account. You can revoke at any time.
       </p>
@@ -357,11 +357,11 @@ export default function ShareDialog({ collection, artifactId, name, onClose }) {
           {busy ? "Sharing…" : "Share"}
         </button>
       </div>
-      {error && <div className="error" style={{ marginTop: "0.6rem" }}>{error}</div>}
-      {note && <p className="muted-line" style={{ marginBottom: 0 }}>{note}</p>}
+      {error && <div className="error mt-2">{error}</div>}
+      {note && <p className="muted-line mb-0">{note}</p>}
 
       {shares && shares.length > 0 && (
-        <div style={{ marginTop: "0.9rem" }}>
+        <div className="mt-3">
           <label className="field-label">Shared with</label>
           {shares.map((s) => (
             <div key={s.id} className="share-row">

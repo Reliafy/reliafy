@@ -252,7 +252,7 @@ function policyFields(policies) {
 // A toolbar dropdown (#314): the trigger, and a menu of .ovm-item buttons that
 // closes like every menu (useMenuDismiss) or on choosing an item. Items stay mounted.
 // ``look``: the trigger's button classes ("secondary sm", or "sm" for the primary, "ghost sm").
-function ToolbarMenu({ label, title, aria, caret = true, className = "", wt, look = "secondary sm", children }) {
+function ToolbarMenu({ label, title, aria, caret = true, className = "", wt, look = "secondary sm", triggerRef, children }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const close = useCallback(() => setOpen(false), []);
@@ -260,6 +260,7 @@ function ToolbarMenu({ label, title, aria, caret = true, className = "", wt, loo
   return (
     <div className={"ovm rbd-tb-menu " + className} ref={ref} data-wt={wt}>
       <button
+        ref={triggerRef}
         type="button"
         className={look + " rbd-tb-trigger"}
         aria-haspopup="menu"
@@ -286,6 +287,22 @@ const Caret = () => (
     <path d="M2.5 4.5 6 8l3.5-3.5" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
+
+// The save status's icon: a tick (saved), a spinner (saving), a warning (couldn't save) or a dot.
+function SaveIcon({ kind }) {
+  if (kind === "tick") {
+    return (
+      <svg className="rbd-save-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m3 8.5 3.2 3.2L13 4.8" /></svg>
+    );
+  }
+  if (kind === "warn") {
+    return (
+      <svg className="rbd-save-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 2.2 14.2 13H1.8L8 2.2Z" /><path d="M8 6.5v3M8 11.4v.1" /></svg>
+    );
+  }
+  if (kind === "saving") return <span className="rbd-save-icon rbd-save-spin" aria-hidden="true" />;
+  return <span className="rbd-save-dot" aria-hidden="true" />;
+}
 
 const MoreIcon = () => (
   <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
@@ -322,20 +339,22 @@ function ValidationStatus({ validation, stale, validating, onValidate }) {
   if (validating || !validation || stale) {
     return (
       <span className="rbd-valid-toggle is-checking" role="status" title="Checking the diagram after your change">
-        Checking…
+        <span className="rbd-valid-icon" aria-hidden="true">…</span>
+        <span className="rbd-valid-text">Checking…</span>
       </span>
     );
   }
   const errors = validation.errors?.length || 0;
   const warnings = validation.warnings?.length || 0;
   const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
-  const [tone, icon, text] = validation.empty
-    ? ["todo", emptyStatus(validation).icon, emptyStatus(validation).text]
+  // [tone, icon, words, the count that stays beside the icon on a phone, the accessible name]
+  const [tone, icon, text, count, name] = validation.empty
+    ? ["todo", emptyStatus(validation).icon, emptyStatus(validation).text, null, emptyStatus(validation).text]
     : !validation.valid
-    ? ["bad", "✕", errors ? plural(errors, "problem") : "Not valid"]
+    ? ["bad", "✕", errors ? plural(errors, "problem") : "Not valid", errors || null, errors ? plural(errors, "problem") : "Diagram not valid"]
     : warnings
-    ? ["caveat", "!", plural(warnings, "warning")]
-    : ["ok", "✓", "Valid"];
+    ? ["caveat", "!", plural(warnings, "warning"), warnings, plural(warnings, "warning")]
+    : ["ok", "✓", "Valid", null, "Diagram valid"];
   return (
     <div className="ovm rbd-tb-menu rbd-valid-menu" ref={ref}>
       <button
@@ -343,10 +362,19 @@ function ValidationStatus({ validation, stale, validating, onValidate }) {
         className={`rbd-valid-toggle is-${tone}`}
         aria-expanded={open}
         aria-haspopup="dialog"
-        title="What the check found: click for the list"
+        aria-label={name}
+        title={`${name}: click for the list`}
         onClick={() => setOpen((o) => !o)}
       >
-        <span aria-hidden="true">{icon}</span> {text}
+        <span className="rbd-valid-icon" aria-hidden="true">{icon}</span>
+        {count != null ? (
+          <>
+            <span className="rbd-valid-count" aria-hidden="true">{count}</span>
+            <span className="rbd-valid-text" aria-hidden="true">{text.replace(/^\d+/, "")}</span>
+          </>
+        ) : (
+          <span className="rbd-valid-text" aria-hidden="true">{text}</span>
+        )}
         <span className="rbd-tb-caret"><Caret /></span>
       </button>
       <div className="ovm-menu rbd-valid-pop" hidden={!open} ref={popRef}>
@@ -549,7 +577,15 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
   // way: only its container's classes change, so nothing on the canvas resets.
   const builderRef = useRef(null);
   const fullBtnRef = useRef(null); // the button on show: on the canvas, or Exit in the toolbar
-  const { full, toggle: toggleFull, exit: exitFull } = useFullScreen(builderRef, { returnFocus: fullBtnRef });
+  const moreBtnRef = useRef(null); // ⋯: where Full screen sits when the toolbar is narrow
+  // Focus returns to the toolbar's Full screen button, or to ⋯ when that has moved into it.
+  const [fullFocusRef] = useState(() => ({
+    get current() {
+      const b = fullBtnRef.current;
+      return b && b.offsetParent ? b : moreBtnRef.current;
+    },
+  }));
+  const { full, toggle: toggleFull, exit: exitFull } = useFullScreen(builderRef, { returnFocus: fullFocusRef });
   // Saved or not, for the full-screen status (the page's title is hidden there):
   // the diagram as last opened or saved, against the canvas now.
   const [savedSnap, setSavedSnap] = useState(null);
@@ -1883,11 +1919,12 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     {/* One toolbar row above the canvas (docs/design-system/components/RbdToolbar.md): the
         building tools on the left (+ Add block, the one primary; Undo, Redo; the diagram's
         settings), what it's doing in the middle, and its state and the rest on the right (saved,
-        the check, Full screen, ⋯). It wraps at a phone's width, the right-hand group as one. */}
+        the check, Full screen, ⋯). One row at every width: as space runs short Full screen, then
+        Undo and Redo, move into ⋯ and the status and check show their icon alone. */}
     <div className="rbd-toolbar">
       <div className="rbd-tb-tools">
       {/* Add a block without right-clicking (#299); on a phone the only way. */}
-      <ToolbarMenu label={<span>+ Add<span className="rbd-add-word"> block</span></span>} title="Add a block: wired in after or alongside what's selected, or in the middle of the canvas"
+      <ToolbarMenu label={<span><span aria-hidden="true">+</span><span className="rbd-add-word"> Add block</span></span>} title="Add block: wired in after or alongside what's selected, or in the middle of the canvas"
                    aria="Add block" className="rbd-add-menu" wt="rbd-add" look="sm">
         {/* In place first, when something is selected (#282); then anywhere. */}
         {inPlace && (
@@ -1935,7 +1972,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           </p>
         )}
       </ToolbarMenu>
-      <div className="rbd-tb-history" role="group" aria-label="Undo and redo" data-steps={`${history.past.length}/${history.future.length}`}>
+      <div className="rbd-tb-history rbd-tb-history-bar" role="group" aria-label="Undo and redo" data-steps={`${history.past.length}/${history.future.length}`}>
         <button type="button" className="ghost sm rbd-icon-btn" onClick={undo} disabled={!canUndo(history) && !dirtySinceStep}
                 aria-label="Undo" title="Undo (Ctrl+Z, ⌘Z on a Mac)"><UndoIcon /></button>
         <button type="button" className="ghost sm rbd-icon-btn" onClick={redo} disabled={!canRedo(history)}
@@ -1992,7 +2029,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         {/* In full screen the page's title is out of sight: the diagram's name shows here. */}
         {full && <span className="rbd-full-name">{(savedRbdName || "").replace(SAMPLE_SUFFIX, "") || "Untitled RBD"}</span>}
         <span className={`rbd-save-status is-${saveStatus.tone}`} title={saveStatus.title} role="status">
-          <span className="rbd-save-dot" aria-hidden="true" />
+          <SaveIcon kind={saveStatus.icon} />
           <span className="rbd-save-text">{saveStatus.text}</span>
         </span>
         {saveStatus.action === "retry" && (
@@ -2014,8 +2051,15 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           </button>
         )}
         <FullScreenButton ref={fullBtnRef} full={full} onClick={toggleFull} base="ghost sm"
-                          className={full ? "" : "rbd-icon-btn is-icon"} />
-        <ToolbarMenu label={<MoreIcon />} title="More" aria="More" caret={false} look="ghost sm">
+                          className={full ? "" : "rbd-icon-btn is-icon rbd-tb-full"} />
+        <ToolbarMenu label={<MoreIcon />} title="More" aria="More" caret={false} look="ghost sm" triggerRef={moreBtnRef}>
+          {/* What a narrow toolbar had no room for (shown by the builder's width, rbdEditorLayout.js). */}
+          {!full && (
+            <button className="ovm-item rbd-mi-tight" onClick={toggleFull} aria-keyshortcuts="F" title="Full screen (F)">Full screen</button>
+          )}
+          <button className="ovm-item rbd-mi-cramped" onClick={undo} disabled={!canUndo(history) && !dirtySinceStep}>Undo</button>
+          <button className="ovm-item rbd-mi-cramped" onClick={redo} disabled={!canRedo(history)}>Redo</button>
+          <div className="rbd-menu-sep rbd-mi-tight" role="separator" />
           {savedRbdId && (
             <button className="ovm-item" onClick={() => setModal("saveasnew")}>Save as new…</button>
           )}

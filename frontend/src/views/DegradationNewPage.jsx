@@ -189,14 +189,14 @@ export default function DegradationNewPage() {
   let nav;
   if (step === 1) {
     nav = (<><button className="secondary" onClick={goBack} disabled={loading}>Cancel</button>
-      <span className="hint" style={{ margin: 0 }}>Pick a dataset and press <b>Use this dataset</b>, or upload a CSV or Excel file</span></>);
+      <span className="hint m-0">Pick a dataset and press <b>Use this dataset</b>, or upload a CSV or Excel file</span></>);
   } else {
     const editing = rd.editing || measEditing;
     const why = editing ? "First save or cancel the change to the reading."
       : !mappingValid ? "First settle what the reading lacks (above)."
         : thresholdBlocks ? "First enter the failure threshold." : null;
     nav = (<><button className="secondary" onClick={goBack} disabled={loading}>Back</button>
-      {why && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{why}</span>}
+      {why && <span className="hint ds-next-why m-0" role="status">{why}</span>}
       <button onClick={onFit} disabled={loading || !name.trim() || !!why}>
         {loading ? "Fitting…" : "Fit and save"}
       </button></>);
@@ -280,7 +280,7 @@ export default function DegradationNewPage() {
 
         {step === 2 && detail && (
           <>
-            <p className="muted-line" style={{ marginTop: 0 }}>
+            <p className="muted-line mt-0">
               {sourceName} · {(csv?.n_rows ?? 0).toLocaleString()} {hasPart ? "readings (its measurements)" : "rows"}
             </p>
             {!rd.editing && !measEditing && (
@@ -348,9 +348,9 @@ export default function DegradationNewPage() {
                 </div>
               </div>
             </div>
-            <details className="deg-advanced" style={{ marginTop: "0.8rem" }}>
+            <details className="deg-advanced mt-3">
               <summary>Advanced (the defaults are fine)</summary>
-              <div className="row" style={{ gap: "0.8rem" }}>
+              <div className="row gap-3">
                 {select("Life distribution", distribution, setDistribution, options.distributions)}
                 {select("Population method", populationMethod, setPopulationMethod, options.population_methods)}
               </div>
@@ -365,7 +365,7 @@ export default function DegradationNewPage() {
         <ErrorNotice error={error} />
 
         <div className="fit-flow-foot">
-          <div className="row" style={{ margin: 0 }}>{nav}</div>
+          <div className="row m-0">{nav}</div>
         </div>
       </div>
       {pending && (

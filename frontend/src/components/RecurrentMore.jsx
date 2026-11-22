@@ -42,7 +42,7 @@ export default function RecurrentMore({ columns, mapping, onChange, windows = ""
                 </Chip>
               ))}
             </span>
-          ) : <span className="muted-line" style={{ margin: 0 }}>No other columns.</span>}
+          ) : <span className="muted-line m-0">No other columns.</span>}
         </div>}
         {onWindowsChange && (
           typing ? (

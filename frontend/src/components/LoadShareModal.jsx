@@ -31,7 +31,7 @@ export default function LoadShareModal({ initial, onClose, onSubmit }) {
   const footer = (
     <>
       <span className="hint">The units share the load; survivors carry more and fail faster.</span>
-      <div className="row" style={{ margin: 0 }}>
+      <div className="row m-0">
         <button className="secondary" onClick={onClose}>Cancel</button>
         <button
           onClick={() => valid && onSubmit({
@@ -56,7 +56,7 @@ export default function LoadShareModal({ initial, onClose, onSubmit }) {
           placeholder={models.length ? "Pick a saved model…" : "No saved covariate models"}
         />
       </div>
-      <p className="hint" style={{ marginTop: 6 }}>
+      <p className="hint mt-1-5">
         Must be an <strong>accelerated-failure-time</strong> model with the{" "}
         <strong>load as its single covariate</strong> (e.g. a Weibull AFT fitted
         against a load column). Fit one under Life data → New model if you don't

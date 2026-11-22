@@ -147,7 +147,7 @@ function AddToRbdModal({ busy, error, onClose, onAdd }) {
       onClose={onClose}
       locked={busy}
       footer={
-        <div className="row" style={{ margin: 0, marginLeft: "auto" }}>
+        <div className="row m-0 ml-auto">
           <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
           <button type="button" onClick={() => onAdd(target || null)} disabled={busy || rbds === null}>
             {busy ? "Opening…" : "Add block"}

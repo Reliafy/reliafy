@@ -46,7 +46,7 @@ export function FleetStrategyFields({ settings, unit, readOnly, onSetting }) {
         {kind === "age" && field("planned_cost", costLabel("Cost of a planned replacement", workspaceCurrency()),
                                  { placeholder: "optional" })}
       </div>
-      <p className="muted-line" style={{ marginBottom: 0 }}>
+      <p className="muted-line mb-0">
         {kind === "age"
           ? "Items already past the age are replaced in the first period. With the costs, the forecast adds what the strategy costs a year."
           : "With the cost of a failure, the forecast adds what failures cost a year."}
@@ -87,7 +87,7 @@ function CountsByYear({ forecast, st }) {
   if (years.length < 2 && !priced) return null;
   const repairable = st.kind === "repairable";
   return (
-    <div className="card" style={{ marginTop: "1rem" }} data-testid="fleet-strategy">
+    <div className="card mt-4" data-testid="fleet-strategy">
       <CardHeader
         title={priced ? "Cost and failures by year" : "Failures by year"}
         subtitle={repairable ? "Every failure, repeats after repair included." : "Each item fails at most once."}
@@ -156,7 +156,7 @@ export default function FleetStrategyCard({ forecast }) {
   const years = (st.yearly || []).filter((y) => y);
 
   return (
-    <div className="card" style={{ marginTop: "1rem" }} data-testid="fleet-strategy">
+    <div className="card mt-4" data-testid="fleet-strategy">
       <CardHeader
         title={age ? `Replace at ${formatWithUnit(st.replace_at, unit)}` : "Run to failure"}
         subtitle={age

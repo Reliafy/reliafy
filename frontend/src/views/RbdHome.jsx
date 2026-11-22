@@ -180,7 +180,7 @@ export default function RbdHome() {
       {imported && (
         <div className="card">
           <div style={{ display: "flex", alignItems: "baseline", gap: "0.75rem" }}>
-            <h2 style={{ margin: 0 }}>Diagrams in {imported.file}</h2>
+            <h2 className="m-0">Diagrams in {imported.file}</h2>
             <span className="grow" style={{ flex: 1 }} />
             <button className="link" onClick={() => setImported(null)}>Cancel</button>
           </div>

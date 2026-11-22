@@ -2,15 +2,15 @@
    components/alt/). The frame's own layouts (ModelFrame.css) size the tabs;
    these rules only fit the ALT pieces into them. */
 
-.alt-notices { display: flex; flex-direction: column; gap: 6px; }
+.alt-notices { display: flex; flex-direction: column; gap: var(--space-1-5); }
 .alt-notices > * { margin: 0; }
 
 /* Life-stress: the use stress and the figures beside the chart(s). */
-.alt-use-box { padding: 10px 16px 6px; display: flex; flex-direction: column; gap: 6px; border-bottom: 1px solid var(--border-subtle); }
-.alt-use-inputs { display: flex; flex-direction: column; gap: 8px; }
-.alt-use-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.alt-use-box { padding: var(--space-2) var(--space-4) var(--space-1-5); display: flex; flex-direction: column; gap: var(--space-1-5); border-bottom: 1px solid var(--border-subtle); }
+.alt-use-inputs { display: flex; flex-direction: column; gap: var(--space-2); }
+.alt-use-field { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
 .alt-use-field > span { font-size: var(--fs-12); color: var(--text-secondary); }
-.alt-use-field input { width: 100%; box-sizing: border-box; padding: 6px 9px; font-size: var(--fs-14); }
+.alt-use-field input { width: 100%; box-sizing: border-box; padding: var(--space-1-5) var(--space-2); font-size: var(--fs-14); }
 .alt-use-hint { margin: 0; font-size: var(--fs-12); color: var(--text-secondary); }
 .alt-use-hint.error-text { color: var(--danger); }
 .alt-ci { display: block; text-align: right; }
@@ -21,23 +21,23 @@
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 16px;
+  gap: var(--space-4);
   align-items: stretch;
 }
-.mf-alt-calc .alt-calc-out { min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.mf-alt-calc .alt-calc-out { min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .mf-alt-calc .alt-calc-out > * { flex: none; }
 .mf-alt-calc .alt-calc-out > .mf-plot-card { flex: 1 1 auto; }
-.mf-alt-calc .alt-metrics { gap: 8px; }
-.mf-alt-calc .alt-metric { padding: 6px 10px; min-width: 96px; }
+.mf-alt-calc .alt-metrics { gap: var(--space-2); }
+.mf-alt-calc .alt-metric { padding: var(--space-1-5) var(--space-3); min-width: 96px; }
 .mf-alt-calc .alt-metric .k { font-size: var(--fs-12); }
-.mf-alt-calc .alt-metric .v { font-size: var(--fs-15, 15px); }
+.mf-alt-calc .alt-metric .v { font-size: var(--fs-16); }
 .mf-alt-calc .alt-calc-note { margin: 0; }
 .mf-alt-calc .mf-plot-controls .seg { flex-wrap: wrap; max-width: 100%; }
 .mf-alt-calc .alt-band-note { font-size: var(--fs-12); line-height: var(--lh-12); }
 .mf-alt-calc .alt-calc-rail { min-height: 0; overflow-y: auto; overscroll-behavior: contain; align-self: stretch; }
-.mf-alt-calc .alt-calc-inputs { padding: 12px 14px 14px; gap: 10px; }
+.mf-alt-calc .alt-calc-inputs { padding: var(--space-3) var(--space-3) var(--space-3); gap: var(--space-2); }
 .mf-alt-calc .alt-calc-inputs > button { width: 100%; }
-.mf-alt-calc .alt-calc-cis { display: flex; flex-direction: column; gap: 4px; }
+.mf-alt-calc .alt-calc-cis { display: flex; flex-direction: column; gap: var(--space-1); }
 .mf-alt-calc .alt-calc-cis .mini-table { width: 100%; font-size: var(--fs-12); }
 .mf-alt-calc .alt-calc-cis .mini-table td:nth-child(2),
 .mf-alt-calc .alt-calc-cis .mini-table td:nth-child(3),
@@ -49,7 +49,7 @@
   justify-content: center;
   border: 1px dashed var(--border);
   border-radius: var(--radius-lg);
-  padding: 24px;
+  padding: var(--space-6);
   text-align: center;
   color: var(--text-secondary);
   font-size: var(--fs-14);
@@ -58,8 +58,8 @@
 
 /* Diagnostics: four checks over the whole width (no side column), two by two. */
 .detail-panel.mf-l3.alt-checks { grid-template-columns: minmax(0, 1fr); }
-.alt-checks .mf-check-foot .muted-line + .muted-line { margin-top: 2px; }
-.alt-checks .mf-check .mini-table td, .alt-checks .mf-check .mini-table th { padding-top: 5px; padding-bottom: 5px; }
+.alt-checks .mf-check-foot .muted-line + .muted-line { margin-top: var(--space-0-5); }
+.alt-checks .mf-check .mini-table td, .alt-checks .mf-check .mini-table th { padding-top: var(--space-1); padding-bottom: var(--space-1); }
 .alt-checks .mf-check tr.current td { background: var(--accent-subtle); }
 
 @media (max-width: 720px) {

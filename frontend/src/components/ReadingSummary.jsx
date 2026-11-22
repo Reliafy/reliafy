@@ -69,7 +69,7 @@ export function ReadingChange({ name, rd, onDone, fit = true }) {
   return (
     <section className="reading-change" aria-label="Change how the columns are read">
       <h3 className="reading-change-h">Change how “{name}” is read</h3>
-      <p className="muted-line" style={{ margin: 0 }}>
+      <p className="muted-line m-0">
         {rd.readOnly
           ? "This dataset isn't yours to change, so this reading is used for this fit only."
           : `Save keeps it with the dataset: later models use it (models already made keep the reading they were fitted with). The rows themselves never change.${fit ? " Use for this fit only leaves the dataset as it is." : ""}`}
@@ -77,9 +77,9 @@ export function ReadingChange({ name, rd, onDone, fit = true }) {
       <ReadingEditor columns={rd.cols.columns} facts={rd.facts} nRows={rd.nRows} reading={rd.draft}
                      onChange={rd.setDraft} disabled={rd.saving} />
       <ErrorNotice error={rd.error} />
-      <div className="row reading-change-foot" style={{ margin: 0 }}>
+      <div className="row reading-change-foot m-0">
         <button type="button" className="secondary" onClick={rd.cancelChange} disabled={rd.saving}>Cancel</button>
-        {waiting && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{waiting}</span>}
+        {waiting && <span className="hint ds-next-why m-0" role="status">{waiting}</span>}
         {!rd.readOnly && fit && (
           <button type="button" className="secondary" onClick={() => { rd.useOnce(rd.draft); onDone?.(); }}
                   disabled={!!waiting || rd.saving}

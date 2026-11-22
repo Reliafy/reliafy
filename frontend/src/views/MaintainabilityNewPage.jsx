@@ -283,7 +283,7 @@ export default function MaintainabilityNewPage() {
           title="Paste a parts list"
           onClose={() => setPaste(null)}
           footer={
-            <div className="row" style={{ margin: 0, marginLeft: "auto" }}>
+            <div className="row m-0 ml-auto">
               <button className="secondary" onClick={() => setPaste(null)}>Cancel</button>
               <button onClick={() => { replaceLines(parsePartsList(paste)); setPaste(null); }} disabled={!parsePartsList(paste).length}>
                 Use these lines
@@ -311,7 +311,7 @@ export default function MaintainabilityNewPage() {
           onClose={() => setSaving(null)}
           locked={busy}
           footer={
-            <div className="row" style={{ margin: 0, marginLeft: "auto" }}>
+            <div className="row m-0 ml-auto">
               <button className="secondary" onClick={() => setSaving(null)} disabled={busy}>Cancel</button>
               <button onClick={onSave} disabled={busy || !saving.name.trim()}>{busy ? "Saving…" : "Save"}</button>
             </div>

@@ -181,7 +181,7 @@ function CompareDistributions({ result, compare, onPick }) {
         <button type="button" className="secondary" onClick={run} disabled={busy}>
           {busy ? "Comparing…" : "Compare with other distributions"}
         </button>
-        {error && <p className="error" style={{ marginTop: 8 }}>{error}</p>}
+        {error && <p className="error mt-2">{error}</p>}
       </div>
     );
   }
@@ -367,7 +367,7 @@ export default function LifeAside({ result, split = null, bestFit = false, compa
       {method && <p className="life-method">{method} fit.</p>}
       {readingOpen && reading && (
         <Modal title={reading.title} className="modal-sm reading-modal" onClose={() => setReadingOpen(false)}
-               footer={<div className="row" style={{ margin: 0, marginLeft: "auto" }}>
+               footer={<div className="row m-0 ml-auto">
                  <button type="button" onClick={() => setReadingOpen(false)}>Done</button></div>}>
           <p className="reading-text">{reading.text}</p>
           {reading.action === "replacement" && <ReplacementLink result={result} modelId={modelId} onUse={onUse} />}
@@ -375,7 +375,7 @@ export default function LifeAside({ result, split = null, bestFit = false, compa
       )}
       {statsOpen && (
         <Modal title="Fit statistics" onClose={() => setStatsOpen(false)}
-               footer={<div className="row" style={{ margin: 0, marginLeft: "auto" }}>
+               footer={<div className="row m-0 ml-auto">
                  <button onClick={() => setStatsOpen(false)}>Done</button></div>}>
           <GoodnessOfFit gof={result.gof} n={result.n} note={result.gof_note} bestFit={bestFit || !!compare} />
           {result.kind === "distribution" && (

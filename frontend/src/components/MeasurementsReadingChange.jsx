@@ -23,7 +23,7 @@ export default function MeasurementsReadingChange({ name, columns, facts = {}, v
   return (
     <section className="reading-change" aria-label="Change how the measurements are read">
       <h3 className="reading-change-h">Change how the measurements of “{name}” are read</h3>
-      <p className="muted-line" style={{ margin: 0 }}>
+      <p className="muted-line m-0">
         {readOnly
           ? "This dataset isn't yours to change, so this reading is used for this fit only."
           : "Kept with the dataset: later models use it. Models already made keep the reading they were fitted with."}
@@ -43,9 +43,9 @@ export default function MeasurementsReadingChange({ name, columns, facts = {}, v
         lifeRules={false}
       />
       <ErrorNotice error={error} />
-      <div className="row reading-change-foot" style={{ margin: 0 }}>
+      <div className="row reading-change-foot m-0">
         <button type="button" className="secondary" onClick={onCancel} disabled={saving}>Cancel</button>
-        {waiting && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{waiting}</span>}
+        {waiting && <span className="hint ds-next-why m-0" role="status">{waiting}</span>}
         <button type="button" onClick={() => onKeep({ ...draft, source: "saved" })} disabled={!!waiting || saving}>
           {saving ? "Saving…" : readOnly ? "Use this reading" : "Save the reading"}
         </button>

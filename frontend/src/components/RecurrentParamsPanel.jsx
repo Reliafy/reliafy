@@ -54,7 +54,7 @@ export default function RecurrentParamsPanel({ onCreated, onBack }) {
 
   return (
     <div className="card">
-      <p className="muted-line" style={{ marginTop: 0 }}>
+      <p className="muted-line mt-0">
         Build a simple repairable-system model from known parameters — no data. Use it for
         reliability-growth planning and repair-vs-replace decisions, like the optimal number of
         repairs before replacement.
@@ -85,7 +85,7 @@ export default function RecurrentParamsPanel({ onCreated, onBack }) {
         </label>
       </div>
 
-      <div style={{ marginTop: "0.8rem" }}>
+      <div className="mt-3">
         <Units value={unit} onChange={setUnit} listId="recurrent-units" />
       </div>
 
@@ -94,8 +94,8 @@ export default function RecurrentParamsPanel({ onCreated, onBack }) {
       <ErrorNotice error={error} />
 
       <div className="fit-flow-foot">
-        {why ? <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{why}</span> : <span />}
-        <div className="row" style={{ margin: 0 }}>
+        {why ? <span className="hint ds-next-why m-0" role="status">{why}</span> : <span />}
+        <div className="row m-0">
           <button className="secondary" onClick={onBack} disabled={busy}>Back</button>
           <button onClick={onSave} disabled={!valid}>{busy ? "Saving…" : "Save model"}</button>
         </div>

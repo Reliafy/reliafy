@@ -130,7 +130,10 @@ IBM Plex Sans for everything; IBM Plex Mono for IDs, code and dense numeric read
   - Between sections: `space-4`.
   - Card padding and the gap between cards: `space-6`.
   - Between page regions: `space-8`.
+  - **Two fine steps, for dense things only:** `space-0-5` (2px) and `space-1-5` (6px). Use them inside chips, badges, compact controls and table cells, where 4px or 8px would visibly change a row's height or a chip's shape. Never use them between blocks, fields or sections. Any other off-grid value (1, 3, 5, 7, 10, 14px…) snaps to the nearest step.
+- **No px for space, type size, radius or layer.** Write `var(--space-N)`, `var(--fs-N)`, `var(--radius-*)` and `var(--z-*)`; 0 stays 0.
 - **Radius:** `radius-md` (6px) for controls, buttons, chips and menus. `radius-lg` (12px) for cards, modals, drawers and result boxes. `radius-sm` (4px) for small marks and chart bars. `radius-full` for switches, avatars, discs and pills.
+- **Layers (`z-index`):** one scale, lowest first. Local layers order things inside one scroller or component: `z-raised` 1, `z-sticky` 2 (sticky rows, columns, footers), `z-sticky-head` 6 (a table's sticky header). Page-wide layers: `z-float` 10, `z-dropdown` 20, `z-popover` 30, `z-navbar` 40, `z-chat` 50, `z-canvas-menu` 60, `z-drawer` 70, `z-sheet` 90 (phone sheets), `z-sheet-menu` 95, `z-overlay` 100 (dialogs), `z-overlay-menu` 200 (menus and drawers over a dialog), `z-toast` 900, `z-fullscreen` 1000, `z-top` 1100. To sit one step above or below a layer, write `calc(var(--z-sheet) - 1)`, never a new number.
 - **Borders, not shadows.** Cards get a 1px `border` plus `shadow-sm` as a hairline lift. `shadow-md` is for sticky bars and dragged items; `shadow-lg` is for menus, popovers, modals and drawers.
 - **Icons:** `icon-sm` 14, `icon-md` 16, `icon-lg` 20.
 - **Motion:** 150ms on colour, border and shadow. Nothing bounces.
@@ -172,3 +175,9 @@ Write like an engineer briefing a manager: **the answer first, then the detail.*
 ## Iconography
 
 Use the app's own icon set in `assets/Icons/`: a 24px grid, 1.7px hairline strokes, round caps and joins, drawn in `currentColor`. The logo is in `assets/Logos/`; set the name beside it in the `heading` style.
+
+## Guards
+
+- **CSS:** `npm run lint:css` (in `frontend/`, and in CI's frontend job) runs stylelint (`frontend/.stylelintrc.json`) on every stylesheet but `tokens.css`. It fails on a hex, `rgb()` or `hsl()` colour; on px or rem for margin, padding, gap, font-size or border-radius; and on a `z-index` that isn't a `--z-*` token.
+- **The baseline:** what was there when the guard came in is counted in `frontend/stylelint-baseline.json`, per file and rule, so only new violations fail. A file's count may go down, never up. After removing some, run `npm run lint:css -- --update` and commit the smaller baseline. Never raise a count to make a change pass: use the token.
+- **Tokens:** `tokensSync.test.js` fails when `tokens.css` isn't what `tokens.json` generates; `tokenNames.test.js` fails on a token name from before v2.

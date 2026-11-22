@@ -35,7 +35,7 @@ export default function TrackedItemsPanel({ model, fleetId, items, selectedId, o
   const unit = model?.results?.unit || model?.unit || "";
 
   return (
-    <div className="card" style={{ marginTop: "1rem" }}>
+    <div className="card mt-4">
       <CardHeader
         title="Tracked items"
         subtitle="Your monitored assets. Add measurements as inspections happen — the prediction updates each time."
@@ -47,7 +47,7 @@ export default function TrackedItemsPanel({ model, fleetId, items, selectedId, o
       />
 
       {items.length === 0 ? (
-        <div className="empty" style={{ padding: "1.6rem" }}>
+        <div className="empty p-6">
           <p>No tracked items yet. Register one to get its first prediction.</p>
         </div>
       ) : (
@@ -169,7 +169,7 @@ function AddMeasurementModal({ model, item, onClose, onAdded }) {
       onClose={onClose}
       locked={busy}
       footer={
-        <div className="row" style={{ margin: 0, marginLeft: "auto" }}>
+        <div className="row m-0 ml-auto">
           <button className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
           <button onClick={onSubmit} disabled={!valid || busy}>
             {busy ? "Predicting…" : "Add & re-predict"}
@@ -178,11 +178,11 @@ function AddMeasurementModal({ model, item, onClose, onAdded }) {
       }
     >
       {last && (
-        <p className="muted-line" style={{ marginTop: 0 }}>
+        <p className="muted-line mt-0">
           Last reading: {last.y}{mUnit ? ` ${mUnit}` : ""} at {last.t}{unit ? ` ${unitInText(unit)}` : ""}.
         </p>
       )}
-      <div className="row" style={{ gap: "0.6rem" }}>
+      <div className="row gap-2">
         <label className="login-field" style={{ flex: 1 }}>
           <span>Time{unit ? ` (${unit})` : ""}</span>
           <input type="number" step="any" value={t} onChange={(e) => setT(e.target.value)} autoFocus />
@@ -236,7 +236,7 @@ function RegisterItemModal({ model, fleetId, onClose, onCreated }) {
       onClose={onClose}
       locked={busy}
       footer={
-        <div className="row" style={{ margin: 0, marginLeft: "auto" }}>
+        <div className="row m-0 ml-auto">
           <button className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
           <button onClick={onSubmit} disabled={!valid || busy}>
             {busy ? "Predicting…" : "Register & predict"}

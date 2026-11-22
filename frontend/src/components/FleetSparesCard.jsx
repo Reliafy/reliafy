@@ -35,7 +35,7 @@ export default function FleetSparesCard({ fleet, settings, forecast, readOnly, d
   const ok = answer?.status === "ok";
   const over = overText(answer?.repairable, answer?.review);
   return (
-    <div className="card" style={{ marginTop: "1rem" }} data-testid="fleet-spares">
+    <div className="card mt-4" data-testid="fleet-spares">
       <CardHeader title="Spares: how many to hold"
                   subtitle="For the replacement part: the stock that covers the lead time at your service level, from this forecast's own distribution." />
       <p className="hint" data-testid="fleet-spares-when-to-use" style={{ margin: "0 0 0.6rem" }}>
@@ -104,7 +104,7 @@ export default function FleetSparesCard({ fleet, settings, forecast, readOnly, d
               </tbody>
             </table></div>
           </details>
-          <div style={{ marginTop: "0.6rem" }}>
+          <div className="mt-2">
             <button className="secondary" onClick={() => saveText(fleetSparesCsv(answer, { fleet: fleet.name, periodLabel: label }),
               fileName(fleet.name))}>Export spares plan (CSV)</button>
           </div>

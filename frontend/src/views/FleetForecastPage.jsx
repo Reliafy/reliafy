@@ -411,7 +411,7 @@ export default function FleetForecastPage() {
         <div className="card error">
           {error}
           {conflict && (
-            <div style={{ marginTop: "0.6rem" }}>
+            <div className="mt-2">
               <button className="secondary" onClick={load}>Reload latest version</button>
             </div>
           )}
@@ -452,9 +452,9 @@ export default function FleetForecastPage() {
               </datalist>
             </label>
           </div>
-          {periodNote && <p className="hint" data-testid="fleet-period-note" style={{ marginBottom: 0 }}>{periodNote}</p>}
+          {periodNote && <p className="hint mb-0" data-testid="fleet-period-note">{periodNote}</p>}
           {noUsage > 0 && (
-            <p id="fleet-usage-missing" className="hint fleet-alert-warn" style={{ marginBottom: 0 }}>
+            <p id="fleet-usage-missing" className="hint fleet-alert-warn mb-0">
               Set the usage per {settingsWord}: {noUsage === items.length ? "the items have" : `${noUsage} item${noUsage === 1 ? " has" : "s have"}`} no
               own rate, so without it they don’t age and the forecast can’t count any failures.
             </p>
@@ -475,7 +475,7 @@ export default function FleetForecastPage() {
           {fields.length > 0 && (
             <>
               <h3 className="fleet-assume-h">{forecast.model_kind === "alt" ? "Operating stress" : "Operating conditions"}</h3>
-              <p className="muted-line" style={{ marginTop: 0 }}>
+              <p className="muted-line mt-0">
                 {forecast.model_kind === "alt"
                   ? "The stress every item runs at, unless an item sets its own."
                   : "The covariate values every item runs at, unless an item sets its own. Blank uses the model's default (the training-data mean, or its most common level)."}
@@ -544,7 +544,7 @@ export default function FleetForecastPage() {
                 : "Rates come from the usage per period and each item's own rate. Switch to “Estimated” to use rates learned from timestamped API meter readings."}
             </p>
             {settings.rate_source === "estimated" && !isCalendarUnit(settings.period_label) && (
-              <p className="hint fleet-alert-warn" style={{ marginBottom: 0 }}>
+              <p className="hint fleet-alert-warn mb-0">
                 “{settings.period_label}” isn’t a calendar unit (days, weeks, months, quarters or years), so usage
                 rates can’t be estimated from API readings — items use their manual rates.
               </p>
@@ -563,7 +563,7 @@ export default function FleetForecastPage() {
       )}
 
       {showAnswer && (
-        <div className="card" style={{ marginTop: "1rem" }}>
+        <div className="card mt-4">
           <ResultSummary
             wt="fleet-answer"
             sentence={
@@ -630,7 +630,7 @@ export default function FleetForecastPage() {
                          onChange={(v) => setSetting("spares", v)} />
       )}
 
-      <div className="card" style={{ marginTop: "1rem" }}>
+      <div className="card mt-4">
         <CardHeader
           title="Items"
           subtitle={items.length > 0 ? `${items.length} item${items.length === 1 ? "" : "s"}` : undefined}
@@ -840,7 +840,7 @@ export default function FleetForecastPage() {
       </div>
 
       {atRisk.length > 0 && (
-        <div className="card" style={{ marginTop: "1rem" }}>
+        <div className="card mt-4">
           <CardHeader
             title="Most at risk"
             subtitle={`The items most likely to fail within ${forecast.periods} ${forecast.period_label}${byConditions ? ", each at its own conditions" : ""}.`}

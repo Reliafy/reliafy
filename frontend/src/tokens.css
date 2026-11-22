@@ -227,7 +227,9 @@
   --ring-selected: 0 0 0 2px #80abff;
 }
 :root {
+  --space-0-5: 2px;
   --space-1: 4px;
+  --space-1-5: 6px;
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
@@ -240,6 +242,23 @@
   --radius-md: 6px;
   --radius-lg: 12px;
   --radius-full: 9999px;
+  --z-raised: 1;
+  --z-sticky: 2;
+  --z-sticky-head: 6;
+  --z-float: 10;
+  --z-dropdown: 20;
+  --z-popover: 30;
+  --z-navbar: 40;
+  --z-chat: 50;
+  --z-canvas-menu: 60;
+  --z-drawer: 70;
+  --z-sheet: 90;
+  --z-sheet-menu: 95;
+  --z-overlay: 100;
+  --z-overlay-menu: 200;
+  --z-toast: 900;
+  --z-fullscreen: 1000;
+  --z-top: 1100;
   --control-sm: 28px;
   --control-md: 32px;
   --control-lg: 40px;
