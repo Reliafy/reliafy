@@ -61,7 +61,8 @@ A task counts when it can be put on dates:
   use on dates.* The fix is on that position; see below.
 
 Failures come from the life model in use on each position, from each item's
-age. They count what the tasks do. A fixed-interval replacement renews the item
+age. A degradation model linked to a failure mode counts too: each time the
+reading crosses its limit (its time to the limit) is a failure of that mode. They count what the tasks do. A fixed-interval replacement renews the item
 at its interval, so failures after it count from new. A check that finds a
 warning in time counts through its P-F interval. A task that restores none of
 the age (greasing a bearing) leaves the failures as they are. Each life's line
@@ -79,7 +80,10 @@ The cost to come is in two parts, each saying what it rests on:
 
 - **Planned:** each task's cost each time, times the times it falls due.
   **Cost by kind** splits it into **Labour** (the task's LSA labour at the
-  trade rates) and **Parts and consumables** (its LSA lines). A cost typed on a
+  trade rates), **Parts and consumables** (its LSA lines) and **Visits**: each
+  visit's call-out and setup, set on the package (**Each visit's call-out and
+  setup** in its Edit pane), or on a task in no package. Tasks due at the same
+  time on the same position are one visit, charged once. A cost typed on a
   task that its LSA doesn't explain is **Other planned**.
 - **Unplanned:** the expected failures times what one failure costs: its
   repair, plus the hours it keeps the asset out of use times the cost of an

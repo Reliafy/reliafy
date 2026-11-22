@@ -53,3 +53,7 @@ test("the planned cost's title says what it holds", () => {
   assert.equal(plannedTitle({ labour_cost: 27, materials_cost: 22, other_planned_cost: 0 }), "Planned: labour $27, parts and consumables $22");
   assert.equal(plannedTitle({}), "");
 });
+
+test("the planned cost's title names the visits' cost", () => {
+  assert.equal(plannedTitle({ labour_cost: 27, visits_cost: 165 }), "Planned: labour $27, visits' call-out and setup $165");
+});

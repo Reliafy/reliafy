@@ -95,6 +95,7 @@ export function plannedTitle(row) {
   const bits = [];
   if (row.labour_cost) bits.push(`labour ${money(row.labour_cost)}`);
   if (row.materials_cost) bits.push(`parts and consumables ${money(row.materials_cost)}`);
+  if (row.visits_cost) bits.push(`visits' call-out and setup ${money(row.visits_cost)}`);
   if (row.other_planned_cost) bits.push(`other (a typed cost the LSA doesn't explain) ${money(row.other_planned_cost)}`);
   return bits.length ? `Planned: ${bits.join(", ")}` : "";
 }

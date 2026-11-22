@@ -512,13 +512,14 @@ TASKS: Table = {
     "update": ("task_id", "name interval unit also_interval also_unit point_id last_done_reading instructions "
                "checklist failure_mode_id unlink_failure_mode source reference outcome clear_outcome trade "
                "while_stored include_positions trigger clear_trigger start cost clear_cost restoration basis older_than "
-               "rule", """Rename it or change its interval, second limit (also_interval 0
+               "rule visit_cost", """Rename it or change its interval, second limit (also_interval 0
         removes it), measurement (point_id, last_done_reading), instructions, checklist, trade ('' clears), failure mode link (unlink_failure_mode
         true removes it), source / reference / outcome (clear_outcome true) of a hand-made task, while_stored
         or include_positions, or its trigger (clear_trigger true: the interval alone again), or when it next
         falls due (start, a date; then every interval; '' goes back to one interval from last done). cost: what it costs
         each time, typed (in place of its LSA's labour at trade rates, spares and consumables; clear_cost true
-        goes back to that); the RCM's calculators read it. Its subject can't change: move it, or retire it and
+        goes back to that); the RCM's calculators read it. visit_cost: a task in no package, its call-out and setup each
+        time (-1 clears it). Its subject can't change: move it, or retire it and
         create another."""),
     "link": ("task_id failure_mode_id", "", "The task also prevents that mode (on its position or one inside it); "
              "its other links stay."),
@@ -589,8 +590,9 @@ PACKAGES: Table = {
         location_id, or a layer on parent_id; unit hours: by operating hours. Timing, cadence and visit rules: maintenance
         guide topic plan."""),
     "update": ("package_id", "name timing every unit weekday nth day month clear_pattern anchor anchor_reading tolerance "
-               "tolerance_unit trade notes tasks season shutdown", "Change it; tasks: members' visit rules; season {} clears it; "
-               "shutdown: its visits are planned outages ({} clears it)."),
+               "tolerance_unit trade notes tasks season shutdown visit_cost", "Change it; tasks: members' visit rules; season {} "
+               "clears it; shutdown: its visits are planned outages ({} clears it); visit_cost: each visit's call-out and "
+               "setup, besides its tasks (-1 clears it)."),
     "add_task": ("package_id task_id", "visit_rule every_nth suppresses", "A task into it (one package each)."),
     "remove_task": ("package_id task_id", "", "Take a task out: it's raised on its own again."),
     "pause": ("package_id reason", "until full_visit", """Pause it until a date (back by itself then; none:
@@ -2016,6 +2018,8 @@ def register() -> None:
                           cost: Annotated[float | None, Field(description=(
                               "update: what the task costs each time it's done (typed), e.g. 180."))] = None,
                           clear_cost: bool | None = None, restoration: Restoration = None,
+                          visit_cost: Annotated[float | None, Field(ge=-1, description=(
+                              "update: a task in no package, its call-out and setup each time; -1 clears it."))] = None,
                           basis: Annotated[Literal["calendar", "operating"] | None, Field(description=(
                               "update: operating counts its interval in running hours (an RBD puts it on "
                               "the calendar through the block's duty); calendar (default)."))] = None,
@@ -2052,6 +2056,8 @@ def register() -> None:
                                      rule=... if rule is None else rule)
                 if clear_cost or cost is not None:
                     view = m.set_task_cost(task_id, None if clear_cost else cost)
+                if visit_cost is not None:
+                    view = m.set_task_visit_cost(task_id, None if visit_cost < 0 else visit_cost)
                 if restoration is not None:
                     given = dict(restoration)
                     view = m.set_task_restoration(task_id, given, failure_mode_id=given.pop("failure_mode_id", None))
@@ -2271,6 +2277,8 @@ def register() -> None:
             unit: Annotated[Literal["days", "weeks", "months", "years", "hours"] | None, Field(description=(
                 "hours: by operating hours on the position's hours counter (a 50 h service), holding tasks by "
                 "hours; its visits are dated through the operating plan, else the counter's rate."))] = None,
+            visit_cost: Annotated[float | None, Field(ge=-1, description=(
+                "update: each visit's cost besides its tasks (call-out, setup); -1 clears it."))] = None,
             anchor_reading: Annotated[float | None, Field(ge=0, description=(
                 "unit hours: the counter reading its visits count from (default the reading on the anchor date)."))]
             = None,
@@ -2327,6 +2335,8 @@ def register() -> None:
                 out = m.update_package(package_id, name, timing, every, unit, weekday, nth, day,
                                        bool(clear_pattern), anchor, tolerance, tolerance_unit, trade, notes, tasks,
                                        ... if season is None else season, month, anchor_reading)
+                if visit_cost is not None:
+                    out = m.set_package_visit_cost(package_id, None if visit_cost < 0 else visit_cost)
                 return m.set_package_shutdown(package_id, shutdown) if shutdown is not None else out
             return run(update)
         if action == "add_task":

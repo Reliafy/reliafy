@@ -55,6 +55,7 @@ function costRows(fc) {
     ["Labour", moneyText(t.labour_cost), "Each task's LSA labour at the trade rates, × the times it's due"],
     ["Parts and consumables", moneyText(t.materials_cost), "Each task's LSA spares and consumables, × the times it's due"],
   ];
+  if (t.visits_cost) rows.push(["Visits", moneyText(t.visits_cost), `${t.visits} visit${t.visits === 1 ? "" : "s"}, each its call-out and setup (set on the package, or on a task in no package); tasks due at the same time on the same position are one visit`]);
   if (t.other_planned_cost) rows.push(["Other planned", moneyText(t.other_planned_cost), "A task's typed cost beyond what its LSA prices"]);
   rows.push(["Planned in all", moneyText(t.planned_cost), fc.cost_basis?.planned || ""]);
   rows.push(["Unplanned (failures)", t.failure_cost == null ? "—" : moneyText(t.failure_cost), fc.cost_basis?.unplanned || ""]);

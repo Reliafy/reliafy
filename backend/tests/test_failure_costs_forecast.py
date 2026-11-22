@@ -218,3 +218,85 @@ def test_costs_over_mcp(env):  # noqa: F811
     assert cls["costs"]["downtime_rate"] == 40
     assert cleared["costs"]["own"]["downtime_hours"] is None
     assert "prompts" in fc and fc["totals"]["total_cost"] == 0
+
+
+# ---- a visit's cost, and limit crossings from a degradation model (Nov 2026) --------------------
+
+def test_each_visit_is_charged_once_and_same_time_visits_are_one(setting):  # noqa: F811
+    """The generator's $165 a service visit (call-out and crew downtime), once a visit: the RCM plan's
+    50 h and 100 h services meet every 100 h, and are one visit then."""
+    m, db, fetch = setting
+    top = _mower(m, db, "Mower", 50)
+    tasks = {t["name"]: t["id"] for t in m._tasks_on(top)}
+    every50 = m.create_package("50 h service", position_id=top, unit="hours", every=50, anchor="2026-11-22",
+                               anchor_reading=0, tasks=[tasks["Check drive belt"], tasks["Grease deck spindles"]])
+    every100 = m.create_package("100 h service", position_id=top, unit="hours", every=100, anchor="2026-11-22",
+                                anchor_reading=0, tasks=[tasks["Replace spark plugs"]])
+    before = pf.position_forecast(m, top, root=top, period="year", periods=2, fetch=fetch)
+    m.set_package_visit_cost(every50["id"], 165)
+    m.set_package_visit_cost(every100["id"], 165)
+    fc = pf.position_forecast(m, top, root=top, period="year", periods=2, fetch=fetch)
+    by = {t["name"]: t for t in fc["tasks"]}
+    assert fc["totals"]["visits"] == by["Grease deck spindles"]["count"]   # the 100 h visits fall on 50 h ones
+    assert fc["totals"]["visits_cost"] == pytest.approx(165 * fc["totals"]["visits"])
+    assert fc["totals"]["planned_cost"] == pytest.approx(before["totals"]["planned_cost"] + 165 * fc["totals"]["visits"])
+    assert m.package(every50["id"])["visit_cost"] == 165
+    # A task in no package carries its own; a packaged one is told to use its package's.
+    with pytest.raises(Invalid):
+        m.set_task_visit_cost(tasks["Grease deck spindles"], 50)
+    alone = m.create_task(top, "Wash the deck", 100, "hours")["id"]
+    m.set_task_visit_cost(alone, 40)
+    again = pf.position_forecast(m, top, root=top, period="year", periods=2, fetch=fetch)
+    # The wash falls due at the 100 h visits: one visit then, charged the larger cost ($165) once.
+    assert again["totals"]["visits"] == fc["totals"]["visits"]
+    assert again["totals"]["visits_cost"] == fc["totals"]["visits_cost"]
+    m.update_task(alone, interval=30)   # now on its own times: $40 each
+    third = pf.position_forecast(m, top, root=top, period="year", periods=2, fetch=fetch)
+    washes = next(t for t in third["tasks"] if t["name"] == "Wash the deck")["count"]
+    shared = third["totals"]["visits"] - fc["totals"]["visits"]
+    assert third["totals"]["visits_cost"] == pytest.approx(fc["totals"]["visits_cost"] + 40 * shared)
+    assert 0 < shared <= washes
+    _rebuilds_the_same(m)
+
+
+def test_a_degradation_models_limit_crossings_are_the_modes_failures(setting):  # noqa: F811
+    """Engine oil past its limit: the time-to-limit lognormal (median 126.5 h, sigma 0.109) from the
+    oil-oxidation degradation model, changed every 100 h on the RCM plan. RePyability's failures by
+    period under that block replacement, at $250 a crossing; the hand check's long run is
+    600 / 100 x F(100) = 0.0916 a year."""
+    import math
+
+    import surpyval as surv
+    from repyability import NonRepairable
+    from repyability.schedule import DutyPlan, Rate, failures_by_period
+
+    m, db, fetch = setting
+    mu, sigma = math.log(126.50857480329202), 0.10871052042529238
+    db.degradation_models.insert_one({
+        "_id": "oil", "id": "oil", "name": "Oil oxidation", "owner_id": "org-forecast-tasks", "dataset_id": "ds-oil",
+        "status": "ready", "spec": {}, "results": {"unit": "hours", "threshold": 25, "measurement_unit": "A/cm",
+                                                   "life_model": {"distribution_id": "lognormal", "distribution": "LogNormal",
+                                                                  "params": [{"name": "mu", "value": mu},
+                                                                             {"name": "sigma", "value": sigma}]}}})
+    top = _mower(m, db, "Mower", 50)
+    oil = m.add_failure_mode(top, "Engine oil oxidised past its limit")["id"]
+    m.decide_failure_mode(oil, "operational", {"outcome": "fixed_interval", "task": "Change engine oil", "interval": 100,
+                                               "interval_unit": "hours"})
+    m.set_mode_costs(oil, failure_cost=250)
+    pm = __import__("backend.maintenance.position_models", fromlist=["link_saved"])
+    pm.link_saved(m, db, ["org-forecast-tasks"], set(), top, "degradation_model", "oil", [oil])
+    fc = pf.position_forecast(m, top, root=top, period="year", periods=10, fetch=fetch)
+    row = next(r for r in fc["models"] if r["model_type"] == "degradation_model")
+    assert row["distribution"].startswith("time to the limit (25 A/cm)")
+    assert row["tasks_counted"][0]["task"]["name"] == "Change engine oil"
+    usage = DutyPlan(Rate(12, per="week")).forecast(fc["start"], "2037-01-01", readings={"hours": 0})
+    direct = failures_by_period(NonRepairable(surv.LogNormal.from_params([mu, sigma]), unplanned_cost=250.0,
+                                              planned_cost=0.0), usage, "year", age=0.0, unit="hours", every=100.0,
+                                resets=False, since_renewal=0.0)
+    assert row["expected_failures"] == pytest.approx(direct.total["expected_failures"], rel=1e-3)
+    years = fc["rows"][4:10]
+    per_600 = sum(r["failures"] for r in years if r) / sum(r["hours"] for r in years) * 600
+    oil_per_600 = per_600 - _per_600(pf.position_forecast(m, top, root=top, period="year", periods=10,
+                                                          fetch=lambda t, i: None if t == "degradation_model" else fetch(t, i)),
+                                     "failures")
+    assert oil_per_600 == pytest.approx(0.0916, rel=0.1)

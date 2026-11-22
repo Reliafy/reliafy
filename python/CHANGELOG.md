@@ -8,6 +8,11 @@ Needs a server on the same release.
   and `downtime_rate` (`clear` unsets them), and `maintenance reliability.set_class_costs` takes
   `downtime_hours` and `downtime_rate`: each figure is the failure mode's own, else its class's.
   `reliafy maintenance failure_modes.update --failure-mode-id … --failure-cost 900 --downtime-hours 4`.
+- **A visit's cost**: `maintenance packages.update` and `maintenance tasks.update` (a task in no package)
+  take `visit_cost`, each visit's call-out and setup besides its tasks (-1 clears it); the forecast adds
+  `visits` and `visits_cost` to its planned cost, tasks due at the same time on one position being one visit.
+  A degradation model linked to a failure mode counts its limit crossings as that mode's failures.
+- **Renamed before release**: `maintenance rcm.optimise_task` is `maintenance rcm.optimise`.
 - **The forecast's cost split**: `maintenance get.forecast` rows and totals carry `labour_cost`,
   `materials_cost`, `other_planned_cost`, `unplanned_cost`, `downtime_hours`, `downtime_cost` and
   `total_cost`, with `cost_basis`, and `prompts` lists what to enter (failure modes with no failure

@@ -202,6 +202,7 @@ and failure_cost (expected), with failures_range / cost_range when one model is 
 done that period. totals: the same for the whole forecast, with its range. Ranges are 90%: the 5th to 95th \
 percentile of outcomes; with several positions the total's range assumes they fail independently.
 - Cost split (rows and totals): planned_cost = labour_cost + materials_cost (each task's LSA lines) + \
+visits_cost (visits x the package's visit_cost, or a lone task's; same position and time = one visit) + \
 other_planned_cost (a typed cost its LSA doesn't explain); unplanned_cost (= failure_cost) = failures x what a \
 failure costs (failure_cost + downtime_hours x downtime_rate, on the failure mode, else its position class: \
 failure_modes.update, reliability.set_class_costs); downtime_hours, downtime_cost; total_cost; total_complete \
