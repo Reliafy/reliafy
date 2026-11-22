@@ -7,7 +7,7 @@ import { CANCELLED_TEXT } from "../jobCancel.js";
 import { unitInText } from "./unitText.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { PlotCard } from "./model/ModelLayouts.jsx";
-import { enteredUnit, fromKelvin, inputStressName, kelvinWords, toKelvin, useForModel, useRangeWarning } from "../altFrame.js";
+import { enteredUnit, fromKelvin, inputStressName, kelvinWords, meanAtUse, toKelvin, useForModel, useRangeWarning } from "../altFrame.js";
 import ProTag from "./ProTag.jsx";
 import ExtrapolationNote from "./ui/ExtrapolationNote.jsx";
 import { formatReadable } from "../format.js";
@@ -208,6 +208,8 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
   }), [active, unit, showBand]);
 
   const m = res?.metrics || {};
+  // SurPyval's mean life with its two-sided interval; none where it is infinite.
+  const mean = meanAtUse(res);
   const af = res?.acceleration_factor;
   const bl = bounds?.b_lives || {};
   const mb = bounds?.mission;
@@ -233,7 +235,16 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
                 <span className="k">Characteristic life</span><span className="v">{fmt(m.characteristic_life)}{u}</span>
                 {lifeCi && <small className="alt-lower">{fmt(lifeCi[0])}–{fmt(lifeCi[1])} ({levelText} two-sided)</small>}
               </div>
-              <div className="alt-metric"><span className="k">Mean life</span><span className="v">{fmt(m.mean_life)}{u}</span></div>
+              {mean && (
+                <div className="alt-metric">
+                  <span className="k">Mean life (MTTF)</span><span className="v">{fmt(mean.value)}{u}</span>
+                  {mean.ci && (
+                    <small className="alt-lower" title="Wald (the delta method on the log of the mean), whichever bounds method is chosen">
+                      {fmt(mean.ci[0])}–{fmt(mean.ci[1])} ({Math.round(mean.level * 100)}% two-sided)
+                    </small>
+                  )}
+                </div>
+              )}
               <div className="alt-metric"><span className="k">B10 life</span><span className="v">{fmt(m.b10)}{u}</span>{lower(bl.b10)}</div>
               <div className="alt-metric"><span className="k">B1 life</span><span className="v">{fmt(m.b1)}{u}</span>{lower(bl.b1)}</div>
               <div className="alt-metric"><span className="k">B50 (median)</span><span className="v">{fmt(m.b50)}{u}</span></div>

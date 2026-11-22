@@ -93,17 +93,22 @@ gives the answer in short: the life-stress model, the shape with its interval,
 how far the life moves across the tested levels and the failures it was fitted
 to.
 
-The **Life-stress** tab is the ALT signature: characteristic life against
-stress, with each tested level marked and the fitted relationship drawn through
-them. Enter your **use stress** beside the chart: the line runs on to it, a star
+The **Life-stress** tab is the ALT signature: life against stress, with each
+tested level marked and the fitted relationship drawn through them. Under the
+chart, **Life shown** picks the life drawn: the **Median** (the default) or the
+**B10**, each with its 90% one-sided lower bound shaded below the line, or the
+**Characteristic** life with its 90% two-sided band. A temperature typed in °C
+or °F reads in that unit on the axis. Enter your **use stress** beside the chart: the line runs on to it, a star
 marks the life there, and the table gives the **acceleration factor** against
 each tested level. The life updates as you type, and the use stress is kept with
 the model, so it opens there next time. The **life at use stress** is shown with
 its 90% two-sided range: the further your use stress is from the tested levels,
-the wider it gets. This is where you see whether the extrapolation is a short
+the wider it gets. Under it, the **mean life (MTTF)** at the use stress has its
+90% two-sided range too. This is where you see whether the extrapolation is a short
 reach or a heroic one: a use stress outside the tested stresses gets a warning
 that the life there rests on the life-stress relationship alone. For an
-Arrhenius fit, the **activation energy** (Ea, in eV) is shown under the shape. A
+Arrhenius or Eyring fit, the **activation energy** (Ea, in eV, with its 90%
+two-sided range) is shown under the shape. A
 model with two stresses shows two charts side by side, one along each stress,
 with a line for each tested level of the other (on a phone, a switch picks one).
 
@@ -120,9 +125,22 @@ than in the field.
 ![The probability plot: parallel straight lines mean a trustworthy fit](/guides/img/alt-03-probplot.png)
 
 **Diagnostics** puts the same questions as tests, each with a one-line answer:
-is the shape the same at every stress, do the levels follow the life model,
-would another life model fit better, and how far is your use stress from the
-stresses you tested. **Data** lists each tested level (its units, failures and
+is the failure mechanism the same at every stress, do the levels follow the life
+model, would another life model fit better, and how far is your use stress from
+the stresses you tested.
+
+The first is what extrapolating rests on. An accelerated life model assumes one
+shape at every stress, so that stress moves only the life. The **common-shape
+test** fits each level on its own and compares that with one shape for all (a
+likelihood-ratio test, chi-squared on one degree of freedom fewer than the
+levels tested). A p-value above 0.05 reads "The shapes are consistent
+(p = 0.43)": the data show no sign of a different mechanism, and extrapolating to
+the use stress rests on that. Below 0.05 it reads "The shapes differ
+(p = 0.003)", which can mean a different failure mode at some stresses, so
+extrapolation is unreliable: look at the failures at the levels whose shape
+stands apart. The statistic, the degrees of freedom and each level's own shape
+are given under it. A level with fewer than two failures has no shape of its own,
+so it is left out of the test and named with its count. **Data** lists each tested level (its units, failures and
 fitted life), how the model was fitted and every parameter with its interval.
 
 ## Extrapolating to use level
@@ -130,8 +148,8 @@ fitted life), how the model was fitted and every parameter with its interval.
 Save the model and open the **Calculator** tab. Enter the stress your
 equipment actually runs at — below your tested range, which is the whole point —
 and press **Compute at use level**: you get the extrapolated reliability curve,
-the characteristic life, mean life, and B-lives at that condition, with their
-bounds (Wald, likelihood ratio or, on Pro, bootstrap): the life's range is 90%
+the characteristic life, mean life (MTTF, with its 90% two-sided range), and
+B-lives at that condition, with their bounds (Wald, likelihood ratio or, on Pro, bootstrap): the life's range is 90%
 two-sided, and the B-life and mission bounds are 90% one-sided lower bounds. The use stress is one for
 the whole page: the Life-stress tab and Diagnostics use the one you enter here.
 
