@@ -209,11 +209,43 @@ def _clean_covariates(values, who: str) -> dict:
     return out
 
 
+MAX_ITEMS = 500  # rows: an item can stand for many identical units (its count)
+MAX_UNITS = 20_000  # units across every row: each is forecast on its own
+
+
+def item_count(item: dict) -> int:
+    """How many identical units an item stands for (same age, rate and
+    conditions): 1 unless it says otherwise."""
+    try:
+        return max(1, int(item.get("count") or 1))
+    except (TypeError, ValueError):
+        return 1
+
+
+def unit_count(items) -> int:
+    """The units a fleet's items stand for: each item's count, added up."""
+    return sum(item_count(it) for it in items or [])
+
+
+def _clean_count(value, name: str) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        count = float(value)
+    except (TypeError, ValueError):
+        raise FleetValidationError(f"'{name}': the number of units must be a whole number.")
+    if not math.isfinite(count) or count < 1 or count != int(count):
+        raise FleetValidationError(f"'{name}': the number of units must be a whole number of at least 1.")
+    return int(count) if count > 1 else None
+
+
 def _clean_items(items) -> list[dict]:
     if not isinstance(items, list):
         raise FleetValidationError("items must be a list.")
-    if len(items) > 500:
-        raise FleetValidationError("A fleet is limited to 500 items.")
+    if len(items) > MAX_ITEMS:
+        raise FleetValidationError(
+            f"A fleet is limited to {MAX_ITEMS} items. An item can stand for many identical units: "
+            "give it the number of units instead of a row each.")
     out = []
     for item in items:
         name = str(item.get("name") or "").strip()
@@ -256,6 +288,9 @@ def _clean_items(items) -> list[dict]:
             if not np.isfinite(service) or service < 0:
                 raise FleetValidationError(f"'{name}': the next service can't be negative.")
             cleaned["next_service_at"] = service
+        count = _clean_count(item.get("count"), name)
+        if count:
+            cleaned["count"] = count
         covariates = _clean_covariates(item.get("covariates"), f"'{name}'")
         if covariates:
             cleaned["covariates"] = covariates
@@ -263,6 +298,9 @@ def _clean_items(items) -> list[dict]:
         if in_service is not None:
             cleaned["service_periods"] = in_service
         out.append(cleaned)
+    if unit_count(out) > MAX_UNITS:
+        raise FleetValidationError(
+            f"A fleet is limited to {MAX_UNITS:,} units in all; these items stand for {unit_count(out):,}.")
     return out
 
 
@@ -410,7 +448,46 @@ def compute(db, fleet: Fleet, owners, *, item_periods: bool = False, spares_opts
     ``item_periods`` adds each item's cumulative chance of failing by the end
     of every period (first-failures forecasts only). ``spares_opts`` (the
     fleet's spares settings, or a what-if) adds ``spares``: how many of the
-    replacement part to hold (#31)."""
+    replacement part to hold (#31).
+
+    An item with a ``count`` stands for that many identical units: each unit
+    is forecast on its own (so nothing is scaled or approximated), and the
+    item's row adds its units' expected failures up. ``prob_any`` stays one
+    unit's chance."""
+    items = fleet.items or []
+    if all(item_count(it) == 1 for it in items):
+        return _compute(db, fleet, owners, item_periods=item_periods, spares_opts=spares_opts)
+    units = [it for it in items for _ in range(item_count(it))]
+    out = _compute(db, fleet.model_copy(update={"items": units}), owners,
+                   item_periods=item_periods, spares_opts=spares_opts)
+    return _collapse_units(out, items)
+
+
+def _collapse_units(out: dict, items: list[dict]) -> dict:
+    """A forecast of expanded units back to one row per item: expected
+    failures added up, everything else (one unit's chance, its rate) kept."""
+    rows = out.get("per_item")
+    if not rows:
+        return out
+    by_id: dict = {}
+    for row in rows:
+        key = row.get("id")
+        if key not in by_id:
+            by_id[key] = dict(row)
+        elif row.get("expected") is not None:
+            by_id[key]["expected"] = (by_id[key].get("expected") or 0.0) + row["expected"]
+    collapsed = []
+    for it in items:
+        row = by_id.get(it.get("id"))
+        if row is None:
+            continue
+        if item_count(it) > 1:
+            row["count"] = item_count(it)
+        collapsed.append(row)
+    return {**out, "per_item": collapsed}
+
+
+def _compute(db, fleet: Fleet, owners, *, item_periods: bool = False, spares_opts: dict | None = None) -> dict:
     kind = fleet.model_kind
     if kind == "recurrent":
         return _compute_recurrent(db, fleet, owners, spares_opts)
@@ -864,7 +941,7 @@ def _forecast_single(model, ages, rates, periods, items, *, Z=None, limits=None,
     if warranty:
         out["out_of_warranty"] = int((limits <= 0).sum())
     if n_doomed:
-        names = ", ".join(items[i]["name"] for i in np.flatnonzero(doomed)[:5])
+        names = ", ".join(list(dict.fromkeys(items[i]["name"] for i in np.flatnonzero(doomed)))[:5])
         many = n_doomed != 1
         out["warnings"] = [
             f"{n_doomed} item{'s' if many else ''} ({names}{', …' if n_doomed > 5 else ''}) "
@@ -1345,5 +1422,5 @@ def headline(fleet: Fleet, forecast: dict) -> str:
     label = forecast.get("period_label", "periods")
     return (
         f"≈ {forecast.get('expected', 0):.1f} failures expected over "
-        f"{forecast.get('periods', 0)} {label} ({len(fleet.items or [])} items)"
+        f"{forecast.get('periods', 0)} {label} ({unit_count(fleet.items)} items)"
     )

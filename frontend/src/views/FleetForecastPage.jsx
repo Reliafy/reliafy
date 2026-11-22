@@ -18,12 +18,12 @@ import ResultSummary, { ResultDetails } from "../components/ui/ResultSummary.jsx
 import { formatNumber, formatPercent } from "../format.js";
 import { PlusIcon, itemName } from "../components/LibRows.jsx";
 import { unitInText } from "../components/unitText.js";
-import { convertPeriod, itemsWithoutUsage, periodDays, usageInputValue } from "../fleetUsage.js";
+import { convertPeriod, itemsWithoutUsage, periodDays, periodsText, periodWord as periodName, usageInputValue } from "../fleetUsage.js";
 import ScrollCue from "../components/ui/ScrollCue.jsx";
 import FleetSparesCard from "../components/FleetSparesCard.jsx";
 import FleetStrategyCard, { FailureCostField, FleetStrategyFields } from "../components/FleetStrategy.jsx";
 import FleetItemsImport, { runningUnitsLabel, useRunningUnits } from "../components/FleetItemsImport.jsx";
-import { mergeItems, patchSelected, removeSelected } from "../fleetItemsImport.js";
+import { mergeItems, patchSelected, removeSelected, unitTotal } from "../fleetItemsImport.js";
 import { PageTitle } from "../components/usePageTitle.js";
 import Loading from "../components/ui/Loading.jsx";
 import { Checkbox } from "../components/ui/Controls.jsx";
@@ -117,6 +117,9 @@ export default function FleetForecastPage() {
   // of period converts the usage and counts from it, and says so.
   const [periodBasis, setPeriodBasis] = useState(null);
   const [periodNote, setPeriodNote] = useState(null);
+  // What's typed in Period while it can't be taken (the horizon isn't a whole
+  // number of it): shown until the box loses focus, never saved.
+  const [periodDraft, setPeriodDraft] = useState(null);
   const navigate = useNavigate();
   const runningUnits = useRunningUnits(id, !!fleet && !fleet.read_only && fleet.model_kind !== "alt");
 
@@ -159,6 +162,10 @@ export default function FleetForecastPage() {
   const single = (settings.method || "renewals") === "single";
   const showService = single && !repairable && !blank(settings.warranty_periods);
   const nameById = Object.fromEntries(items.map((it) => [it.id, it.name]));
+  // An item can stand for many identical units (a count from the model's data):
+  // the table then has a Units column and the card counts units as well.
+  const hasCounts = items.some((it) => Number(it.count) > 1);
+  const units = unitTotal(items);
   // Items with no usage never age, so the forecast would read "≈ 0": ask for
   // the usage per period instead (unsaved), or caveat a saved forecast.
   const noUsage = itemsWithoutUsage(settings, items);
@@ -176,15 +183,23 @@ export default function FleetForecastPage() {
   // partial words ("quar…") without converting.
   const setPeriod = (label) => {
     const converted = periodBasis ? convertPeriod({ ...settings, period_label: label }, items, periodBasis, label) : null;
+    if (converted?.blocked) {
+      // The typed horizon can't be said in the new period: keep the one typed.
+      setSetting("period_label", periodBasis);
+      setPeriodDraft(label);
+      setPeriodNote(converted.blocked);
+      return;
+    }
+    setPeriodDraft(null);
     if (converted) {
-      const word = (l) => String(l).trim().replace(/s$/i, "");
+      const word = (l) => periodName(1, l);
       const rate = converted.settings.default_rate;
       const u = unit ? ` ${unitInText(unit)}` : "";
       setSettings(converted.settings);
       setItems(converted.items);
       setPeriodNote(Number(settings.default_rate) > 0
-        ? `Converted from ${word(periodBasis)}s: ${formatNumber(settings.default_rate, { sig: 6 })}${u} a ${word(periodBasis)} is ${formatNumber(rate, { sig: 6 })}${u} a ${word(label)}, over ${converted.settings.periods} ${word(label)}${converted.settings.periods === 1 ? "" : "s"}. Item rates, lead time and review interval are converted too.`
-        : `Converted from ${word(periodBasis)}s: horizon ${converted.settings.periods} ${word(label)}${converted.settings.periods === 1 ? "" : "s"}; item rates, lead time and review interval are converted too.`);
+        ? `Converted from ${periodName(2, periodBasis)}: ${formatNumber(settings.default_rate, { sig: 6 })}${u} a ${word(periodBasis)} is ${formatNumber(rate, { sig: 6 })}${u} a ${word(label)}, over ${periodsText(converted.settings.periods, label)}. Item rates, lead time and review interval are converted too.`
+        : `Converted from ${periodName(2, periodBasis)}: horizon ${periodsText(converted.settings.periods, label)}; item rates, lead time and review interval are converted too.`);
       setDirty(true);
     } else {
       setSetting("period_label", label);
@@ -216,10 +231,14 @@ export default function FleetForecastPage() {
   const removeItem = (idx) => { setItems((xs) => xs.filter((_, i) => i !== idx)); setSelected(new Set()); setDirty(true); };
   const replaceItems = (next) => { setItems(next); setSelected(new Set()); setDirty(true); };
   // The model's running units: straight in when the forecast has none yet,
-  // else a preview to add them or replace the items.
+  // else (or when close ages share a row) a preview to add them or replace the items.
   const takeModelUnits = () => {
-    if (items.length === 0 && runningUnits?.items?.length) replaceItems(mergeItems([], runningUnits.items));
-    else setImportMode("model");
+    // Units grouped at their average age go through the preview, which says so.
+    if (items.length === 0 && runningUnits?.items?.length && !runningUnits.grouped) {
+      replaceItems(mergeItems([], runningUnits.items));
+    } else {
+      setImportMode("model");
+    }
   };
   const toggle = (idx) => setSelected((sel) => {
     const next = new Set(sel);
@@ -337,7 +356,7 @@ export default function FleetForecastPage() {
     Number(settings.default_rate) > 0
       ? `${formatNumber(settings.default_rate, { sig: 6 })}${unit ? ` ${unitInText(unit)}` : ""} of use a ${settingsWord} per item`
       : items.length > 0 && noUsage === 0 ? "each item at its own rate" : `no usage per ${settingsWord} yet`,
-    `${settings.periods ?? 12} ${settingsPeriod}`,
+    periodsText(settings.periods ?? 12, settingsPeriod),
     methodText,
     settings.rate_source === "estimated" ? "rates from API readings" : null,
     single && !repairable && (!blank(settings.warranty_use) || !blank(settings.warranty_periods)) ? "warranty limits" : null,
@@ -445,8 +464,8 @@ export default function FleetForecastPage() {
             </label>
             <label className="login-field" style={{ width: 130 }}>
               <span>Period</span>
-              <input type="text" value={settings.period_label ?? "months"} list="fleet-period-options"
-                     onChange={(e) => setPeriod(e.target.value)} />
+              <input type="text" value={periodDraft ?? settings.period_label ?? "months"} list="fleet-period-options"
+                     onChange={(e) => setPeriod(e.target.value)} onBlur={() => setPeriodDraft(null)} />
               <datalist id="fleet-period-options">
                 {["days", "weeks", "months", "quarters", "years"].map((p) => <option key={p} value={p} />)}
               </datalist>
@@ -633,7 +652,9 @@ export default function FleetForecastPage() {
       <div className="card mt-4">
         <CardHeader
           title="Items"
-          subtitle={items.length > 0 ? `${items.length} item${items.length === 1 ? "" : "s"}` : undefined}
+          subtitle={items.length > 0
+            ? `${formatNumber(items.length)} item${items.length === 1 ? "" : "s"}${hasCounts ? ` · ${formatNumber(units)} units` : ""}`
+            : undefined}
           actions={!readOnly && items.length > 0 && (
             <div className="fleet-items-tools">
               {!importMode && runningUnits?.running > 0 && (
@@ -708,6 +729,11 @@ export default function FleetForecastPage() {
                     </th>
                   )}
                   <th>Item</th>
+                  {hasCounts && (
+                    <th className="num" style={{ width: 90 }} title="Identical units the row stands for: each is forecast on its own">
+                      Units
+                    </th>
+                  )}
                   <th className="num" style={{ width: 90 }}
                       title="From the simulation, to 2 significant figures: items with the same inputs can still differ slightly.">
                     Expected failures
@@ -744,6 +770,15 @@ export default function FleetForecastPage() {
                                  onChange={(e) => setItem(idx, "name", e.target.value)} />
                         )}
                       </td>
+                      {hasCounts && (
+                        <td className="num">
+                          {readOnly ? asText(it.count ?? 1) : (
+                            <input className="cell-input" type="number" inputMode="numeric" min="1" step="1"
+                                   value={it.count ?? 1} aria-label={`Units of ${it.name || "item"}`}
+                                   onChange={(e) => setItem(idx, "count", e.target.value === "" ? null : e.target.value)} />
+                          )}
+                        </td>
+                      )}
                       <td className="num fleet-expected"
                           title={r.history && r.rate_factor != null && !itemFiguresStale
                             ? `${r.history.system}: ${formatNumber(r.history.failures)} failures where the fleet model expects ${formatNumber(r.history.expected, { sig: 3 })}, so ×${formatNumber(r.rate_factor, { sig: 2 })} the fleet rate`
@@ -754,7 +789,10 @@ export default function FleetForecastPage() {
                         )}
                       </td>
                       {!hideProb && (
-                        <td className="num">{r.prob_any === undefined || itemFiguresStale ? "—" : formatPercent(r.prob_any)}</td>
+                        <td className="num">
+                          {r.prob_any === undefined || itemFiguresStale ? "—" : formatPercent(r.prob_any)}
+                          {Number(it.count) > 1 && r.prob_any !== undefined && !itemFiguresStale && <div className="hint">each unit</div>}
+                        </td>
                       )}
                       <td className="num">
                         {readOnly ? asText(it.current_use) : (

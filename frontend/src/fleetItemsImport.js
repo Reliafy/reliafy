@@ -5,7 +5,7 @@
 
 import { CONVERTIBLE_UNITS, guessUnit, timeUnitOf } from "./datasetGuess.js";
 
-export const MAX_ITEMS = 500; // a fleet's limit (backend/services/fleet.py)
+export const MAX_ITEMS = 500; // a fleet's limit on rows (backend/services/fleet.py)
 
 // Hours in one of each calendar unit, to convert ages typed in another.
 const HOURS = { Minutes: 1 / 60, Hours: 1, Days: 24, Weeks: 168, Months: 730.5, Years: 8766 };
@@ -318,9 +318,18 @@ export function readBlock(text, opts = {}) {
 }
 
 // The preview's sentence: "30 items read; 2 rows skipped".
+// The units a list of items stands for: an item with a count (identical
+// units, say 450 still running at 6 months) is that many.
+export function unitTotal(items = []) {
+  return items.reduce((sum, it) => sum + (Number(it.count) > 1 ? Math.floor(Number(it.count)) : 1), 0);
+}
+
+const thousands = (v) => Number(v).toLocaleString("en-GB");
+
 export function summary({ items = [], skipped = [] }, existing = 0) {
   const n = items.length;
-  const parts = [`${n} item${n === 1 ? "" : "s"} read`];
+  const units = unitTotal(items);
+  const parts = [`${thousands(n)} item${n === 1 ? "" : "s"} read${units > n ? ` (${thousands(units)} units)` : ""}`];
   if (skipped.length) parts.push(`${skipped.length} row${skipped.length === 1 ? "" : "s"} skipped`);
   let text = parts.join("; ");
   const room = MAX_ITEMS - existing;
