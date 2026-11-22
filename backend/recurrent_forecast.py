@@ -38,6 +38,88 @@ SEED = 0
 
 RANGE_NOTE = ("The range allows for chance and for the fit's own uncertainty (its parameters drawn from their "
               "estimated spread).")
+#: What a count's range means, beside the expected number's own (narrower) range.
+COUNT_NOTE = ("The range is for how many failures there will be: chance as well as the fit's own uncertainty. "
+              "The range of the expected number leaves chance out, so it is narrower; use the count's range for "
+              "spares.")
+#: The chance of not running out a stock level is worked out for, by default.
+DEFAULT_STOCK_LEVEL = 0.90
+
+
+# ---- Counts, stock levels and the constant-rate comparison ---------------------------------
+
+def stock_level(value) -> float:
+    """The chance of not running out to hold stock for: 0.5 to 0.999, a
+    percentage (90) read as 0.9; 90% when not given."""
+    from backend.services import spares
+
+    try:
+        level = spares.service_level(value)
+    except spares.SparesError as exc:
+        raise FitError(str(exc)) from None
+    return DEFAULT_STOCK_LEVEL if level is None else level
+
+
+def _mixture_pmf(means) -> np.ndarray:
+    """P(k failures) for a Poisson count whose mean is each of ``means``
+    (the fit's parameter draws) equally likely: chance and the fit's
+    uncertainty together, exactly, with no simulation noise."""
+    from scipy.stats import poisson
+
+    mu = np.clip(np.nan_to_num(np.asarray(means, dtype=float).ravel()), 0.0, None)
+    if mu.size == 0 or mu.max() <= 0:
+        return np.array([1.0])
+    k = np.arange(int(poisson.ppf(1 - 1e-9, mu.max())) + 2)
+    return poisson.pmf(k[None, :], mu[:, None]).mean(axis=0)
+
+
+def _nb_pmf(mean: float, var: float) -> np.ndarray:
+    """P(k failures) for a count with this mean and variance: a negative
+    binomial when over-dispersed, else Poisson (as :func:`_nb_quantiles`)."""
+    from scipy.stats import nbinom, poisson
+
+    if not (mean > 0):
+        return np.array([1.0])
+    if var > mean * (1 + 1e-9):
+        r = mean * mean / (var - mean)
+        pr = r / (r + mean)
+        k = np.arange(int(nbinom.ppf(1 - 1e-9, r, pr)) + 2)
+        return nbinom.pmf(k, r, pr)
+    k = np.arange(int(poisson.ppf(1 - 1e-9, mean)) + 2)
+    return poisson.pmf(k, mean)
+
+
+def _count_range(demand) -> list:
+    return [demand.quantile(levels.Q_LOW), demand.quantile(levels.Q_HIGH)]
+
+
+def stock(demand, level: float) -> dict:
+    """The smallest stock with at least ``level`` chance of covering the
+    count, and its chance of running out (spares in parts; the dollars are
+    worked out elsewhere)."""
+    hold = demand.quantile(level)
+    return {"level": level, "hold": hold, "runout": demand.prob_short(hold),
+            "runout_one_less": demand.prob_short(hold - 1) if hold >= 1 else None}
+
+
+def constant_rate(model) -> dict | None:
+    """The whole record's average rate (failures over the systems' observed
+    time), the store's usual basis for ordering: ``{failures, exposure,
+    rate}`` per system-hour, or None without event data."""
+    try:
+        d = model.data
+        x, c, item = np.asarray(d.x, dtype=float), np.asarray(d.c), np.asarray(d.i)
+        n = np.asarray(d.n, dtype=float) if d.n is not None else np.ones(x.size)
+        tl = np.asarray(d.tl, dtype=float) if d.tl is not None else np.zeros(x.size)
+        ids = list(d.ids)
+    except Exception:  # noqa: BLE001 - built from parameters
+        return None
+    failures = float(n[c == 0].sum())
+    starts = np.where(np.isfinite(tl), np.maximum(tl, 0.0), 0.0)
+    exposure = float(sum(x[item == s].max() - starts[item == s].min() for s in ids))
+    if not (exposure > 0):
+        return None
+    return {"failures": failures, "exposure": exposure, "rate": failures / exposure}
 
 
 # ---- Model kinds ------------------------------------------------------------------
@@ -182,7 +264,8 @@ def match_systems(names, effects: dict | None) -> list:
 
 # ---- Minimal-repair fleet forecast --------------------------------------------------
 
-def nhpp_forecast(model, ages, rates, periods: int, names=None, draws: int = DRAWS, year_groups=None) -> dict:
+def nhpp_forecast(model, ages, rates, periods: int, names=None, draws: int = DRAWS, year_groups=None,
+                  keep_demand: bool = False) -> dict:
     """Failures of repairable items over ``periods`` under a Poisson-process
     fit: each item at age ``a`` using ``r`` a period expects
     ``w·(Λ(a + k·r) − Λ(a))`` within ``k`` periods, ``w`` its rate factor
@@ -192,7 +275,11 @@ def nhpp_forecast(model, ages, rates, periods: int, names=None, draws: int = DRA
     the fit's parameter draws, each item's rate factor (a fitted system's
     posterior; for any other item, the fleet's spread between systems) and
     Poisson chance. Without a covariance (a model built from parameters) the
-    range is Poisson, given the model."""
+    range is Poisson, given the model. ``mean_interval`` is the expected
+    total's range (the fit's uncertainty and the rate factors, no chance);
+    ``keep_demand`` adds the total's distribution as ``demand`` (a
+    :class:`backend.services.spares.Demand`, not JSON) for a stock level."""
+    from backend.services import spares
     from scipy.stats import poisson
 
     model = _same_curve(model)
@@ -224,13 +311,19 @@ def nhpp_forecast(model, ages, rates, periods: int, names=None, draws: int = DRA
                            for m in matched])
         flat = grid.ravel()
         counts = np.empty((P.shape[0], periods))
+        means = np.empty(P.shape[0])
         for d, row in enumerate(P):
             with np.errstate(all="ignore"):
                 lam = np.asarray(_fitter(model_id).from_params(list(row)).cif(flat), dtype=float).reshape(grid.shape)
             inc = np.nan_to_num(np.diff(lam, axis=1), nan=0.0, posinf=0.0)
             w = rng.gamma(shape, 1.0 / rate_g) if s2 > 0 else np.ones(k)
-            counts[d] = rng.poisson(np.maximum((inc * w[:, None]).sum(axis=0), 0.0))
+            mu = np.maximum((inc * w[:, None]).sum(axis=0), 0.0)
+            means[d] = mu.sum()
+            counts[d] = rng.poisson(mu)
         totals = np.cumsum(counts, axis=1)
+        mean_interval = [float(v) for v in _quantiles(means)]
+        # The total's distribution: Poisson given each draw's mean, mixed.
+        demand = spares.Demand.from_pmf(_mixture_pmf(means)) if keep_demand else None
         lo, hi = _quantiles(totals[:, -1])
         p_lo, p_hi = _quantiles(counts)
         method = "simulated"
@@ -242,6 +335,8 @@ def nhpp_forecast(model, ages, rates, periods: int, names=None, draws: int = DRA
                 for q in (levels.Q_LOW, levels.Q_HIGH)]
         p_lo, p_hi = ends
         method = "poisson"
+        mean_interval = None
+        demand = spares.Demand.from_pmf(_mixture_pmf([expected])) if keep_demand else None
         if year_groups is not None:
             yearly = [[float(poisson.ppf(q, mu)) if mu > 0 else 0.0 for q in (levels.Q_LOW, levels.Q_HIGH)]
                       for mu in (float(per_period[g].sum()) for g in year_groups)]
@@ -255,9 +350,10 @@ def nhpp_forecast(model, ages, rates, periods: int, names=None, draws: int = DRA
             row["history"] = {"system": matched[i], "failures": sysd["failures"], "expected": sysd["expected"]}
         per_item.append(row)
     n_matched = sum(1 for m in matched if m)
-    return {
+    out = {
         "expected": expected,
         "interval": [float(lo), float(hi)],
+        "mean_interval": mean_interval,
         "per_period": [float(v) for v in per_period],
         "per_period_interval": [[float(a), float(b)] for a, b in zip(np.atleast_1d(p_lo), np.atleast_1d(p_hi))],
         "per_item": per_item,
@@ -265,6 +361,9 @@ def nhpp_forecast(model, ages, rates, periods: int, names=None, draws: int = DRA
         "units": _units_note(effects, n_matched, k, method),
         "yearly_interval": yearly,
     }
+    if keep_demand:
+        out["demand"] = demand
+    return out
 
 
 def _units_note(effects, n_matched: int, k: int, method: str) -> dict:
@@ -398,7 +497,8 @@ def _renewal_means(model, horizons, rows, ages, items: int, seed) -> tuple[np.nd
     return out, var
 
 
-def renewal_forecast(model, ages, rates, periods: int, names=None, year_groups=None) -> dict:
+def renewal_forecast(model, ages, rates, periods: int, names=None, year_groups=None,
+                     keep_demand: bool = False) -> dict:
     """Failures of repairable items over ``periods`` under an imperfect-
     repair fit, by simulation. An item named as a system in the model's data
     starts from where that system's history leaves it (its age at the end of
@@ -458,7 +558,10 @@ def renewal_forecast(model, ages, rates, periods: int, names=None, year_groups=N
     else:
         param_var = np.zeros(periods)
     sim_disp = total_var / totals[-1] if totals[-1] > 0 else 1.0
-    lo, hi = _nb_quantiles(totals[-1], totals[-1] * sim_disp + param_var[-1])
+    total_var_all = totals[-1] * sim_disp + param_var[-1]
+    lo, hi = _nb_quantiles(totals[-1], total_var_all)
+    mean_interval = ([max(0.0, float(totals[-1] - levels.Z * np.sqrt(param_var[-1]))),
+                      float(totals[-1] + levels.Z * np.sqrt(param_var[-1]))] if n else None)
     period_param = np.diff(np.concatenate([[0.0], np.sqrt(param_var)])) ** 2
     p_lo, p_hi = _nb_quantiles(per_period, per_period * sim_disp + period_param)
     yearly = None
@@ -487,9 +590,10 @@ def renewal_forecast(model, ages, rates, periods: int, names=None, year_groups=N
         text += ("Items not in the model's data are taken as having run their age since new with no failure yet: "
                  "name items as the model's systems to start them from their own history. ")
     text += RANGE_NOTE if n else "The range is the simulated spread only: this model has no fit uncertainty to add."
-    return {
+    out = {
         "expected": float(totals[-1]),
         "interval": [float(lo[0]), float(hi[0])],
+        "mean_interval": mean_interval,
         "per_period": [float(v) for v in per_period],
         "per_period_interval": [[float(a), float(b)] for a, b in zip(p_lo, p_hi)],
         "per_item": per_item,
@@ -497,6 +601,11 @@ def renewal_forecast(model, ages, rates, periods: int, names=None, year_groups=N
         "units": {"matched": n_matched, "spread": None, "text": text},
         "yearly_interval": yearly,
     }
+    if keep_demand:
+        from backend.services import spares
+
+        out["demand"] = spares.Demand.from_pmf(_nb_pmf(float(totals[-1]), float(total_var_all)))
+    return out
 
 
 # ---- The Calculator -------------------------------------------------------------------
@@ -544,13 +653,20 @@ def _pair(v):
     return [float(min(a[0], a[1])), float(max(a[0], a[1]))] if a.size >= 2 and np.all(np.isfinite(a[:2])) else None
 
 
-def calculate(model, results: dict, t: float, start: float | None = None, profile: dict | None = None) -> dict:
+def calculate(model, results: dict, t: float, start: float | None = None, profile: dict | None = None,
+              service_level=None) -> dict:
     """The Calculator's values at ``t`` with their bounds: expected failures
     per system from new N(t), the failure rate and the MTBF (its 90% range
     and one-sided 90% lower bound), and over ``[start, t]`` the expected
     failures per system. A covariate model is evaluated at ``profile``
     (``{column: level or number}``, the rest at the fleet's average); an
-    imperfect-repair model by simulation from new."""
+    imperfect-repair model by simulation from new.
+
+    The window's ``ci`` is the range of the count itself (chance and the
+    fit's uncertainty), ``mean_ci`` the expected number's (the fit's
+    uncertainty alone); ``stock`` the smallest stock with at least
+    ``service_level`` (90% unless given) chance of not running out over the
+    window; ``constant_rate`` the same window at the record's average rate."""
     try:
         t = float(t)
     except (TypeError, ValueError):
@@ -564,7 +680,10 @@ def calculate(model, results: dict, t: float, start: float | None = None, profil
     alpha = 1 - levels.LEVEL
     out: dict = {"t": t, "start": start, "level": levels.LEVEL}
     if _is_renewal(model):
-        return _json_safe({**out, **_renewal_calc(model, t, start)})
+        res = _renewal_calc(model, t, start, stock_level(service_level))
+        if "window" in res:
+            _with_constant_rate(res["window"], model, t - start)
+        return _json_safe({**out, **res})
 
     if _is_regression(model):
         z, label = _profile_vector(model, results, profile)
@@ -610,14 +729,41 @@ def calculate(model, results: dict, t: float, start: float | None = None, profil
     if start is not None:
         with np.errstate(all="ignore"):
             n_s = _first(model.cif(np.array([start])))
-        win = {"expected": (n_t - n_s) if n_t is not None and n_s is not None else None, "ci": None}
+        mean = (n_t - n_s) if n_t is not None and n_s is not None else None
+        win = {"expected": mean, "ci": None, "mean_ci": None, "range_kind": "count"}
         P = param_draws(model)
         if P is not None:
             lam = _cif_draws(model_id, P, [start, t])
-            lo, hi = _quantiles(lam[:, 1] - lam[:, 0])
-            win["ci"] = [float(lo), float(hi)]
-        out["window"] = win
+            means = lam[:, 1] - lam[:, 0]
+            lo, hi = _quantiles(means)
+            win["mean_ci"] = [float(lo), float(hi)]
+            pmf = _mixture_pmf(means)
+            win["range_note"] = COUNT_NOTE
+        else:  # built from parameters: chance only
+            pmf = _mixture_pmf([mean or 0.0])
+            win["range_note"] = "The range is chance only: this model has no fit uncertainty to add."
+        _count_and_stock(win, pmf, stock_level(service_level))
+        out["window"] = _with_constant_rate(win, model, t - start)
     return _json_safe(out)
+
+
+def _count_and_stock(win: dict, pmf, level: float) -> None:
+    """A window's count range and the stock to hold for it, from the count's
+    distribution."""
+    from backend.services import spares
+
+    demand = spares.Demand.from_pmf(pmf)
+    win["ci"] = _count_range(demand)
+    win["stock"] = stock(demand, level)
+
+
+def _with_constant_rate(win: dict, model, span: float, systems: int = 1) -> dict:
+    """The same span at the whole record's average rate, for a side-by-side
+    with how a store that orders on the average would see it."""
+    cr = constant_rate(model)
+    if cr is not None:
+        win["constant_rate"] = {**cr, "expected": cr["rate"] * span * systems}
+    return win
 
 
 def _rates(n_t, n_ci, rocof, r_ci, r_up) -> dict:
@@ -629,7 +775,7 @@ def _rates(n_t, n_ci, rocof, r_ci, r_up) -> dict:
             "mtbf": {"value": mtbf, "ci": mtbf_ci, "lower": mtbf_lower}}
 
 
-def _renewal_calc(model, t: float, start: float | None) -> dict:
+def _renewal_calc(model, t: float, start: float | None, level: float = DEFAULT_STOCK_LEVEL) -> dict:
     """N(t) from new for an imperfect-repair model, simulated (fixed seed),
     beyond the data too, with the fit's uncertainty by sigma points."""
     grid = np.array([v for v in (start, t) if v is not None], dtype=float)
@@ -667,14 +813,26 @@ def _renewal_calc(model, t: float, start: float | None) -> dict:
                            "added by sigma points." if spread else "Simulated from new; this fit has no "
                            "uncertainty to add.")}
     if start is not None:
-        out["window"] = {"expected": float(base[1] - base[0]), "ci": win_ci}
+        w = float(base[1] - base[0])
+        win = {"expected": w, "ci": None, "mean_ci": win_ci, "range_kind": "count"}
+        # The count: the simulated spread of one system's failures (about
+        # Poisson for a renewal-type process) widened by the fit's.
+        var = w + (((win_ci[1] - w) / levels.Z) ** 2 if win_ci else 0.0)
+        _count_and_stock(win, _nb_pmf(w, var), level)
+        win["range_note"] = (COUNT_NOTE if win_ci else
+                             "The range is chance only: this fit has no uncertainty to add.")
+        out["window"] = win
     return out
 
 
-def from_now(model, horizon: float) -> dict:
+def from_now(model, horizon: float, service_level=None) -> dict:
     """The fleet's failures over the next ``horizon`` from where each fitted
     system is now (the end of its record), with each system's share: the
-    model's own systems run through the forecast."""
+    model's own systems run through the forecast. ``interval`` is the count's
+    range (chance and the fit's uncertainty), ``mean_interval`` the expected
+    number's; ``stock`` the smallest stock with at least ``service_level``
+    (90% unless given) chance of not running out; ``constant_rate`` the
+    same stretch at the record's average rate."""
     try:
         h = float(horizon)
     except (TypeError, ValueError):
@@ -689,13 +847,22 @@ def from_now(model, horizon: float) -> dict:
     except Exception:  # noqa: BLE001
         raise FitError("This model has no event data to start from (built from parameters).")
     ends = np.array([float(x[item == s].max()) for s in model.data.ids])
+    level = stock_level(service_level)
     rates = np.ones(len(ids))
-    fc = (renewal_forecast if _is_renewal(model) else nhpp_forecast)(model, ends, rates * h, 1, names=ids)
+    fc = (renewal_forecast if _is_renewal(model) else nhpp_forecast)(model, ends, rates * h, 1, names=ids,
+                                                                     keep_demand=True)
     systems = [{"system": s, "age": float(a), "expected": r["expected"], **({"rate_factor": r["rate_factor"]}
                if "rate_factor" in r else {})} for s, a, r in zip(ids, ends, fc["per_item"])]
     systems.sort(key=lambda r: -r["expected"])
-    return _json_safe({"horizon": h, "expected": fc["expected"], "interval": fc["interval"], "level": levels.LEVEL,
-                       "systems": systems[:50], "n_systems": len(ids), "note": fc["units"]["text"]})
+    # The range and the stock from one distribution, so they agree.
+    out = {"horizon": h, "expected": fc["expected"], "interval": _count_range(fc["demand"]),
+           "mean_interval": fc["mean_interval"], "range_kind": "count", "range_note": COUNT_NOTE,
+           "stock": stock(fc["demand"], level), "level": levels.LEVEL,
+           "systems": systems[:50], "n_systems": len(ids), "note": fc["units"]["text"]}
+    cr = constant_rate(model)
+    if cr is not None:
+        out["constant_rate"] = {**cr, "expected": cr["rate"] * h * len(ids)}
+    return _json_safe(out)
 
 
 # ---- Overhaul interval range ---------------------------------------------------------------

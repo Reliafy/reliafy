@@ -415,10 +415,11 @@ def calculate(
     session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """The Calculator's values with their 90% bounds, from the saved model.
-    JSON ``{t, start?, profile?}``: expected failures per system from new at
-    ``t``, the failure rate and MTBF there, and over ``[start, t]`` the
-    expected failures; ``profile`` the covariate values for a covariate model
-    (``{column: level or number}``). An imperfect-repair model is simulated,
+    JSON ``{t, start?, profile?, service_level?}``: expected failures per
+    system from new at ``t``, the failure rate and MTBF there, and over
+    ``[start, t]`` the expected failures with the count's range and the
+    stock to hold at ``service_level`` (90% unless given); ``profile`` the
+    covariate values for a covariate model (``{column: level or number}``). An imperfect-repair model is simulated,
     beyond the data too. Read-only, not metered."""
     from backend import recurrent_forecast
 
@@ -428,7 +429,8 @@ def calculate(
     try:
         live = recurrent_service.get_live_model(session, model_id, [*ctx.read_owners, doc.owner_id])
         return JSONResponse(content=recurrent_forecast.calculate(
-            live, doc.results or {}, body.get("t"), start=body.get("start"), profile=body.get("profile")))
+            live, doc.results or {}, body.get("t"), start=body.get("start"), profile=body.get("profile"),
+            service_level=body.get("service_level")))
     except recurrent_service.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except (FitError, ValueError, TypeError) as exc:
@@ -437,12 +439,14 @@ def calculate(
 
 @router.post("/recurrent/models/{model_id}/from-now")
 def from_now(
-    model_id: str, horizon: float = Body(..., embed=True),
+    model_id: str, horizon: float = Body(..., embed=True), service_level: float | None = Body(None, embed=True),
     session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
     """The fleet's failures over the next ``horizon`` from where each of the
-    model's systems is now (the end of its record), with a 90% range that
-    carries the fit's uncertainty; imperfect repair by simulation."""
+    model's systems is now (the end of its record), with a 90% range of the
+    count (chance and the fit's uncertainty), the expected number's own range,
+    and the stock to hold for ``service_level`` (the chance of not running
+    out, 90% unless given); imperfect repair by simulation."""
     from backend import recurrent_forecast
 
     doc, _ = access_service.fetch_readable(session, "recurrent_models", RecurrentModelDoc, model_id, ctx)
@@ -450,7 +454,7 @@ def from_now(
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     try:
         live = recurrent_service.get_live_model(session, model_id, [*ctx.read_owners, doc.owner_id])
-        return JSONResponse(content=recurrent_forecast.from_now(live, horizon))
+        return JSONResponse(content=recurrent_forecast.from_now(live, horizon, service_level))
     except recurrent_service.ModelNotFound:
         return JSONResponse(status_code=404, content={"detail": "Model not found."})
     except (FitError, ValueError, TypeError) as exc:

@@ -187,9 +187,15 @@ the average rate and MTBF across it. Each figure on a saved model has its 90%
 range (the MTBF also its 90% lower bound). An imperfect-repair model is simulated,
 beyond the data too; a covariate model is read at the values you choose (a site,
 a duty). **From now on** gives the fleet's failures over the next stretch from
-where each system is now, with a range that allows for chance and for the fit's
-own uncertainty. That's the number that sizes a spares order or a maintenance
-budget.
+where each system is now. Both give the 90% range of **how many** failures
+there will be (chance and the fit's own uncertainty: the range to plan spares
+from), and beside it the narrower range of the expected number (the fit's
+uncertainty alone). **Stock to hold** is the smallest stock with at least the
+chance of not running out you pick (90% unless you choose another), with the
+chance of running out at that stock and at one fewer; and **At the record's
+average rate** shows the same stretch on the whole record's average, the way a
+store ordering on the average would see it. That sizes a spares order or a
+maintenance budget; the dollars stay with you.
 
 ## Plan ahead
 
