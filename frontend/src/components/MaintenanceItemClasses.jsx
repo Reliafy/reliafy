@@ -18,27 +18,28 @@ import { DESCRIPTION_HINT, tooLong } from "../maintenanceText.js";
 import { partsPath } from "../redirects.js";
 import LoadFailed from "./LoadFailed.jsx";
 import Loading from "./ui/Loading.jsx";
+import { Select } from "./ui/Controls.jsx";
 
 // ---- pickers ---------------------------------------------------------------------------
 
 // A class from the flat list (getItemClasses().classes: each with its display path).
 export function ClassPicker({ classes, value, onChange, emptyLabel = "None", exclude }) {
   return (
-    <select value={value || ""} onChange={(e) => onChange(e.target.value || null)}>
+    <Select value={value || ""} onChange={(e) => onChange(e.target.value || null)}>
       <option value="">{emptyLabel}</option>
       {(classes || []).filter((c) => !exclude?.has(c.id)).map((c) => (
         <option key={c.id} value={c.id}>{c.display}</option>
       ))}
-    </select>
+    </Select>
   );
 }
 
 function MakerPicker({ makers, value, onChange, emptyLabel = "None", exclude }) {
   return (
-    <select value={value || ""} onChange={(e) => onChange(e.target.value || null)}>
+    <Select value={value || ""} onChange={(e) => onChange(e.target.value || null)}>
       <option value="">{emptyLabel}</option>
       {(makers || []).filter((mk) => mk.id !== exclude).map((mk) => <option key={mk.id} value={mk.id}>{mk.name}</option>)}
-    </select>
+    </Select>
   );
 }
 
@@ -49,20 +50,20 @@ export function KindFilters({ classes, makers, value, onChange }) {
   return (
     <>
       {classes?.length > 0 && (
-        <select aria-label="Item class" value={value.itemClassId || ""} style={{ maxWidth: "16rem" }}
+        <Select aria-label="Item class" value={value.itemClassId || ""} className="kind-filter"
                 onChange={(e) => onChange({ ...value, itemClassId: e.target.value || null })}>
           <option value="">Every class</option>
           <option value="none">No class</option>
           {classes.map((c) => <option key={c.id} value={c.id}>{c.display}</option>)}
-        </select>
+        </Select>
       )}
       {makers?.length > 0 && (
-        <select aria-label="Manufacturer" value={value.manufacturerId || ""}
+        <Select aria-label="Manufacturer" value={value.manufacturerId || ""}
                 onChange={(e) => onChange({ ...value, manufacturerId: e.target.value || null })}>
           <option value="">Every manufacturer</option>
           <option value="none">No manufacturer linked</option>
           {makers.map((mk) => <option key={mk.id} value={mk.id}>{mk.name}</option>)}
-        </select>
+        </Select>
       )}
     </>
   );
@@ -143,10 +144,10 @@ function ItemKindModal({ item, kinds, onClose, onDone }) {
   return (
     <FormModal title={`What ${item.name} is`} submitLabel="Save" onClose={onClose} onSubmit={submit}>
       <Field label="Model: the catalogue part it is (its class and maker come with it)">
-        <select value={f.partId || ""} onChange={(e) => setF({ ...f, partId: e.target.value || null })}>
+        <Select value={f.partId || ""} onChange={(e) => setF({ ...f, partId: e.target.value || null })}>
           <option value="">{parts === null ? "Loading…" : "None"}</option>
           {(parts || []).map((pt) => <option key={pt.id} value={pt.id}>{pt.part_number} · {pt.name}</option>)}
-        </select>
+        </Select>
       </Field>
       <Field label="Its own item class (leave as None to take its part's)">
         <ClassPicker classes={kinds.classes} value={f.itemClassId} onChange={(v) => setF({ ...f, itemClassId: v })} />
@@ -179,10 +180,10 @@ function AttributesModal({ item, onClose, onDone }) {
       {item.attributes.map((a) => (
         <Field key={a.name} label={`${a.name}${a.unit ? ` (${a.unit})` : ""}`}>
           {a.kind === "choice" ? (
-            <select value={values[a.name] ?? ""} onChange={(e) => setValues({ ...values, [a.name]: e.target.value })}>
+            <Select value={values[a.name] ?? ""} onChange={(e) => setValues({ ...values, [a.name]: e.target.value })}>
               <option value="">—</option>
               {a.options.map((o) => <option key={o} value={o}>{o}</option>)}
-            </select>
+            </Select>
           ) : (
             <input type={a.kind === "number" ? "number" : "text"} step="any" inputMode={a.kind === "number" ? "decimal" : undefined}
                    value={values[a.name] ?? ""} onChange={(e) => setValues({ ...values, [a.name]: e.target.value })} />
@@ -403,9 +404,9 @@ function ClassAttributesModal({ c, onClose, onDone }) {
         <div key={i} className="maint-row" style={{ marginTop: "0.25rem" }}>
           <input placeholder="e.g. Flow" value={r.name} onChange={setRow(i, "name")} />
           <input placeholder="unit, e.g. m3/h" value={r.unit} style={{ width: "7rem" }} onChange={setRow(i, "unit")} />
-          <select value={r.kind} onChange={setRow(i, "kind")}>
+          <Select value={r.kind} onChange={setRow(i, "kind")}>
             {ATTRIBUTE_KINDS.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
-          </select>
+          </Select>
           {r.kind === "choice" && <input placeholder="options: a | b | c" value={r.options} onChange={setRow(i, "options")} />}
           <button className="secondary" onClick={() => setRows(rows.filter((_, j) => j !== i))}>Remove</button>
         </div>

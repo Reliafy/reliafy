@@ -17,6 +17,7 @@ import "./MeasurementViews.css";
 import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { DateInput } from "./ui/DateTimeInput.jsx";
 import Loading from "./ui/Loading.jsx";
+import { Select } from "./ui/Controls.jsx";
 
 // Consumables (salt added to the pool; acid; a stabiliser): the Measurements
 // tab's monthly bars, the dialogs to record a use (Record use…: another date,
@@ -106,18 +107,18 @@ export function AddConsumableModal({ position, onClose, onDone }) {
       <p className="lib-date">Something added at {position.name} that gets used up: salt, acid, a stabiliser. Each addition is kept, and comes out of stock where the part is held.</p>
       {parts && parts.length > 0 && (
         <Field label="It is">
-          <select value={mode} onChange={(e) => setMode(e.target.value)}>
+          <Select value={mode} onChange={(e) => setMode(e.target.value)}>
             <option value="pick">A part in the parts register</option>
             <option value="new">A new one (added to the register)</option>
-          </select>
+          </Select>
         </Field>
       )}
       {mode === "pick" && parts && (
         <Field label="Part">
-          <select value={partId} onChange={(e) => setPartId(e.target.value)} autoFocus>
+          <Select value={partId} onChange={(e) => setPartId(e.target.value)} autoFocus>
             <option value="">Choose…</option>
             {parts.map((p) => <option key={p.id} value={p.id}>{p.part_number === p.name ? p.name : `${p.part_number} ${p.name}`}{p.unit ? ` (${p.unit})` : ""}</option>)}
-          </select>
+          </Select>
         </Field>
       )}
       {mode === "new" && (

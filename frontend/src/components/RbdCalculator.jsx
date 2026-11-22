@@ -44,7 +44,7 @@ import { importanceRows } from "../rbdImportance.js";
 import ProTag from "./ProTag.jsx";
 import PercentField from "./PercentField.jsx";
 import { readPercents } from "../percentForms.js";
-import { Checkbox } from "./ui/Controls.jsx";
+import { Checkbox, Select } from "./ui/Controls.jsx";
 
 // Linear interpolation of y at xq on the (x, y) grid (null y = gap).
 function interp(x, y, xq) {
@@ -1485,7 +1485,7 @@ function AsOfPanel({ blocks, states, onChange, unitLabel, repairable, sources = 
                     )}
                   </td>
                   <td>
-                    <select
+                    <Select
                       value={mode}
                       aria-label={`${b.label} state now`}
                       onChange={(e) => onChange(b.id, { mode: e.target.value })}
@@ -1493,7 +1493,7 @@ function AsOfPanel({ blocks, states, onChange, unitLabel, repairable, sources = 
                       <option value="new">New</option>
                       <option value="age">Running</option>
                       <option value={outMode}>{repairable ? "Down" : "Failed"}</option>
-                    </select>
+                    </Select>
                   </td>
                   <td>
                     {!timed ? (

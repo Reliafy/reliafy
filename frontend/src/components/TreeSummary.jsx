@@ -18,6 +18,7 @@ import { builtAsTitle, carriedAsTitle, classLabel, isDesignClass } from "../posi
 import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { hoursWords, planWords } from "../operatingPlan.js";
 import Loading from "./ui/Loading.jsx";
+import { Select } from "./ui/Controls.jsx";
 
 // The Explorer's Summary tab (#UI, the RCM details panel's patterns): one
 // column, a readable width at most. Status chips and the description first,
@@ -433,9 +434,9 @@ function Inside({ r, display, onSelect, add, here = null, design = false }) {
              aside={r.kids.length > 1 && (
                <label className="td-sort">
                  <span className="sr-only">Sort what's inside</span>
-                 <select className="ctl td-sort-sel" value={sort} onChange={(e) => setSort(e.target.value)}>
+                 <Select className="td-sort-sel" value={sort} onChange={(e) => setSort(e.target.value)}>
                    {sorts.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-                 </select>
+                 </Select>
                </label>
              )}>
       {r.kids.length === 0 && <p className="td-quiet">Nothing inside yet.</p>}
