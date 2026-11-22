@@ -60,7 +60,6 @@
 .lib-share fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--space-1-5); }
 .lib-share legend { font-weight: 600; margin-bottom: var(--space-1); }
 .lib-share-choice { display: flex; gap: var(--space-2); align-items: flex-start; min-height: 32px; }
-.lib-share-choice input { margin-top: var(--space-1); }
 .lib-ws { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-1-5); }
 .lib-ws li { display: inline-flex; align-items: center; gap: var(--space-1); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: var(--space-0-5) var(--space-1) var(--space-0-5) var(--space-2); max-width: 100%; }
 .lib-ws code { overflow-wrap: anywhere; }

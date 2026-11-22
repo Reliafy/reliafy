@@ -75,7 +75,8 @@
 .ft-row-label { font-weight: 600; overflow-wrap: anywhere; }
 .ft-row-top { font-weight: 400; color: var(--text-secondary); font-size: var(--fs-12); }
 .ft-row-sub { font-size: var(--fs-12); color: var(--text-secondary); overflow-wrap: anywhere; }
-.ft-row-dots { min-width: 36px; min-height: 36px; padding: 0 var(--space-1-5); }
+.ft-row-dots { min-width: var(--control-md); min-height: var(--control-md); padding: 0 var(--space-1-5); }
+@media (max-width: 720px) { .ft-row-dots { min-width: var(--control-lg); min-height: var(--control-lg); } }
 .ft-row-menu .ovm-menu { min-width: 210px; }
 
 /* The row's mark: a gate's type, or a basic event's circle. */

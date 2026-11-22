@@ -1,14 +1,5 @@
-/* What to improve's tabs and measures (#225): a wrapping row of text tabs, the
+/* What to improve's tabs and measures (#225): the shared Tabs, the
    tab's question, then the answer, one chart in a tight card, Details. */
-.rbd-improve-tabs { display: flex; flex-wrap: wrap; gap: 0 var(--space-4); border-bottom: 1px solid var(--border); }
-.rbd-improve-tab {
-  appearance: none; background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
-  margin: 0 0 -1px; padding: var(--space-2) 0; min-height: 36px; font: inherit; font-size: var(--fs-14);
-  color: var(--text-secondary); cursor: pointer; box-shadow: none;
-}
-.rbd-improve-tabs .rbd-improve-tab:hover:not(:disabled) { color: var(--text); background: none; }
-.rbd-improve-tabs .rbd-improve-tab.active { color: var(--accent-text); border-bottom-color: var(--accent); font-weight: 500; }
-.rbd-improve-tab:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .rbd-improve-q { margin: var(--space-2) 0 0; font-size: var(--fs-16); font-weight: 600; color: var(--text); }
 .rbd-measure { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
 .rbd-measure .result-summary { margin: 0; }
@@ -18,10 +9,6 @@
 .rbd-improve-limit { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-1-5); margin-top: var(--space-1);
   font-size: var(--fs-12); color: var(--text-secondary); }
 .rbd-improve-limit input { width: 6.5em; }
-@media (max-width: 640px) {
-  .rbd-improve-tabs { gap: 0 var(--space-3); }
-  .rbd-improve-tab { min-height: 44px; }
-}
 .rbd-measure-table td, .rbd-measure-table th { font-variant-numeric: tabular-nums; vertical-align: top; }
 .rbd-measure-table th:first-child, .rbd-measure-table td:first-child { text-align: left; white-space: normal; }
 .rbd-measure-table td:first-child .muted { font-size: var(--fs-12); color: var(--text-secondary); }

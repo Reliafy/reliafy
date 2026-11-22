@@ -17,6 +17,8 @@ import { getMaintenanceLocation, getOperatingPlan, getPositionCondition, getRoll
 import { builtAsTitle, carriedAsTitle, classLabel, isDesignClass } from "../positionClass.js";
 import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { hoursWords, planWords } from "../operatingPlan.js";
+import Loading from "./ui/Loading.jsx";
+import { Select } from "./ui/Controls.jsx";
 
 // The Explorer's Summary tab (#UI, the RCM details panel's patterns): one
 // column, a readable width at most. Status chips and the description first,
@@ -288,7 +290,7 @@ function Work({ r, state, today, fullPage, logEvent = null }) {
   let body;
   let count = null;
   if (error) body = <p className="field-error" role="alert">Couldn't load its work: {error} Try again in a moment.</p>;
-  else if (!data) body = <p className="td-quiet">Loading…</p>;
+  else if (!data) body = <Loading inline as="p" />;
   else {
     const tasks = [...(data.tasks || []), ...(data.item_tasks || []).map((t) => ({ ...t, onItem: true }))]
       .sort((a, b) => (b.overdue - a.overdue) || (a.next_due || "9999").localeCompare(b.next_due || "9999"));
@@ -432,9 +434,9 @@ function Inside({ r, display, onSelect, add, here = null, design = false }) {
              aside={r.kids.length > 1 && (
                <label className="td-sort">
                  <span className="sr-only">Sort what's inside</span>
-                 <select className="ctl td-sort-sel" value={sort} onChange={(e) => setSort(e.target.value)}>
+                 <Select className="td-sort-sel" value={sort} onChange={(e) => setSort(e.target.value)}>
                    {sorts.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-                 </select>
+                 </Select>
                </label>
              )}>
       {r.kids.length === 0 && <p className="td-quiet">Nothing inside yet.</p>}

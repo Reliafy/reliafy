@@ -75,7 +75,7 @@
 }
 
 .sg-field input,
-.sg-field select {
+.sg-field select, .sg-field .sel-trigger {
   font-size: var(--fs-13);
   max-width: 100%;
 }

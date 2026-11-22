@@ -32,7 +32,7 @@ shape:
 Each element fails dangerously undetected at a constant rate (λDU), is
 proof-tested every 8,760 hours (yearly) and is repaired at once when a test
 finds it failed. The diagram is a **Safety function**, with a target of SIL 2:
-the switch on the builder's toolbar is on, and the chip beside it holds the
+the switch in the diagram's settings (the toolbar button beside Undo) is on, and the chip beside it holds the
 target. Calculate it as it is to see the results, then make it yours.
 Until you **Save**, your edits stay in this browser tab, so a reload keeps
 them; the note above the diagram says when they've been brought back.
@@ -43,7 +43,7 @@ Each block's summary shows its λDU, *instant repair* and its proof-test interva
 (⏱ 8,760 h); the transmitters also carry their common-cause chip, ⚭ β 5%.
 
 To turn an existing diagram into a safety function instead, switch on
-**Safety function** in its toolbar. A safety function is a repairable diagram,
+**Safety function** in its settings (the toolbar button beside Undo). A safety function is a repairable diagram,
 so the switch makes it one.
 
 ## Describe each element
@@ -63,8 +63,8 @@ or right-click it and choose **Rename**.
 
 Redundant channels that belong to one common-cause group must be identical:
 give them the same λDU, as a **Mean** or as **Parameters** (a mean of
-1,000,000 hours is λ = 1e-6 exactly). If a group's members differ, **Validate**
-says so before you calculate.
+1,000,000 hours is λ = 1e-6 exactly). If a group's members differ, the check
+(at the right of the toolbar) says so before you calculate.
 
 Failures that are found at once by diagnostics aren't part of λDU. **Every
 block repaired instantly** in the toolbar's ⋯ menu repairs every element as
@@ -85,7 +85,7 @@ floor under a redundant pair's PFDavg.
 
 ## Read the results
 
-**Validate**, then open the **Calculator** and calculate. A safety function's
+Once the check shows **✓ Valid**, open the **Calculator** and calculate. A safety function's
 results lead with:
 
 - the **PFDavg** and the **SIL** band it falls in (low demand: SIL 1 below 0.1,
@@ -142,7 +142,7 @@ partner:
    press **Edit in the plan**. That saves the block and opens the diagram's
    **Maintenance plan** on it: set its **Task** to **Proof test**, every
    **8,760** hours.
-3. **Validate** and calculate: the PFDavg falls to **1.37e-4, SIL 3**.
+3. Calculate again: the PFDavg falls to **1.37e-4, SIL 3**.
 
 That figure treats the two valves as independent, which two valves of one type
 on one line rarely are. Select both valves (shift-click), choose

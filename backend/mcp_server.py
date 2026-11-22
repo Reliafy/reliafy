@@ -882,7 +882,7 @@ ONE_OF = {
     ("change", "upload_send_part"): "upload_id ...", ("analyse", "plan_accelerated_test"): "life_params ...",
 }
 #: Kept short: tools/list is capped at 8,000 characters (test_mcp_tools.py); it appears on every tool.
-ARGS_HELP = "Args: see guide(action='<tool>.<action>')."
+ARGS_HELP = "See guide(action='<tool>.<action>')."
 
 
 def _pointer(tool: str, value: str) -> str:

@@ -27,7 +27,7 @@ import { RolesCard } from "../components/RolePicker.jsx";
 import { StartHere, StartHereCompact, useActivation } from "../components/FirstRun.jsx";
 import WhatChangedPanel, { ChangeList } from "../components/WhatChanged.jsx";
 import UnsavedFitReminder from "../components/UnsavedFitReminder.jsx";
-import PlaceholderRows from "../components/PlaceholderRows.jsx";
+import Loading from "../components/ui/Loading.jsx";
 import LoadFailed from "../components/LoadFailed.jsx";
 import { partsPath } from "../redirects.js";
 import { ORDERS_PATH, ordersPath } from "../maintenanceOrders.js";
@@ -64,7 +64,7 @@ function HomeList({ id, title, note, all, rows, empty, loading = false, failed =
       {(loading || !failed || rows.length > 0 || children) && (
         <div className="wc-card">
           {children}
-          {loading ? <PlaceholderRows label={`Loading ${title}…`} />
+          {loading ? <Loading label={`Loading ${title}…`} />
             : rows.length > 0 ? <ChangeList rows={rows} /> : !failed && empty && <p className="home-none">{empty}</p>}
         </div>
       )}
@@ -81,7 +81,7 @@ function HomeWaiting() {
       {[4, 6].map((rows) => (
         <section className="wc-panel home-list" key={rows} aria-hidden="true">
           <div className="recent-models-head"><span className="wait-bar home-wait-title" /></div>
-          <div className="wc-card"><PlaceholderRows rows={rows} label={null} /></div>
+          <div className="wc-card"><Loading rows={rows} label={null} /></div>
         </section>
       ))}
     </div>
@@ -353,7 +353,7 @@ export default function HomePage() {
       ) : (
         <>
           {place === "large" && (firstRun === null
-            ? <div className="wc-card home-start-wait"><PlaceholderRows label="Loading the ways to start…" /></div>
+            ? <div className="wc-card home-start-wait"><Loading label="Loading the ways to start…" /></div>
             : <StartHere info={firstRun} sampleModelId={sampleModelId} />)}
           {place === "first" && (
             <div className="home-start-first"><StartHereCompact sampleModelId={sampleModelId} /></div>

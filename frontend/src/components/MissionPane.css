@@ -51,9 +51,9 @@
 .mission-grid-table thead th { font-weight: 600; white-space: nowrap; max-width: 12rem; overflow: hidden; text-overflow: ellipsis; }
 .mission-grid-table tbody th { font-weight: 600; max-width: 14rem; overflow-wrap: anywhere; }
 .mission-grid-n { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-.mission-grid-table select { min-height: 36px; font-size: var(--fs-13); }
-.mission-grid-table td.is-standby select { font-style: italic; }
-.mission-grid-table td.is-off select { color: var(--text-secondary); }
+.mission-grid-table select, .mission-grid-table .sel-trigger { min-height: 36px; font-size: var(--fs-13); }
+.mission-grid-table td.is-standby select, .mission-grid-table td.is-standby .sel-trigger { font-style: italic; }
+.mission-grid-table td.is-off select, .mission-grid-table td.is-off .sel-trigger { color: var(--text-secondary); }
 .mission-grid-key { margin: 0; display: flex; flex-direction: column; gap: var(--space-0-5); font-size: var(--fs-12); color: var(--text-secondary); }
 .mission-grid-key > div { display: flex; flex-wrap: wrap; gap: 0 var(--space-1-5); }
 .mission-grid-key dt { font-weight: 600; color: var(--text, inherit); }

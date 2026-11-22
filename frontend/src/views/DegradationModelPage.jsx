@@ -8,6 +8,7 @@ import { deleteDegradationModel, downloadModelPython, getDegradationModel, renam
 import DownloadPythonItem from "../components/model/DownloadPythonItem.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import ModelFrame from "../components/model/ModelFrame.jsx";
+import ModelSetsInterval from "../components/ModelSetsInterval.jsx";
 import useTabParam from "../components/model/useTabParam.js";
 import { degradationAnswer } from "../degradationFrame.js";
 import { itemName } from "../components/LibRows.jsx";
@@ -15,6 +16,7 @@ import { relativeTime } from "../instrument.js";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 import { PageTitle } from "../components/usePageTitle.js";
+import Loading from "../components/ui/Loading.jsx";
 
 // One saved degradation model in the model frame: the answer line, the
 // result's tabs (in the address, ?tab=), "Track items" (the fleet of tracked
@@ -79,7 +81,12 @@ export default function DegradationModelPage() {
           </button>
         </>
       )}
-      notice={error && <div className="card error mf-notice" role="alert">{error}</div>}
+      notice={(
+        <>
+          {model && <ModelSetsInterval modelId={model.id} />}
+          {error && <div className="card error mf-notice" role="alert">{error}</div>}
+        </>
+      )}
     >
       {model ? (
         // A model this page can't draw shows a card here, not the whole-app error page.
@@ -88,7 +95,7 @@ export default function DegradationModelPage() {
                                  datasetId={model.dataset_id} tab={tab} onTab={(t) => setTab(t, "paths")} />
         </ErrorBoundary>
       ) : missing ? <ModelNotFound id={id} kind="degradation" />
-        : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
+        : !error && <div className="mf-body mf-single"><Loading /></div>}
       <PageTitle name={model && itemName(model)} />
     </ModelFrame>
   );

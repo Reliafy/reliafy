@@ -78,6 +78,7 @@ test("the cells: headline with bounds, mean, B10, counts, used by", () => {
   assert.equal(countsText({ counts: { units: 6 } }), "6 units measured");
   assert.equal(usedText({ used_by: { decisions: [{}, {}], rbds: [{}] } }), "2 decisions · 1 RBD");
   assert.equal(usedText({ used_by: { decisions: [], rbds: [] } }), "");
+  assert.equal(usedText({ used_by: { decisions: [{}], rbds: [], tasks: [{}] } }), "1 decision · 1 task interval");
   assert.equal(fmt(null), "—");
   assert.equal(fmt(1234567), "1,235,000");
   assert.equal(withBounds({ value: 5, unit: "" }), "5");

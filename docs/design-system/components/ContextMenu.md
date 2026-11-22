@@ -46,6 +46,10 @@ The menu's look lives in `index.css` (`.ovm-menu.row-menu`), not with any page, 
 
 The first item takes focus. ↑ ↓ Home End move, Enter or Space chooses, → opens a submenu and ← or Esc goes back to its item. Esc or Tab closes the menu.
 
+## Focus and Pin
+
+Every row that has something inside it offers **Focus here** (opened at every level, every other branch closed), then **Focus ›** (1, 2 or 3 levels), then **Pin this branch**, before Delete. A row with nothing inside it has only Focus here. While a focus is on, **Clear focus** follows them. On a tab with its own table the words name what it shows (**Focus tasks**, **Focus failure modes**, **Focus measurements**, **Focus models**, **Focus missions**, and **Focus tasks ›** likewise); elsewhere they stay Focus here and Focus ›. See `TreeTable`.
+
 ## Order
 
 Go first (Open in the tree), then edit, then structure (count, focus, move), then remove. Use one danger item at most, at the end, after a separator. Labels are verbs in sentence case; "…" when the item opens a dialog.

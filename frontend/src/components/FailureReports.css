@@ -21,7 +21,7 @@
 .fr-chip-n { margin-left: var(--space-1); opacity: 0.75; font-weight: 400; }
 .fr-controls { display: flex; flex-wrap: wrap; gap: var(--space-1-5); align-items: center; }
 .fr-controls input,
-.fr-controls select { min-width: 0; max-width: 100%; font-size: var(--fs-13); padding: var(--space-1) var(--space-2); }
+.fr-controls select, .fr-controls .sel-trigger { min-width: 0; max-width: 100%; font-size: var(--fs-13); padding: var(--space-1) var(--space-2); }
 .fr-controls input[type="search"] { flex: 1 1 160px; }
 .fr-date { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--fs-13); color: var(--text-secondary); }
 
@@ -126,7 +126,7 @@ button.fr-step-btn:focus-visible {  }
 .fr-modal-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-2); }
 .fr-row-3 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); }
 .fr-modal-row > * { min-width: 0; }
-.fr-modal-row :is(input, select) { min-width: 0; max-width: 100%; }
+.fr-modal-row :is(input, select, .sel-trigger) { min-width: 0; max-width: 100%; }
 .fr-modal-where { margin: 0; }
 .fr-modal-item { margin: 0; }
 .fr-radios { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }

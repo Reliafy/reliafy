@@ -58,12 +58,12 @@
 .rbd-phase-states { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr)); gap: var(--space-1-5) var(--space-3); }
 .rbd-phase-state { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-width: 0; }
 .rbd-phase-state > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rbd-phase-state select, .rbd-phase-state input { width: 9.5rem; flex: none; }
+.rbd-phase-state select, .rbd-phase-state input, .rbd-phase-state .sel-trigger { width: 9.5rem; flex: none; }
 .rbd-phase-state.is-off > span { text-decoration: line-through; color: var(--text-secondary); }
 /* A phase's covariate (#372): one value or a schedule over the phase, the full row wide. */
 .rbd-phase-cov { grid-column: 1 / -1; flex-wrap: wrap; align-items: flex-start; }
 .rbd-phase-cov > span { flex: 1 1 8rem; padding-top: var(--space-1); }
-.rbd-phase-cov .phase-cov-value > input, .rbd-phase-cov .phase-cov-value > select { width: 9.5rem; }
+.rbd-phase-cov .phase-cov-value > input, .rbd-phase-cov .phase-cov-value > select, .rbd-phase-cov .phase-cov-value > .sel-trigger { width: 9.5rem; }
 
 /* MissionCurve.jsx: the whole mission as one curve (Missions tab and the RBD's Calculator). */
 .mission-curve { margin: var(--space-3) 0 0; min-width: 0; }
