@@ -1,5 +1,5 @@
 import SegmentedControl from "./ui/SegmentedControl.jsx";
-import { BLANK_LABEL, setStatusMeaning, statusMeaning, statusValues, statusValuesWithBlank } from "../lifeData.js";
+import { BLANK_LABEL, readCounts, setStatusMeaning, statusMeaning, statusValues, statusValuesWithBlank } from "../lifeData.js";
 
 // What each value of a status column means, failed or still running: one row
 // per value with its count. The fit wizard's Data step and Compare groups
@@ -14,7 +14,8 @@ const MEANINGS = [
 ];
 const FIXED = { "-1": "Found failed (left-censored)", 2: "Failed between the two times (interval)" };
 
-// ``compact``: one short line, "F → 0 failed · S → 1 running", each value's
+// ``compact``: one short line, "F 30 rows → 0 failed · S 18 rows → 1 running"
+// and the reading counted, each value's
 // code a two-way switch (the Data step's c row). The code carries its meaning
 // in words: a bare 0 / 1 was read the wrong way round (1 taken as "failed").
 const CODES = [
@@ -22,19 +23,23 @@ const CODES = [
   { value: 1, label: "1 running", title: "1 = still running" },
 ];
 
+const rowsText = (n) => `${n.toLocaleString("en-GB")} ${n === 1 ? "row" : "rows"}`;
+
 export default function StatusMeanings({ column, values, blanks = 0, mapping, onChange, compact = false }) {
   const all = statusValuesWithBlank(values, blanks);
   const rows = statusValues(all);
   if (!rows.length) return null;
   if (compact) {
+    const read = readCounts(rows, mapping);
     return (
       <div className="ds-status-compact" role="group" aria-label={`How each value in ${column} is read`}>
         {rows.map((v) => {
           const m = statusMeaning(v.label, mapping);
           return (
             <span className="ds-status-pair" key={v.label}>
-              <span className="ds-status-value" title={`${v.rows.toLocaleString()} ${v.rows === 1 ? "row" : "rows"}`}>
+              <span className="ds-status-value">
                 {v.label === "" ? <i>{BLANK_LABEL}</i> : v.label}
+                <span className="ds-status-rows">{rowsText(v.rows)}</span>
               </span>
               <span aria-hidden="true">→</span>
               {FIXED[m] ? (
@@ -46,6 +51,7 @@ export default function StatusMeanings({ column, values, blanks = 0, mapping, on
             </span>
           );
         })}
+        {read && <span className="ds-status-rows" role="status">{read}</span>}
       </div>
     );
   }

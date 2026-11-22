@@ -8,7 +8,7 @@ import { PlotCard, PlotPanel } from "./model/ModelLayouts.jsx";
 import AltLifeStress from "./alt/AltLifeStress.jsx";
 import AltDiagnostics from "./alt/AltDiagnostics.jsx";
 import AltData from "./alt/AltData.jsx";
-import { altTabs, defaultUse, resolveAltTab, shapeParam, useForModel } from "../altFrame.js";
+import { altTabs, defaultUse, resolveAltTab, seriesLabel, shapeParam, useForModel } from "../altFrame.js";
 import { formatNumber } from "../format.js";
 import "./alt/AltFrame.css";
 
@@ -93,7 +93,9 @@ function ProbabilityTab({ results, name }) {
   const r = results;
   const prob = r.probability_plot || {};
   const traces = [];
-  (prob.series || []).forEach((s, i) => {
+  (prob.series || []).forEach((raw, i) => {
+    // The legend in the user's units ("Temperature (°C)=114"), not kelvin.
+    const s = { ...raw, label: seriesLabel(raw, r.stresses) };
     const color = COLORWAY[i % COLORWAY.length];
     if (s.line) {
       traces.push({

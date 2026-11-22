@@ -12,7 +12,7 @@ import { PlotCard, PlotPanel, ScrollCard } from "../model/ModelLayouts.jsx";
 import { COLORWAY, DATA_INK, INK, SURFACE, bandPair, fitLine } from "../../plotTheme.js";
 import { formatNumber } from "../../format.js";
 import { evaluateAlt } from "../../api.js";
-import { accelerationRows, activationEnergy, inputStressName, kelvinWords, levelWords, shapeParam, useForModel, useRangeWarning } from "../../altFrame.js";
+import { accelerationRows, activationEnergy, enteredUnit, fromKelvin, inputStressName, plotInEnteredUnits, kelvinWords, levelWords, shapeParam, useForModel, useRangeWarning } from "../../altFrame.js";
 import ExtrapolationNote from "../ui/ExtrapolationNote.jsx";
 import { unitInText } from "../unitText.js";
 import { ciPct } from "../../levels.js";
@@ -251,7 +251,12 @@ export default function AltLifeStress({ results, modelId, name, use, onUse, edit
   const ev = state?.ev && !state.busy && state.key === JSON.stringify(numeric) ? state.ev : null;
   const lifeUse = ev?.metrics?.characteristic_life;
   const lines = ev?.life_lines || [];
-  const plots = [r.life_stress_plot, r.life_stress_plot_2].filter(Boolean);
+  // The charts in the user's units (°C for a temperature typed in °C); the
+  // model is asked in kelvin, so its answers are turned back for the chart.
+  const plots = [r.life_stress_plot, r.life_stress_plot_2].filter(Boolean)
+    .map((p, j) => plotInEnteredUnits(p, r.stresses, j));
+  const shown = (v, j) => (v == null ? v : fromKelvin(v, enteredUnit(r.stresses?.[j])));
+  const alongShown = (ln, j) => (ln && Array.isArray(ln.stress) ? { ...ln, stress: ln.stress.map((v) => shown(v, j)) } : ln);
   const side = <Side results={r} modelId={modelId} use={use} onUse={onUse} edited={edited} state={state} />;
   const chart = (j) => (
     <PlotCard key={j} title={plots.length > 1 ? `Life against ${plots[j].x_label}` : null}>
@@ -259,9 +264,9 @@ export default function AltLifeStress({ results, modelId, name, use, onUse, edit
         plot={plots[j]}
         unit={r.unit}
         name={name}
-        along={lines[j] || null}
-        otherUse={numeric && plots.length > 1 ? numeric[1 - j] : null}
-        usePoint={ev && numeric ? { x: numeric[j], y: lifeUse } : null}
+        along={alongShown(lines[j], j) || null}
+        otherUse={numeric && plots.length > 1 ? shown(numeric[1 - j], 1 - j) : null}
+        usePoint={ev && numeric ? { x: shown(numeric[j], j), y: lifeUse } : null}
       />
     </PlotCard>
   );

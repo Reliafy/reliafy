@@ -221,7 +221,7 @@ def headline(doc: StrategyAnalysis) -> str:
             return f"Replace at ~{_about(t)}{unit}" if t is not None else "Beneficial"
         return "Run-to-failure is optimal (no beneficial interval)"
     if doc.kind == "compare_two":
-        return (r.get("verdict") or {}).get("text") or "Comparison"
+        return strategy_service.compare_headline(r) or (r.get("verdict") or {}).get("text") or "Comparison"
     if doc.kind == "failure_finding":
         unit = f" {unit_in_text(r['unit'])}" if r.get("unit") else ""
         i = r.get("interval")

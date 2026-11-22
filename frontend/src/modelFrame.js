@@ -272,12 +272,12 @@ export function answerParts(result, { split = null, saved = null } = {}) {
       const when = r.horizon != null ? withUnit(r.horizon, r.unit) : null;
       if (top?.at?.cif != null && when) {
         const ci = top.at.lower != null && top.at.upper != null
-          ? ` (${formatPercent(top.at.lower)}–${formatPercent(top.at.upper)})` : "";
+          ? ` (${ciPct(r)} two-sided ${formatPercent(top.at.lower)}–${formatPercent(top.at.upper)})` : "";
         add(`${top.name} ${formatPercent(top.at.cif)} of units by ${when}${ci}`);
         const any = anyAt(r, r.horizon);
         if (causes.length > 1 && any.cif != null) {
           const anyCi = any.lower != null && any.upper != null
-            ? ` (${formatPercent(any.lower)}–${formatPercent(any.upper)})` : "";
+            ? ` (${ciPct(r)} two-sided ${formatPercent(any.lower)}–${formatPercent(any.upper)})` : "";
           add(`any mode ${formatPercent(any.cif)}${anyCi}`);
         }
       }

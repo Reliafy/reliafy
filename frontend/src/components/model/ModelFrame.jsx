@@ -16,7 +16,7 @@
 //
 // ``embedded``: a frame inside another page (the fit wizard's result): a
 // height of its own instead of the screen's.
-import { useLayoutEffect, useRef } from "react";
+import { Fragment, useLayoutEffect, useRef } from "react";
 import PageHeader from "../ui/PageHeader.jsx";
 import Tabs, { panelId, tabId } from "../ui/Tabs.jsx";
 import "./ModelFrame.css";
@@ -65,11 +65,13 @@ export function AnswerLine({ parts, children }) {
   if (!list.length && !children) return null;
   return (
     <p className="mf-answer" aria-label="The answer">
+      {/* The separator sits between the phrases, outside them, so a long line
+          wraps there (each phrase is kept whole). */}
       {list.map((p, i) => (
-        <span key={i} className="mf-answer-part">
+        <Fragment key={i}>
           {i > 0 && <span className="mf-sep" aria-hidden="true"> · </span>}
-          {p}
-        </span>
+          <span className="mf-answer-part">{p}</span>
+        </Fragment>
       ))}
       {children}
     </p>

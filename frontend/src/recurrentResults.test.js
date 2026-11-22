@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  rateWords,
   cvmCheck, duanePoints, fittedToData, growingCheck, logSlope, mtbfWords, planViews, recurrentAnswer, recurrentTabs,
   resolveRecurrentTab, systemsCheck, trendCheck, poissonUpperTail, scaledParam,
   beyondDataWords, boundsWords, restoresRange, dataText, effectTone, fitSystemsHref, ratioCiText, familyOf, growthReading, orderedParams, paramLabel, pct, perUnit, ratioText, repairTitle, terminationText,
@@ -266,4 +267,11 @@ test("boundsWords: every bound on the page says its side and method", () => {
   const k = boundsWords({ ci_level: 0.9, family: "renewal", model: { id: "grp_i" },
     params: [{ name: "q", value: 0.48, ci: [0.3, 1.14], ci_method: "lr" }] });
   assert.match(k[1], /^Share of age kept q's interval is a profile-likelihood one, so it can run past 0 or 1/);
+});
+
+test("rateWords: a small rate per 1,000 hours, never in scientific notation", () => {
+  assert.deepEqual(rateWords(9.821e-4, "hours"), { value: "0.9821", per: "per 1,000 hours", k: 1000 });
+  assert.deepEqual(rateWords(0.25, "hours"), { value: "0.25", per: "per hour", k: 1 });
+  assert.equal(rateWords(2e-6, "hours").per, "per 100,000 hours");
+  assert.equal(rateWords(null, "hours").value, "—");
 });

@@ -43,8 +43,10 @@ function distance(a, b, most) {
 
 // Whether `b` (or its start, a word still being typed) is a small typo away from `a`. Never for
 // a short word or a code (a word with a digit: a tag, a serial, a part number).
+// The first letter must match (or be swapped with the second): "mower" isn't "lower".
 export function near(a, b) {
   if (a.length < 4 || !b || /\d/.test(a)) return false;
+  if (a[0] !== b[0] && !(b.length > 1 && a[0] === b[1] && a[1] === b[0])) return false;
   const most = a.length <= 7 ? 1 : 2;
   return [b, b.slice(0, a.length), b.slice(0, a.length + 1)]
     .some((c) => Math.abs(c.length - a.length) <= most && distance(a, c, most) <= most);
@@ -236,8 +238,16 @@ export function searchGuides(guides, q, limit = 4) {
 
 // The server's groups and the pages' and guides' as one list: the group with the best match
 // first; on a tie, records, then pages and tabs, then guides. Empty groups drop out.
+// Near spellings (tier 4) only when nothing matches as typed: a real match never sits beside
+// near-misses.
 export function mergeGroups(server = [], features = null, guides = null) {
-  const all = [...server, features, guides].filter((g) => g && g.results?.length);
+  let all = [...server, features, guides].filter((g) => g && g.results?.length);
+  if (all.some((g) => g.results.some((r) => (r.tier ?? 9) < 4))) {
+    all = all.map((g) => {
+      const results = g.results.filter((r) => r.tier !== 4);
+      return { ...g, results, total: Math.max(results.length, (g.total ?? g.results.length) - (g.results.length - results.length)) };
+    }).filter((g) => g.results.length);
+  }
   return all
     .map((g, i) => ({ g, i, best: Math.min(...g.results.map((r) => r.tier ?? 9)) }))
     .sort((a, b) => a.best - b.best || a.i - b.i)

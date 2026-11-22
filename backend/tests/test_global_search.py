@@ -43,6 +43,23 @@ def test_tiers_exact_prefix_word_inside_near():
     assert Matcher("pump").tier(["Valve"], ["notes about a pump"]) == 2  # extra words match, never exact
     assert Matcher("valve").tier(["Valve"], ["x"]) == 0
     assert not Matcher("   ") and Matcher("  ").tier(["x"]) is None
+    # Another first letter is another word, not a typo; a swap of the first two still is.
+    assert Matcher("mower").tier(["Lower bathroom toilet"]) is None
+    assert Matcher("mower").tier(["Power"]) is None
+    assert Matcher("omwer").tier(["Ride-on mower"]) == 4
+    assert Matcher("mower", near=False).tier(["Ride-on mowr"]) is None
+
+
+def test_near_spellings_only_when_nothing_matches_as_typed(client):
+    db = client.db
+    _doc(db, "datasets", "d1", "Ride-on mower failures", A)
+    _doc(db, "rbds", "b1", "Mowing deck", A)  # near "mower" only as a fallback
+    _doc(db, "models", "m1", "Mover gearbox", A)  # one letter from "mower"
+    client.act_as(A)
+    g = _search(client, "mower")
+    assert _names(g, "dataset") == ["Ride-on mower failures"] and "model" not in g
+    g = _search(client, "mowr")  # nothing as typed: the near spellings
+    assert _names(g, "dataset") == ["Ride-on mower failures"]
 
 
 def test_ranked_best_first_then_by_name():

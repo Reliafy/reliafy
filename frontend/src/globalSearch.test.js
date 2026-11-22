@@ -25,6 +25,9 @@ test("ranks exact, prefix, whole words, inside, then near spellings, as the serv
   assert.equal(near("pump", "pimp"), true);
   assert.equal(near("pump", "plum"), false); // two edits in a short word
   assert.equal(near("pum", "pun"), false);
+  assert.equal(near("mower", "lower"), false); // another first letter: another word
+  assert.equal(near("mower", "power"), false);
+  assert.equal(near("omwer", "mower"), true);
 });
 
 test("the pages come from the live menu, so a page this workspace lacks isn't offered", () => {
@@ -106,6 +109,10 @@ test("groups: the best match's group first; ties keep records, then pages, then 
   const merged = mergeGroups([g("part", [2, 3]), g("model", [0])], g("feature", [0]), g("guide", [1]));
   assert.deepEqual(merged.map((x) => x.kind), ["model", "feature", "guide", "part"]);
   assert.deepEqual(mergeGroups([], g("feature", []), null), []);
+  // Near spellings drop out when anything matches as typed; kept when nothing does.
+  const real = mergeGroups([g("asset", [4, 4]), g("model", [2])], g("feature", [4]), null);
+  assert.deepEqual(real.map((x) => [x.kind, x.results.length, x.total]), [["model", 1, 1]]);
+  assert.equal(mergeGroups([g("asset", [4])], null, null)[0].results.length, 1);
 });
 
 test("keyboard: arrows wrap, Tab jumps to the next group's first result, past the last it's the page's", () => {
