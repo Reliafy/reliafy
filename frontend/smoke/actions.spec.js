@@ -339,7 +339,7 @@ test("replacement over a shutdown calendar: the rule, the next months and one un
   await now.getByLabel(/Its age today/).fill("200");
   await now.getByRole("button", { name: "Check this unit" }).click();
   await expect(now).toContainText("Keep it: replace it at the Annual shutdown", { timeout: 30_000 });
-  await expect(now).toContainText("Replacing now becomes the best choice from an age of");
+  await expect(now).toContainText("Replacing it now would be best only once it is older than");
 });
 
 // A photo added to a work order (a nameplate, say) moved to the work order's
