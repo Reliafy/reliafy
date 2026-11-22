@@ -718,7 +718,7 @@ def _prompts(m: Maintenance, fetch, tree, tasks_out: list[dict], models: list[di
             if c["per_failure"] is None:
                 no_cost.append({"mode": {"id": fm["id"], "text": fm.get("text") or ""}, "position": here,
                                 "counted": fm["id"] in lives_for,
-                                "link": _explorer_link(node["id"], root, "rcm", sel=fm["id"])})
+                                "link": _explorer_link(node["id"], root, "rcm", sel=fm["id"], fm=fm["id"])})
         if fetch is None:
             continue
         for x in _mode_tasks(m, node, None):
@@ -729,7 +729,7 @@ def _prompts(m: Maintenance, fetch, tree, tasks_out: list[dict], models: list[di
                 pf_seen.add(task["id"])
                 no_pf.append({"task": {"id": task["id"], "name": task.get("name") or ""},
                               "mode": {"id": x["mode"]["id"], "text": x["mode"].get("text") or ""}, "position": here,
-                              "link": _explorer_link(node["id"], root, "rcm", sel=x["mode"]["id"])})
+                              "link": _explorer_link(node["id"], root, "rcm", sel=x["mode"]["id"], fm=x["mode"]["id"])})
     for r in models:
         if r["cost_per_failure"] is None and not r.get("failure_modes") and not m._modes_on(r["position"]["id"]):
             # A life for every failure of a position with no failure modes: its class's cost, or a mode of its own.

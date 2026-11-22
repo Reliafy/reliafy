@@ -42,7 +42,12 @@ export function checkFigure(key, raw) {
 export function usedText(used) {
   if (!used) return "";
   if (used.per_failure == null) return "No failure cost yet: the forecast leaves these failures out of the unplanned cost.";
-  return `One failure, all in: ${money(used.per_failure)}. ${used.text.charAt(0).toUpperCase()}${used.text.slice(1)}.`;
+  const src = used.sources || {};
+  if (!used.downtime_cost) {
+    const down = used.downtime_hours ? ` It keeps it out of use ${figureText("downtime_hours", used.downtime_hours)} (${src.downtime_hours}); no cost an hour set.` : "";
+    return `One failure, all in: ${money(used.per_failure)} (${src.failure_cost || "set here"}).${down}`;
+  }
+  return `One failure, all in: ${money(used.per_failure)}: ${used.text}.`;
 }
 
 // The forecast's "What to enter" groups, in the order they change the numbers most: failure

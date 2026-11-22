@@ -1082,5 +1082,5 @@ button.link.rim-tquietlink { align-self: flex-start; font-size: var(--fs-13); }
 
 /* A failure mode's "What a failure costs" (FailureCostRows.jsx): three figures side by side, wrapping
    to one a row on a narrow panel, and the all-in line under them. */
-.fcost-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-3); }
+.fcost-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-3); }
 .fcost-note { margin: 0; color: var(--text-secondary); font-size: var(--fs-12); line-height: var(--lh-12); }

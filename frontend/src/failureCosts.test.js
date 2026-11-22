@@ -23,8 +23,13 @@ test("the class's figure shows while the mode has none", () => {
 
 test("one failure all in, or what's missing", () => {
   assert.match(usedText({ per_failure: null }), /No failure cost yet/);
-  assert.equal(usedText({ per_failure: 1100, text: "$900 (the failure mode's) + 2 h down at $100 an hour (the Pumps class's)" }),
-    "One failure, all in: $1,100. $900 (the failure mode's) + 2 h down at $100 an hour (the Pumps class's).");
+  assert.equal(usedText({ per_failure: 1100, downtime_cost: 200, text: "$900 (the failure mode's) + 2 h down at $100 an hour (the Pumps class's)" }),
+    "One failure, all in: $1,100: $900 (the failure mode's) + 2 h down at $100 an hour (the Pumps class's).");
+  assert.equal(usedText({ per_failure: 1200, failure_cost: 1200, sources: { failure_cost: "the failure mode's" } }),
+    "One failure, all in: $1,200 (the failure mode's).");
+  assert.equal(usedText({ per_failure: 900, failure_cost: 900, downtime_hours: 4, downtime_cost: null,
+    sources: { failure_cost: "the failure mode's", downtime_hours: "the failure mode's" } }),
+  "One failure, all in: $900 (the failure mode's). It keeps it out of use 4 h (the failure mode's); no cost an hour set.");
 });
 
 test("the forecast's prompts: costs first, then P-F intervals, then tasks with no effect, each with its link", () => {

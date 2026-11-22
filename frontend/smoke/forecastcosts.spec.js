@@ -44,6 +44,7 @@ test("Forecast… lists what to enter; the link opens the failure mode, whose fa
   // The link: the failure mode on the RCM tab, its "What a failure costs" under its consequence.
   await enter.locator("li", { hasText: `Seal leaks ${tag}` }).getByRole("link", { name: "Enter the cost" }).click();
   await expect.poll(() => query(page).get("tab")).toBe("rcm");
+  expect(query(page).get("fm")).toBe(p.mode.id);
   await expect.poll(() => query(page).get("forecast")).toBe(null);
   const costs = page.getByRole("region", { name: "Failure consequences" });
   await expect(costs).toContainText("What a failure costs");
@@ -71,7 +72,7 @@ test("Forecast… and a failure mode's costs at 400 px: nothing scrolls sideways
   await expect(page.locator("section.table-pane")).toContainText("What to enter", { timeout: 30_000 });
   expect(await sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "forecast-what-to-enter-phone");
-  await open(page, `/asset-register/explorer?arrange=positions&root=${p.pump.id}&sel=${p.mode.id}&tab=rcm`);
+  await open(page, `/asset-register/explorer?arrange=positions&root=${p.pump.id}&sel=${p.mode.id}&fm=${p.mode.id}&tab=rcm`);
   await expect(page.getByRole("region", { name: "Failure consequences" })).toContainText("What a failure costs", { timeout: 30_000 });
   expect(await sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "failure-mode-costs-phone");
