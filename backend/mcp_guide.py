@@ -471,6 +471,7 @@ fallback says where).
 5. Import with the upload_id: change import_rbd (diagrams; save=false previews with edges and cut sets; only \
 picks diagrams by name; time_unit when the file states none), change import_excel (target dataset or \
 rbd_template), change import_rcm (an RCM worksheet or task plan, CSV or .xlsx, onto a position), change dataset_upload, or change rbd_upload_outage_log.
+A handful of lives the user tells you (no file): change dataset_upload notation="120, 310, [400, 450], 1000+" with unit and name (1000+ still running, [a, b] failed in a window, <50 failed before, 3*200 three alike, | (tl, tr] observed window; one "P1: 120, 310, 1000+" history per line for repairable data); read_as says what it read.
 Relay the import notes: they say what was approximated. Blocks imported without a non-repairable model (needs_model) \
 need one before analysis: ask the user, don't invent values."""),
 

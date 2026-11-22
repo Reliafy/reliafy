@@ -62,8 +62,9 @@ and saved analyses by name or tag, the app's pages and tabs, and these guides,
 with small typos forgiven. Use the arrow keys to move and Enter to open.
 
 Upload it under [Data](/data) → **New dataset**: drop a CSV or Excel file (for
-a workbook, choose the sheet and the header row), or **Paste or type the
-data**. Reliafy shows the first rows, then asks once how the columns are read.
+a workbook, choose the sheet and the header row), **Paste the data** from a
+spreadsheet, or **Type it in** (below). Reliafy shows the first rows, then asks
+once how the columns are read.
 Each column's name carries a small tag (text, integer, number, date): the way
 Reliafy read it. A column of times tagged *text* is the sign to look at the
 file: a value like `14,010` with a thousands separator, or a stray letter, is
@@ -80,6 +81,38 @@ fitted with, and the rows themselves never change. You don't need to delete
 the dataset and upload it again. A reading Reliafy guessed says *guessed —
 check it*, with **Looks right** to keep it. Samples and datasets shared with
 you for viewing show the line without **Change**.
+
+### A few lives: type them in
+
+For a handful of units there's no need for a file. Choose **Type it in** and
+write the lives as text, separated by commas:
+
+```
+120, 310, [400, 450], 1000+
+```
+
+- a plain number failed then: `120`;
+- `1000+` is still running at 1000 (it hasn't failed yet);
+- `[400, 450]` failed some time between 400 and 450, found at an inspection;
+- `<50` (or `50-`) failed some time before 50, found failed at the first look;
+- `3*200` is three units that failed at 200;
+- `300 | (50, inf]` was observed only after 50 (it was in service before
+  records began);
+- one unit's repeated failures go on a line of their own, its id first:
+  `P1: 120, 310, 1000+` (repairable data).
+
+**What can I type?** under the box lists the same. As you type, Reliafy says
+what it read (*4 units: 2 failed, 1 in a window 400–450, 1 still running at
+1,000*) and the columns it will save. If it can't read something, it says
+where and what to write instead (*Entry 2 (line 1, “abc”): Can't read
+'abc'…*). Give the unit of the times and a name, then **Create dataset**. The
+dataset is saved exactly as the same data in a spreadsheet would be, so
+fitting, comparing groups and everything else work the same.
+
+A dataset of up to 200 rows offers **Show as text** under its preview: the
+same text, to copy into an email or a report, or to type in again. Over the
+API, MCP and the command line it's `change dataset_upload` with `notation`
+(`reliafy upload --notation "120, 310, 1000+" --name Seals --unit hours`).
 
 ### How the columns are read
 

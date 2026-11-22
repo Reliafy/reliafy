@@ -79,6 +79,22 @@ The tags are detected from the table as before, plus **Measurements** when
 the part exists. "Use for" then leads with the condition and life model; the
 summary adds the readings ("40 pumps · 35 failed · 314 readings").
 
+## Typed in as text
+
+A few lives can be typed instead of uploaded, in SurPyval's notation
+(`backend/services/notation.py`, which reads it with
+`surpyval.utils.notation`): `120, 310, [400, 450], 1000+`, or one
+`P1: 120, 310, 1000+` history per line for repairable data. It is stored as
+the CSV the same data in a spreadsheet would be (columns `x`, or `xl`/`xr`
+when any entry is a window, then `c`, `n`, `tl`, `tr`, with `i` first for
+histories; only the columns the data needs), with a saved reading naming
+each column, so nothing downstream knows it was typed. The routes:
+`POST /api/datasets/notation/read` (the live reading, saves nothing),
+`POST /api/datasets/notation` (save) and `GET /api/datasets/{id}/notation`
+(the dataset page's "Show as text", up to 200 rows, via
+`SurpyvalData.to_notation`). Over MCP, REST and the CLI it's
+`change dataset_upload` with `notation` (`reliafy upload --notation`).
+
 ## Creating a dataset with measurements
 
 - **New dataset** (the app): the file, paste or typed-in table, with an

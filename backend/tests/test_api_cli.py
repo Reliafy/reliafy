@@ -531,3 +531,17 @@ def test_cli_capture(server, capsys, monkeypatch):
     (tmp / "clip.xyz").write_bytes(b"?")
     with pytest.raises(Exception, match="Can't tell"):
         rf.add_capture_media(rid, str(tmp / "clip.xyz"))
+
+
+def test_cli_and_client_upload_typed_lives(server, capsys):
+    code, out, _ = run(capsys, "upload", "--notation", "120, 310, [400, 450], 1000+", "--name", "Typed",
+                       "--unit", "hours", "--json")
+    assert code == 0, out
+    got = json.loads(out)
+    assert got["n_rows"] == 4 and got["columns"] == ["xl", "xr", "c"] and "1 in a window" in got["read_as"]
+    code, _, err = run(capsys, "upload", "--notation", "10, 20")
+    assert code == 1 and "--unit" in err
+    code, _, err = run(capsys, "upload")
+    assert code == 1 and "--notation" in err
+    made = Client().upload_notation("P1: 120, 310, 1000+", name="Pump", unit="hours")
+    assert made["columns"] == ["i", "x", "c"]

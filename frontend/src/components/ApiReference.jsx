@@ -967,7 +967,8 @@ curl -X POST ${base}/api/v1/change/import_rbd -H "Authorization: Bearer $RELIAFY
   -H "Content-Type: application/json" -d '{"upload_id": "UPLOAD_ID"}'
 
 reliafy import rbd plant.xml          # the same three steps
-reliafy upload bearings.xlsx --name Bearings`}
+reliafy upload bearings.xlsx --name Bearings
+reliafy upload --notation "120, 310, [400, 450], 1000+" --name Seals --unit hours   # a few lives typed in`}
       />
       <ul className="api-list">
         <li><code>PUT /api/uploads/{"{upload_id}"}?t=…</code> (or <code>POST</code> with the raw body) — no sign-in: the link’s token is the credential. It works once and expires after 15 minutes. Answers <code>{`{ upload_id, size, sha256, detected_format }`}</code>.</li>

@@ -5,6 +5,7 @@ import LoadFailed from "../components/LoadFailed.jsx";
 import { getDataset, deleteDataset, downloadDatasetCsv, removeMeasurements, renameDataset, splitDataset } from "../api.js";
 import PreviewTable from "../components/PreviewTable.jsx";
 import DatasetAllRows from "../components/DatasetAllRows.jsx";
+import DatasetAsText, { AS_TEXT_MAX_ROWS } from "../components/DatasetAsText.jsx";
 import CompareGroups from "../components/CompareGroups.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
 import { DatasetPartModal } from "../components/DatasetPartInput.jsx";
@@ -54,6 +55,8 @@ export default function DatasetPage() {
   const [adding, setAdding] = useState(false);
   // "Show all rows": the table's every row, a window at a time, instead of the short preview.
   const [allRows, setAllRows] = useState(false);
+  // "Show as text": the life data in SurPyval's notation, to copy out (small datasets).
+  const [asText, setAsText] = useState(false);
   // Creating a dataset whose data you already had opens that one: say so,
   // and offer the name you just typed (location state from the New flow).
   const [reused, setReused] = useState(() => (location.state?.reused ? location.state : null));
@@ -74,7 +77,7 @@ export default function DatasetPage() {
     setParams(next, { replace: true });
   };
   const setComparing = (on) => setParam("compare", on ? "" : null);
-  const setPart = (p) => { setAllRows(false); setParam("part", p === "life" ? null : p); };
+  const setPart = (p) => { setAllRows(false); setAsText(false); setParam("part", p === "life" ? null : p); };
 
   // How the columns are read, with Change: kept with the dataset for later fits.
   const rd = useDatasetReading(ds);
@@ -294,10 +297,22 @@ export default function DatasetPage() {
                     ) : (
                       <>
                         <PreviewTable columns={shown.columns} rows={shown.preview} types={types} className="ds-preview" />
-                        {shown.preview.length < shown.n_rows && (
-                          <button type="button" className="secondary ds-allrows-open" onClick={() => setAllRows(true)}>
-                            Show all {shown.n_rows.toLocaleString()} rows
-                          </button>
+                        <div className="ds-preview-actions">
+                          {shown.preview.length < shown.n_rows && (
+                            <button type="button" className="secondary ds-allrows-open" onClick={() => setAllRows(true)}>
+                              Show all {shown.n_rows.toLocaleString()} rows
+                            </button>
+                          )}
+                          {part === "life" && shown.n_rows <= AS_TEXT_MAX_ROWS && !asText && (
+                            <button type="button" className="secondary" onClick={() => setAsText(true)}
+                                    title="The lives as text (120, 310, 1000+), to copy into an email, a report or Type it in">
+                              Show as text
+                            </button>
+                          )}
+                        </div>
+                        {asText && part === "life" && (
+                          <DatasetAsText key={`${ds.id}-${rd.reading ? JSON.stringify(rd.reading) : ""}`}
+                                         datasetId={ds.id} onClose={() => setAsText(false)} />
                         )}
                       </>
                     )}
