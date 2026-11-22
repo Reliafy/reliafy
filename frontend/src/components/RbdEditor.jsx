@@ -1,3 +1,4 @@
+import { useUnsavedSignal } from "../useUnsavedSignal.js";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import useMenuDismiss from "./useMenuDismiss.js";
 import { Link } from "react-router-dom";
@@ -635,6 +636,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     [tracked, rebasing, saveGraph, savedSnap]
   );
   useEffect(() => { onDirty?.(dirty); }, [onDirty, dirty]);
+  useUnsavedSignal("rbd-editor", tracked && dirty); // also the update bar's unsaved signal
   // An unsaved diagram's canvas, for the page to keep over a reload (views/RbdBuilder.jsx).
   useEffect(() => {
     // Only once it differs from what was opened: an untouched starter isn't "your edits".

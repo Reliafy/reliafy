@@ -199,6 +199,10 @@ from backend.security_headers import SecurityHeadersMiddleware  # noqa: E402
 app.add_middleware(BodySizeLimitMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 
+from backend.build_id import BuildIdMiddleware, current_build_id  # noqa: E402
+
+app.add_middleware(BuildIdMiddleware)
+
 
 def _startup() -> None:
     init_db()
@@ -335,6 +339,7 @@ def health() -> dict:
     return {
         "status": "ok",
         "storage": "simulator" if db.is_simulated() else "mongodb",
+        "build": current_build_id() or None,
     }
 
 
