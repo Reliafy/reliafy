@@ -3,9 +3,9 @@
 /* The coefficient table fills the left, beside the group effect. */
 .mm-coef-panel { align-items: flex-start; }
 .mm-coef-main { flex: 1; min-width: 0; }
-.mm-table-card .rs-table-wrap { padding: 2px 16px 6px; max-width: none; }
+.mm-table-card .rs-table-wrap { padding: var(--space-0-5) var(--space-4) var(--space-1-5); max-width: none; }
 .mm-table-card th { white-space: nowrap; }
-.detail-panel .mm-note { margin: 8px 0 0; }
+.detail-panel .mm-note { margin: var(--space-2) 0 0; }
 .mm-part { color: var(--text-secondary); }
 /* Stacked (as .detail-panel stacks at 760 px): full width, so the table
    scrolls inside its card rather than widening the page. */

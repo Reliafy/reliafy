@@ -2,29 +2,29 @@
    scrolls inside its own box (maint-scroll), so nothing moves the page sideways on a phone. */
 .rbd-plan {
   border-top: 1px solid var(--border);
-  padding: 12px 14px 4px;
+  padding: var(--space-3) var(--space-3) var(--space-1);
   background: var(--bg-surface);
   min-width: 0;
 }
-.rbd-plan-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.rbd-plan-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1-5) var(--space-3); }
 .rbd-plan-head h3 { margin: 0; font-size: var(--fs-16); font-weight: 600; }
 .rbd-plan-counts { font-size: var(--fs-13); flex: 1 1 200px; }
-.rbd-plan-btns { display: flex; gap: 8px; align-items: center; margin-left: auto; }
+.rbd-plan-btns { display: flex; gap: var(--space-2); align-items: center; margin-left: auto; }
 
 /* Duty, prominently: a one-line explanation that opens to the detail. */
-.rbd-plan-duty { margin: 10px 0 6px; padding: 8px 12px; border-radius: var(--radius-md); background: var(--bg-subtle);
+.rbd-plan-duty { margin: var(--space-2) 0 var(--space-1-5); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--bg-subtle);
   font-size: var(--fs-13); line-height: var(--lh-13); }
 .rbd-plan-duty summary { cursor: pointer; }
-.rbd-plan-duty p { margin: 6px 0 2px; max-width: 72ch; }
+.rbd-plan-duty p { margin: var(--space-1-5) 0 var(--space-0-5); max-width: 72ch; }
 
-.rbd-plan-filter { margin: 6px 0; font-size: var(--fs-13); }
+.rbd-plan-filter { margin: var(--space-1-5) 0; font-size: var(--fs-13); }
 .rbd-plan-filter button.link { font-size: inherit; }
-.rbd-plan-empty, .rbd-plan-note { font-size: var(--fs-13); margin: 6px 0 8px; }
+.rbd-plan-empty, .rbd-plan-note { font-size: var(--fs-13); margin: var(--space-1-5) 0 var(--space-2); }
 
 /* The box the table scrolls in is a size container, so a note under a block wraps at the width
    that's in view (not the table's), and soft shadows at its edges say there's more to the side. */
 .rbd-plan-scroll {
-  margin: 6px 0 0;
+  margin: var(--space-1-5) 0 0;
   container-type: inline-size;
   background:
     linear-gradient(to right, var(--bg-surface) 30%, transparent) left center / 32px 100% no-repeat local,
@@ -32,12 +32,12 @@
     radial-gradient(farthest-side at 0 50%, var(--scroll-shade), transparent) left center / 12px 100% no-repeat scroll,
     radial-gradient(farthest-side at 100% 50%, var(--scroll-shade), transparent) right center / 12px 100% no-repeat scroll;
 }
-.rbd-plan-table { margin-bottom: 4px; min-width: 860px; }
-.rbd-plan-table th, .rbd-plan-table td { text-align: left; vertical-align: top; padding: 0.4rem 0.45rem; white-space: nowrap; }
+.rbd-plan-table { margin-bottom: var(--space-1); min-width: 860px; }
+.rbd-plan-table th, .rbd-plan-table td { text-align: left; vertical-align: top; padding: var(--space-1-5) var(--space-2); white-space: nowrap; }
 .rbd-plan-table thead th { font-size: var(--fs-13); }
 .rbd-plan-table .rbd-plan-name { display: table-cell; max-width: 14rem; overflow: hidden; text-overflow: ellipsis;
-  font-weight: 600; padding-top: 0.7rem; }
-.rbd-plan-table input, .rbd-plan-table select, .rbd-plan-table .sel-trigger { font-size: var(--fs-13); padding: 4px 6px; min-height: 32px; margin: 0; }
+  font-weight: 600; padding-top: var(--space-3); }
+.rbd-plan-table input, .rbd-plan-table select, .rbd-plan-table .sel-trigger { font-size: var(--fs-13); padding: var(--space-1) var(--space-1-5); min-height: 32px; margin: 0; }
 .rbd-plan-table select, .rbd-plan-table .sel-trigger { max-width: 12rem; }
 .rbd-plan-num { width: 5.5rem; }
 .rbd-plan-pct { width: 3.6rem; }
@@ -47,16 +47,16 @@
 /* The interval and its unit (InputGroup): as wide as its two controls, not the cell. */
 .rbd-plan-every-group { display: inline-flex; }
 .rbd-plan-every-group > .rbd-plan-basis { flex: none; }
-.rbd-plan-with-suffix { display: inline-flex; align-items: center; gap: 4px; }
-.rbd-plan-table small { display: block; font-size: var(--fs-12); margin-top: 2px; }
+.rbd-plan-with-suffix { display: inline-flex; align-items: center; gap: var(--space-1); }
+.rbd-plan-table small { display: block; font-size: var(--fs-12); margin-top: var(--space-0-5); }
 .rbd-plan-table input.is-invalid { border-color: var(--danger); }
 /* Duty is the first thing after the name: tinted, so it reads as part of the block. */
 .rbd-plan-table td.rbd-plan-duty-cell { background: color-mix(in srgb, var(--accent) 6%, transparent); }
 .rbd-plan-block + .rbd-plan-block tr:first-child > * { border-top: 1px solid var(--border); }
 .rbd-plan-block tr:not(:last-child) > * { border-bottom: 0; }
 .rbd-plan-extra td { padding-top: 0; }
-.rbd-plan-fields { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 2px 0 6px; white-space: normal; }
-.rbd-plan-field { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-13); }
+.rbd-plan-fields { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); padding: var(--space-0-5) 0 var(--space-1-5); white-space: normal; }
+.rbd-plan-field { display: flex; flex-direction: column; gap: var(--space-0-5); font-size: var(--fs-13); }
 .rbd-plan-problem td { color: var(--warning, var(--danger)); font-size: var(--fs-13); white-space: normal; padding-top: 0; }
 .rbd-plan-more { min-height: 32px; }
 
@@ -66,7 +66,7 @@
 .rbd-builder.is-full.has-plan .rbd-plan { max-height: 45vh; overflow: auto; flex: none; }
 
 @media (max-width: 600px) {
-  .rbd-plan { padding: 10px 10px 4px; }
+  .rbd-plan { padding: var(--space-2) var(--space-3) var(--space-1); }
   .rbd-plan-btns { margin-left: 0; }
   .rbd-plan-table input, .rbd-plan-table select, .rbd-plan-table .sel-trigger { font-size: var(--fs-16); min-height: 40px; }
   .rbd-plan-table .rbd-plan-every-group > .ctl { min-height: 38px; }
@@ -85,7 +85,7 @@
 }
 
 /* A block standing for a position: its task is read from the tree, shown here, edited there. */
-.rbd-plan-tree { margin: 8px 0 4px; font-size: var(--fs-13); line-height: var(--lh-13); max-width: 80ch; }
+.rbd-plan-tree { margin: var(--space-2) 0 var(--space-1); font-size: var(--fs-13); line-height: var(--lh-13); max-width: 80ch; }
 .rbd-plan-block.is-tree > tr:first-child > th { box-shadow: inset 3px 0 0 var(--accent); }
 .rbd-plan-from a { font-weight: 400; font-size: var(--fs-12); }
 .rbd-plan-tree-task span { display: block; }
@@ -94,7 +94,7 @@
 .rbd-plan-edit-tree { font-weight: 600; }
 
 /* Sub-system blocks a repairable diagram can't take: said, with Expand. */
-.rbd-plan-subs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 10px; padding: 8px 12px;
+.rbd-plan-subs { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin: 0 0 var(--space-2); padding: var(--space-2) var(--space-3);
   border: 1px solid var(--warning-border); background: var(--warning-bg); border-radius: var(--radius-md); font-size: var(--fs-13); min-width: 0; }
 .rbd-plan-subs p { margin: 0; flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
 
@@ -103,12 +103,12 @@
 .rbd-plan-table small.rbd-plan-pending { display: block; white-space: normal; max-width: 12rem; }
 /* The duty a running-hours meter suggests, beside the block's own. */
 .rbd-plan-proposal { display: block; font-size: var(--fs-12); color: var(--text-secondary); }
-.rbd-plan-proposal button.link { font-size: inherit; margin-left: 6px; min-height: 24px; }
+.rbd-plan-proposal button.link { font-size: inherit; margin-left: var(--space-1-5); min-height: 24px; }
 /* Shutdowns read from the tree. */
-.rbd-plan-shuts { margin: 8px 0; font-size: var(--fs-13); line-height: var(--lh-13); }
-.rbd-plan-shuts h4 { margin: 0 0 4px; font-size: var(--fs-14); font-weight: 600; }
-.rbd-plan-shuts ul { margin: 0; padding-left: 1.1rem; }
+.rbd-plan-shuts { margin: var(--space-2) 0; font-size: var(--fs-13); line-height: var(--lh-13); }
+.rbd-plan-shuts h4 { margin: 0 0 var(--space-1); font-size: var(--fs-14); font-weight: 600; }
+.rbd-plan-shuts ul { margin: 0; padding-left: var(--space-4); }
 .rbd-plan-shuts li { overflow-wrap: anywhere; }
 .rbd-plan-table td.rbd-plan-restores { white-space: normal; min-width: 11rem; max-width: 16rem; }
-.rbd-plan-gone { padding: 6px 10px; border: 1px solid var(--warning-border); background: var(--warning-bg); border-radius: var(--radius-md); }
+.rbd-plan-gone { padding: var(--space-1-5) var(--space-3); border: 1px solid var(--warning-border); background: var(--warning-bg); border-radius: var(--radius-md); }
 .rbd-plan-gone b { font-weight: 500; }

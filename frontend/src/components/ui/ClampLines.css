@@ -1,5 +1,5 @@
 /* Long text: a few lines, then "Show all". */
-.clampl { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+.clampl { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-0-5); min-width: 0; }
 .clampl-text {
   margin: 0; min-width: 0; max-width: 100%;
   white-space: pre-wrap; overflow-wrap: anywhere;

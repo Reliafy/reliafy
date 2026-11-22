@@ -1,26 +1,26 @@
 /* What a task by use counts: the Measurement field in a task's dialogs and the
    question a move asks (TaskMeasurement.jsx). Fits 400 px: options wrap, the
    selects take the width they're given, touch targets are at least 32 px. */
-.tm-field, .tm-task, .tm-reading { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 12px 10px; margin: 0; min-width: 0; font-size: var(--fs-14); }
-.tm-field legend, .tm-task legend, .tm-reading legend { padding: 0 4px; font-size: var(--fs-13); font-weight: 500; color: var(--text-secondary); }
-.tm-reading { border-style: dashed; margin-top: 8px; }
+.tm-field, .tm-task, .tm-reading { border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-2) var(--space-3) var(--space-2); margin: 0; min-width: 0; font-size: var(--fs-14); }
+.tm-field legend, .tm-task legend, .tm-reading legend { padding: 0 var(--space-1); font-size: var(--fs-13); font-weight: 500; color: var(--text-secondary); }
+.tm-reading { border-style: dashed; margin-top: var(--space-2); }
 .tm-reading legend { font-weight: 500; }
-.tm-counts, .tm-now { margin: 2px 0 4px; overflow-wrap: anywhere; }
-.tm-help { color: var(--text-secondary); font-size: var(--fs-13); margin: 2px 0; overflow-wrap: anywhere; }
+.tm-counts, .tm-now { margin: var(--space-0-5) 0 var(--space-1); overflow-wrap: anywhere; }
+.tm-help { color: var(--text-secondary); font-size: var(--fs-13); margin: var(--space-0-5) 0; overflow-wrap: anywhere; }
 .tm-err { color: var(--danger-text); font-size: var(--fs-12); font-weight: 500; }
-.tm-change { margin-top: 4px; min-height: 32px; font-size: var(--fs-14); }
-.tm-edit { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.tm-change { margin-top: var(--space-1); min-height: 32px; font-size: var(--fs-14); }
+.tm-edit { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-1-5); }
 .tm-edit > .link { align-self: flex-start; min-height: 32px; }
-.tm-label { display: flex; flex-direction: column; gap: 4px; }
+.tm-label { display: flex; flex-direction: column; gap: var(--space-1); }
 .tm-label > span { font-size: var(--fs-13); font-weight: 500; color: var(--text-secondary); }
 .tm-field select, .tm-task select, .tm-field .sel-trigger, .tm-task .sel-trigger { max-width: 100%; min-height: 32px; }
-.tm-opt { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; min-height: 32px; cursor: pointer; }
+.tm-opt { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1-5) var(--space-2); min-height: 32px; cursor: pointer; }
 .tm-opt > .check-label { flex: 1 1 12rem; min-width: 0; }
-.tm-enter > .check-label { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
-.tm-sub { margin: 2px 0 6px 26px; }
-.tm-num { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.tm-enter > .check-label { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--space-1-5) var(--space-2); }
+.tm-sub { margin: var(--space-0-5) 0 var(--space-1-5) var(--space-6); }
+.tm-num { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--space-1-5); }
 .tm-num input[type="number"] { width: 7rem; min-height: 32px; }
-.tm-move { display: flex; flex-direction: column; gap: 12px; font-size: var(--fs-14); }
+.tm-move { display: flex; flex-direction: column; gap: var(--space-3); font-size: var(--fs-14); }
 .tm-edit > .link { font-size: var(--fs-14); }
 .tm-opt input:focus-visible, .tm-field select:focus-visible, .tm-task select:focus-visible,
 .tm-num input:focus-visible, .tm-change:focus-visible, .tm-edit > .link:focus-visible {

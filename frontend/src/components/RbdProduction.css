@@ -2,31 +2,31 @@
    block dialog's Capacity section. */
 .rbd-production {
   margin: 0;
-  padding-top: 16px;
+  padding-top: var(--space-4);
   border-top: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
 }
 .rbd-production-head {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
 }
 .rbd-production-head h3 { margin: 0; font-size: var(--fs-16); font-weight: 600; color: var(--text); }
-.rbd-production-fields { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
-.rbd-production-body { display: flex; flex-direction: column; gap: 12px; }
+.rbd-production-fields { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: flex-end; }
+.rbd-production-body { display: flex; flex-direction: column; gap: var(--space-3); }
 .rbd-production-body.stale { opacity: 0.6; }
 .rbd-production-levels { max-width: 360px; }
 .rbd-production-levels td { font-variant-numeric: tabular-nums; }
 
 .rbd-capacity .seg { align-self: flex-start; }
 .rbd-capacity-one input { width: 10rem; }
-.rbd-capacity-levels { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.rbd-capacity-levels { display: flex; flex-direction: column; gap: var(--space-1-5); align-items: flex-start; }
 .rbd-capacity-head,
-.rbd-capacity-row { display: grid; grid-template-columns: 8rem 9rem 2.25rem; gap: 8px; align-items: center; }
+.rbd-capacity-row { display: grid; grid-template-columns: 8rem 9rem 2.25rem; gap: var(--space-2); align-items: center; }
 .rbd-capacity-head { font-size: var(--fs-12); color: var(--text-secondary); }
 .rbd-capacity-row input {
   width: 100%;
@@ -34,7 +34,7 @@
   border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
   color: var(--text);
-  padding: 0.45rem 0.6rem;
+  padding: var(--space-2) var(--space-3);
   font-size: var(--fs-14);
   font-family: inherit;
 }

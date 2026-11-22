@@ -21,7 +21,7 @@
 .pred-scroll { overflow-x: auto; position: relative; max-width: 100%; }
 .pred-table { min-width: 640px; }
 .pred-table th.num, .pred-table td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.pred-table tbody td { padding: 10px 12px; border-bottom: 1px solid var(--border-subtle); font-size: var(--fs-14); vertical-align: top; }
+.pred-table tbody td { padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border-subtle); font-size: var(--fs-14); vertical-align: top; }
 .pred-table .lib-date { font-size: var(--fs-12); }
 .pred-unassigned td { color: var(--text-secondary); }
 .pred-sub td:first-child { color: var(--text-secondary); }
@@ -29,8 +29,8 @@
 /* The builder's rows: plain inputs in the cells (narrow enough to fit beside
    the conditions on a laptop; the card scrolls sideways on a phone). */
 .pred-edit { min-width: 560px; }
-.pred-edit tbody td { vertical-align: middle; padding: 8px 6px; }
-.pred-edit thead th { padding-left: 6px; padding-right: 6px; }
+.pred-edit tbody td { vertical-align: middle; padding: var(--space-2) var(--space-1-5); }
+.pred-edit thead th { padding-left: var(--space-1-5); padding-right: var(--space-1-5); }
 .pred-edit input[type="text"], .pred-edit input[type="number"] {
   width: 100%;
   min-width: 0;
@@ -39,7 +39,7 @@
   border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
   color: var(--text);
-  padding: 0.4rem 0.5rem;
+  padding: var(--space-1-5) var(--space-2);
   font-size: var(--fs-14);
   font-family: inherit;
 }
@@ -62,7 +62,7 @@
 .ptp input { width: 100%; }
 .ptp-chosen { display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
 .ptp-name {
-  flex: 1 1 auto; min-width: 0; text-align: left; background: none; border: 0; padding: 0.2rem 0;
+  flex: 1 1 auto; min-width: 0; text-align: left; background: none; border: 0; padding: var(--space-1) 0;
   color: var(--text); font: inherit; font-size: var(--fs-14); cursor: pointer; overflow-wrap: anywhere;
 }
 .ptp-name:hover { color: var(--accent-text); text-decoration: underline; }
@@ -74,25 +74,25 @@
 /* In a portal, fixed to the screen where PartTypePicker's listPlace says (its left, width, top or
    bottom and max height), so a scrolling table or a pane can't cut it off. */
 .ptp-list {
-  position: fixed; z-index: var(--z-top); margin: 0; padding: 4px 0; list-style: none; box-sizing: border-box;
+  position: fixed; z-index: var(--z-top); margin: 0; padding: var(--space-1) 0; list-style: none; box-sizing: border-box;
   max-height: 18rem; overflow-y: auto;
   background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-md);
 }
-.ptp-item { display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; cursor: pointer; }
+.ptp-item { display: flex; flex-direction: column; gap: var(--space-0-5); padding: var(--space-1-5) var(--space-3); cursor: pointer; }
 .ptp-item.is-active { background: var(--accent-subtle); }
 .ptp-item-name { font-size: var(--fs-14); color: var(--text); }
 .ptp-item-meta { font-size: var(--fs-12); color: var(--text-secondary); }
-.ptp-note { padding: 6px 10px; font-size: var(--fs-12); color: var(--text-secondary); }
+.ptp-note { padding: var(--space-1-5) var(--space-3); font-size: var(--fs-12); color: var(--text-secondary); }
 .ptp-note button.link { font-size: inherit; }
-.ptp-group { padding: 6px 10px 2px; font-size: var(--fs-12); font-weight: 600; color: var(--text-secondary); text-transform: none; border-top: 1px solid var(--border-subtle); }
+.ptp-group { padding: var(--space-1-5) var(--space-3) var(--space-0-5); font-size: var(--fs-12); font-weight: 600; color: var(--text-secondary); text-transform: none; border-top: 1px solid var(--border-subtle); }
 .ptp-group:first-child { border-top: 0; }
 
 /* A line's type: the picker, a rate of the user's own, or "Not electronic". */
-.ptc { display: flex; flex-direction: column; gap: 4px; min-width: 12rem; }
-.ptc-rate { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ptc { display: flex; flex-direction: column; gap: var(--space-1); min-width: 12rem; }
+.ptc-rate { display: flex; align-items: center; gap: var(--space-1-5); flex-wrap: wrap; }
 .ptc-rate input { width: 6.5rem; }
 .ptc-unit { font-size: var(--fs-12); color: var(--text-secondary); }
-.ptc-exclude { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-12); color: var(--text-secondary); cursor: pointer; min-height: 28px; }
+.ptc-exclude { display: inline-flex; align-items: center; gap: var(--space-1-5); font-size: var(--fs-12); color: var(--text-secondary); cursor: pointer; min-height: 28px; }
 .ptc-exclude input { margin: 0; }
 
 /* The result. */
@@ -103,12 +103,12 @@
   .pred-pareto { grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr); }
 }
 .pred-small { width: 100%; border-collapse: collapse; font-size: var(--fs-13); }
-.pred-small th, .pred-small td { padding: 6px 8px; border-bottom: 1px solid var(--border-subtle); text-align: left; }
+.pred-small th, .pred-small td { padding: var(--space-1-5) var(--space-2); border-bottom: 1px solid var(--border-subtle); text-align: left; }
 .pred-small thead th { font-size: var(--fs-12); font-weight: 500; color: var(--text-secondary); }
 .pred-small .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pred-source { margin-top: var(--space-2); }
-.pred-source ul { margin: var(--space-1) 0 0; padding-left: 1.2rem; }
+.pred-source ul { margin: var(--space-1) 0 0; padding-left: var(--space-5); }
 .pred-notes { white-space: pre-line; }
 
-.pred-q-cell { display: inline-flex; flex-direction: column; gap: 4px; align-items: flex-end; max-width: 9rem; }
+.pred-q-cell { display: inline-flex; flex-direction: column; gap: var(--space-1); align-items: flex-end; max-width: 9rem; }
 .pred-q-cell button { white-space: normal; text-align: right; }
