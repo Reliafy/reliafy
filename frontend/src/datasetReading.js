@@ -10,6 +10,8 @@
 //                                           // (s: the state during the row, multi-state; kept, not yet fitted)
 //     c_invert, c_map,                      // what the status values mean
 //     all_failed,                           // no status column, on purpose: every row failed
+//     one_stream,                           // no item column, on purpose: every row is an event of one
+//                                           // stream (one fleet, one system); without it each row is a unit
 //     unit, m_unit, x2_unit,                // x's unit (any unit), m's, the second clock's ("cycles")
 //     z: [col], z_units: { col: unit },     // the covariates, with optional units
 //     not_used: [col],                      // columns read as nothing
@@ -33,7 +35,7 @@ const LABEL = { e: "failure mode", x2: "second clock" };
 
 export const emptyReading = () => ({
   ...Object.fromEntries(ROLES.map((r) => [r, ""])),
-  c_invert: false, c_map: null, all_failed: false, unit: "", m_unit: "", x2_unit: "", z: [], z_units: {}, not_used: [],
+  c_invert: false, c_map: null, all_failed: false, one_stream: false, unit: "", m_unit: "", x2_unit: "", z: [], z_units: {}, not_used: [],
 });
 
 // The second clock's unit: as typed ("cycles"), else from its column's name; blank without one.
@@ -58,6 +60,14 @@ const DATE_VALUE = /^\d{4}-\d{1,2}-\d{1,2}([ T]\d{1,2}:\d{2}.*)?$|^\d{1,2}[/.-]\
 // The columns a reading gives a role (never also covariates).
 export const usedColumns = (r) => new Set(ROLES.map((k) => r?.[k]).filter((v) => typeof v === "string" && v));
 
+// A column of dates: by its type, its name (as text) or its values.
+function isDateColumn(name, fact = {}) {
+  const dtype = String(fact?.dtype || "");
+  const text = !isNumeric(dtype);
+  return /date|time/.test(dtype) || (DATE_NAMES.test(words(name)) && text)
+    || (text && fact?.sample != null && DATE_VALUE.test(String(fact.sample).trim()));
+}
+
 // Why a column left over isn't a covariate by default, or null: it is one.
 // "one value", "a date", "an id" or "free text": one tap includes it anyway.
 export function notUsedReason(name, fact = {}, nRows = 0) {
@@ -66,8 +76,7 @@ export function notUsedReason(name, fact = {}, nRows = 0) {
   if (nu !== null && nu <= 1) return "one value";
   const dtype = String(fact.dtype || "");
   const text = !isNumeric(dtype);
-  if (/date|time/.test(dtype) || (DATE_NAMES.test(w) && text)
-      || (text && fact.sample != null && DATE_VALUE.test(String(fact.sample).trim()))) return "a date";
+  if (isDateColumn(name, fact)) return "a date";
   if (((ITEM_NAMES.test(w) || BARE_ID.test(w)) && !CATEGORY.test(w)) || (text && nu !== null && nRows > 1 && nu >= nRows)) {
     return "an id";
   }
@@ -92,8 +101,9 @@ export function defaultZ(columns, facts, used, nRows) {
 // The item each row belongs to: a column named like one (a tag, serial,
 // asset; a bare "ID" last), preferring one whose values repeat.
 function itemColumn(columns, facts, nRows, used) {
+  // A date is when something happened, never which item it happened to.
   const pool = columns.filter((c) => !used.has(c) && !CATEGORY.test(words(c))
-    && (!isNumeric(facts[c]?.dtype) || facts[c]?.whole !== false));
+    && (!isNumeric(facts[c]?.dtype) || facts[c]?.whole !== false) && !isDateColumn(c, facts[c]));
   const named = pool.filter((c) => ITEM_NAMES.test(words(c)));
   const bare = pool.filter((c) => BARE_ID.test(words(c)) && !named.includes(c));
   const repeats = (c) => facts[c]?.nUnique != null && nRows && facts[c].nUnique > 1 && facts[c].nUnique < nRows;
@@ -249,8 +259,13 @@ export function readingWaiting(reading, facts, nRows) {
 // A failure mode beside inspection ranges or late entry: kept with the
 // dataset, but a fit by failure mode needs one exact value per unit.
 export function readingNotes(r) {
-  if (!r?.e || !(r.xl || r.xr || r.tl)) return [];
-  return [{
+  // Said beside i, so the fold holding it stays open while it's ticked.
+  const stream = r?.one_stream && !r.i ? [{
+    col: "", row: "i",
+    text: "Every row is read as an event of one stream: a repairable model fits it as one system. Life models read each row as its own unit.",
+  }] : [];
+  if (!r?.e || !(r.xl || r.xr || r.tl)) return stream;
+  return [...stream, {
     col: r.e, row: "e",
     text: "Kept with the dataset as it is. A fit by failure mode needs one exact value per unit, so to fit by mode, "
       + "or to fit every failure as one, its fit asks which to leave out (for that fit only).",
@@ -267,6 +282,7 @@ export function readingParts(r) {
   if (r.c) out.push({ key: "c", label: "c", value: r.c });
   else if (r.e && !r.xl && !r.m) out.push({ key: "c", label: "c", value: `none: a blank ${LABEL.e} is still running` });
   else if (r.all_failed) out.push({ key: "c", label: "c", value: "every row failed" });
+  if (r.one_stream && !r.i) out.push({ key: "i", label: "i", value: "none: every row is one stream" });
   for (const k of ["n", "tl", "tr", "i", "m", "e", "s"]) {
     if (r[k]) out.push({ key: k, label: LABEL[k] || k, value: r[k] + (k === "m" && r.m_unit ? ` (${r.m_unit})` : "") });
   }
@@ -300,6 +316,7 @@ export function setRole(r, role, col, facts, nRows) {
   const next = { ...r, [role]: col };
   if (col) for (const k of ROLES) if (k !== role && next[k] === col) next[k] = "";
   if (role === "c") next.all_failed = next.all_failed && !col;
+  if (role === "i") next.one_stream = !!next.one_stream && !col;
   // The second clock's unit follows its column, unless the user typed their own.
   if (role === "x2" && (!col || !r.x2_unit || r.x2_unit === defaultSecondUnit(r.x2))) {
     next.x2_unit = col ? defaultSecondUnit(col) : "";
@@ -347,7 +364,7 @@ export function readingPayload(r) {
 export function missingFor(kind, r) {
   if (!r) return null;
   const x = r.x || r.xl;
-  if (kind === "repairable" && !r.i) return "A repairable model follows each system's failures, so it needs i: the column that says which system each row belongs to. This dataset's reading has none.";
+  if (kind === "repairable" && !r.i && !r.one_stream) return "A repairable model follows each system's failures, so it needs i: the column that says which system each row belongs to, or, with no such column, tick “every row is one stream” under More columns › i (Change). This dataset’s reading has neither.";
   if (kind === "degradation" && !x) return "A degradation model follows each item's readings over x (the age or time of each reading), and this dataset's reading has no x.";
   if (kind === "degradation" && (!r.i || !r.m)) return `A degradation model follows each item's readings, so it needs ${!r.i ? "i (which item each row belongs to)" : ""}${!r.i && !r.m ? " and " : ""}${!r.m ? "m (the measured value)" : ""}. This dataset's reading has ${!r.i && !r.m ? "neither" : "none"}.`;
   if (!x) return "This dataset's reading has no x: the value when each unit failed or was removed.";

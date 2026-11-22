@@ -97,7 +97,7 @@ export const RECURRENT_NONE = {
 // [{ row, text, note? }] (``note``: said, but doesn't stop Next).
 export function recurrentIssues(map, windows = "", recordEnd = "") {
   const out = [];
-  if (!map.i) out.push({ row: "i", text: "Pick i: the column saying which item each row belongs to." });
+  if (!map.i && !map.one_stream) out.push({ row: "i", text: "Pick i: the column saying which item each row belongs to." });
   if (!map.x) out.push({ row: "x", text: "Pick x: the column with the value at each failure." });
   if (map.i && map.x && map.i === map.x) out.push({ row: "x", text: "x and i are the same column: pick a different one for each." });
   if (out.length === 0 && !map.tr && !map.c && !(map.ws && map.we) && !String(windows || "").trim()
@@ -119,6 +119,7 @@ export function recordEndIssue(value) {
 // [[field, value]], in order: i, x, the optional modifiers, the covariates.
 export function recurrentFields(mapping) {
   const out = [["i", mapping.i], ["x", mapping.x]];
+  if (!mapping.i && mapping.one_stream) out.push(["one_stream", "true"]);
   ["c", "n", "tl", "tr", "t", "mode", "ws", "we", "downtime", "cost"].forEach((k) => { if (mapping[k]) out.push([k, mapping[k]]); });
   (mapping.z || []).forEach((col) => out.push(["z", col]));
   return out;
@@ -139,6 +140,8 @@ export function recurrentMappingFromReading(r, facts = {}, nRows = 0) {
   const status = codedStatus(r, facts, nRows, "0 = a failure, 1 = the end of the record");
   const mapping = {
     i: r.i || "", x: r.x || "", c: status.c, n: r.n || "", tl: r.tl || "", tr: r.tr || "", mode: r.e || "",
+    // No item column, every row one stream (one fleet, one system): the fit reads it as one system.
+    ...(!r.i && r.one_stream ? { one_stream: true } : {}),
   };
   const unit = r.unit || guessUnit(mapping.x) || guessUnit(mapping.tr);
   const missing = missingFor("repairable", r) || unitColumnProblem(r) || status.problem;

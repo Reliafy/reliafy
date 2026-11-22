@@ -37,7 +37,11 @@ asks no column questions: it shows that reading in one line at the top of the
 **Model** step, with **Change** to read the columns differently. The key columns are **i** (*which item each
 row belongs to*: this is what groups events into per-machine histories) and
 **x** (*the value at each failure, counted from new*: hours, cycles or
-kilometres from that system's start, not a calendar date). **c** (a failure, 0,
+kilometres from that system's start, not a calendar date). With no item
+column, because every row is an event of one stream (one fleet's replacements
+against cumulative fleet hours, one system's failures), tick **No item column:
+every row is one stream of events** under i: it fits as one system, with no
+column to add. The dataset page shows the same reading, with **Change**. **c** (a failure, 0,
 or the end of the record, 1), **n** (how many failures the row stands for) and
 **tl** (start of record) are there if your data has them. There is no range
 (xl to xr): a repairable fit takes each failure's own value.

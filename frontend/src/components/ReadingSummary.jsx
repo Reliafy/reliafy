@@ -59,7 +59,8 @@ export default function ReadingSummary({
 // the dataset (later fits use it; models already made keep the reading they
 // were fitted with). ``rd``: useDatasetReading. A sample or view-only share
 // can't keep one: the change is used for this fit only, and says so.
-export function ReadingChange({ name, rd, onDone }) {
+// ``fit``: false on the dataset's own page (no fit to use it for only).
+export function ReadingChange({ name, rd, onDone, fit = true }) {
   if (!rd.editing) return null;
   const waiting = readingWaiting(rd.draft, rd.facts, rd.nRows);
   const save = async () => {
@@ -71,7 +72,7 @@ export function ReadingChange({ name, rd, onDone }) {
       <p className="muted-line" style={{ margin: 0 }}>
         {rd.readOnly
           ? "This dataset isn't yours to change, so this reading is used for this fit only."
-          : "Save keeps it with the dataset: later models use it (models already made keep the reading they were fitted with). Use for this fit only leaves the dataset as it is."}
+          : `Save keeps it with the dataset: later models use it (models already made keep the reading they were fitted with). The rows themselves never change.${fit ? " Use for this fit only leaves the dataset as it is." : ""}`}
       </p>
       <ReadingEditor columns={rd.cols.columns} facts={rd.facts} nRows={rd.nRows} reading={rd.draft}
                      onChange={rd.setDraft} disabled={rd.saving} />
@@ -79,7 +80,7 @@ export function ReadingChange({ name, rd, onDone }) {
       <div className="row reading-change-foot" style={{ margin: 0 }}>
         <button type="button" className="secondary" onClick={rd.cancelChange} disabled={rd.saving}>Cancel</button>
         {waiting && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{waiting}</span>}
-        {!rd.readOnly && (
+        {!rd.readOnly && fit && (
           <button type="button" className="secondary" onClick={() => { rd.useOnce(rd.draft); onDone?.(); }}
                   disabled={!!waiting || rd.saving}
                   title="Fit with this reading without changing the dataset's (one clock of two, or no failure mode, say)">

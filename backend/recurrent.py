@@ -196,6 +196,19 @@ def fit_spec(df: pd.DataFrame, spec: dict, gof_test: bool = True) -> tuple[dict,
 
 
 RECORD_END_COLUMN = "__record_end__"  # the column a typed end of test becomes
+#: The item column "every row is one stream" becomes, and the stream's name.
+ONE_STREAM_COLUMN = "__one_stream__"
+ONE_STREAM_NAME = "All rows"
+
+
+def one_stream(df: pd.DataFrame, mapping: dict) -> tuple[pd.DataFrame, dict]:
+    """A mapping with no item column that says every row is one stream of
+    events (``one_stream``: one fleet's replacements against fleet hours, one
+    system's failures) as a fit takes it: one system, named "All rows". The
+    dataset itself is never changed; this frame is the fit's own copy."""
+    if not mapping.get("one_stream") or mapping.get("i"):
+        return df, mapping
+    return df.assign(**{ONE_STREAM_COLUMN: ONE_STREAM_NAME}), {**mapping, "i": ONE_STREAM_COLUMN}
 
 
 def parse_record_end(value) -> float | None:
@@ -272,6 +285,7 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str
     from backend import recurrent_models as extra
     from backend import recurrent_systems as per
 
+    df, mapping = one_stream(df, mapping)
     given = mapping
     df, chosen = per.only_systems(df, mapping, systems)
     df, mapping = with_record_end(df, mapping, record_end)
@@ -977,6 +991,7 @@ def projection_inputs(df: pd.DataFrame, mapping: dict, test_end=None) -> dict:
     end-of-test row (``c = 1``). The end of the test comes from the data's
     own ``c = 1`` rows, else its observation window (``tr``), else
     ``test_end`` — the time every system's test stopped."""
+    df, mapping = one_stream(df, mapping)
     for key in ("i", "x", "mode"):
         col = mapping.get(key)
         if not col:

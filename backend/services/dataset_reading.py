@@ -18,7 +18,9 @@ covariates:
     u     a column giving each row's time unit (converted to ``unit``)
 
 plus ``c_invert`` / ``c_map`` (what the status values mean), ``all_failed``
-(no status column: every row is a failure, said on purpose), ``unit`` (x's),
+(no status column: every row is a failure, said on purpose), ``one_stream``
+(no item column: every row is an event of one stream, one fleet or one
+system, said on purpose; with neither, each row is its own unit), ``unit`` (x's),
 ``m_unit``, ``x2_unit`` (the second clock's unit: "cycles", "landings"; from its
 column's name when blank), ``z`` (the covariates: every column not used as something else,
 less the ``not_used`` ones), ``z_units`` ({column: unit}, optional) and
@@ -60,7 +62,8 @@ class ReadingError(ValueError):
 
 
 def empty() -> dict:
-    return {**{r: "" for r in ROLES}, "c_invert": False, "c_map": None, "all_failed": False, "unit": "",
+    return {**{r: "" for r in ROLES}, "c_invert": False, "c_map": None, "all_failed": False, "one_stream": False,
+            "unit": "",
             "m_unit": "", "x2_unit": "", "z": [], "z_units": {}, "not_used": []}
 
 
@@ -130,6 +133,7 @@ def normalize(raw: dict | None, columns, *, require_x: bool = True, measurement_
         out["c_map"] = {str(k): _code(v) for k, v in c_map.items()}
         out["c_invert"] = False
     out["all_failed"] = bool(raw.get("all_failed")) and not out["c"]
+    out["one_stream"] = bool(raw.get("one_stream")) and not out["i"]
     out["unit"] = str(raw.get("unit") or "").strip()[:40]
     out["m_unit"] = str(raw.get("m_unit") or "").strip()[:40] if out["m"] else ""
     out["x2_unit"] = second_clock_unit(out["x2"], raw.get("x2_unit"))
@@ -411,8 +415,9 @@ def _item_column(cols: list[dict], n_rows: int, used: set) -> str:
     """The item each row belongs to: a column named like one (a tag, serial,
     asset; a bare "ID" last), preferring one whose values repeat (several rows
     per item). Text or whole numbers only."""
+    # A date is when something happened, never which item it happened to.
     pool = [c for c in cols if c["name"] not in used and not _CATEGORY.search(_words(c["name"]))
-            and (not _numeric(c.get("dtype")) or c.get("whole") is not False)]
+            and (not _numeric(c.get("dtype")) or c.get("whole") is not False) and not _is_date(c)]
     named = [c for c in pool if _ITEM_NAMES.search(_words(c["name"]))]
     bare = [c for c in pool if _BARE_ID.search(_words(c["name"])) and c not in named]
 
@@ -452,6 +457,15 @@ def _tvc(columns: list[str], facts: dict, n_rows: int) -> dict | None:
     return {"i": item, "xl": start, "xr": stop, "unit": unit}
 
 
+def _is_date(f: dict) -> bool:
+    """A column of dates: by its type, its name (as text) or its values."""
+    dtype = str(f.get("dtype") or "")
+    sample = f.get("sample")
+    return bool(re.search(r"date|time", dtype) or (_DATE_NAMES.search(_words(f.get("name") or ""))
+                                                   and not _numeric(dtype))
+                or (not _numeric(dtype) and sample is not None and _DATE_VALUE.match(str(sample).strip())))
+
+
 def not_used_reason(f: dict, n_rows: int) -> str | None:
     """Why a column left over isn't offered as a covariate by default ("one
     value", "a date", "an id", "free text"), or None: it's a covariate. The
@@ -462,9 +476,7 @@ def not_used_reason(f: dict, n_rows: int) -> str | None:
     if nu is not None and nu <= 1:
         return "one value"
     dtype = str(f.get("dtype") or "")
-    sample = f.get("sample")
-    if re.search(r"date|time", dtype) or (_DATE_NAMES.search(words) and not _numeric(dtype)) or (
-            not _numeric(dtype) and sample is not None and _DATE_VALUE.match(str(sample).strip())):
+    if _is_date(f):
         return "a date"
     if ((_ITEM_NAMES.search(words) or _BARE_ID.search(words)) and not _CATEGORY.search(words)) or (
             not _numeric(dtype) and nu is not None and n_rows > 1 and nu >= n_rows):
@@ -602,7 +614,7 @@ def merged(base: dict, given: dict) -> dict:
         if role == "c":
             out["c_invert"], out["c_map"] = False, None
     taken = {out[r] for r in ROLES if out.get(r)}
-    for key in ("c_invert", "c_map", "all_failed", "unit", "m_unit", "x2_unit", "z_units"):
+    for key in ("c_invert", "c_map", "all_failed", "one_stream", "unit", "m_unit", "x2_unit", "z_units"):
         if key in given:
             out[key] = given[key]
     if "z" in given:
@@ -722,6 +734,8 @@ def summary(reading: dict) -> str:
         parts.append("c: none, a blank failure mode is still running")
     elif reading.get("all_failed"):
         parts.append("c: every row failed")
+    if reading.get("one_stream") and not reading.get("i"):
+        parts.append("i: none, every row is one stream")
     for role in ("n", "tl", "tr", "i", "m", "e", "s", "x2"):
         if reading.get(role):
             unit = f" ({reading['m_unit']})" if role == "m" and reading.get("m_unit") else ""
