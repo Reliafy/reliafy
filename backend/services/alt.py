@@ -121,6 +121,36 @@ def rename_model(db, model_id: str, name: str, owner_id: str) -> AltModelDoc:
     return doc
 
 
+def clean_use_stress(values, n: int):
+    """A use stress as kept with a model: one finite number per stress (the user's units, as typed),
+    or None when it isn't that."""
+    import math
+
+    if not isinstance(values, (list, tuple)) or len(values) != n:
+        return None
+    try:
+        out = [float(v) for v in values]
+    except (TypeError, ValueError):
+        return None
+    return out if all(math.isfinite(v) for v in out) else None
+
+
+def set_use_stress(db, model_id: str, use_stress, owner_id: str) -> AltModelDoc:
+    """Keep (or, given None or something unusable, forget) the use stress the page opens at."""
+    doc = get_model(db, model_id, owner_id)
+    if doc is None or doc.owner_id != owner_id:
+        raise ModelNotFound(model_id)
+    use = clean_use_stress(use_stress, len(doc.spec.get("stress_cols") or []))
+    spec = {k: v for k, v in doc.spec.items() if k != "use_stress"}
+    if use is not None:
+        spec["use_stress"] = use
+    doc.spec = spec
+    doc.updated_at = _now()
+    db.alt_models.update_one({"_id": model_id, "owner_id": owner_id},
+                             {"$set": {"spec": spec, "updated_at": doc.updated_at}})
+    return doc
+
+
 def delete_model(db, model_id: str, owner_id: str) -> None:
     result = db.alt_models.delete_one({"_id": model_id, "owner_id": owner_id})
     if result.deleted_count == 0:

@@ -48,3 +48,16 @@ test("a target reads as typed: 99.5% is never 100%", () => {
   assert.equal(formatTarget(0.9999), "99.99%");
   assert.equal(formatTarget(0.99), "99%");
 });
+
+test("a saved sequential test lists its rule and the counts so far", () => {
+  const rows = inputRows("sequential_test", {
+    method: "mtbf", mtbf: 60000, good_mtbf: 120000, confidence: 0.9, producer_risk: 0.1, unit: "hours",
+    failures_seen: 2, time_seen: 471168,
+  });
+  assert.deepEqual(rows.map((r) => [r.label, r.value]), [
+    ["Test type", "MTBF (failures against test time)"], ["MTBF to demonstrate", "60,000 hours"],
+    ["A good design's MTBF", "120,000 hours"], ["Confidence", "90%"], ["Producer's risk", "10%"],
+    ["Failures so far", "2"], ["Total test time so far", "471,168 hours"],
+  ]);
+  assert.equal(reopenLink("sequential_test", {}), null);
+});

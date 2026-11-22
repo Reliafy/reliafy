@@ -125,7 +125,7 @@ def test_make_a_library_add_snapshots_and_read_it(web):
     assert m1["model"]["has_dataset"] and m1["model"]["kind_label"] == "Non-repairable"
     h = m1["model"]["headline"]
     assert h["label"] == "B10" and h["confidence"] == 0.9 and h["bound"] == "lower"
-    assert 0 < h["lower"] < h["value"] and "90% lower bound" in h["text"]
+    assert 0 < h["lower"] < h["value"] and "at 90%)" in h["text"] and "≥" in h["text"]
     # A model from parameters needs no data: where it came from, in words.
     assert m2["model"]["fitted_on"] is None and m2["model"]["basis_text"] == "From parameters"
     assert m2["model"]["headline"]["lower"] is None
@@ -478,3 +478,10 @@ def test_an_upload_into_a_library_is_pro(web):
     assert r.status_code == 402 and r.json()["code"] == "pro_required"
     assert web.db.datasets.count_documents({"owner_id": PRO}) == before
     assert web.db.library_records.count_documents({"library_id": lid}) == 0
+
+
+def test_a_library_headline_is_rounded_as_the_model_page_rounds_it():
+    from backend.library.entries import _sig3
+
+    # 4,827 on the card against 4,830 on the model page read as two different numbers.
+    assert [_sig3(v) for v in (5983.2, 4827.4, 978.6, 12.34, 0.04567, 0)] == ["5,980", "4,830", "979", "12.3", "0.0457", "0"]

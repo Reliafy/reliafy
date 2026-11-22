@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   cvmCheck, duanePoints, fittedToData, growingCheck, logSlope, mtbfWords, planViews, recurrentAnswer, recurrentTabs,
   resolveRecurrentTab, systemsCheck, trendCheck, poissonUpperTail, scaledParam,
-  dataText, effectTone, fitSystemsHref, ratioCiText, familyOf, growthReading, orderedParams, paramLabel, pct, perUnit, ratioText, repairTitle, terminationText,
+  beyondDataWords, boundsWords, restoresRange, dataText, effectTone, fitSystemsHref, ratioCiText, familyOf, growthReading, orderedParams, paramLabel, pct, perUnit, ratioText, repairTitle, terminationText,
 } from "./recurrentResults.js";
 
 test("paramLabel: plain names with the unit, per model", () => {
@@ -14,7 +14,7 @@ test("paramLabel: plain names with the unit, per model", () => {
   assert.equal(paramLabel({ model: { id: "duane" }, unit: "hours" }, "alpha"), "Growth shape α");
   assert.equal(paramLabel({ model: { id: "hpp" }, unit: "hours" }, "lambda"), "Failure rate λ (per hour)");
   const grp = { family: "renewal", model: { id: "grp_i" }, unit: "hours" };
-  assert.equal(paramLabel(grp, "q"), "Restoration factor q");
+  assert.equal(paramLabel(grp, "q"), "Share of age kept q (a repair restores 1 − q)");
   assert.equal(paramLabel({ family: "renewal", model: { id: "ari" }, baseline: { id: "crow_amsaa" } }, "rho"),
     "Repair efficiency ρ");
   assert.equal(paramLabel({ family: "regression", baseline: { id: "crow_amsaa" }, unit: "days" }, "alpha"),
@@ -36,7 +36,7 @@ test("growthReading: the evidence and what it means, no verdict", () => {
   };
   assert.deepEqual(growthReading(r), {
     title: "Shape of the failure rate",
-    text: "β 2.06 (95% range 1.44–2.95). β above 1 means failures come faster as time goes on; below 1, slower.",
+    text: "β 2.06 (95% two-sided range 1.44–2.95). β above 1 means failures come faster as time goes on; below 1, slower.",
   });
   const flat = { growth: "stable", growth_basis: { symbol: "β", no_trend: 1, ci: [0.8, 1.3] } };
   assert.doesNotMatch(growthReading({ ...flat, growth_basis: { ...flat.growth_basis, estimate: 1.0 } }).text, /improv|deteriorat|no clear trend/i);
@@ -122,10 +122,10 @@ test("resolveRecurrentTab: ids, names and the old tab ids", () => {
 
 test("recurrentAnswer: the verdict, the shape, MTBF now and the data", () => {
   assert.deepEqual(recurrentAnswer(crow, { saved: "saved now" }), [
-    "Crow-AMSAA (NHPP)", "β 2.06 (95% 1.44–2.95)", "MTBF now 323 hours (≥ 230 at 90%)", "4 systems, 30 failures", "saved now",
+    "Crow-AMSAA (NHPP)", "β 2.06 (95% two-sided 1.44–2.95)", "MTBF now 323 hours (≥ 230 at 90%, one-sided)", "4 systems, 30 failures", "saved now",
   ]);
   assert.equal(mtbfWords({ ...crow, demonstrated_mtbf: null, mtbf_ci: [195, 577], rates_at: "x" }),
-    "MTBF now 323 hours (95% 195–577), at the fleet's average covariates");
+    "MTBF now 323 hours (95% two-sided 195–577), at the fleet's average covariates");
   // A covariate model with levels: each level's MTBF, not an average system.
   assert.equal(mtbfWords({ ...crow, rates_at: "x", rates_by_group: [
     { label: "site Coastal", mtbf: 627.2 }, { label: "site Inland", mtbf: 263.2 }] }),
@@ -138,7 +138,7 @@ test("recurrentAnswer: the verdict, the shape, MTBF now and the data", () => {
     next_failure: { units: [{ system: "CMP-4", median: 91.3 }] },
   };
   assert.deepEqual(recurrentAnswer(grp), [
-    "Partial repair", "repairs restore 79% of the age gained (95% range 78%–81%)",
+    "Partial repair", "repairs restore 79% of the age gained (95% two-sided range 78%–81%)",
     "next failure: CMP-4 in about 91.3 hours (median)", "4 systems, 30 failures",
   ]);
   // The headline follows the interval: never "As bad as old" for an estimate
@@ -147,7 +147,10 @@ test("recurrentAnswer: the verdict, the shape, MTBF now and the data", () => {
     restoration: { effectiveness: 0.52, effectiveness_ci: [-0.14, 0.7] } };
   const words = recurrentAnswer(maybe);
   assert.equal(words[0], "Partial repair, can't rule out as bad as old");
-  assert.equal(words[1], "repairs restore 52% of the age gained (90% range -14%–70%)");
+  // A share can't be below 0% (as bad as old): the range stops there and says it reaches it.
+  assert.equal(words[1], "repairs restore 52% of the age gained (90% two-sided range 0%–70%, reaching as bad as old)");
+  const both = recurrentAnswer({ ...maybe, restoration: { effectiveness: 0.6, effectiveness_ci: [-0.2, 1.3] } });
+  assert.equal(both[1], "repairs restore 60% of the age gained (90% two-sided range 0%–100%, from as bad as old to as good as new)");
   const hpp = { model: { id: "hpp" }, from_params: true, mtbf: 500, unit: "hours" };
   assert.deepEqual(recurrentAnswer(hpp), ["Constant failure rate", "MTBF at the horizon 500 hours", "made from parameters"]);
 });
@@ -171,7 +174,7 @@ test("the Duane plot: cumulative MTBF over the data's span, and its slope", () =
   assert.deepEqual(d.fitted.x, [100, 400]);
   assert.ok(logSlope(d.observed) > 0);
   assert.equal(logSlope({ x: [1, 2], y: [1, 2] }), null);
-  assert.match(growingCheck(crow).words, /^β 2\.06 \(95% range 1\.44–2\.95\)\. β above 1 means .* The cumulative MTBF rises as time goes on \(Duane slope/);
+  assert.match(growingCheck(crow).words, /^β 2\.06 \(95% two-sided range 1\.44–2\.95\)\. β above 1 means .* The cumulative MTBF rises as time goes on \(Duane slope/);
   assert.doesNotMatch(growingCheck(crow).words, /getting worse|Yes|No,/);
   assert.match(growingCheck({ mcf: crow.mcf }).words, /^The cumulative MTBF rises as time goes on/);
 });
@@ -239,4 +242,28 @@ test("terminationText: says how the record ends", () => {
   // On the answer line, after the data.
   const words = recurrentAnswer({ ...one, model: { id: "crow_amsaa" }, termination: { kind: "time", end: 1000 } });
   assert.deepEqual(words.slice(-2), ["1 system, 12 failures", "time-terminated at 1,000 hours"]);
+});
+
+test("restoresRange keeps a restored share inside 0%–100% and names the end it reaches", () => {
+  assert.equal(restoresRange({ effectiveness_ci: [-0.14, 0.7] }).words, "0%–70%, reaching as bad as old");
+  assert.equal(restoresRange({ effectiveness_ci: [0.3, 1.2] }).words, "30%–100%, reaching as good as new");
+  assert.equal(restoresRange({ effectiveness_ci: [0.3, 0.7] }).words, "30%–70%");
+  assert.equal(restoresRange({}), null);
+});
+
+test("beyondDataWords: an answer past the longest record says how far past", () => {
+  assert.equal(beyondDataWords({ data_end: 11800, times: 1.711 }, "hours"),
+    "This is 1.7× the longest record in the data (11,800 hours). The data stop there, so the answer assumes the "
+    + "fitted trend carries on unchanged past them.");
+  assert.equal(beyondDataWords(null), null);
+});
+
+test("boundsWords: every bound on the page says its side and method", () => {
+  const w = boundsWords({ ci_level: 0.9, params: [{ name: "beta", value: 0.5, ci: [0.3, 0.8] }],
+    demonstrated_mtbf: { lower: 94.5, confidence: 0.9, method: "crow" } });
+  assert.match(w[0], /90% two-sided, from the fit's information \(Wald/);
+  assert.match(w[1], /one-sided lower bound \(the demonstrated MTBF\), by Crow's exact method \(MIL-HDBK-189C\)/);
+  const k = boundsWords({ ci_level: 0.9, family: "renewal", model: { id: "grp_i" },
+    params: [{ name: "q", value: 0.48, ci: [0.3, 1.14], ci_method: "lr" }] });
+  assert.match(k[1], /^Share of age kept q's interval is a profile-likelihood one, so it can run past 0 or 1/);
 });

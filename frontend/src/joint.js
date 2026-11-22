@@ -156,6 +156,24 @@ export function riskBoundNote(rows, level = 0.9) {
 // one, else the first.
 export const sortColumn = (labels) => ((labels || []).length > 1 ? 1 : 0);
 
+// The horizon the ranking uses: the one whose shown figures tell the units
+// apart best (the most different values), the middle one on a tie, then the
+// shorter. Where every unit is "> 99.9%" over 90 days, the 90-day column
+// can't rank them, so the ranking (and the words naming it) use the one that
+// can. ``rows``: the scored rows ({risk: [...]}).
+export function rankColumn(rows, labels) {
+  const n = (labels || []).length;
+  if (n <= 1) return 0;
+  const scored = (rows || []).filter((r) => r.risk);
+  const mid = sortColumn(labels);
+  const spread = (c) => new Set(scored.map((r) => riskText(r.risk?.[c]))).size;
+  let best = mid;
+  for (let c = 0; c < n; c += 1) {
+    if (spread(c) > spread(best)) best = c;
+  }
+  return best;
+}
+
 // A class's fleet in one line (the Explorer by Classes): how many positions,
 // how many have risk now, and the highest. Members come highest risk first.
 export function fleetAnswer(fleet) {
@@ -163,8 +181,9 @@ export function fleetAnswer(fleet) {
   const n = fleet.positions;
   const parts = [`${n.toLocaleString("en-AU")} position${n === 1 ? "" : "s"}`];
   if (fleet.scored) {
-    const top = fleet.members.find((m) => m.scored);
-    const col = sortColumn(fleet.horizons.labels);
+    const scored = fleet.members.filter((m) => m.scored);
+    const col = rankColumn(scored, fleet.horizons.labels);
+    const top = sortRiskRows(scored, col)[0];
     parts.push(`${fleet.scored === n ? "all" : fleet.scored.toLocaleString("en-AU")} with risk now`);
     if (top) parts.push(`highest: ${top.position.name || "(no name)"}, ${riskText(top.risk[col])} in the next ${fleet.horizons.labels[col]}`);
   } else {
@@ -213,7 +232,7 @@ function shownRisk(p) {
 }
 
 // The risk table's order, by one named column: the chance of failing over the
-// middle horizon (the one "Highest risk now" quotes), highest first; rows that
+// horizon the ranking uses (rankColumn; "Highest risk" quotes it), highest first; rows that
 // show the same figure there go shortest median life left first.
 export function sortRiskRows(rows, col = 1) {
   const life = (r) => (r.median_reached === false || r.median_remaining == null ? Infinity : r.median_remaining);

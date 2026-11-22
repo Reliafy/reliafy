@@ -89,7 +89,7 @@ export default function OptimalReplacement({ modelId = null, planned = null, unp
   return (
     <div className="strategy-tool">
       <div className="strategy-form">
-        <ModelPicker key={wanted || ""} label="Non-repairable model" value={model} onChange={pickModel} preferSaved wanted={wanted}
+        <ModelPicker key={wanted || ""} label="Life model (non-repairable or degradation)" value={model} onChange={pickModel} preferSaved wanted={wanted} degradationModels
                      onSource={setSource} wt="repl-model" />
         {isRegression && (
           <p className="hint">

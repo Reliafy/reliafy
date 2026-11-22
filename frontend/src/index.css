@@ -2892,6 +2892,20 @@ h1 .chip,
   flex-direction: column;
 }
 
+/* A stat's interval or bound sits under its number (the label comes first,
+   by order), never above the label where it reads as the card before's. */
+.params .stat .param-ci {
+  order: 3;
+}
+
+/* Per-demand: the one-sided figure in a sentence, above the cards. */
+.pd-answer {
+  margin: 0 0 var(--space-3);
+  font-size: var(--fs-14);
+  line-height: var(--lh-14);
+  color: var(--text);
+}
+
 /* Detail panel: plot + goodness-of-fit aside (Instrument). */
 .detail-panel {
   display: flex;
@@ -8746,6 +8760,8 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .rbd-asof-sub { display: block; font-size: var(--fs-12); color: var(--text-secondary); }
 .rbd-asof-panel { display: flex; flex-direction: column; gap: 6px; max-width: 560px; }
 .rbd-asof-table { margin-bottom: 0; }
+.rbd-asof-source { display: block; max-width: 280px; font-size: var(--fs-12); line-height: var(--lh-12); color: var(--text-secondary); white-space: normal; }
+.rbd-asof-source.is-caveat { color: var(--warning-text); }
 .rbd-asof-table select, .rbd-asof-table input {
   background: var(--bg-surface); border: 1px solid var(--border-control); border-radius: var(--radius-md); color: var(--text);
   padding: 3px 6px; font: inherit; font-size: var(--fs-13);
@@ -9372,6 +9388,8 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
 .rbd-answer-rows { margin: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .rbd-answer-rows > div { display: grid; grid-template-columns: 136px 1fr; gap: var(--space-3); align-items: baseline; }
 .rbd-answer-rows dt { font-size: var(--fs-13); color: var(--text-secondary); }
+.rbd-answer-rows .muted { color: var(--text-secondary); }
+.rbd-hft-note { margin-top: var(--space-1); font-size: var(--fs-13); line-height: var(--lh-13); }
 .rbd-answer-rows dd { margin: 0; font-size: var(--fs-14); line-height: var(--lh-14); color: var(--text); min-width: 0; }
 .rbd-answer-rows dd b { font-weight: 600; font-variant-numeric: tabular-nums; }
 .rbd-answer-big { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }

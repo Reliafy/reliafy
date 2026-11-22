@@ -80,7 +80,7 @@ Match the relationship to the physics:
 Then its fixed inputs: **Stress 1** (and **Stress 2** for a two-stress model),
 each picked from the reading's covariates (**Z**), with its **unit** (°C, K, °F, V, kV,
 MPa, or type your own) and, if you know it, the **use stress** in that unit:
-the Calculator starts there. Reliafy picks the stress columns from their names
+the saved model opens at it. Reliafy picks the stress columns from their names
 to start with. Then fit.
 
 ![Choosing a life distribution and a life-stress relationship](/guides/img/alt-01-new.png)
@@ -97,9 +97,13 @@ The **Life-stress** tab is the ALT signature: characteristic life against
 stress, with each tested level marked and the fitted relationship drawn through
 them. Enter your **use stress** beside the chart: the line runs on to it, a star
 marks the life there, and the table gives the **acceleration factor** against
-each tested level. The **life at use stress** is shown with its 90% range: the
-further your use stress is from the tested levels, the wider it gets. This is
-where you see whether the extrapolation is a short reach or a heroic one. A
+each tested level. The life updates as you type, and the use stress is kept with
+the model, so it opens there next time. The **life at use stress** is shown with
+its 90% two-sided range: the further your use stress is from the tested levels,
+the wider it gets. This is where you see whether the extrapolation is a short
+reach or a heroic one: a use stress outside the tested stresses gets a warning
+that the life there rests on the life-stress relationship alone. For an
+Arrhenius fit, the **activation energy** (Ea, in eV) is shown under the shape. A
 model with two stresses shows two charts side by side, one along each stress,
 with a line for each tested level of the other (on a phone, a switch picks one).
 
@@ -127,7 +131,8 @@ Save the model and open the **Calculator** tab. Enter the stress your
 equipment actually runs at — below your tested range, which is the whole point —
 and press **Compute at use level**: you get the extrapolated reliability curve,
 the characteristic life, mean life, and B-lives at that condition, with their
-bounds (Wald, likelihood ratio or, on Pro, bootstrap). The use stress is one for
+bounds (Wald, likelihood ratio or, on Pro, bootstrap): the life's range is 90%
+two-sided, and the B-life and mission bounds are 90% one-sided lower bounds. The use stress is one for
 the whole page: the Life-stress tab and Diagnostics use the one you enter here.
 
 Give it a reference stress as well and you get the **acceleration factor**: the
@@ -166,7 +171,7 @@ units and a 1,000-minute test give:
 > Test **34 at 23.6 kV**, **6 at 36 kV**, each for 1,000 minutes. Expect about
 > 16.9 failures in all. The test estimates B10 at the use stress (20 kV: 2,504
 > minutes on these planning values) to within a factor of 2.79 at 90%
-> confidence.
+> confidence (two-sided).
 
 ![The accelerated test plan, started from a fitted model](/guides/img/alt-05-plan.png)
 
@@ -175,7 +180,12 @@ fail, so it needs more of them. The highest stress needs only a few, because
 they fail quickly. **Stress levels** offers 3 or 4
 levels instead of 2: a little less precise, but the middle level shows whether
 the life-stress model really holds. **Check a test of my own** works out what a
-test you have already designed would give.
+test you have already designed would give. When the factor is past 10, the
+answer says the range is too wide to quote and what would narrow it.
+
+For an Arrhenius or Eyring plan, choose **Temperature in** K or °C: temperatures
+typed in °C are worked in kelvin (the note under the model says so, "40 °C is
+313.15 K") and the answer reads back in °C.
 
 Plans take one stress, a Weibull or lognormal distribution, and the Arrhenius,
 Eyring or inverse power law model. Without a fit, open the tab directly and type

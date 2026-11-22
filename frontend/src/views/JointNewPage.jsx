@@ -443,7 +443,8 @@ export default function JointNewPage() {
             )}
             {ready && !editing && issues.length > 0 && (
               <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>
-                First settle what the reading lacks: {[...new Set(issues.map((i) => `${i.row} (${i.table === "life" ? "life data" : "measurements"})`))].join(", ")}.
+                {issues[0].text.replace(/\.\s*$/, "")} ({issues[0].table === "life" ? "life data" : "measurements"}: use its
+                Change the reading{issues.length > 1 ? `; ${issues.length - 1} more note${issues.length === 2 ? "" : "s"} above` : ""}).
               </span>
             )}
             <button type="button" className="secondary" disabled={!mapped || !!busy} onClick={onCheck}>

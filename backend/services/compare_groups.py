@@ -378,9 +378,13 @@ def compare_groups(
 
     longest = {g: float(np.max(x[lab == g])) for g in order}
     horizon = min(longest.values())
+    # The group whose data ends first sets the longest window every curve has data for.
+    ends_first = min(longest, key=longest.get)
     notes: list[str] = []
+    tau_source = "given"
     if tau is None:
         tau = horizon
+        tau_source = "auto"
     else:
         tau = float(tau)
         if not np.isfinite(tau) or tau <= 0:
@@ -392,6 +396,7 @@ def compare_groups(
                 f"({fmt_num(horizon)}), so it was capped there: beyond it that group's curve has no data, "
                 "and its average life would be extrapolated.")
             tau = horizon
+            tau_source = "capped"
     if tau <= 0:
         raise CompareGroupsError("Every time in one group is 0: there is no window to average life over.")
 
@@ -448,6 +453,10 @@ def compare_groups(
         "groups": summaries,
         "reference": reference,
         "tau": float(tau),
+        # How the window was set: "auto" (none given), "given", or "capped" (a longer one cut to the
+        # data), and the group whose data ends first (it sets the longest window there is data for).
+        "tau_source": tau_source,
+        "tau_group": ends_first,
         "alpha": ALPHA,
         "ci_level": round(1.0 - CI_ALPHA, 6),
         "logrank": primary,

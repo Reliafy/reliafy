@@ -332,3 +332,14 @@ def test_a_status_column_needs_both_meanings_unless_its_header_says_status():
     # A header that plainly says status keeps a one-sided column.
     assert c_of("Status", ["Failed", "Failed"]) == "Status"
     assert c_of("Status", ["Running", "Running"]) == "Status"
+
+
+def test_summary_says_a_blank_failure_mode_is_still_running():
+    """No status column beside a failure-mode one: the summary never says
+    "every row failed" (the blanks are units still running)."""
+    from backend.services import dataset_reading as dr
+
+    text = dr.summary({"x": "hours", "e": "failure_mode", "all_failed": True, "unit": "hours"})
+    assert "every row failed" not in text
+    assert "c: none, a blank failure mode is still running" in text
+    assert "c: every row failed" in dr.summary({"x": "hours", "all_failed": True})

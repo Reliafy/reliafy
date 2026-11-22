@@ -97,3 +97,49 @@ def split_for_model(db, model) -> dict | None:
     while len(_CACHE) > _CACHE_MAX:
         _CACHE.popitem(last=False)
     return split
+
+
+def range_of_inputs(kwargs: dict) -> dict | None:
+    """Where the data sit in time, so an answer outside them can say so:
+    ``first_failure`` (the earliest failure: an exact time, or for inspection
+    data the earliest check that found one) and ``last_seen`` (the oldest age
+    any unit was seen at, failed or still running). None when the data aren't
+    times with a censor flag, or no unit failed. Never raises."""
+    try:
+        x = kwargs.get("x")
+        xl, xr = kwargs.get("xl"), kwargs.get("xr")
+        if x is None and xl is not None and xr is not None:
+            lo = np.asarray(xl, dtype=float)
+            hi = np.asarray(xr, dtype=float)
+            c = np.asarray(kwargs["c"], dtype=float) if kwargs.get("c") is not None else np.zeros_like(lo)
+            failed = (c != 1) & np.isfinite(hi)
+            seen = np.where(np.isfinite(hi), hi, lo)
+        elif x is not None and xl is None and xr is None:
+            t = np.asarray(x, dtype=float)
+            if t.ndim != 1:
+                return None
+            c = np.asarray(kwargs["c"], dtype=float) if kwargs.get("c") is not None else np.zeros_like(t)
+            # A failure at a known time, or known only to be before it (left-censored).
+            failed = ((c == 0) | (c == -1)) & np.isfinite(t)
+            hi = seen = t
+        else:
+            return None
+        n = np.asarray(kwargs["n"], dtype=float) if kwargs.get("n") is not None else np.ones_like(seen)
+        failed = failed & (n > 0)
+        ok = np.isfinite(seen) & (n > 0)
+        if not failed.any() or not ok.any():
+            return None
+        return {"first_failure": float(np.min(hi[failed])), "last_seen": float(np.max(seen[ok]))}
+    except Exception:
+        return None
+
+
+def data_range(df, mapping: dict) -> dict | None:
+    """:func:`range_of_inputs` for a data frame under a plain column mapping."""
+    from backend.fitting import build_fit_inputs  # local: fitting imports this module
+
+    try:
+        return range_of_inputs(build_fit_inputs(df, {k: v for k, v in (mapping or {}).items()
+                                                     if k in ("x", "c", "n", "xl", "xr")}))
+    except Exception:
+        return None

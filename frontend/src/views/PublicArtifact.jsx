@@ -21,6 +21,7 @@ import CompareResult from "../components/CompareResult.jsx";
 import FfiResult from "../components/FfiResult.jsx";
 import CalendarReplacementResult from "../components/CalendarReplacementResult.jsx";
 import DemoTestResult from "../components/DemoTestResult.jsx";
+import { SequentialResult } from "../components/SequentialTestPlan.jsx";
 import IntervalAnalysisResult from "../components/IntervalAnalysisResult.jsx";
 import PreviewTable from "../components/PreviewTable.jsx";
 import PublicRbd from "../components/PublicRbd.jsx";
@@ -195,6 +196,7 @@ export function Body({ collection, a, token, unlock, framed = false }) {
           {a.kind === "failure_finding" && <FfiResult result={a.results} />}
           {a.kind === "calendar_replacement" && <CalendarReplacementResult result={a.results} />}
           {a.kind === "demonstration_test" && <DemoTestResult result={a.results} />}
+          {a.kind === "sequential_test" && <SequentialResult result={a.results} />}
           {(a.kind === "on_condition_interval" || a.kind === "failure_finding_interval") && (
             <IntervalAnalysisResult kind={a.kind} result={a.results} />
           )}

@@ -325,3 +325,14 @@ test("an RBD row counts its placeholders through every sub-system; a parts count
   assert.equal(forText({ model: pred }), "the failures of what it counted. Electronics only: 3 lines left out (Airframe kit; Battery pack; Propeller ×4)");
   assert.equal(forText({ model: { numbers: [] } }), "All failures of this position");
 });
+
+test("enteredOfModel: only a model saved from parameters can have them edited on its page", async () => {
+  const { enteredOfModel } = await import("./explorerModels.js");
+  const typed = { id: "m", kind: "distribution", dataset_id: "", distribution_id: "weibull",
+    spec: { params_only: true, unit: "Hours" }, results: { params: [{ name: "alpha", value: 30000 }, { name: "beta", value: 1.5 }] } };
+  assert.deepEqual(enteredOfModel(typed), { distribution: "weibull", unit: "Hours", params: { alpha: 30000, beta: 1.5 } });
+  assert.equal(enteredOfModel({ ...typed, dataset_id: "d1" }), null);
+  assert.equal(enteredOfModel({ ...typed, read_only: true }), null);
+  assert.equal(enteredOfModel({ ...typed, spec: { ...typed.spec, per_demand: true } }), null);
+  assert.equal(enteredOfModel({ ...typed, distribution_id: "loglogistic" }), null);
+});

@@ -18,6 +18,8 @@ import { STARTING_WORDS, boundWords, checkTime, perUnit, precisePercent, startin
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import Chip from "./ui/Chip.jsx";
 import ScrollCue from "./ui/ScrollCue.jsx";
+import ExtrapolationNote from "./ui/ExtrapolationNote.jsx";
+import { timeExtrapolation } from "../extrapolation.js";
 import { unitInText } from "./unitText.js";
 import { applyAnswer, autoRangeEnd, curveIsCurrent, markPending, nextCombinationValues, requestKey, startNote, startValues } from "../calcSeries.js";
 import { answerFor, exactBound, exactKey, exactTimes, exactValues } from "../calcExact.js";
@@ -242,7 +244,7 @@ function CovariateRow({ series, covariates, onUpdate, onAdd, canAdd, onEdit, lab
 // chart fills the tab's height (the model page's frame).
 export default function Calculator({ functions, unit, params, state, setState, nextIdRef, name = null,
                                      paramLabel = null, fill = false, ciLabel = "90%", ciNote = null,
-                                     credible = false, spread = null, bases = {} }) {
+                                     credible = false, spread = null, bases = {}, dataRange = null }) {
   const { meta, evaluate_path: evaluatePath } = functions;
   const tLabel = unit ? `t (${unit})` : "t";
   const covariates = functions.covariates || [];
@@ -547,6 +549,29 @@ export default function Calculator({ functions, unit, params, state, setState, n
   // hazard — additive-hazards models). Surface it rather than hide it.
   const curveWarning = series.map((s) => s.curves?.warning).find(Boolean);
 
+  // The answer before the first failure or past the oldest age in the data
+  // (dataRange from the fit): said with the shared extrapolation note. A time
+  // found counts with its bound; a time typed counts as the age reached.
+  const extrapolation = (() => {
+    if (!dataRange) return null;
+    let lo = null;
+    let hi = null;
+    if (timeMode) {
+      const ts = tarTimes.filter(Number.isFinite);
+      if (!multi && tarPoint && ci.bound !== "none") {
+        if (Number.isFinite(tarPoint.lower)) ts.push(tarPoint.lower);
+        if (Number.isFinite(tarPoint.upper)) ts.push(tarPoint.upper);
+      }
+      if (!ts.length) return null;
+      lo = Math.min(...ts);
+      hi = Math.max(...ts);
+    } else {
+      if (tNum == null) return null;
+      lo = hi = tNum + (cond > 0 ? cond : 0);
+    }
+    return timeExtrapolation(dataRange, lo, hi, unit ? unitInText(unit) : "");
+  })();
+
   // Confidence band of each series for the active function (raw scale only —
   // it isn't conditionalised, so it's hidden when a survived-age is set).
   // A library model (NRC/INL): no fit to bound, but its rate's spread across plants gives a band
@@ -726,6 +751,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
         <p className="muted-line" style={{ margin: "0 0 0.4rem" }}>{tarPoint.lower_note}</p>
       )}
       {curveWarning && <p className="calc-warn">⚠ {curveWarning}</p>}
+      <ExtrapolationNote words={extrapolation} />
       {confidencePath && ci.bound !== "none" && bandError && (
         <p className="hint" style={{ margin: "0 0 0.4rem" }}>
           Couldn't compute {credible ? "credible intervals" : "confidence bounds"}: {bandError}

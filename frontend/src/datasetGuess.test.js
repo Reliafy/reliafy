@@ -252,3 +252,11 @@ test("guessLifeColumns: a state at detection on a failure log is never the statu
   assert.equal(guessLifeColumns([{ name: "Hours", dtype: "int64", values: null },
     { name: "Status", dtype: "object", values: { Running: 3 } }]).c, "Status");
 });
+
+test("Compare never guesses the status or failure-mode column as the split", () => {
+  const cols = [{ name: "Hours", dtype: "int64" }, { name: "Status", dtype: "object" }, { name: "Failure mode", dtype: "object" },
+    { name: "Site", dtype: "object" }];
+  const distinct = { Hours: 60, Status: 2, "Failure mode": 2, Site: 4 };
+  assert.equal(guessCompareColumns(cols, { distinct }).group, "Status");
+  assert.equal(guessCompareColumns(cols, { distinct, exclude: ["Status", "Failure mode"] }).group, "Site");
+});

@@ -4,7 +4,7 @@ import { boundWords } from "../lifeResults.js";
 import { COLORWAY } from "../plotTheme.js";
 import { ciPct } from "../levels.js";
 import {
-  ciText, dataText, familyOf, growthReading, pct, perUnit, ratioText, repairTitle, scaledParam,
+  ciText, dataText, familyOf, growthReading, pct, perUnit, ratioText, repairTitle, restoresRange, scaledParam,
 } from "../recurrentResults.js";
 
 const sig = (v, n = 3) => formatNumber(v, { sig: n });
@@ -65,7 +65,7 @@ export default function RecurrentAside({ r, onStats = null, onData = null, onNex
               <span className="gk">{d.label}</span>
               <span className="gv-col">
                 <span className="gv">{sig(d.value)}</span>
-                {ciText(d.ci) && <span className="param-ci">{ciPct(r)} {ciText(d.ci)}</span>}
+                {ciText(d.ci) && <span className="param-ci">{ciPct(r)} two-sided {ciText(d.ci)}</span>}
               </span>
             </div>
           );
@@ -120,7 +120,7 @@ function NowCard({ r, unit }) {
         <span className="gk">MTBF{unit ? ` (${unit})` : ""}</span>
         <span className="gv">{sig(r.mtbf)}</span>
         <span className="life-lo">
-          {dm?.lower != null ? `≥ ${sig(dm.lower)} (${level}%)` : ciText(r.mtbf_ci) || ""}
+          {dm?.lower != null ? `≥ ${sig(dm.lower)} (${level}%, one-sided)` : ciText(r.mtbf_ci) ? `${ciText(r.mtbf_ci)} (two-sided)` : ""}
         </span>
       </div>
       <div className="gofr life-row"
@@ -146,17 +146,21 @@ const shownEffectiveness = (rest) => {
 function RepairCard({ rest, level }) {
   return (
     <div className="gof-card life-card">
-      <div className="gofh life-card-head"><span>Each repair</span><span className="gof-sub">{level} interval</span></div>
+      <div className="gofh life-card-head"><span>Each repair</span><span className="gof-sub">{level} two-sided</span></div>
       <div className="gofr life-row" title={`${rest.sentence} ${rest.scale || ""}`}>
         <span className="gk">{rest.ratio != null ? "Gap ratio" : rest.parameter === "q"
-          ? <>Restores <span className="gof-sub">q = {formatNumber(rest.value, { sig: 3 })}</span></> : "Restores"}</span>
+          ? <>Restores <span className="gof-sub">1 − q, q = {formatNumber(rest.value, { sig: 3 })}</span></> : "Restores"}</span>
         <span className="gv">{rest.ratio != null ? ratioText(rest.ratio) : pct(shownEffectiveness(rest))}</span>
         <span className="life-lo">
-          {rest.ratio != null
-            ? rest.ratio_ci && ciText(rest.ratio_ci, 3)
-            : rest.effectiveness_ci && `${pct(rest.effectiveness_ci[0])}–${pct(rest.effectiveness_ci[1])}`}
+          {rest.ratio != null ? rest.ratio_ci && ciText(rest.ratio_ci, 3) : restoresRange(rest)?.text}
         </span>
       </div>
+      {rest.ratio == null && (rest.parameter === "q" || restoresRange(rest)?.reach) && (
+        <p className="mf-note">
+          {rest.parameter === "q" ? "q is the share of the age a repair leaves; it restores the rest. " : ""}
+          {restoresRange(rest)?.reach ? `The ${level} range is ${restoresRange(rest).reach}.` : ""}
+        </p>
+      )}
     </div>
   );
 }

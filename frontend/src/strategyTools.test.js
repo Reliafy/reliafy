@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { checkPercent } from "./percent.js";
-import { STRATEGY_TOOLS, failureFindingMissing, replacementMissing, strategyListFor, strategyUnit } from "./strategyTools.js";
+import { STRATEGY_TOOLS, computeWaitText, failureFindingMissing, replacementMissing, strategyListFor, strategyUnit } from "./strategyTools.js";
 
 const model = { distribution_id: "weibull", params: [] };
 
@@ -55,4 +55,9 @@ test("with Parameters open and nothing typed, the parameters are what's missing"
     "Enter the model's parameters.");
   assert.equal(replacementMissing({ model: null, planned: "1", unplanned: "2", unit: "", source: "saved" }),
     "Choose a non-repairable model first.");
+});
+
+test("a long compute says what it's doing and for how long", () => {
+  assert.equal(computeWaitText("Working out the best rule", 5), "Working out the best rule: 5 s so far.");
+  assert.match(computeWaitText("Working out the best rule", 95), /1 min 35 s so far\. .*Cancel stops it\./);
 });

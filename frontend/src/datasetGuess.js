@@ -87,15 +87,18 @@ export function guessSplit(columns, { distinct = {}, exclude = [], splitBy = nul
 // numeric column named like a time ("hours", "Run hours", "cycles"); only then
 // the first numeric column. Why: a numeric covariate ("duty_pct") before the
 // time column was once read as the time, which gave a wrong comparison.
-export function guessCompareColumns(columns, { distinct = {}, splitBy = null, x = "" } = {}) {
+// ``exclude``: columns never guessed as the time or the split (the status column
+// and the failure mode, which say what happened to a unit, not which group it is in).
+export function guessCompareColumns(columns, { distinct = {}, splitBy = null, x = "", exclude = [] } = {}) {
   const names = columns.map((c) => c.name);
   const censor = columns.find((c) => CENSOR_RE.test(c.name) && isNumeric(c.dtype))?.name || "";
-  const candidates = columns.filter((c) => isNumeric(c.dtype) && c.name !== censor && c.name !== splitBy);
+  const candidates = columns.filter((c) => isNumeric(c.dtype) && c.name !== censor && c.name !== splitBy
+    && !exclude.includes(c.name));
   const named = (c) => (UNIT_RE.test(c.name) || TIME_WORDS.test(words(c.name)) || !!guessUnit(c.name))
     && !ID_WORDS.test(words(c.name));
   const time = (x && x !== splitBy && names.includes(x) ? x : "")
     || candidates.find(named)?.name || candidates[0]?.name || names[0] || "";
-  const group = guessSplit(columns, { distinct, splitBy, exclude: [time, censor] });
+  const group = guessSplit(columns, { distinct, splitBy, exclude: [time, censor, ...exclude] });
   return {
     time,
     group,

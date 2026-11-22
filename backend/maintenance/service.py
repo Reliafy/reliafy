@@ -15134,6 +15134,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             "class": self._class_view(self._class_key(p)) if self._class_key(p) else None,
             "operating_context": p.get("operating_context", ""),
             "path": path, "retired": bool(p.get("retired")),
+            # The asset it's in (the Explorer's ?root=), so a link to the Explorer opens that asset
+            # alone at once instead of reading the whole register to find it.
+            "asset": self._asset_of_position(id, path),
             # Out of service until a date, if marked (its tasks aren't due meanwhile).
             "out_of_service": self._service_view(id),
             # Where it is: set on it, or inherited (inherited_from says from what); None if unset.
@@ -15175,6 +15178,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             # What it's exposed to: its own conditions and those from above and where it is.
             **self._conditions_view(p),
         }
+
+    def _asset_of_position(self, id: str, path: list[dict] | None = None) -> str:
+        """The asset a position is in, as the Explorer opens it (assetTree.js assetOf): the top
+        place above where it is, when it's somewhere; else the top position of its tree."""
+        loc, _ = self._located(id)
+        if loc is not None:
+            ups = self._ancestor_ids(loc["id"])
+            return ups[-1] if ups else loc["id"]
+        tops = [a for a in (path if path is not None else self._position_path(id)) if a["kind"] == "Position"]
+        return tops[0]["id"] if tops else id
 
     def _position_path(self, id: str) -> list[dict]:
         """The way down to a position, top first. An item position's path runs
