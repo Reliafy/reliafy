@@ -92,7 +92,7 @@
  "src/components/Walkthrough.css function-disallowed-list": 1,
  "src/components/WhatChanged.css declaration-property-unit-disallowed-list": 14,
  "src/index.css color-no-hex": 7,
- "src/index.css declaration-property-unit-disallowed-list": 1753,
+ "src/index.css declaration-property-unit-disallowed-list": 1750,
  "src/index.css declaration-property-value-allowed-list": 27,
  "src/index.css function-disallowed-list": 1,
  "src/views/AssetExplorer.css color-no-hex": 5,
