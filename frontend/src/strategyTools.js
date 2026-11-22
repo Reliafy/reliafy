@@ -70,3 +70,11 @@ export function failureFindingMissing({ model, availability, availCheck, unit, s
   if (availCheck && availCheck.state !== "ok") return "Check the target availability.";
   return unitMissing(model, unit);
 }
+
+// The line under a long exact compute: what it's doing, how long so far,
+// and (past 20 s) that it's still going and can be cancelled.
+export function computeWaitText(doing, secs) {
+  const took = secs < 60 ? `${secs} s` : `${Math.floor(secs / 60)} min ${secs % 60} s`;
+  const tail = secs >= 20 ? " A busy server or a long calendar can take a minute or two; Cancel stops it." : "";
+  return `${doing}: ${took} so far.${tail}`;
+}

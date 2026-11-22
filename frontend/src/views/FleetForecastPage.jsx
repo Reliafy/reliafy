@@ -95,6 +95,14 @@ export default function FleetForecastPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [conflict, setConflict] = useState(false);
+  // Items and settings live only on this page until Save & forecast: closing or
+  // reloading the tab with them unsaved asks first (the browser's own prompt).
+  useEffect(() => {
+    if (!dirty) return undefined;
+    const ask = (e) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", ask);
+    return () => window.removeEventListener("beforeunload", ask);
+  }, [dirty]);
   const askText = useAskText();
   // The assumptions line opens into its form (#311); a new forecast starts open.
   const [editing, setEditing] = useState(false);
@@ -571,7 +579,7 @@ export default function FleetForecastPage() {
               },
             ]}
           >
-            {dirty ? "Unsaved changes — Save & forecast to update." : repairable ? forecast.units?.text : null}
+            {dirty ? "Unsaved changes — Save & forecast to keep them and update." : repairable ? forecast.units?.text : null}
           </ResultSummary>
           {(forecast.per_period || []).some((v) => v > 0) && (
             <>

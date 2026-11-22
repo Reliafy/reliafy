@@ -363,3 +363,16 @@ def test_mcp_calendar_replacement_and_next_replacement(env):
                                                    "shuts": MCP_SHUTS, "failure_cost": 400, "anytime_cost": 150,
                                                    "today": TODAY}))
     assert by_id["cost_rate"] == pytest.approx(out["cost_rate"], rel=1e-12) and by_id["unit"] == "Days"
+
+
+def test_unit_now_says_when_replacing_now_would_win_in_the_headline_s_words():
+    """The one-unit answer keeps "keep it" and "replace now" apart: replacing
+    now is best only past an age, said as such (not "becomes the best choice")."""
+    out = sc.calendar_next(
+        "weibull", [{"name": "alpha", "value": 30.0}, {"name": "beta", "value": 4.0}], age=10, unit="weeks",
+        today="2026-11-12", failure_cost=160000, anytime_cost=95000,
+        opportunities=[{"name": "Crusher shut", "cost": 45000, "every": 4, "every_unit": "weeks",
+                        "start": "2026-11-25"}])
+    assert out["recommendation"].startswith("Keep it: replace it at the Crusher shut")
+    if out["replace_from_age"] is not None:
+        assert "Replacing it now would be best only once it is older than" in out["recommendation"]

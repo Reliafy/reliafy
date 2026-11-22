@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listStrategyAnalyses } from "../api.js";
 import { relativeTime } from "../instrument.js";
-import { strategyListFor } from "../strategyTools.js";
+import { computeWaitText, strategyListFor } from "../strategyTools.js";
 import { itemName } from "./LibRows.jsx";
 import Chip from "./ui/Chip.jsx";
 import { SAVED_EVENT } from "./SaveAnalysisButton.jsx";
@@ -62,4 +62,23 @@ export function SavedOfKind({ kind, noun }) {
 export function ComputeReason({ id, reason }) {
   if (!reason) return null;
   return <p className="hint compute-why" id={id} role="status">{reason}</p>;
+}
+
+// While an exact compute runs in the request itself: after a few seconds, say
+// what it's doing and how long it has taken, so a long wait isn't a silent
+// "Computing…" (Cancel sits beside the button).
+export function ComputeWait({ running, doing }) {
+  const [secs, setSecs] = useState(0);
+  useEffect(() => {
+    if (!running) { setSecs(0); return undefined; }
+    const start = Date.now();
+    const timer = setInterval(() => setSecs(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [running]);
+  if (!running || secs < 3) return null;
+  return (
+    <p className="hint" role="status" aria-live="polite" data-testid="compute-wait">
+      {computeWaitText(doing, secs)}
+    </p>
+  );
 }

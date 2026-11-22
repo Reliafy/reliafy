@@ -25,7 +25,8 @@ Go to **Decisions → Strategy → Optimal replacement**, or, on a saved model's
 wear-out model also offers it when you click its **Failure pattern**). It opens on **Saved
 model** with that model (or the one you used last) chosen and its time unit
 filled in; pick another (a class's model fitted from maintenance records is
-listed too, in days), or choose **Parameters** to type a distribution's
+listed too, in days; so is a saved degradation model, used as its life to the
+wear limit: the distribution of the units' crossing times), or choose **Parameters** to type a distribution's
 parameters together with the **Unit of the model's times** (days, hours, …).
 That unit has no default: the answer is in it, so a model fitted in days must
 say days. Then supply two numbers:
@@ -105,7 +106,7 @@ That's the **Shutdown calendar** mode. On **Decisions → Strategy → Optimal r
 switch the **Replacement mode** from **Age replacement** to
 [Shutdown calendar](/strategy/replacement?mode=calendar), then give it:
 
-- **Non-repairable model** — a saved model, or **Parameters** to type a distribution, and
+- **Life model (non-repairable or degradation)** — a saved model, or **Parameters** to type a distribution, and
   the **Model time unit** (days, weeks, months, …), so the shut dates can be
   turned into model time.
 - **Shuts** — each with what **Replacing at it costs** and when it comes: every
