@@ -52,6 +52,46 @@ A part on no parts list still shows if a task uses it: a diaphragm kit named on
 the dosing pump's diaphragm change shows with its changes and the odd early
 failure.
 
+## The forecast counts the maintenance
+
+**Maintenance › Forecast**, beside Spares, gives the work, failures and costs
+to come here and inside it, by month. Its **Expected failures** count what the
+tasks do, so two plans for the same equipment give different failures. A
+ride-on mower on its maker's 25-hour plan, where the spark plugs are only
+inspected (a plug gives no warning to act on), expects about 3.3 breakdowns
+per 600 operating hours. On a 50-hour plan that replaces the plugs every 100
+hours, it expects about 1.5.
+
+Each life is forecast with the tasks of the failure modes it's for:
+
+- **A fixed-interval replacement** (restoring the item as new, the default)
+  is a planned replacement at its interval, from the date it next falls due.
+  It's done on its dates, failed or not, and failures after it count from new.
+  Where two replacements cover the same failure modes, the sooner one counts.
+- **An on-condition check** counts through its warning period: the saved P-F
+  calculation linked as its evidence gives the share of warnings the check
+  finds in time, and the failures left are the warnings it misses. These are
+  expected values only, with no 90% range yet, and the notes say so.
+
+Some tasks don't change the failures, and each life's line in **Failures: the
+life models used** says which were counted and which weren't, with why
+(*not counted: Grease spindle bearings (it restores none of the item's age, so
+the failures are as they would be without it)*):
+
+- a fixed-interval task that restores none of the age (greasing a bearing)
+  leaves the failures as they are;
+- a partial restoration isn't counted yet;
+- an on-condition check with no P-F interval linked isn't counted, because
+  without it there's nothing to say how many warnings it catches;
+- a task whose interval and the life are in different kinds of unit (a
+  calendar task on a life in operating hours) isn't counted yet;
+- failure-finding tests, redesigns and run to failure leave the failures as
+  they are.
+
+When a position's failure modes each have a life of their own, each is
+forecast with its own tasks, and the position's whole-life model is listed
+under **Left out**, so no failure is counted twice.
+
 ## Count the stock
 
 On a part's page, **Stock… › Counted** records what was on the shelf on the day

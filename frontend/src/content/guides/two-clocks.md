@@ -43,7 +43,9 @@ every unit has the same rate, the fit says so and stops.
 2. Pick the dataset. In its reading, give the first clock's column the role
    **x**. Open **More columns** and give the second clock's column the role
    **second clock**. Its **unit** fills in from the column's name ("Landings"
-   gives landings); type your own if it's wrong.
+   gives landings); type your own if it's wrong. To fit on the first clock
+   alone without changing the dataset, press **Change**, set the second clock
+   to none and press **Use for this fit only**: the dataset keeps both clocks.
 3. On the **Model** step, the list now offers the models on two clocks:
    **Weibull on two clocks** (the usual choice), lognormal or exponential.
 4. Choose **Fit**.
