@@ -24,7 +24,7 @@ import HelpLink from "./ui/HelpLink.jsx";
 // control, one sentence a step, with Next / Back / Skip, and a ring around
 // the control. A bottom sheet on a phone. Steps are data (walkthroughs.js).
 //
-// Started by start(id) (the "Show me how" links) or by a URL carrying
+// Started by start(id) (the "Take the tour" links) or by a URL carrying
 // ?walkthrough=<id> (&auto=1 for a first-run start, which runs at most once
 // per user). Started, each step reached, completed and skipped are counted
 // as product events. If a step's control isn't on the page, or the user
@@ -391,10 +391,10 @@ function WalkthroughCallout({ run, targetRef, onMove, onEnd, onShown }) {
   );
 }
 
-// "Show me how": starts walkthrough ``id`` (opening its page if need be).
+// "Take the tour": starts walkthrough ``id`` (opening its page if need be).
 // Renders nothing outside the app shell.
-// With ``asHelp`` it is the page's help link (ui/HelpLink): "Take the tour".
-export function ShowMeHow({ id, children = "Show me how", className = "", asHelp = false }) {
+// With ``asHelp`` it is the page's help link (ui/HelpLink).
+export function ShowMeHow({ id, children = "Take the tour", className = "", asHelp = false }) {
   const ctx = useWalkthrough();
   if (!ctx || !getWalkthrough(id)) return null;
   if (asHelp) return <HelpLink kind="tour" className={className} onClick={() => ctx.start(id)} />;

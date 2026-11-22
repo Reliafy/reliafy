@@ -106,6 +106,9 @@
   background: var(--cat-pink-bg);
 }
 
+/* Up to three lines, so a typical event name ("Raw water pumping lost (2 of 3
+   pumps down)") shows whole at the diagram's scale; a longer one ends in "…"
+   and the node's tooltip holds it all. Three lines still fit NODE_H. */
 .ft-box-title {
   font-size: calc(var(--fs-14) * var(--ft-scale));
   font-weight: 600;
@@ -115,8 +118,9 @@
   overflow: hidden;
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  word-break: break-word;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow-wrap: anywhere;
 }
 .ft-box-sub {
   margin-top: 2px;

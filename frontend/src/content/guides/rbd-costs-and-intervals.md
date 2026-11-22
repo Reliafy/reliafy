@@ -170,7 +170,7 @@ then ranks them by what that step gains.
 ![What to improve, ranked by the running cost saved](/guides/img/costs-05-improve.png)
 
 - **Step** sets how far each lever moves: 10%, 25% or 50%.
-- **Measured over**: the **Long run**, or the results' **Window** from new.
+- **Measured over**: the **Long run**, or the Calculator's **Out to** horizon from new.
 - **Rank by**: **Availability**, or **Cost** (the running cost saved per
   unit of time) once the diagram has costs.
 - **Add costs to change…** lets you say what each change would cost you,

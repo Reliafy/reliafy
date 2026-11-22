@@ -73,7 +73,7 @@
   }
 }
 
-/* "Show me how": an inline link at the end of a page's meta line or an
+/* "Take the tour" and "Read the guide": an inline link at the end of a page's meta line or an
    empty state's sentence, wrapping with the text. */
 button.link.wt-launch {
   display: inline;

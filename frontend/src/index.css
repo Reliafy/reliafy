@@ -10227,8 +10227,7 @@ main.content:focus { outline: none; }
 .rim-restore { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .rim-restore .rw-fhelp { flex-basis: 100%; margin: 0; }
 .rcm-on-tree { margin-bottom: 16px; }
-.rcm-on-tree-list { margin: 8px 0 0; padding-left: 18px; }
-.rcm-on-tree-list li { margin: 4px 0; overflow-wrap: anywhere; }
+.rcm-on-tree-table .lib-name { overflow-wrap: anywhere; }
 
 /* A workbook's sheet chosen in the fit flow's source step, not in a modal. */
 .xl-inline-panel {
