@@ -152,9 +152,10 @@ def test_the_fallback_and_guide_name_the_in_connection_route(env):
     from backend import mcp_guide
 
     link = _ok(_call(env.token[A], "change", {"action": "upload_create", "purpose": "excel", "filename": "fmea.xlsx"}))
-    assert "change upload_send_part" in link["fallback"] and "target rcm" in link["fallback"]
+    # An FMEA / RCM worksheet sent that way goes onto a position with change import_rcm (#1001).
+    assert "change upload_send_part" in link["fallback"] and "change import_rcm" in link["fallback"]
     guide = mcp_guide.TOPICS["uploads"][1]
-    assert "change upload_send_part" in guide and "target rcm" in guide
+    assert "change upload_send_part" in guide and "change import_rcm" in guide
 
     async def tools(client):
         return {t.name: t for t in (await client.list_tools()).tools}
