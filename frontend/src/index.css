@@ -8253,6 +8253,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   font-family: inherit;
   font-size: var(--fs-13);
   line-height: var(--lh-13);
+  font-weight: 400; /* a value is read, like a text box's (buttons are 500) */
   color: var(--text);
   background: var(--bg-surface);
   border: 1px solid var(--border-control);
@@ -8340,6 +8341,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 /* A long list (a tree of positions) never runs off a phone's screen; the position picker fills its field. */
 .sel-menu { max-width: calc(100vw - 32px); }
 .sel-trigger.position-picker { width: 100%; }
+.sel-trigger.nav-workspace-select { font-weight: 500; } /* the workspace switcher reads as a control in the bar */
 .sel-group {
   padding: 8px 12px 4px;
   font-size: var(--fs-12);
