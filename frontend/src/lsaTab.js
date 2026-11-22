@@ -7,7 +7,6 @@
 // the page is components/LsaPanel.jsx, a task's LSA components/LsaTask.jsx.
 
 import { toCsv } from "./csv.js";
-import { hereFirst, wherePath } from "./subtree.js";
 import { formatCost } from "./money.js";
 import { OUTCOME_LABEL, triggerText, whenText } from "./rcmWorksheet.js";
 
@@ -256,8 +255,10 @@ export function costFoot(tasks = []) {
   return none && priced.length ? `${head}; ${none} ${none === 1 ? "has" : "have"} no cost yet.` : `${head}.`;
 }
 
-// The Maintenance tab shows every task on the row and on everything below it, at any depth (the
-// Explorer's roll-up, subtree.js); the server gives them in one read (task-table).
+// The Maintenance tab shows the row's own tasks unless "Include what's inside" is on.
+export function tasksHere(tasks, key, below = false) {
+  return below ? tasks : tasks.filter((t) => t.subject?.id === key);
+}
 
 // The first names and how many more: "Torque wrench, Multimeter +1".
 export function shortList(names, show = 2) {
@@ -309,8 +310,6 @@ function sortValue(t, col) {
   if (col === "hours") return t.resources?.labour_hours || null;
   if (col === "people") return t.resources?.people || null;
   if (col === "cost") return t.cost?.amount ?? null;
-  // By the whole path, so twins sort beside their parents ("Pump 1 › Motor" before "Pump 2 › Motor").
-  if (col === "position") { const p = wherePath(t); return p === "" ? null : p.toLowerCase(); }
   const v = cellText(t, col);
   return v === "" ? null : v.toLowerCase();
 }
@@ -321,7 +320,7 @@ export function searchTasks(tasks, q) {
   const words = String(q || "").toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return tasks;
   return tasks.filter((t) => {
-    const hay = [...DEFAULT_TASK_COLUMNS.map((c) => cellText(t, c)), t.subject?.within || "", ...(t.modes || []).flatMap((m) => [m.text, modeLine(m)])]
+    const hay = [...DEFAULT_TASK_COLUMNS.map((c) => cellText(t, c)), ...(t.modes || []).flatMap((m) => [m.text, modeLine(m)])]
       .join(" ").toLowerCase();
     return words.every((w) => hay.includes(w));
   });
@@ -350,9 +349,8 @@ export function nextSort(keys, col, shift = false) {
   return keys.filter((_, i) => i !== at);
 }
 
-// Blank values last whichever way; then position (by its path) and task A–Z. `here` (the
-// Maintenance tab's row): with no sort picked, that row's own tasks first, then the ones below.
-export function sortTasks(tasks, keys, { here = null } = {}) {
+// Blank values last whichever way; then position and task A–Z.
+export function sortTasks(tasks, keys) {
   const cmpKey = (a, b, { col, dir }) => {
     const x = sortValue(a, col), y = sortValue(b, col);
     if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
@@ -361,10 +359,6 @@ export function sortTasks(tasks, keys, { here = null } = {}) {
   };
   const tail = [{ col: "position", dir: 1 }, { col: "task", dir: 1 }];
   return [...tasks].sort((a, b) => {
-    if (here && !keys.length) {
-      const c = hereFirst(here)(a, b);
-      if (c) return c;
-    }
     for (const k of [...keys, ...tail]) {
       const c = cmpKey(a, b, k);
       if (c) return c;

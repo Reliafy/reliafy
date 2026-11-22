@@ -60,7 +60,8 @@ for (const width of [1440, 400]) {
       await expect(bar.getByRole("tab", { name: "Maintenance", exact: true })).toHaveAttribute("aria-selected", "true");
       expect(query(page).get("sel")).toBe(a.outdoor.id);
       await expect(page.locator(".tt-headslot")).toContainText(`Outdoor ${tag}`);
-      await expect(page.locator(".tt-headslot")).toContainText("Position");
+      // The tasks there and below, in the tree: the level's roll-up beside its name.
+      await expect(page.locator(".tt-headslot")).toContainText(/tasks? |No tasks here or below/);
       await shot(page, `levels-maintenance-parent-${width}`);
       await bar.getByRole("tab", { name: "Summary", exact: true }).click();
       await expect(bar.getByRole("tab", { name: "Summary", exact: true })).toHaveAttribute("aria-selected", "true");

@@ -1,5 +1,0 @@
-/* Where a rolled-up record lives: its position, and a quieter line under it. */
-.where-lives { display: flex; flex-direction: column; min-width: 0; }
-.where-lives-name, .where-lives-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.where-lives-name { color: var(--text); } /* the table's own size */
-.where-lives-note { font-size: var(--fs-12); line-height: var(--lh-12); color: var(--text-secondary); }

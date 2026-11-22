@@ -154,6 +154,14 @@ export function RowIcon({ r }) {
       </svg>
     );
   }
+  // The Maintenance tab's rows: a task (a spanner).
+  if (r.type === "mtask") {
+    return (
+      <svg className="tp-ic tp-ic-meas" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true">
+        <path d="M10.2 2.4a3.2 3.2 0 0 0-3.9 4.1L2.6 10.2a1.4 1.4 0 0 0 2 2l3.7-3.7a3.2 3.2 0 0 0 4.1-3.9l-1.9 1.9-1.6-.4-.4-1.6z" strokeWidth="1.3" strokeLinejoin="round" />
+      </svg>
+    );
+  }
   if (r.type === "pmodel") {
     return (
       <svg className="tp-ic tp-ic-meas" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true">
@@ -413,7 +421,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
     // details across the table; not on a data cell (an editable one's own
     // double-click edits it in place), a control or the chevron.
     // A measurement row (the Measurements tab) spreads its details the same way.
-    onDoubleClick: table && !phone && table.onOpen && (opensPanel(r) || r.type === "meas" || r.type === "pmodel" || r.type === "mission" || r.type === "phase" || r.type === "mcov" || r.type === "mrule") ? (e) => {
+    onDoubleClick: table && !phone && table.onOpen && (opensPanel(r) || r.type === "meas" || r.type === "pmodel" || r.type === "mission" || r.type === "phase" || r.type === "mcov" || r.type === "mrule" || r.type === "mtask") ? (e) => {
       if (e.target.closest("input, select, textarea, a, button, .tp-chev, .rw-c, [contenteditable='true']")) return;
       e.preventDefault();
       window.getSelection?.()?.removeAllRanges?.();
