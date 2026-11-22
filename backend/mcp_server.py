@@ -6953,7 +6953,7 @@ def optimal_replacement(
     position_id: _POSITION_ID = None,
 ) -> dict[str, Any]:
     """The cost-optimal age-replacement interval for a component with a known life
-    model; beneficial=false means run to failure is cheaper; block is the block-replacement alternative. For a saved
+    model; beneficial=false means run to failure is cheaper. For a saved
     Weibull fitted to data, shape_uncertainty answers at each end of β's 90% interval: relay uncertainty_note when
     present."""
     user, db = _caller(ctx), _db()

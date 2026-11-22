@@ -427,7 +427,6 @@ def optimal_replacement(
     time_range, range_note = _replacement_range(
         distribution_id, params, extras, cp, cu, lfp, point, unit_s
     )
-    block = None if lfp else _block_replacement(nr, cp, cu, grid, point["run_to_failure_cost_rate"])
     a_year = _positive_or_none(use_per_year, "The use a year")
     fleet = _positive_or_none(units, "The number of units")
     yearly = None
@@ -460,10 +459,8 @@ def optimal_replacement(
         "recommendation": recommendation,
         "optimal_time_range": time_range,
         "optimal_time_range_note": range_note,
-        "block": block,
         "yearly": yearly,
-        "curve": {"t": grid.tolist(), "cost_rate": _clean(cost),
-                  **({"block_cost_rate": block.pop("curve")} if block else {})},
+        "curve": {"t": grid.tolist(), "cost_rate": _clean(cost)},
     }
 
 
@@ -477,42 +474,6 @@ def _positive_or_none(value, label: str) -> Optional[float]:
     if not (math.isfinite(v) and v > 0):
         raise StrategyError(f"{label} must be more than 0.")
     return v
-
-
-def _block_replacement(nr, cp: float, cu: float, grid: np.ndarray, rtf_rate: Optional[float]) -> Optional[dict]:
-    """Block (group) replacement: every unit replaced at fixed times ``T``
-    apart, failures replaced as they come. Its long-run cost rate is
-    ``(cp + cu M(T)) / T``, ``M`` the expected failures of a position in
-    ``T`` from new, renewals included: the reliability library's renewal
-    count (``NonRepairable.failures``, exact). The best ``T`` is found on the
-    curve's grid, then refined. None when the library can't count renewals
-    for this model."""
-    from scipy.optimize import minimize_scalar
-
-    def rate(t):
-        t = np.atleast_1d(np.asarray(t, dtype=float))
-        m = np.atleast_1d(np.asarray(nr.failures(t).expected_failures, dtype=float))
-        return (cp + cu * m) / t
-
-    try:
-        with np.errstate(all="ignore"):
-            curve = rate(grid)
-            i = int(np.nanargmin(curve))
-            lo, hi = grid[max(i - 1, 0)], grid[min(i + 1, len(grid) - 1)]
-            found = minimize_scalar(lambda t: float(rate(t)[0]), bounds=(lo, hi), method="bounded",
-                                    options={"xatol": 1e-6 * hi})
-    except Exception:  # noqa: BLE001 - no renewal count for this model
-        return None
-    t_best, r_best = (float(found.x), float(found.fun)) if found.fun <= curve[i] else (float(grid[i]), float(curve[i]))
-    saving = (rtf_rate - r_best) / rtf_rate if rtf_rate else 0.0
-    pays = bool(saving > _MIN_SAVING) and i < len(grid) - 1
-    return {
-        "beneficial": pays,
-        "optimal_time": t_best if pays else None,
-        "optimal_cost_rate": r_best if pays else None,
-        "savings": saving if pays else 0.0,
-        "curve": _clean(curve),
-    }
 
 
 # ---------------------------------------------------------------------------
