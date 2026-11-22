@@ -77,7 +77,7 @@
 /* A chart that fills its box (Plot fill). */
 .plot-fill { position: relative; flex: 1 1 auto; min-height: 200px; min-width: 0; }
 .plot-fill-inner { position: absolute; inset: 0; }
-.plot-fill > .plot-dl { z-index: 3; }
+.plot-fill > .plot-dl { z-index: calc(var(--z-sticky) + 1); }
 
 .mf-plot-card {
   flex: 1 1 auto;
@@ -224,7 +224,7 @@
 .mf-scroll:focus-visible { outline: none; box-shadow: var(--focus-ring-inset); }
 .mf-scroll .mini-table,
 .mf-scroll .calc-table { width: 100%; }
-.mf-scroll thead th { position: sticky; top: 0; z-index: 1; background: var(--bg-surface); }
+.mf-scroll thead th { position: sticky; top: 0; z-index: var(--z-raised); background: var(--bg-surface); }
 .gof-card .mf-scroll .mini-table th:first-child,
 .gof-card .mf-scroll .mini-table td:first-child { padding-left: 16px; }
 .gof-card .mf-scroll .mini-table th:last-child,

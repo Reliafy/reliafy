@@ -68,7 +68,7 @@ html.print-layout .public-page .card { box-shadow: none; }
 .share-plain {
   margin: 6px 0 2px;
   max-width: 62rem;
-  font-size: var(--fs-16, 16px);
+  font-size: var(--fs-16);
   line-height: 1.5;
   font-weight: 500;
   color: var(--text);
@@ -143,7 +143,7 @@ html.print-layout .public-page .card { box-shadow: none; }
   .public-page .scroll-cue-body > table { min-width: 0 !important; width: 100%; }
   .public-page .scroll-cue-body > table th,
   .public-page .scroll-cue-body > table td {
-    font-size: 11px !important;
+    font-size: var(--fs-12) !important;
     padding-left: 6px !important;
     padding-right: 6px !important;
     white-space: normal !important;

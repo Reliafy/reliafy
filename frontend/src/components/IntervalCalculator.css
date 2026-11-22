@@ -5,7 +5,7 @@
 .ivc-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
 .ivc-model { margin: 0; }
 .ivc-go { display: flex; justify-content: flex-start; }
-.ivc-result { margin-top: 14px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+.ivc-result { margin-top: 14px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); }
 .ivc-answer { margin: 0 0 8px; font-weight: 600; }
 .ivc-facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; font-size: var(--fs-13); }
 .ivc-facts dt { color: var(--text-secondary); }

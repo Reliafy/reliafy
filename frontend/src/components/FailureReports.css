@@ -87,7 +87,7 @@
 .fr-h2 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; font-size: var(--fs-18); line-height: var(--lh-18); }
 .fr-h2 .fr-label { font-size: var(--fs-14); }
 .fr-h2 > span:first-child { min-width: 0; overflow-wrap: anywhere; }
-.fr-h2 > span:first-child:focus-visible {  border-radius: 3px; }
+.fr-h2 > span:first-child:focus-visible {  border-radius: var(--radius-sm); }
 
 .fr-steps { display: flex; flex-wrap: wrap; gap: 4px; list-style: none; margin: 0; padding: 0; }
 .fr-step { display: flex; align-items: center; }
@@ -95,7 +95,7 @@
 .fr-step-btn {
   display: inline-block;
   padding: 2px 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   border: 1px solid var(--border);
   background: none;
   color: var(--text-secondary);
@@ -116,7 +116,7 @@ button.fr-step-btn:focus-visible {  }
 .fr-fold { background: none; border: 0; padding: 0; margin: 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
 .fr-fold:hover:not(:disabled),
 .fr-fold:active:not(:disabled) { background: none; color: var(--accent-text); box-shadow: none; }
-.fr-fold:focus-visible {  border-radius: 3px; }
+.fr-fold:focus-visible {  border-radius: var(--radius-sm); }
 .fr-fold-arrow { display: inline-block; width: 1em; color: var(--text-secondary); }
 .fr-card-sum { font-weight: 400; font-size: var(--fs-13); }
 .fr-form { margin-top: 8px; gap: 10px; }

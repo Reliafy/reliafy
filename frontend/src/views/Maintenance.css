@@ -54,9 +54,9 @@
 }
 
 .maint-badge {
-  font-size: 0.8rem;
+  font-size: var(--fs-13);
   padding: 0.05rem 0.45rem;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--accent-subtle);
   border: 1px solid var(--accent-border);
 }
@@ -82,7 +82,7 @@
 
 .maint-group h3 {
   margin: 0 0 0.5rem;
-  font-size: 1rem;
+  font-size: var(--fs-16);
 }
 
 .maint-action {
@@ -234,7 +234,7 @@
 /* A part of a card: the class forecast's positions, spares and budget. */
 .maint-sub {
   margin: 1.25rem 0 0.5rem;
-  font-size: var(--fs-16, 1rem);
+  font-size: var(--fs-16);
 }
 
 /* The chosen class in the list (its page). */
@@ -250,7 +250,7 @@
 /* The Classes page's parts: position classes, item classes, then conditions. */
 .maint-section {
   margin: 1.5rem 0 0.75rem;
-  font-size: var(--fs-18, 1.15rem);
+  font-size: var(--fs-20);
 }
 
 /* Conditions: one chip each, set here (solid), inherited (dashed, with where from) or
@@ -421,7 +421,7 @@ button.maint-toggle {
   display: block;
   margin-top: 0.25rem;
   color: var(--text-secondary);
-  font-size: 0.8rem;
+  font-size: var(--fs-13);
 }
 
 .maint-length-over {
@@ -481,7 +481,7 @@ button.maint-toggle {
   .maint-assets td[data-label]::before {
     content: attr(data-label);
     display: block;
-    font-size: 0.75rem;
+    font-size: var(--fs-12);
     color: var(--text-secondary);
   }
 
@@ -530,7 +530,7 @@ button.maint-toggle {
 .wor-input { width: 9rem; max-width: 100%; }
 .wor-other { margin-top: 0.5rem; }
 .wor-other summary { cursor: pointer; padding: 0.3rem 0; }
-.wor-taken-head { font-size: 0.95rem; margin: 0.75rem 0 0.25rem; }
+.wor-taken-head { font-size: var(--fs-16); margin: 0.75rem 0 0.25rem; }
 .maint-line-readings { margin-left: 0.5rem; }
 
 /* The Maintenance page's time-zone line: the sentence, then "Use <zone>" and the
@@ -556,7 +556,7 @@ button.maint-toggle {
 /* The answer first, above the tabs: "3 open, 1 late by 4 days. …" */
 .maint-answer {
   margin: 0.25rem 0 0.75rem;
-  font-size: var(--fs-15, 1rem);
+  font-size: var(--fs-16);
 }
 .maint-filters { margin-top: 0; margin-bottom: 0.5rem; }
 /* The area picker shrinks to the bar (a long location name mustn't widen the page). */
@@ -569,7 +569,7 @@ button.maint-toggle {
 }
 .maint-subhead {
   margin: 1rem 0 0.4rem;
-  font-size: var(--fs-14, 0.95rem);
+  font-size: var(--fs-14);
 }
 .maint-nowrap { white-space: nowrap; }
 .maint-head.maint-wrap { flex-wrap: wrap; }

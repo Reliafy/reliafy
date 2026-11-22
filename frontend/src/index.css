@@ -77,7 +77,7 @@ h6 {
 .navbar {
   position: sticky;
   top: 0;
-  z-index: 40;
+  z-index: var(--z-navbar);
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border);
 }
@@ -177,7 +177,7 @@ h6 {
 }
 .sidebar:not(.drawer)::-webkit-scrollbar { width: 6px; }
 .sidebar:not(.drawer)::-webkit-scrollbar-track { background: transparent; }
-.sidebar:not(.drawer)::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; }
+.sidebar:not(.drawer)::-webkit-scrollbar-thumb { background: transparent; border-radius: var(--radius-sm); }
 .sidebar:not(.drawer):hover::-webkit-scrollbar-thumb,
 .sidebar:not(.drawer):focus-within::-webkit-scrollbar-thumb { background: var(--text-disabled); }
 
@@ -362,7 +362,7 @@ h6 {
 .side-foot .ava {
   width: 30px;
   height: 30px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   background: var(--border);
   display: grid;
   place-items: center;
@@ -433,7 +433,7 @@ h6 {
     top: 0;
     left: 0;
     bottom: 0;
-    z-index: 70;
+    z-index: var(--z-drawer);
     width: min(280px, 85vw);
     height: auto;
     overflow-y: auto;
@@ -460,7 +460,7 @@ h6 {
   .sidebar-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 69;
+    z-index: calc(var(--z-drawer) - 1);
     background: var(--scrim);
   }
 }
@@ -718,7 +718,7 @@ h6 {
   width: 22px;
   height: 22px;
   margin-top: 1px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   font-size: var(--fs-13);
   font-weight: 600;
   color: var(--text-on-fill);
@@ -1016,7 +1016,7 @@ h6 {
   height: 44px;
   transform: translateY(-50%);
   box-sizing: border-box;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   border: 1px solid var(--border);
   background: var(--bg-subtle);
 }
@@ -1394,10 +1394,10 @@ h6 {
   place-items: center;
   font-size: var(--fs-12);
   font-weight: 600;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   color: var(--text-on-fill);
   box-shadow: var(--shadow-sm);
-  z-index: 2;
+  z-index: var(--z-sticky);
 }
 
 .rbd-status-working {
@@ -1417,7 +1417,7 @@ h6 {
   display: grid;
   place-items: center;
   font-size: var(--fs-12);
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   background: var(--warning);
   color: var(--text-on-fill);
   box-shadow: var(--shadow-sm);
@@ -1440,7 +1440,7 @@ h6 {
   border-radius: var(--radius-md);
   padding: 1px 6px;
   box-shadow: var(--shadow-sm);
-  z-index: 2;
+  z-index: var(--z-sticky);
 }
 
 .rbd-placeholder-note {
@@ -1501,7 +1501,7 @@ h6 {
    soft accent-tint hover). */
 .rbd-menu {
   position: fixed;
-  z-index: 60;
+  z-index: var(--z-canvas-menu);
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -1553,7 +1553,7 @@ h6 {
   left: 50%;
   bottom: 14px;
   transform: translateX(-50%);
-  z-index: 5;
+  z-index: calc(var(--z-sticky) + 3);
   max-width: calc(100% - 120px);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2205,7 +2205,7 @@ select.ctl { padding-right: 30px; }
 }
 .field-error::before {
   content: "!"; flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; margin-top: 1px;
-  border-radius: 50%; background: var(--danger); color: var(--text-on-fill); font-size: var(--fs-12); font-weight: 600; line-height: 1;
+  border-radius: var(--radius-full); background: var(--danger); color: var(--text-on-fill); font-size: var(--fs-12); font-weight: 600; line-height: 1;
 }
 
 /* A value that's allowed but probably not what was meant: the same shape as an error, amber. */
@@ -2215,7 +2215,7 @@ select.ctl { padding-right: 30px; }
 }
 .field-warning::before {
   content: "!"; flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; margin-top: 1px;
-  border-radius: 50%; background: var(--warning); color: var(--text-on-fill); font-size: var(--fs-12); font-weight: 600; line-height: 1;
+  border-radius: var(--radius-full); background: var(--warning); color: var(--text-on-fill); font-size: var(--fs-12); font-weight: 600; line-height: 1;
 }
 
 /* A checkbox with its label (ui/Controls Checkbox): the whole label is the target. */
@@ -2226,7 +2226,7 @@ select.ctl { padding-right: 30px; }
 /* The box alone (a row-select in a table): no row padding; on a phone an invisible
    40 px target around it, so the row keeps its height. */
 .check.check-bare { display: inline-flex; vertical-align: middle; padding: 0; position: relative; }
-.check.check-bare > input { margin: 0; position: relative; z-index: 1; }
+.check.check-bare > input { margin: 0; position: relative; z-index: var(--z-raised); }
 @media (max-width: 720px) {
   .check { min-height: var(--control-lg); align-items: center; }
   .check > input:is([type="checkbox"], [type="radio"]) { margin-top: 0; }
@@ -2298,7 +2298,7 @@ button.choice-chip.on:focus-visible { box-shadow: inset 0 0 0 1px var(--accent),
 .psec-title { margin: 0; font-size: var(--fs-14); font-weight: 600; }
 .psec-count {
   display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px;
-  border-radius: 10px; background: var(--bg-subtle); color: var(--text-secondary); font-size: var(--fs-12); font-variant-numeric: tabular-nums;
+  border-radius: var(--radius-full); background: var(--bg-subtle); color: var(--text-secondary); font-size: var(--fs-12); font-variant-numeric: tabular-nums;
 }
 button.psec-act { margin-left: auto; }
 button.psec-act.ghost { color: var(--accent-text); }
@@ -2318,7 +2318,7 @@ button.add-row svg { width: 14px; height: 14px; }
 .ctl.ia-box { width: 100%; height: auto; min-height: var(--control-sm); padding: 2px 8px; font-size: inherit; }
 /* A section's "?": its guidance, on press. */
 button.psec-tip {
-  width: 20px; height: 20px; min-height: 0; padding: 0; justify-content: center; border-radius: 50%;
+  width: 20px; height: 20px; min-height: 0; padding: 0; justify-content: center; border-radius: var(--radius-full);
   border: 1px solid var(--border); color: var(--text-secondary); font-size: var(--fs-12); font-weight: 600; box-shadow: none;
 }
 button.psec-tip[aria-expanded="true"] { color: var(--accent-text); border-color: var(--accent-border); }
@@ -2389,7 +2389,7 @@ button.more-btn svg { width: 16px; height: 16px; }
 .chip-dot {
   width: 6px;
   height: 6px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   flex-shrink: 0;
 }
 /* On/off switch (components/ui/Switch.jsx): a track and knob, label beside. */
@@ -2410,7 +2410,7 @@ button.switch:hover:not(:disabled) { background: none; }
   width: 32px;
   height: 18px;
   flex: none;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   border: 1px solid var(--text-tertiary);
   background: var(--bg-subtle);
   transition: background 0.15s, border-color 0.15s;
@@ -2421,7 +2421,7 @@ button.switch:hover:not(:disabled) { background: none; }
   left: 2px;
   width: 12px;
   height: 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--text-tertiary);
   transition: transform 0.15s, background 0.15s;
 }
@@ -2474,7 +2474,7 @@ h1 .chip,
   justify-content: center;
   padding: 24px 16px;
   overflow-y: auto;
-  z-index: 100;
+  z-index: var(--z-overlay);
 }
 
 .modal {
@@ -2669,7 +2669,7 @@ h1 .chip,
 .steps .step .dot {
   width: 24px;
   height: 24px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   display: grid;
   place-items: center;
   font-size: var(--fs-12);
@@ -3049,7 +3049,7 @@ h1 .chip,
 .detail-panel .gofr.rec-cause-row:focus-visible { outline: none; box-shadow: var(--focus-ring-inset); }
 .detail-panel .gofr.rec-cause-row.on { background: var(--accent-subtle); }
 .detail-panel .gofr.rec-cause-row.on .gk { color: var(--text); font-weight: 500; }
-.rec-dot { display: inline-block; width: 8px; height: 8px; border-radius: 999px; margin-right: 8px; vertical-align: 1px; }
+.rec-dot { display: inline-block; width: 8px; height: 8px; border-radius: var(--radius-full); margin-right: 8px; vertical-align: 1px; }
 .mf-effects-words li.rec-effect-line { display: flex; align-items: flex-start; gap: 10px; }
 .mf-effects-words li.rec-effect-line .chip { flex: none; }
 .gof-card .rec-nf-table th:first-child, .gof-card .rec-nf-table td:first-child { padding-left: 16px; }
@@ -3403,7 +3403,7 @@ h1 .chip,
   position: absolute;
   top: 0;
   bottom: 0;
-  z-index: 1;
+  z-index: var(--z-raised);
   width: 32px;
   padding: 0;
   justify-content: center;
@@ -3950,7 +3950,7 @@ h1 .chip,
 .combo-dot {
   width: 11px;
   height: 11px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   flex-shrink: 0;
   margin-bottom: 0.55rem;
 }
@@ -5452,7 +5452,7 @@ select:disabled {
   background: var(--bg-surface);
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: var(--z-float);
 }
 
 .landing-nav-actions {
@@ -5545,7 +5545,7 @@ select:disabled {
   background: var(--accent-subtle);
   display: inline-block;
   padding: 5px 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   margin-bottom: 20px;
 }
 
@@ -6729,7 +6729,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .api-docs-menu a {
   display: block;
   padding: 6px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   font-size: var(--fs-14);
   color: var(--text-secondary);
   text-decoration: none;
@@ -6939,12 +6939,12 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   position: fixed;
   right: 22px;
   bottom: 22px;
-  z-index: 50;
+  z-index: var(--z-chat);
   display: inline-flex;
   align-items: center;
   gap: 8px;
   padding: 11px 16px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--accent);
   color: var(--text-on-fill);
   border: none;
@@ -7192,7 +7192,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .chat-tool-dot {
   width: 7px;
   height: 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--text-disabled);
   flex-shrink: 0;
 }
@@ -7211,7 +7211,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .chat-typing span {
   width: 6px;
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--text-disabled);
   animation: chat-bounce 1.2s infinite;
 }
@@ -7272,7 +7272,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .chat-send svg { width: 17px; height: 17px; }
 
 @media (max-width: 1100px) {
-  .chat-panel { position: fixed; right: 0; top: 58px; z-index: 45; box-shadow: var(--shadow-lg); }
+  .chat-panel { position: fixed; right: 0; top: 58px; z-index: calc(var(--z-chat) - 5); box-shadow: var(--shadow-lg); }
 }
 
 /* Credit balance pill in the chat header */
@@ -7438,7 +7438,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   font-weight: 600;
   color: var(--text-on-fill);
   background: var(--accent);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   padding: 4px 10px;
 }
 .price-card h3 {
@@ -7525,7 +7525,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   height: 15px;
   margin-left: 2px;
   border: 1px solid var(--border);
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   font-size: var(--fs-12);
   font-weight: 600;
   line-height: 1;
@@ -7651,7 +7651,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .set-profile .ava.lg {
   width: 44px;
   height: 44px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   background: var(--border);
   display: grid;
   place-items: center;
@@ -7733,7 +7733,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
-  z-index: 40;
+  z-index: var(--z-navbar);
 }
 .ovm-menu[hidden] { display: none; }
 .ovm-item {
@@ -7759,7 +7759,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   max-width: calc(100vw - 16px);
   position: fixed;
   right: auto;
-  z-index: 95; /* over the details sheet on a phone (90), under dialogs (100) */
+  z-index: var(--z-sheet-menu); /* over the details sheet on a phone (90), under dialogs (100) */
   min-width: 200px;
 }
 .row-menu .ovm-item { white-space: normal; }
@@ -7777,7 +7777,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 .row-menu-parent.inline::after { content: "▸" / ""; }
 .row-menu-parent.inline.open::after { content: "▾" / ""; }
 .row-menu .ovm-item.row-menu-parent.open { background: var(--accent-subtle); color: var(--accent-text); }
-.ovm-menu.row-submenu { z-index: 96; min-width: 190px; }
+.ovm-menu.row-submenu { z-index: calc(var(--z-sheet-menu) + 1); min-width: 190px; }
 .row-menu-inline { display: flex; flex-direction: column; gap: 2px; padding-left: 14px; }
 
 /* ---- RCM: study tree, decision flow, evidence -------------------------- */
@@ -8202,7 +8202,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
   bottom: 0;
   width: 7px;
   cursor: col-resize;
-  z-index: 5;
+  z-index: calc(var(--z-sticky) + 3);
 }
 .chat-resize:hover,
 .chat-resize:active {
@@ -8262,7 +8262,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 
 .sel-menu {
   position: fixed;
-  z-index: 200;
+  z-index: var(--z-overlay-menu);
   max-height: 280px;
   overflow-y: auto;
   background: var(--bg-surface);
@@ -8862,7 +8862,7 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
 button.secondary.ccf { color: var(--text); border-color: var(--cat-pink-border); background: var(--cat-pink-bg); }
 button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: var(--cat-pink); background: var(--cat-pink-bg); }
 .rbd-ccf-list {
-  position: absolute; top: calc(100% + 6px); left: 0; z-index: 6;
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: var(--z-sticky-head);
   background: var(--bg-surface); border: 1px solid var(--border);
   border-radius: var(--radius-lg); padding: 8px 10px; box-shadow: var(--shadow-lg);
   min-width: 260px; max-width: 340px;
@@ -8896,7 +8896,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
 .guide-group { margin-bottom: 8px; }
 .guide-group-h { font-size: var(--fs-14); font-weight: 600; color: var(--text-secondary); margin: 22px 0 6px; }
 .guide-head .guide-meta { display: flex; gap: 8px; align-items: center; font-size: var(--fs-13); color: var(--text-secondary); margin-bottom: 6px; }
-.guide-cat { padding: 1px 8px; border: 1px solid var(--border); border-radius: 999px; }
+.guide-cat { padding: 1px 8px; border: 1px solid var(--border); border-radius: var(--radius-full); }
 .guide-prereq { color: var(--text-secondary); font-size: var(--fs-14); }
 /* Guides read as articles: prose first, screenshots supporting it. */
 .guide-prose { max-width: 720px; line-height: var(--lh-16); font-size: var(--fs-16); }
@@ -8935,9 +8935,9 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
 }
 .guide-cta { margin-top: 24px; }
 /* In-app Help drawer */
-.help-drawer-backdrop { position: fixed; inset: 0; background: var(--scrim); z-index: 200; }
+.help-drawer-backdrop { position: fixed; inset: 0; background: var(--scrim); z-index: var(--z-overlay-menu); }
 .help-drawer {
-  position: fixed; top: 0; right: 0; height: 100vh; width: min(560px, 92vw); z-index: 201;
+  position: fixed; top: 0; right: 0; height: 100vh; width: min(560px, 92vw); z-index: calc(var(--z-overlay-menu) + 1);
   background: var(--bg-surface); border-left: 1px solid var(--border);
   box-shadow: var(--shadow-lg); display: flex; flex-direction: column;
 }
@@ -8983,13 +8983,13 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
 .blog-filters { display: flex; gap: 8px; margin: 0 0 18px; flex-wrap: wrap; }
 .blog-filter {
   background: none; border: 1px solid var(--border); color: var(--text-secondary);
-  border-radius: 999px; padding: 5px 14px; font-size: var(--fs-13); cursor: pointer; box-shadow: none;
+  border-radius: var(--radius-full); padding: 5px 14px; font-size: var(--fs-13); cursor: pointer; box-shadow: none;
 }
 .blog-filter:hover { border-color: var(--accent); color: var(--accent-text); }
 .blog-filter.active { background: var(--accent); border-color: var(--accent); color: var(--text-on-fill); }
 .blog-tag {
   background: var(--accent-subtle); color: var(--accent-text);
-  border-radius: 999px; padding: 1px 9px; font-size: var(--fs-12); font-weight: 600;
+  border-radius: var(--radius-full); padding: 1px 9px; font-size: var(--fs-12); font-weight: 600;
 }
 
 /* Saved-models type tags for the newer model kinds */
@@ -9038,7 +9038,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
 }
 .ref-toc a {
   font-size: var(--fs-13); text-decoration: none; color: var(--text-secondary);
-  border: 1px solid var(--border); border-radius: 999px; padding: 3px 11px;
+  border: 1px solid var(--border); border-radius: var(--radius-full); padding: 3px 11px;
 }
 .ref-toc a:hover { color: var(--accent-text); border-color: var(--accent); }
 
@@ -9074,7 +9074,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
 .ref-link {
   display: inline-flex; align-items: center; justify-content: center;
   width: 16px; height: 16px; margin-left: 6px; padding: 0; vertical-align: middle;
-  border: 1px solid var(--border); border-radius: 50%;
+  border: 1px solid var(--border); border-radius: var(--radius-full);
   background: none; color: var(--text-secondary); box-shadow: none;
   font-size: var(--fs-12); line-height: 1; cursor: pointer;
 }
@@ -9113,7 +9113,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
   height: 26px;
   transform: translateY(-50%);
   box-sizing: border-box;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   border: 1.5px solid var(--cat-violet-border);
   background: var(--cat-violet-bg);
   box-shadow: var(--shadow-sm);
@@ -9364,7 +9364,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
    together are a little wider than the card), never cut off. */
 .rbd-chips {
   position: absolute; bottom: -14px; left: 50%; transform: translateX(-50%); width: max-content;
-  max-width: calc(100% + 32px); display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; z-index: 2;
+  max-width: calc(100% + 32px); display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; z-index: var(--z-sticky);
 }
 .rbd-chip {
   font-size: calc(var(--fs-12) * var(--node-scale)); font-weight: 500; line-height: 24px; border-radius: var(--radius-md); padding: 0 6px;
@@ -9525,7 +9525,7 @@ html.full-screen-lock, html.full-screen-lock body { overflow: hidden; overscroll
 .rbd-builder.is-full {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: var(--z-fullscreen);
   box-sizing: border-box;
   width: 100%;
   height: 100%;
@@ -9561,9 +9561,9 @@ html.full-screen-lock, html.full-screen-lock body { overflow: hidden; overscroll
 }
 /* The shared page's diagram: a Full screen button over its corner. */
 .public-rbd-canvas-wrap { position: relative; }
-.public-rbd-canvas-wrap > .full-screen-btn { position: absolute; top: 8px; right: 8px; z-index: 5; }
+.public-rbd-canvas-wrap > .full-screen-btn { position: absolute; top: 8px; right: 8px; z-index: calc(var(--z-sticky) + 3); }
 .public-rbd-canvas-wrap.is-full {
-  position: fixed; inset: 0; z-index: 1000; box-sizing: border-box; width: 100%; height: 100%;
+  position: fixed; inset: 0; z-index: var(--z-fullscreen); box-sizing: border-box; width: 100%; height: 100%;
   background: var(--bg-surface); padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 .public-rbd-canvas-wrap.is-full > .rbd-canvas { height: 100%; min-height: 0; max-height: none; border: 0; border-radius: 0; }
@@ -9766,7 +9766,7 @@ html.full-screen-lock, html.full-screen-lock body { overflow: hidden; overscroll
 .rbd-builder.is-narrow .rbd-canvas .react-flow__minimap { display: none; }
 /* What an action did floats under the toolbar's row (the toolbar never wraps). */
 .rbd-builder.is-narrow .rbd-tb-flash {
-  position: absolute; top: calc(100% - var(--space-2)); left: 0; right: 0; z-index: 5; flex: none; text-align: left;
+  position: absolute; top: calc(100% - var(--space-2)); left: 0; right: 0; z-index: calc(var(--z-sticky) + 3); flex: none; text-align: left;
   background: var(--bg-surface); padding: 2px var(--space-2); border-radius: var(--radius-md); pointer-events: none;
 }
 .rbd-builder.is-narrow .rbd-full-name { display: none; }
@@ -9774,7 +9774,7 @@ html.full-screen-lock, html.full-screen-lock body { overflow: hidden; overscroll
    "+ Add block" is the "+" alone, then Full screen goes into ⋯ and the status and check show
    their icon alone, then Undo and Redo go into ⋯. */
 .rbd-builder.is-narrow .rbd-add-word, .rbd-builder.is-narrow .rbd-add-menu .rbd-tb-caret { display: none; }
-.rbd-builder.is-narrow .rbd-add-menu .rbd-tb-trigger { min-width: var(--control-sm); justify-content: center; font-size: var(--fs-16, 16px); font-weight: 600; }
+.rbd-builder.is-narrow .rbd-add-menu .rbd-tb-trigger { min-width: var(--control-sm); justify-content: center; font-size: var(--fs-16); font-weight: 600; }
 .rbd-builder:not(.is-tight) .rbd-mi-tight, .rbd-builder:not(.is-cramped) .rbd-mi-cramped { display: none; }
 .rbd-builder.is-tight:not(.is-full) .rbd-tb-full { display: none; }
 .rbd-builder.is-cramped .rbd-tb-history-bar { display: none; }
@@ -9807,7 +9807,7 @@ html.full-screen-lock, html.full-screen-lock body { overflow: hidden; overscroll
    of the chart, over its top margin. */
 .plot-frame { position: relative; }
 .plot-dl {
-  position: absolute; top: 0; right: 0; z-index: 2;
+  position: absolute; top: 0; right: 0; z-index: var(--z-sticky);
   display: inline-flex; align-items: center; gap: 2px;
   padding-left: 6px;
   /* On the chart's own ground, so a line under it doesn't run through the labels. */
@@ -9901,7 +9901,7 @@ input.rbd-rename {
 .rbd-sif-shares-table td { font-variant-numeric: tabular-nums; }
 .rbd-sif-shares-table thead th:first-child { text-align: left; }
 .rbd-sif-bar {
-  display: inline-block; vertical-align: middle; width: 48px; height: 6px; margin-right: 8px; border-radius: 3px;
+  display: inline-block; vertical-align: middle; width: 48px; height: 6px; margin-right: 8px; border-radius: var(--radius-full);
   background: linear-gradient(90deg, var(--accent) calc(var(--share) * 100%), var(--border-subtle) 0);
 }
 .rbd-avail-imp-scroll .calc-table.rbd-sif-shares-table { min-width: 0; }
@@ -9952,7 +9952,7 @@ input.rbd-rename {
 .joint-fields { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end; margin: 8px 0; }
 .joint-fields .dist-field { flex: 1 1 180px; min-width: 0; max-width: 280px; }
 .joint-fields .dist-field input { width: 100%; box-sizing: border-box; }
-.joint-h3 { font-size: 0.95rem; margin: 16px 0 6px; }
+.joint-h3 { font-size: var(--fs-16); margin: 16px 0 6px; }
 .joint-check { display: flex; gap: 8px; align-items: baseline; margin: 6px 0; flex-wrap: wrap; }
 .joint-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 .joint-check-out { margin-top: 12px; }
@@ -10039,7 +10039,7 @@ a.ovm-item svg { width: 15px; height: 15px; flex: none; }
 
 /* Section landing pages: a compact header. The menu already says which
    section you're in, so the one-word breadcrumb only shows on a phone. */
-.page-header.section-header .title-row h1 { font-size: var(--fs-24, 24px); }
+.page-header.section-header .title-row h1 { font-size: var(--fs-24); }
 .page-header.section-header .ph-meta { margin-top: 2px; font-size: var(--fs-13); }
 .page-header.section-header + * { margin-top: 12px; }
 @media (min-width: 900px) {
@@ -10085,7 +10085,7 @@ button.help-link:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .lib-model-choice { display: flex; align-items: center; gap: var(--space-2); min-height: var(--control-md); font-size: var(--fs-14); line-height: var(--lh-20); }
 /* A Pro-only action, marked for users without Pro (ProTag.jsx). */
 .pro-tag {
-  display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px;
+  display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: var(--radius-full);
   font-size: var(--fs-12); font-weight: 600; line-height: var(--lh-12); vertical-align: middle;
   color: var(--cat-violet); background: var(--cat-violet-bg); border: 1px solid var(--cat-violet-border);
 }
@@ -10095,7 +10095,7 @@ button.help-link:focus-visible { outline: none; box-shadow: var(--focus-ring); }
   position: absolute;
   left: 8px;
   top: -48px;
-  z-index: 1000;
+  z-index: var(--z-fullscreen);
   padding: 10px 14px;
   border-radius: var(--radius-md);
   background: var(--bg-surface);
@@ -10178,7 +10178,7 @@ main.content:focus { outline: none; }
 .sel-search {
   position: sticky;
   top: -4px;
-  z-index: 1;
+  z-index: var(--z-raised);
   margin: -4px -4px 4px;
   width: calc(100% + 8px);
   box-sizing: border-box;
@@ -10251,13 +10251,13 @@ main.content:focus { outline: none; }
 .reading-z-head { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; }
 .reading-z-head code { font-weight: 600; color: var(--text); font-size: var(--fs-14); }
 .reading-z-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.reading-z-item { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px; min-width: 0; max-width: 100%; }
+.reading-z-item { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 4px 8px; min-width: 0; max-width: 100%; }
 .reading-z-item.off { background: var(--border-subtle); color: var(--text-secondary); }
 .reading-z-item.off .reading-z-pick span { text-decoration: none; }
 .reading-z-pick { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-14); min-height: 32px; overflow-wrap: anywhere; }
 .reading-z-unit { width: 8rem; max-width: 100%; }
 .reading-z-line { margin: 0; color: var(--text-secondary); font-size: var(--fs-13); overflow-wrap: anywhere; }
-.reading-summary { display: flex; flex-direction: column; gap: var(--space-1); border: 1px solid var(--border); border-radius: 8px; padding: var(--space-2) var(--space-3); min-width: 0; }
+.reading-summary { display: flex; flex-direction: column; gap: var(--space-1); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-2) var(--space-3); min-width: 0; }
 .reading-summary.guessed { border-color: var(--warning-border); background: var(--warning-bg); }
 .reading-summary-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); font-size: var(--fs-14); min-width: 0; }
 .reading-summary-lead { color: var(--text-secondary); }
@@ -10269,8 +10269,8 @@ main.content:focus { outline: none; }
 .reading-summary-actions { display: inline-flex; align-items: center; gap: var(--space-2); margin-left: auto; }
 .reading-summary-actions .link, .reading-summary-actions button { min-height: 32px; }
 .reading-summary-note { margin: 0; color: var(--text-secondary); font-size: var(--fs-13); }
-.reading-change { display: flex; flex-direction: column; gap: var(--space-2); border: 1px solid var(--border); border-radius: 8px; padding: var(--space-3); min-width: 0; }
-.reading-change-h { margin: 0; font-size: var(--fs-15, 15px); }
+.reading-change { display: flex; flex-direction: column; gap: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-3); min-width: 0; }
+.reading-change-h { margin: 0; font-size: var(--fs-16); }
 .reading-change-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
 .fit-reading { gap: var(--space-2); }
 .fit-z { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }

@@ -9,15 +9,15 @@
 .ml-stale { margin: 0; color: var(--warning); }
 /* Most of the answer rests on placeholders: said as a bad verdict (W2). */
 .ml-stale.is-most { color: var(--danger-text); font-weight: 500; }
-.ml-h { font-size: 0.85rem; margin: 4px 0 6px; color: var(--text-secondary); text-transform: none; }
-.ml-params { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+.ml-h { font-size: var(--fs-14); margin: 4px 0 6px; color: var(--text-secondary); text-transform: none; }
+.ml-params { width: 100%; border-collapse: collapse; font-size: var(--fs-14); }
 .ml-params th, .ml-params td { padding: 4px 8px; border-bottom: 1px solid var(--border); text-align: left; }
 .ml-params .num { text-align: right; font-variant-numeric: tabular-nums; }
-.ml-dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; font-size: 0.875rem; }
+.ml-dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; font-size: var(--fs-14); }
 .ml-dl dt { color: var(--text-secondary); }
 .ml-dl dd { margin: 0; }
 .ml-dlrow { display: contents; }
-.ml-used { margin: 0; padding-left: 1.1rem; font-size: 0.875rem; }
+.ml-used { margin: 0; padding-left: 1.1rem; font-size: var(--fs-14); }
 .ml-note { margin: 0 0 4px; white-space: pre-wrap; }
 .ml-row { display: flex; flex-wrap: wrap; gap: 12px; }
 .ml-row > .field { flex: 1 1 200px; }
@@ -25,4 +25,4 @@
 .ml-mode { display: flex; align-items: center; gap: 8px; min-height: 32px; }
 .ml-picker { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
 .ml-picker .evidence-picker { max-height: 260px; overflow: auto; }
-.ml-group { font-size: 0.75rem; color: var(--text-secondary); margin: 6px 0 2px; text-transform: uppercase; letter-spacing: 0.04em; }
+.ml-group { font-size: var(--fs-12); color: var(--text-secondary); margin: 6px 0 2px; text-transform: uppercase; letter-spacing: 0.04em; }

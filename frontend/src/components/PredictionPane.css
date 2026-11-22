@@ -54,7 +54,7 @@ th.pred2-c-ne, td.pred2-c-ne { text-align: center; }
 
 .pred2-status { display: flex; flex-direction: column; gap: 6px; }
 .pred2-big { margin: 0; font-size: var(--fs-14); }
-.pred2-big b { font-size: var(--fs-24, 1.5rem); font-variant-numeric: tabular-nums; margin-right: 4px; }
+.pred2-big b { font-size: var(--fs-24); font-variant-numeric: tabular-nums; margin-right: 4px; }
 .pred2-dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; margin: 0; font-size: var(--fs-13); }
 .pred2-dl dt { color: var(--text-secondary); }
 .pred2-dl dd { margin: 0; }

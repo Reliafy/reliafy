@@ -3,7 +3,7 @@
 
 .wt-ring {
   position: fixed;
-  z-index: 1000;
+  z-index: var(--z-fullscreen);
   border-radius: var(--radius-md);
   /* The ring, and a light dim over the rest of the page. Clicks pass
      through: the page stays usable. */
@@ -14,7 +14,7 @@
 
 .wt-callout {
   position: fixed;
-  z-index: 1001;
+  z-index: calc(var(--z-fullscreen) + 1);
   box-sizing: border-box;
   width: 320px;
   max-width: calc(100vw - 2 * var(--space-4));

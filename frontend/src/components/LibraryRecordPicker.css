@@ -14,7 +14,7 @@
   font-size: var(--fs-13); }
 .lib-pick-row > span { min-width: 0; overflow-wrap: anywhere; }
 .lib-pick-row .num { text-align: right; font-variant-numeric: tabular-nums; }
-.lib-pick-head { position: sticky; top: 0; z-index: 1; background: var(--bg-surface); font-size: var(--fs-12); font-weight: 600; color: var(--text-secondary); }
+.lib-pick-head { position: sticky; top: 0; z-index: var(--z-raised); background: var(--bg-surface); font-size: var(--fs-12); font-weight: 600; color: var(--text-secondary); }
 [role="option"].lib-pick-row { cursor: pointer; }
 .lib-pick-row.hi { background: var(--accent-subtle); box-shadow: inset 3px 0 0 var(--accent); }
 .lib-pick-name { font-weight: 600; }

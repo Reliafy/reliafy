@@ -54,7 +54,7 @@ p.td-quiet { margin: 0; }
 .td-row-chips { flex: 0 1 auto; justify-content: flex-end; margin-top: 1px; }
 .td-row button.td-go { font-size: var(--fs-14); font-weight: 500; color: var(--text); text-align: left; text-decoration: none; padding: 0; overflow-wrap: anywhere; }
 .td-row button.td-go:hover:not(:disabled) { color: var(--accent-text); text-decoration: underline; }
-.td-row a:focus-visible, .td-row button.td-go:focus-visible {  border-radius: 2px; }
+.td-row a:focus-visible, .td-row button.td-go:focus-visible {  border-radius: var(--radius-sm); }
 a.td-more { align-self: flex-start; font-size: var(--fs-13); }
 
 /* The sort beside "Directly inside". */
@@ -79,14 +79,14 @@ a.td-more { align-self: flex-start; font-size: var(--fs-13); }
 /* The Parts and stock and Classes tabs (TreeDetail): the pages they were, at
    the panel's text size, their tables scrolling inside the panel. */
 .td-tab-page {
-  font-size: 0.875rem;
+  font-size: var(--fs-14);
 }
 .td-tab-page .maint-section {
-  font-size: 1rem;
+  font-size: var(--fs-16);
   margin: 16px 0 8px;
 }
 .td-tab-page .td-tab-check {
-  font-size: 0.875rem;
+  font-size: var(--fs-14);
   white-space: nowrap;
 }
 .td-tab-page .td-tab-actions {
@@ -95,5 +95,5 @@ a.td-more { align-self: flex-start; font-size: var(--fs-13); }
   margin: 0 0 12px;
 }
 .td-tab-page .card {
-  font-size: 0.875rem;
+  font-size: var(--fs-14);
 }

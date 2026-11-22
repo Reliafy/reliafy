@@ -159,7 +159,7 @@
 .tp button.tp-addrow:hover:not(:disabled) { background: var(--accent-wash); color: var(--accent-text); }
 .tp button.tp-addrow:focus-visible { outline-offset: -2px; }
 .tp button.tp-addrow:disabled { opacity: 0.55; cursor: default; }
-.tp-addrow-plus { flex: none; width: 14px; text-align: center; font-size: 15px; line-height: 1; }
+.tp-addrow-plus { flex: none; width: 14px; text-align: center; font-size: var(--fs-14); line-height: 1; }
 .tp-addrow-nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 .tp .ovm-trigger {
@@ -201,7 +201,7 @@
 .tp-pins {
   position: sticky;
   top: 0;
-  z-index: 3;
+  z-index: calc(var(--z-sticky) + 1);
   height: 0;
   overflow: visible;
 }
@@ -269,13 +269,13 @@
   position: absolute;
   left: 4px;
   top: -9px;
-  z-index: 1;
+  z-index: var(--z-raised);
   width: 14px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--radius-full);
   background: var(--bg-surface);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-12);
   line-height: 16px;
   text-align: center;
   pointer-events: none;
@@ -321,7 +321,7 @@
   min-width: 18px;
   height: 17px;
   padding: 0 4px;
-  border-radius: 9px;
+  border-radius: var(--radius-full);
   border: 1px solid transparent;
   font-size: var(--fs-12);
   font-weight: 600;
@@ -363,7 +363,7 @@
   right: -4px;
   width: 8px;
   cursor: col-resize;
-  z-index: 4;
+  z-index: calc(var(--z-sticky) + 2);
   touch-action: none;
 }
 
@@ -397,7 +397,7 @@
 
 .td-title:focus-visible {
   box-shadow: var(--focus-ring);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .td .crumb button.crumb-link {
@@ -449,7 +449,7 @@
     display: block;
   }
   .tx.phone .tp-row {
-    font-size: 15px;
+    font-size: var(--fs-14);
     padding-right: 12px;
   }
   .tx.phone .tp-chev,
@@ -460,7 +460,7 @@
   .tx.phone .tp-mini {
     min-width: 22px;
     height: 20px;
-    font-size: 12px;
+    font-size: var(--fs-12);
   }
   .tx.phone .tp button.tp-icon-btn,
   .tx.phone .tt-actions button.tp-icon-btn {
@@ -505,7 +505,7 @@ button.rw-cklink {
 .rw-cklink:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
 }
 .tp-mini.rcm {
   background: transparent;
@@ -519,7 +519,7 @@ button.rw-cklink {
 .tt-head {
   position: sticky;
   top: 0;
-  z-index: 6;
+  z-index: var(--z-sticky-head);
   display: flex;
   min-width: 100%;
   background: var(--bg-subtle);
@@ -542,7 +542,7 @@ button.rw-cklink {
 .tt-h-tree {
   position: sticky;
   left: 0;
-  z-index: 2;
+  z-index: var(--z-sticky);
   background: var(--bg-subtle);
   padding-left: 12px;
 }
@@ -585,7 +585,7 @@ button.rw-cklink {
 .tp-table .tp-scroll { scrollbar-gutter: stable; }
 .tt-top {
   position: relative;
-  z-index: 8; /* the Columns list opens over the table's sticky headers */
+  z-index: calc(var(--z-sticky-head) + 2); /* the Columns list opens over the table's sticky headers */
   flex: none;
   min-width: 0;
 }
@@ -828,7 +828,7 @@ button.rw-cklink {
   height: 0;
   opacity: 0;
   pointer-events: none;
-  z-index: 7;
+  z-index: calc(var(--z-sticky-head) + 1);
   transition: opacity 0.12s linear;
 }
 .tt-shade-l { background: linear-gradient(to right, var(--scroll-shade), transparent); }
@@ -852,7 +852,7 @@ button.rw-cklink {
   background: var(--text-disabled);
   background-clip: padding-box;
   border: 3px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 .tx:not(.phone) .tp-table .tp-scroll::-webkit-scrollbar-thumb:hover { background-color: var(--text-secondary); }
 @supports not selector(::-webkit-scrollbar) {
@@ -870,7 +870,7 @@ button.rw-cklink {
 .tt-tree {
   position: sticky;
   left: 0;
-  z-index: 1;
+  z-index: var(--z-raised);
   flex: none;
   display: flex;
   align-items: center;
@@ -895,7 +895,7 @@ button.rw-cklink {
 .tp-row.tt.tt-fn .tp-nm { font-weight: 600; }
 .tp-row.tt.tt-fail .tp-nm { font-weight: 500; }
 .tp-row.tt.pin, .tp-row.tt.pin .tt-tree { background: var(--bg-subtle); }
-.tp-row.tt .rw-c { font-size: 13px; }
+.tp-row.tt .rw-c { font-size: var(--fs-13); }
 .tp-row.tt .tp-ic.rw-ic { margin: 0 4px 0 1px; }
 .tt-fn .tp-ic { color: var(--accent-text); }
 .tt-fail .tp-ic, .tt-unassigned .tp-ic { color: var(--warning-text); }
@@ -933,7 +933,7 @@ button.rw-cklink {
 .tx.is-full {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: var(--z-fullscreen);
   box-sizing: border-box;
   width: 100%;
   height: 100%;
@@ -1075,7 +1075,7 @@ button.rw-cklink {
   box-sizing: border-box;
   display: inline-grid;
   place-items: center;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--accent);
   color: var(--text-on-fill);
   font-size: var(--fs-12);
@@ -1086,7 +1086,7 @@ button.rw-cklink {
 .ovm-menu.tm-menu {
   position: fixed;
   right: auto;
-  z-index: 70;
+  z-index: var(--z-drawer);
   width: 280px;
   max-width: calc(100vw - 16px);
   box-sizing: border-box;
@@ -1141,7 +1141,7 @@ button.rw-cklink {
   width: 16px;
   height: 16px;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--bg-surface);
   color: var(--text-on-fill);
 }
@@ -1160,9 +1160,9 @@ button.rw-cklink {
    the add row is as tall as the rows (44 px). */
 @media (max-width: 720px) {
   .tx.phone .tp-arrange { height: auto; }
-  .tx.phone .tp .tp-arrange button.tp-arrange-btn { height: 44px; min-width: 44px; padding: 0 12px; font-size: 14px; }
+  .tx.phone .tp .tp-arrange button.tp-arrange-btn { height: 44px; min-width: 44px; padding: 0 12px; font-size: var(--fs-14); }
   .tx.phone .tp-filter input { padding: 11px 0; }
-  .tx.phone .tp button.tp-addrow { font-size: 15px; padding-left: 40px; }
+  .tx.phone .tp button.tp-addrow { font-size: var(--fs-14); padding-left: 40px; }
 }
 
 /* ---- a pinned branch ------------------------------------------------------- */
@@ -1304,12 +1304,12 @@ button.rw-cklink {
   position: absolute;
   left: 0;
   right: 0;
-  z-index: 3;
+  z-index: calc(var(--z-sticky) + 1);
   pointer-events: none;
 }
 .tp-row.drop-into::after { top: 0; bottom: 0; box-shadow: inset 0 0 0 2px var(--accent); background: var(--accent-subtle); }
-.tp-row.drop-before::after { top: -2px; height: 4px; border-radius: 2px; background: var(--accent); }
-.tp-row.drop-after::after { bottom: -2px; height: 4px; border-radius: 2px; background: var(--accent); }
+.tp-row.drop-before::after { top: -2px; height: 4px; border-radius: var(--radius-full); background: var(--accent); }
+.tp-row.drop-after::after { bottom: -2px; height: 4px; border-radius: var(--radius-full); background: var(--accent); }
 .tp-row.drop-no::after { top: 0; bottom: 0; box-shadow: inset 0 0 0 2px var(--danger); }
 /* A task's row dropped to link it (a copy, never a move): "+ Link here" at the row's right. */
 .tp-row.drop-copy::before {
@@ -1318,12 +1318,12 @@ button.rw-cklink {
   right: 8px;
   top: 50%;
   transform: translateY(-50%);
-  z-index: 4;
+  z-index: calc(var(--z-sticky) + 2);
   padding: 1px 8px;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--accent);
   color: var(--text-on-fill);
-  font-size: 11.5px;
+  font-size: var(--fs-12);
   font-weight: 600;
   pointer-events: none;
 }
@@ -1332,18 +1332,18 @@ html.rcm-dragging, html.rcm-dragging * { cursor: grabbing !important; user-selec
 html.rcm-dragging.rcm-nodrop, html.rcm-dragging.rcm-nodrop * { cursor: no-drop !important; }
 .rcm-ghost {
   position: fixed;
-  z-index: 1000;
+  z-index: var(--z-fullscreen);
   pointer-events: none;
   max-width: 300px;
   display: flex;
   flex-direction: column;
   gap: 3px;
   padding: 6px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: var(--bg-surface);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
-  font-size: 12.5px;
+  font-size: var(--fs-13);
   line-height: 1.35;
   white-space: normal;
 }
@@ -1354,10 +1354,10 @@ html.rcm-dragging.rcm-nodrop, html.rcm-dragging.rcm-nodrop * { cursor: no-drop !
   min-width: 20px;
   height: 20px;
   padding: 0 5px;
-  border-radius: 10px;
+  border-radius: var(--radius-full);
   background: var(--accent);
   color: var(--text-on-fill);
-  font-size: 11.5px;
+  font-size: var(--fs-12);
 }
 .rcm-ghost-say { color: var(--text-secondary); }
 .rcm-ghost-plus { font-size: var(--fs-14); font-weight: 600; }
@@ -1365,7 +1365,7 @@ html.rcm-dragging.rcm-nodrop, html.rcm-dragging.rcm-nodrop * { cursor: no-drop !
 .rcm-ghost.is-no .rcm-ghost-say { color: var(--danger-text); }
 .rcm-toast {
   position: fixed;
-  z-index: 900;
+  z-index: var(--z-toast);
   left: 50%;
   bottom: 20px;
   transform: translateX(-50%);
@@ -1376,7 +1376,7 @@ html.rcm-dragging.rcm-nodrop, html.rcm-dragging.rcm-nodrop * { cursor: no-drop !
   width: max-content;
   max-width: min(640px, calc(100vw - 32px));
   padding: 8px 8px 8px 14px;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: var(--bg-surface);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
@@ -1391,11 +1391,11 @@ html.rcm-dragging.rcm-nodrop, html.rcm-dragging.rcm-nodrop * { cursor: no-drop !
 /* The Move to… picker: the tree with the RCM in it, the places it can't go greyed. */
 .rcm-move-tree {
   position: relative; list-style: none; margin: 0; padding: 4px 0; max-height: min(52vh, 420px); overflow: auto;
-  border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface);
+  border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-surface);
 }
 .rcm-mt-row {
   display: flex; align-items: center; gap: 6px; min-height: 36px; padding-right: 8px; cursor: pointer;
-  border-radius: 6px; margin: 0 4px; color: var(--text); min-width: 0;
+  border-radius: var(--radius-md); margin: 0 4px; color: var(--text); min-width: 0;
 }
 .rcm-mt-row:hover { background: var(--accent-wash); }
 .rcm-mt-row:focus-visible { outline-offset: -2px; }
@@ -1404,10 +1404,10 @@ html.rcm-dragging.rcm-nodrop, html.rcm-dragging.rcm-nodrop * { cursor: no-drop !
 .rcm-mt-row.no:hover { background: none; }
 .rcm-mt-row .tp-ic { flex: none; }
 .rcm-mt-name { flex: 1; min-width: 0; overflow-wrap: anywhere; line-height: 1.3; padding: 6px 0; }
-.rcm-mt-here { flex: none; font-size: var(--fs-12); color: var(--text-secondary); border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; }
+.rcm-mt-here { flex: none; font-size: var(--fs-12); color: var(--text-secondary); border: 1px solid var(--border); border-radius: var(--radius-full); padding: 0 6px; }
 button.rcm-mt-arrow, span.rcm-mt-arrow {
   flex: none; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
-  padding: 0; border: 0; background: none; box-shadow: none; min-height: 0; color: var(--text-secondary); border-radius: 6px;
+  padding: 0; border: 0; background: none; box-shadow: none; min-height: 0; color: var(--text-secondary); border-radius: var(--radius-md);
 }
 button.rcm-mt-arrow svg { transition: transform 0.12s; }
 button.rcm-mt-arrow.open svg { transform: rotate(90deg); }
