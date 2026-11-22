@@ -3,6 +3,7 @@ import Modal from "./Modal.jsx";
 import { openGuide } from "./HelpButton.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import "./RbdBlockOptions.css";
+import { Select } from "./ui/Controls.jsx";
 
 // The letters after β of the multiple Greek letter model (#84): γ for a group
 // of three, γ and δ for four, …; each the chance a shared failure that takes
@@ -94,10 +95,10 @@ export default function CcfModal({ initial, memberLabels, repairable, onClose, o
       {!repairable && (
         <label className="login-field">
           <span>β splits each component's</span>
-          <select value={basis} onChange={(e) => setBasis(e.target.value)}>
+          <Select value={basis} onChange={(e) => setBasis(e.target.value)}>
             <option value="rate">Failure rate — holds over the whole life (recommended)</option>
             <option value="probability">Failure probability — short missions only (PRA basic events)</option>
-          </select>
+          </Select>
         </label>
       )}
       {!repairable && basis === "probability" && (
