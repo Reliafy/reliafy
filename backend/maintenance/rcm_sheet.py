@@ -240,6 +240,8 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
             # combination of tasks), another task for it (the export writes one
             # row per task), or a repeat to pass over.
             member = _member(decision, seen[key], live_tasks, sheet_tasks, row, errors)
+            if member is not None and mode.get("task_lsa") and member.get("task"):
+                member["task_lsa"] = mode["task_lsa"]
             if member is not None:
                 counts["combinations"] += not seen[key]["members"]
                 seen[key]["members"].append(member)
@@ -250,6 +252,8 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
             if extra is None:
                 repeated.append(row)
             else:
+                if mode.get("task_lsa"):
+                    extra["task_lsa"] = mode["task_lsa"]
                 seen[key]["extra_tasks"].append(extra)
                 counts["tasks_linked" if extra["shared"] else "tasks"] += 1
             return None
@@ -276,6 +280,8 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
             "consequence": mode.get("consequence"), "hidden": mode.get("hidden"), "decision": decision, "task": task,
             "shared": shared, "extra_tasks": [], "scores": scores,
             "members": [],  # further outcomes of its decision, from repeated rows (a combination)
+            # Its task's Task ID, trade and labour hours (put on the task after it's made).
+            "task_lsa": mode.get("task_lsa") if task else None,
         }
         seen[key] = planned
         counts["modes"] += 1
@@ -493,6 +499,28 @@ def _extra_task(decision, planned: dict, live_tasks: dict, sheet_tasks: dict, ro
             "outcome": decision["outcome"], "shared": shared}
 
 
+def _put_task_lsa(m: Maintenance, task_id: str | None, lsa: dict | None) -> None:
+    """A row's Task ID, trade and labour hours on the task it made or names: its
+    reference, its trade and one labour line (one person, those hours, that trade).
+    Only adds, as the import does: a task already carrying a reference, a trade or
+    labour keeps its own."""
+    if not task_id or not lsa:
+        return
+    task = m._get(task_id, "Task")
+    if task.get("retired"):
+        return
+    changes = {}
+    if lsa.get("reference") and not task.get("reference"):
+        changes["reference"] = shortened(lsa["reference"], SHORT_TEXT)[0]
+    if lsa.get("trade") and not task.get("trade"):
+        changes["trade"] = shortened(lsa["trade"], SHORT_TEXT)[0]
+    if changes:
+        m.update_task(task_id, **changes)
+    if lsa.get("hours") is not None and not (task.get("resources") or {}).get("labour"):
+        trade = shortened(lsa.get("trade") or task.get("trade") or "", SHORT_TEXT)[0]
+        m.set_task_resources(task_id, {"labour": [{"trade": trade, "people": 1, "hours": lsa["hours"]}]})
+
+
 def _write(m: Maintenance, position_id: str, functions: list[dict]) -> None:
     def task_named(name) -> str | None:
         """A live task on the position with that name (one the sheet made just now too)."""
@@ -530,12 +558,22 @@ def _write(m: Maintenance, position_id: str, functions: list[dict]) -> None:
             # decision diagram wouldn't make (rcm_decisions.advice).
             m.decide_failure_mode(mode_id, mode["consequence"] or None, decision if decision else ...,
                                   task_id=shared, hidden=True if mode.get("hidden") else ..., strict=False)
+            fm = m._get(mode_id, "FailureMode")
+            if fm.get("outcomes"):
+                # A combination: its members in order, the first row's then each repeated row's.
+                rows_lsa = [mode.get("task_lsa")] + [x.get("task_lsa") for x in mode.get("members") or []]
+                for member, lsa in zip(fm["outcomes"], rows_lsa):
+                    _put_task_lsa(m, member.get("task_id"), lsa)
+            else:
+                _put_task_lsa(m, fm.get("task_id"), mode.get("task_lsa"))
         for extra in mode.get("extra_tasks") or []:
             have = task_named(extra["name"])
             if have:
                 m.link_task(have, mode_id)
             else:
-                m.add_mode_task(mode_id, extra["name"], extra["interval"], extra["unit"], extra["outcome"], strict=False)
+                have = m.add_mode_task(mode_id, extra["name"], extra["interval"], extra["unit"], extra["outcome"],
+                                       strict=False)["id"]
+            _put_task_lsa(m, have, extra.get("task_lsa"))
 
     for fn in functions:
         # A new function with one standard keeps the one text; with several (or
