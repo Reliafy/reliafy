@@ -126,3 +126,22 @@ def test_fit_recurrent_model_from_a_dataset_with_one_end_of_test(env):
     assert out["record_ends"].startswith("time-terminated")
     _err(_call(a, "change", {"action": "model_fit_recurrent", "save": False, "dataset_id": ds["id"],
         "system_column": "unit", "time_column": "hours", "observed_to": [1000, 1000]}))
+
+
+def test_a_datasets_end_of_record_is_the_default_end_of_test(env):
+    a = env.token[A]
+    df = _compressors()
+    csv = df[["compressor", "hours"]].to_csv(index=False)
+    kept = _ok(_call(a, "change", {"action": "dataset_upload", "name": "Compressors with an end", "csv": csv,
+                                   "x_col": "hours", "i_col": "compressor", "all_failed": True, "record_end": 9000}))
+    assert kept["reading"]["record_end"] == 9000
+    plain = _ok(_call(a, "change", {"action": "dataset_upload", "name": "Compressors without one", "csv": csv,
+                                    "x_col": "hours", "i_col": "compressor", "all_failed": True}))
+    fit = {"action": "model_fit_recurrent", "save": False, "model": "crow_amsaa", "system_column": "compressor",
+           "time_column": "hours", "unit": "hours"}
+    with_end = _ok(_call(a, "change", {**fit, "dataset_id": kept["id"]}))
+    typed = _ok(_call(a, "change", {**fit, "dataset_id": plain["id"], "observed_to": 9000}))
+    last = _ok(_call(a, "change", {**fit, "dataset_id": plain["id"]}))
+    assert with_end["params"] == typed["params"] and with_end["params"] != last["params"]
+    changed = _ok(_call(a, "change", {"action": "dataset_update", "dataset_id": plain["id"], "record_end": 9000}))
+    assert changed["reading"]["record_end"] == 9000
