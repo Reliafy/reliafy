@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fitClassModel, getLibraryRecord, getLibrarySources, linkPositionModel, listModels, previewPositionFit } from "../api.js";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
-import { Select, TextInput } from "./ui/Controls.jsx";
+import { Checkbox, Select, TextInput } from "./ui/Controls.jsx";
 import { useModes } from "./ModelTable.jsx";
 import { saveErrorText } from "../confirm.js";
 import {
@@ -56,13 +56,11 @@ function ForPicker({ modes, value, onChange }) {
       {open && (
         <div className="fit2-for-list" role="group" aria-label="Failure modes it's for">
           <TextInput type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search failure modes" aria-label="Search failure modes" />
-          <label className="ml-mode"><input type="checkbox" checked={!value.length} onChange={() => onChange([])} /> All failures of this position</label>
+          <Checkbox className="ml-mode" checked={!value.length} onChange={() => onChange([])} label="All failures of this position" />
           {shown.map((m) => (
-            <label key={m.id} className="ml-mode">
-              <input type="checkbox" checked={value.includes(m.id)}
-                     onChange={(e) => onChange(e.target.checked ? [...value, m.id] : value.filter((x) => x !== m.id))} />
-              {m.text}
-            </label>
+            <Checkbox key={m.id} className="ml-mode" checked={value.includes(m.id)}
+                      onChange={(e) => onChange(e.target.checked ? [...value, m.id] : value.filter((x) => x !== m.id))}
+                      label={m.text} />
           ))}
           {modes?.length === 0 && <p className="rim-tquiet">No failure modes yet.</p>}
         </div>
@@ -224,8 +222,8 @@ export default function FitLifeModel({ position, start = {}, link = null, onClos
                         return (
                           <tr key={r.fitment_id || i} className={state.exclude.has(r.fitment_id) ? "off" : undefined}>
                             <td>{h.when}</td><td>{h.what}</td><td className="num">{h.age}</td><td>{h.kind}</td>
-                            <td><input type="checkbox" aria-label={`Use ${h.what} ${h.when}`} checked={!state.exclude.has(r.fitment_id)}
-                                       disabled={!r.fitment_id} onChange={() => toggle(r.fitment_id)} /></td>
+                            <td><Checkbox aria-label={`Use ${h.what} ${h.when}`} checked={!state.exclude.has(r.fitment_id)}
+                                          disabled={!r.fitment_id} onChange={() => toggle(r.fitment_id)} /></td>
                           </tr>
                         );
                       })}

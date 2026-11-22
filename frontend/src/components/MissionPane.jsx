@@ -16,6 +16,7 @@ import "./CovariateCalculator.css";
 import { levelPct } from "../levels.js";
 import "./RbdMission.css";
 import "./MissionPane.css";
+import { Select } from "./ui/Controls.jsx";
 
 // The diagram loads only when "Show the RBD" asks for it (React Flow is large).
 const RbdDiagramView = lazy(() => import("./RbdDiagramView.jsx"));
@@ -528,14 +529,14 @@ function PhaseCovariates({ rows, phase, idPrefix, readOnly, onChange }) {
           ))}
         </ul>
         {!readOnly && pickable.length > 0 && (
-          <select className="mission-own-pick" aria-label={`Set a block's own ${row.name} in this phase`} value=""
+          <Select className="mission-own-pick" aria-label={`Set a block's own ${row.name} in this phase`} value=""
                   onChange={(e) => {
                     const v = e.target.value;
                     if (v) setOwn((s) => new Set([...s, v]));
                   }}>
             <option value="">Set a block's own…</option>
             {pickable.map((b) => <option key={`${b.id}:${b.key}`} value={`${b.id}:${b.key}`}>{b.label}</option>)}
-          </select>
+          </Select>
         )}
         {row.missing.length > 0 && (
           <p className="field-error mission-row-needs">Needs a value for {row.missing.join(", ")}: set it for the phase, or on each block.</p>

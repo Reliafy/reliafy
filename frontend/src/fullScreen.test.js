@@ -100,6 +100,9 @@ test("save snapshot: the diagram, not its selection or sizes", () => {
 test("save status says it in words", () => {
   assert.equal(rbdSaveStatus({ savedId: null, dirty: true }).text, "Not saved yet");
   assert.equal(rbdSaveStatus({ savedId: "a", dirty: false }).text, "Saved");
+  assert.equal(rbdSaveStatus({ savedId: "a", dirty: false }).icon, "tick");
+  assert.equal(rbdSaveStatus({ savedId: "a", dirty: true, autosave: true }).icon, "saving");
+  assert.equal(rbdSaveStatus({ savedId: "a", dirty: true, autosave: true, saveState: "failed" }).icon, "warn");
   assert.equal(rbdSaveStatus({ savedId: "a", dirty: true }).text, "Unsaved changes");
   assert.equal(rbdSaveStatus({ savedId: "s", readOnly: true, dirty: false }).text, "Read only");
   assert.match(rbdSaveStatus({ savedId: "s", readOnly: true, dirty: true }).title, /save a copy/);

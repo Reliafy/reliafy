@@ -21,6 +21,7 @@ import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteConfirm, renamePrompt } from "../confirm.js";
 import { PageTitle } from "../components/usePageTitle.js";
 import { atLevel, crossingBound, twoSidedFor } from "../lifeBound.js";
+import Loading from "../components/ui/Loading.jsx";
 
 // One-sided levels for the lower bound on the crossing time (a life bound: 90% by default).
 const CONFIDENCE_LEVELS = [
@@ -91,7 +92,7 @@ export default function StrategyTracking() {
   }, [fleet, selectedId, confidence]);
 
   if (error && !fleet) return <div className="app"><LoadFailed header onRetry={() => { setError(null); refresh(); }} error={error} notFound="Tracked fleet not found." to="/risk" label="See condition monitoring" /></div>;
-  if (!fleet) return <div className="app"><div className="card empty">Loading…</div></div>;
+  if (!fleet) return <div className="app"><Loading card /></div>;
 
   const model = fleet.model || null;
   const items = fleet.items || [];

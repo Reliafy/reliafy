@@ -138,28 +138,49 @@ export function tabMenu(tab, items, { lead = [], pin = [] } = {}) {
   return before.length && tree.length ? [...before, { separator: true }, ...tree] : [...before, ...tree];
 }
 
-// A row's Isolate (closes the rest of the tree, opens this row so far): a
-// submenu, "with 1 level open", "2 levels open", "3 levels open", "everything
-// open" (ids isolate:1, isolate:2, isolate:3, isolate:all); a row with nothing
-// inside it has just "Isolate" (it closes the rest; there's nothing to open).
-// `can`: whether this row can be isolated (treeIsolate.canIsolate). `levels`:
-// how many levels there are below it (treeIsolate.levelsBelow), given on the
-// RCM tab, where a row can go five deep (down to the tasks): "With 4 levels
-// open" and "With 5 levels open" are offered there when the rows go that deep.
-export function isolateItems(r, { can, levels = 0 } = {}) {
-  if (!r || !can) return [];
-  if (!r.kids?.length) return [{ id: "isolate:1", label: "Focus" }];
+// A row's Focus (closes the rest of the tree, opens this row so far). The same
+// words on every tab and in every tree-table (Summary, RCM, FME(C)A,
+// Maintenance tasks, Measurements, Modelling, Missions):
+//   "Focus here" — this row opened at every level below it, so everything in
+//     it shows (its tasks, failure modes, measuring points, models), every
+//     other branch closed (id isolate:all);
+//   "Focus ›" — the same, opened only 1, 2 or 3 levels (isolate:1, :2, :3; on
+//     the RCM tab, where a row goes five deep, 4 and 5 too where they exist).
+// On a tab with its own table the words name what it shows: "Focus tasks"
+// (Maintenance), "Focus failure modes" (RCM, FME(C)A), "Focus measurements",
+// "Focus models", "Focus missions" (focusNoun), and "Focus tasks ›" likewise.
+// A row with nothing inside it has just "Focus here" (it closes the rest;
+// there's nothing to open). While a focus is on (`focused`: the tree has one),
+// "Clear focus" follows them: what was open before the focus, back again.
+// `can`: whether this row can be focused (treeIsolate.canIsolate). `levels`:
+// how many levels there are below it (treeIsolate.levelsBelow).
+export const FOCUS_HERE = "Focus here";
+export const CLEAR_FOCUS = { id: "focus-clear", label: "Clear focus" };
+// `noun`: what the open tab's table shows ("tasks", "failure modes", "measurements", "models",
+// "missions"): the labels then read "Focus tasks" and "Focus tasks ›"; without one, "Focus here" and "Focus".
+export function focusNoun(tab, { tasks = false } = {}) {
+  if (tab === "maintenance") return tasks ? "tasks" : "";
+  return { rcm: "failure modes", fmea: "failure modes", measurements: "measurements", models: "models", missions: "missions" }[tab] || "";
+}
+export function isolateItems(r, { can, levels = 0, focused = false, noun = "" } = {}) {
+  const here = noun ? `Focus ${noun}` : FOCUS_HERE;
+  if (!r || !can) return focused ? [CLEAR_FOCUS] : [];
+  const clear = focused ? [CLEAR_FOCUS] : [];
+  if (!r.kids?.length) return [{ id: "isolate:1", label: here }, ...clear];
   const deeper = [4, 5].filter((n) => levels >= n).map((n) => ({ id: `isolate:${n}`, label: `With ${n} levels open` }));
-  return [{
-    id: "isolate", label: "Focus",
-    items: [
-      { id: "isolate:1", label: "With 1 level open" },
-      { id: "isolate:2", label: "With 2 levels open" },
-      { id: "isolate:3", label: "With 3 levels open" },
-      ...deeper,
-      { id: "isolate:all", label: "With everything open" },
-    ],
-  }];
+  return [
+    { id: "isolate:all", label: here },
+    {
+      id: "isolate", label: here === FOCUS_HERE ? "Focus" : here,
+      items: [
+        { id: "isolate:1", label: "With 1 level open" },
+        { id: "isolate:2", label: "With 2 levels open" },
+        { id: "isolate:3", label: "With 3 levels open" },
+        ...deeper,
+      ],
+    },
+    ...clear,
+  ];
 }
 
 // How many live positions sit directly inside each position (the tree's rows).

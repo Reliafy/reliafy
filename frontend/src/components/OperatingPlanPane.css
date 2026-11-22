@@ -26,7 +26,6 @@
 .op-days { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 .op-daybox { display: inline-flex; align-items: center; gap: var(--space-1); padding: 0 var(--space-2); min-height: var(--control-sm);
   border: 1px solid var(--border-control); border-radius: var(--radius-md); cursor: pointer; font-size: var(--fs-13); line-height: var(--lh-13); }
-.op-daybox input { margin: 0; }
 .op-daybox.on { border-color: var(--accent-border); background: var(--accent-subtle); color: var(--accent-text); }
 .op-add { align-self: flex-start; }
 .op-runs { display: flex; flex-direction: column; gap: var(--space-1); max-width: 40rem; }

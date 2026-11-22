@@ -129,3 +129,13 @@ test("a package by operating hours stays on hours in its edit", async () => {
   assert.deepEqual(unitsFor({ cadence: { unit: "weeks" } }), PACKAGE_UNITS);
   assert.equal(packageDates({ every: "50", unit: "hours", pattern: "none" }, { anchor: "2026-11-22", today: "2026-11-22" }), null);
 });
+
+test("a visit's call-out and setup: sent when changed, cleared when emptied", () => {
+  const pkg = { name: "50 h service", timing: "fixed", visit_cost: 165, tasks: [] };
+  const form = initialForm(pkg);
+  assert.equal(form.visitCost, "165");
+  assert.deepEqual(editBody(pkg, { ...form, visitCost: "200" }).visit_cost, 200);
+  assert.equal(editBody(pkg, { ...form, visitCost: "" }).visit_cost, null);
+  assert.equal(editBody(pkg, form).visit_cost, undefined);
+  assert.equal(formProblem({ ...form, visitCost: "-5" }, pkg), "A visit's cost is 0 or more.");
+});

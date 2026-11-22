@@ -14,6 +14,8 @@ import {
 import { workOrderPath } from "../maintenanceOrders.js";
 import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import "./Maintenance.css";
+import LoadFailed from "../components/LoadFailed.jsx";
+import Loading from "../components/ui/Loading.jsx";
 
 const STATUSES = [
   { value: "", label: "All" },
@@ -158,8 +160,8 @@ function ReportDetail({ id, day, onChanged }) {
     if (ok) await act(async () => { await deleteFieldReport(id); return getFieldReport(id); });
   };
 
-  if (error && !report) return <div className="card error">{error}</div>;
-  if (!report) return <p className="lib-date">Loading…</p>;
+  if (error && !report) return <LoadFailed what="Couldn't load the report." error={error} />;
+  if (!report) return <Loading />;
   const photos = report.media.filter((m) => m.kind === "photo");
   const sounds = report.media.filter((m) => m.kind === "audio");
   const files = report.media.filter((m) => m.kind === "file");
@@ -271,7 +273,7 @@ function Media({ reportId, media, size = "full" }) {
     return src ? <a href={src} target="_blank" rel="noreferrer"><img src={src} alt={media.caption || "Photo from the report"} className="maint-photo" /></a>
       : <div className="maint-photo maint-photo-blank" />;
   }
-  if (!src) return <span className="lib-date">Loading…</span>;
+  if (!src) return <Loading inline />;
   if (media.kind === "audio") return <audio controls preload="metadata" src={src} aria-label="Recording from the report" />;
   return <a href={src} target="_blank" rel="noreferrer">Open {media.name}</a>;
 }

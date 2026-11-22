@@ -7,6 +7,7 @@ import {
 import TablePane from "./TablePane.jsx";
 import "../views/Maintenance.css";
 import "./TreeSheetPane.css";
+import { Radio } from "./ui/Controls.jsx";
 
 // The asset tree in a spreadsheet, in the Explorer's table area beside the tree (no modal):
 // Import from Excel (pick a file, see what it would change and any problems by row, then Import:
@@ -165,10 +166,8 @@ export default function TreeSheetPane({ start = "import", branch = null, whole =
         <fieldset className="ts-scope">
           <legend className="ts-label">What to export</legend>
           {exportChoices(branch, { whole }).map((c) => (
-            <label key={c.id} className="ts-choice">
-              <input type="radio" name="ts-scope" value={c.id} checked={scope === c.id} onChange={() => setScope(c.id)} />
-              {c.label}
-            </label>
+            <Radio key={c.id} className="ts-choice" name="ts-scope" value={c.id} checked={scope === c.id}
+                   onChange={() => setScope(c.id)} label={c.label} />
           ))}
         </fieldset>
       )}

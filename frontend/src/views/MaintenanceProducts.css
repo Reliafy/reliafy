@@ -39,13 +39,13 @@
   flex-wrap: wrap;
   gap: 8px;
 }
-.pp-filter select {
+.pp-filter select, .pp-filter .sel-trigger {
   max-width: 220px;
 }
 
 @media (max-width: 720px) {
   .pp-filter,
-  .pp-filter select {
+  .pp-filter select, .pp-filter .sel-trigger {
     max-width: 100%;
   }
 }

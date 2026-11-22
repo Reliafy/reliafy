@@ -53,7 +53,7 @@ The notes are the part to read carefully. Two are common:
   answer. It imports as a block marked *No failure data*: double-click it and set a
   non-repairable model, such as an exponential failure rate, before you calculate.
 
-Press **Validate** once you've dealt with the notes. It names any block still
+Once you've dealt with the notes, open the check at the right of the toolbar. It names any block still
 missing a model and any wiring problem. Then **Save**. Saving is the moment the
 diagram counts towards your plan's storage.
 

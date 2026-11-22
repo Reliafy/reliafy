@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { portalHost } from "../fullScreen.js";
 import { placeMenu } from "../menuPlace.js";
 import "./ColumnFilter.css";
+import { Checkbox } from "./ui/Controls.jsx";
 
 // A tree-table column's filter (docs/design-system/components/ColumnFilter.md): a small funnel in
 // the column's header that opens a list of the values in that column, each with how many rows
@@ -92,11 +93,12 @@ export default function ColumnFilter({ label, facets, chosen = {}, onChange, onC
               {f.values.map((v) => {
                 const on = (chosen[f.id] || []).includes(v.value);
                 return (
-                  <label key={`${f.id}:${v.value}`} className={"cf-item" + (v.count ? "" : " zero")}>
-                    <input type="checkbox" checked={on} onChange={(e) => toggle(f, v.value, e.target.checked)} />
-                    <span className="cf-lbl" title={v.label}>{v.label}</span>
-                    <span className="cf-n" aria-label={`${v.count} ${v.count === 1 ? "row" : "rows"}`}>{v.count.toLocaleString("en-AU")}</span>
-                  </label>
+                  <Checkbox key={`${f.id}:${v.value}`} className={"cf-item" + (v.count ? "" : " zero")}
+                            checked={on} onChange={(e) => toggle(f, v.value, e.target.checked)}
+                            label={<>
+                              <span className="cf-lbl" title={v.label}>{v.label}</span>
+                              <span className="cf-n" aria-label={`${v.count} ${v.count === 1 ? "row" : "rows"}`}>{v.count.toLocaleString("en-AU")}</span>
+                            </>} />
                 );
               })}
             </div>

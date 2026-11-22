@@ -14,6 +14,7 @@ import { goneText, mergeTreeData, setTreeSetting, treeRowProblems, treeTaskPath 
 import { packagePath } from "../maintenanceOrders.js";
 import "../views/Maintenance.css";
 import "./RbdMaintenancePlan.css";
+import { Select } from "./ui/Controls.jsx";
 
 // The Maintenance plan of a repairable RBD (D5: the one place its planned work is edited): a table
 // under the canvas, the diagram kept in view, one row per block with its duty, its task, how often,
@@ -216,10 +217,10 @@ function PlanRow({ row, unit, u, crews, listId, open, onToggle, onChange }) {
           <small className="muted">{hasDuty(data) && data.duty < 1 ? dutyWords(data.duty, unit).replace(/^Runs \S+ of the time · /, "") : "all the time"}</small>
         </td>
         <td>
-          <select value={task} aria-label={`${name}: task`} title={TASKS.find((t) => t.id === task)?.help}
+          <Select value={task} aria-label={`${name}: task`} title={TASKS.find((t) => t.id === task)?.help}
                   onChange={(e) => onChange(setTask(data, e.target.value))}>
             {TASKS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-          </select>
+          </Select>
         </td>
         <td className="rbd-plan-every">
           {task === "none" ? <span className="muted">—</span> : (
@@ -231,12 +232,12 @@ function PlanRow({ row, unit, u, crews, listId, open, onToggle, onChange }) {
                             label={`${name}: every`} className="ctl rbd-plan-num"
                             onCommit={(v) => onChange(setInterval(data, v, operating ? "operating" : "calendar"))} />
                 {operatingAllowed(unit) || operating ? (
-                  <select value={operating ? "operating" : "calendar"} aria-label={`${name}: counted in`}
+                  <Select value={operating ? "operating" : "calendar"} aria-label={`${name}: counted in`}
                           title="On the calendar, or in the block's running hours (through Runs)"
-                          className="ctl ctl-unit rbd-plan-basis" onChange={(e) => { setBasis(e.target.value); onChange(setIntervalBasis(data, e.target.value)); }}>
+                          className="ctl-unit rbd-plan-basis" onChange={(e) => { setBasis(e.target.value); onChange(setIntervalBasis(data, e.target.value)); }}>
                     <option value="calendar">{u || "calendar"}</option>
                     <option value="operating">{basisUnit("operating", u)}</option>
-                  </select>
+                  </Select>
                 ) : u ? <Addon>{u}</Addon> : null}
               </InputGroup>
               {note && <small className="muted">{note}</small>}

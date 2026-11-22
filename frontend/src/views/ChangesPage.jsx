@@ -6,6 +6,7 @@ import PageHeader from "../components/ui/PageHeader.jsx";
 import SegmentedControl from "../components/ui/SegmentedControl.jsx";
 import ResultSummary, { ResultDetails } from "../components/ui/ResultSummary.jsx";
 import { ChangeList, ChangesSentence } from "../components/WhatChanged.jsx";
+import Loading from "../components/ui/Loading.jsx";
 
 // What changed in the workspace over a period (#41): the server's sentence
 // (its counts in bold, so no tiles repeat them), then every change with a
@@ -37,7 +38,7 @@ export default function ChangesPage() {
         <SegmentedControl options={PERIODS} value={period} onChange={setPeriod} label="Period" />
       </div>
       {error && <p className="card empty">{error}</p>}
-      {!error && !data && <div className="card empty view-loading">Loading…</div>}
+      {!error && !data && <Loading card />}
       {!error && data && (
         <>
           <ResultSummary

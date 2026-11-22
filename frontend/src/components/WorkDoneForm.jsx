@@ -9,6 +9,7 @@ import {
   replaceReason, replaceRecordText, subjectPath, closeActionBlocker,
 } from "../maintenanceSubjects.js";
 import { DateInput } from "./ui/DateTimeInput.jsx";
+import { Select } from "./ui/Controls.jsx";
 
 // What was done, as a work order's close records it: each action (checked, replaced,
 // repaired, inspected, other; a replacement's failure mode, the part and the new
@@ -111,39 +112,39 @@ export default function WorkDoneForm({
           <div className="rcm-form">
             {inside.length > 0 && (
               <Field label="On">
-                <select value={a.where || ""} onChange={(e) => update(i, { where: e.target.value, mode: null, part_id: "", from: "" })}>
+                <Select value={a.where || ""} onChange={(e) => update(i, { where: e.target.value, mode: null, part_id: "", from: "" })}>
                   <option value="">{wo.position?.name || wo.subject?.name} (this work order's)</option>
                   <optgroup label="Inside it">
                     {inside.map((p) => (
                       <option key={p.id} value={p.id}>{p.label}{p.fitted?.item ? `: ${p.fitted.item.name}${p.fitted.item.serial ? ` (${p.fitted.item.serial})` : ""}` : ""}</option>
                     ))}
                   </optgroup>
-                </select>
+                </Select>
               </Field>
             )}
             <Field label="What was done">
-              <select value={a.kind} onChange={(e) => update(i, { kind: e.target.value })}>
+              <Select value={a.kind} onChange={(e) => update(i, { kind: e.target.value })}>
                 {!a.kind && <option value="">Choose…</option>}
                 {kinds.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
-              </select>
+              </Select>
             </Field>
             {a.kind === "inspect" && (
               <Field label="Finding">
-                <select value={a.finding || ""} onChange={(e) => update(i, { finding: e.target.value })}>
+                <Select value={a.finding || ""} onChange={(e) => update(i, { finding: e.target.value })}>
                   <option value="">Choose…</option>
                   <option value="ok">OK</option>
                   <option value="degraded">Degraded</option>
                   <option value="found_failed">Found failed</option>
-                </select>
+                </Select>
               </Field>
             )}
             {a.kind === "replace" && atPosition && (
               <Field label="Did it fail?">
-                <select value={a.failed == null ? "" : a.failed ? "yes" : "no"} onChange={(e) => update(i, { failed: e.target.value === "yes" })}>
+                <Select value={a.failed == null ? "" : a.failed ? "yes" : "no"} onChange={(e) => update(i, { failed: e.target.value === "yes" })}>
                   {a.failed == null && <option value="">Choose…</option>}
                   <option value="yes">Yes, it failed</option>
                   <option value="no">No, a planned replacement</option>
-                </select>
+                </Select>
               </Field>
             )}
             {a.kind && a.kind !== "other" && a.kind !== "checked" && atPosition && (a.kind !== "replace" || a.failed) && (
@@ -156,10 +157,10 @@ export default function WorkDoneForm({
             {a.kind === "replace" && listed.length > 0 && (
               <>
                 <Field label="Part fitted (from the parts list)">
-                  <select value={a.part_id || ""} onChange={(e) => pickPart(i, e.target.value)}>
+                  <Select value={a.part_id || ""} onChange={(e) => pickPart(i, e.target.value)}>
                     <option value="">Not from the parts list</option>
                     {listed.map((pt) => <option key={pt.id} value={pt.id}>{partLabel(pt)}</option>)}
-                  </select>
+                  </Select>
                 </Field>
                 {a.part_id && (
                   <Field label="Take it from stock at">
@@ -234,10 +235,10 @@ export function StockPicker({ part, places = [], value, onChange }) {
   const held = (part?.stock || []).filter((s) => s.quantity > 0);
   const heldIds = new Set(held.map((s) => s.location.id));
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)}>
+    <Select value={value} onChange={(e) => onChange(e.target.value)}>
       <option value="">Don't change stock</option>
       {held.map((s) => <option key={s.location.id} value={s.location.id}>{s.location.name} ({s.quantity} there)</option>)}
       {places.filter((l) => !heldIds.has(l.id)).map((l) => <option key={l.id} value={l.id}>{l.name} (none there)</option>)}
-    </select>
+    </Select>
   );
 }

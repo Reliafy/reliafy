@@ -155,11 +155,13 @@ export default function RbdBuilder() {
         rbdId={id}
         imported={imported}
         onDraft={keepKey ? onDraft : null}
-        onSaved={(savedId) => {
+        onSaved={(savedId, { auto = false } = {}) => {
           clearDraft(keepKey);
-          keyRef.current.savedId = savedId;
           // Saved: the "added as a block — not saved yet" note no longer holds.
           setAdded(null);
+          // An autosave keeps the diagram already at this address.
+          if (auto) return;
+          keyRef.current.savedId = savedId;
           navigate(`/systems/b/${savedId}`, { replace: true });
         }}
         onMeta={setMeta}

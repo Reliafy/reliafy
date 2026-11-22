@@ -8,6 +8,7 @@ import { EntryList, LibraryAbout, LibraryChips, useRobots } from "../components/
 import { countsText, libraryPath } from "../libraries.js";
 import "./PublicPage.css";
 import "./LibraryPages.css";
+import Loading from "../components/ui/Loading.jsx";
 
 // A public library as anyone sees it, signed out (and the owner's "Preview as public", ?as=public):
 // like a share page (/p/:token), a slim logo bar, "Create free account" when signed out, then the
@@ -58,7 +59,7 @@ export default function PublicLibraryPage({ id, preview = false }) {
               <p>{error}</p>
             </div>
           )}
-          {!error && !lib && <div className="card empty" style={{ margin: "3rem auto", maxWidth: 520 }}>Loading…</div>}
+          {!error && !lib && <div style={{ margin: "3rem auto", maxWidth: 520 }}><Loading card /></div>}
           {lib && (
             <>
               <header className="page-header">

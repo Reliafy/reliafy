@@ -6,6 +6,9 @@ import { formatCost, workspaceCurrency } from "../money.js";
 import { Link, useLocation } from "react-router-dom";
 import { explorerHere } from "../products.js";
 import { taskKey } from "../explorerRcm.js";
+import LoadFailed from "./LoadFailed.jsx";
+import Loading from "./ui/Loading.jsx";
+import { Select } from "./ui/Controls.jsx";
 
 // One task's LSA in the Explorer's LSA tab (?task=<id>, with a back link): the
 // task's name, kind, interval, position and the failure modes it serves, then
@@ -158,9 +161,9 @@ export default function LsaTask({ taskId, onBack, onChanged }) {
   };
 
   const back = <button type="button" className="link pk-back" onClick={onBack}>← All tasks here</button>;
-  if (state.error && state.id === taskId) return <div>{back}<div className="card error">Couldn&apos;t load the task: {state.error}</div></div>;
+  if (state.error && state.id === taskId) return <div>{back}<LoadFailed what="Couldn't load the task." error={state.error} /></div>;
   const data = state.id === taskId ? state.data : null;
-  if (!data || !draft) return <div>{back}<p className="lib-date">Loading…</p></div>;
+  if (!data || !draft) return <div>{back}<Loading /></div>;
   const t = data.task;
   const r = t.resources || {};
   const kind = kindText({ ...t, kind: t.outcome });
@@ -216,10 +219,10 @@ export default function LsaTask({ taskId, onBack, onChanged }) {
                   <Cell label="Tool" className="lsa-wide"><input aria-label={`Tool, line ${i + 1}`} placeholder="e.g. Torque wrench" value={x.name} maxLength={200} onChange={(e) => patch({ name: e.target.value })} /></Cell>
                   <Cell label="How many" className="lsa-num"><input type="number" min="0" step="1" inputMode="numeric" aria-label={`How many, line ${i + 1}`} value={x.qty} onChange={(e) => patch({ qty: e.target.value })} /></Cell>
                   {data.points.length > 0 && (
-                    <Cell label="Reads" className="lsa-wide"><select aria-label={`Reads, line ${i + 1}`} value={x.point_id} onChange={(e) => patch({ point_id: e.target.value })}>
+                    <Cell label="Reads" className="lsa-wide"><Select aria-label={`Reads, line ${i + 1}`} value={x.point_id} onChange={(e) => patch({ point_id: e.target.value })}>
                       <option value="">Reads no point</option>
                       {data.points.map((p) => <option key={p.id} value={p.id}>{p.name}{p.unit ? ` (${p.unit})` : ""}{p.kind === "channel" ? " · channel" : ""}{p.on ? ` · ${p.on}` : ""}</option>)}
-                    </select></Cell>
+                    </Select></Cell>
                   )}
                   <Cell label="Note" className="lsa-wide"><input aria-label={`Note, line ${i + 1}`} value={x.note} maxLength={200} onChange={(e) => patch({ note: e.target.value })} /></Cell>
                 </>

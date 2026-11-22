@@ -9,7 +9,7 @@ import {
 } from "../api.js";
 import Chip from "./ui/Chip.jsx";
 import Field from "./ui/Field.jsx";
-import { Select, TextInput } from "./ui/Controls.jsx";
+import { Checkbox, Radio, Select, TextInput } from "./ui/Controls.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import Modal from "./Modal.jsx";
 import Plot from "./Plot.jsx";
@@ -18,6 +18,7 @@ import { predictionPath } from "../predictions.js";
 import { CloseIcon, ExpandIcon, ShrinkIcon } from "./icons.jsx";
 import { ACCENT, BAND_FILL } from "../plotTheme.js";
 import { saveErrorText } from "../confirm.js";
+import { optimisePath, setsLine } from "../taskOptimise.js";
 import { explorerHere } from "../products.js";
 import {
   MODEL_COLUMNS, b10Text, boundsLabel, countsText, enteredParams, enteredStart, exponentialLabel, fmt, forText, headline,
@@ -194,7 +195,7 @@ export function ModelSide({ r, phone, expanded, onExpand, onCollapse, onClose, h
   return (
     <aside className={"rw-panel mt-panel ml-panel" + (phone ? " sheet" : "") + (expanded ? " is-expanded" : "")} aria-label="Details"
            onKeyDown={(e) => {
-             if (e.key !== "Escape" || e.defaultPrevented || e.target.closest("input, textarea, select")) return;
+             if (e.key !== "Escape" || e.defaultPrevented || e.target.closest("input, textarea, select, .sel-trigger, .sel-menu")) return;
              e.stopPropagation();
              if (expanded) onCollapse(); else onClose();
            }}>
@@ -297,7 +298,7 @@ export function ModelSide({ r, phone, expanded, onExpand, onCollapse, onClose, h
         )}
         <section aria-label="Used by">
           <h3 className="ml-h">Used by</h3>
-          {!link.used_by?.decisions?.length && !link.used_by?.rbds?.length ? (
+          {!link.used_by?.decisions?.length && !link.used_by?.rbds?.length && !link.used_by?.tasks?.length ? (
             <p className="rim-tquiet">Nothing links it yet. Link it as a failure mode's evidence on the RCM tab (“Based on:”).</p>
           ) : (
             <ul className="ml-used">
@@ -309,6 +310,13 @@ export function ModelSide({ r, phone, expanded, onExpand, onCollapse, onClose, h
               ))}
               {(link.used_by?.rbds || []).map((x) => (
                 <li key={x.id}><Link to={`/systems/b/${x.id}`}>{x.name}</Link><span className="rw-sum"> · RBD block</span></li>
+              ))}
+              {(link.used_by?.tasks || []).map((x) => (
+                <li key={`t:${x.task_id}`}>
+                  <span className="rw-sum">Sets the interval of </span>
+                  <Link to={optimisePath(x, location)}>{setsLine(x)}</Link>
+                  {x.moved && <span className="rw-sum"> · ! refitted since: re-optimise</span>}
+                </li>
               ))}
             </ul>
           )}
@@ -407,10 +415,9 @@ export function RbdLinkModal({ position, onClose, onDone }) {
             <div key={title}>
               <div className="ml-group">{title}</div>
               {g.map((x) => (
-                <label key={x.id} className={"evidence-option" + (chosen === x.id ? " selected" : "")}>
-                  <input type="radio" name="ml-rbd" checked={chosen === x.id} onChange={() => setChosen(x.id)} />
-                  <span className="evidence-name">{x.name}</span>
-                </label>
+                <Radio key={x.id} className={"evidence-option" + (chosen === x.id ? " selected" : "")}
+                       name="ml-rbd" checked={chosen === x.id} onChange={() => setChosen(x.id)}
+                       label={<span className="evidence-name">{x.name}</span>} />
               ))}
             </div>
           ))}
@@ -457,16 +464,18 @@ export function NewRbdModal({ position, hasInside = false, hasModel = false, onC
         ? "Repairable: blocks are repaired when they fail, and the answer is availability (with maintenance read from the tree)."
         : "Non-repairable: the answer is the system's reliability and life."}</p>
       <div className="evidence-picker" role="radiogroup" aria-label="Start with">
-        <label className={"evidence-option" + (start === "self" ? " selected" : "")}>
-          <input type="radio" name="nr-start" checked={start === "self"} onChange={() => setStart("self")} />
-          <span className="evidence-name">One block for {position.name}</span>
-          <span className="rim-tquiet"> {hasModel ? "its life model in use" : "a placeholder until it has a life model"}</span>
-        </label>
-        <label className={"evidence-option" + (start === "blank" ? " selected" : "")}>
-          <input type="radio" name="nr-start" checked={start === "blank"} onChange={() => setStart("blank")} />
-          <span className="evidence-name">Empty</span>
-          <span className="rim-tquiet"> just In and Out: draw the blocks yourself</span>
-        </label>
+        <Radio className={"evidence-option" + (start === "self" ? " selected" : "")}
+               name="nr-start" checked={start === "self"} onChange={() => setStart("self")}
+               label={<>
+                 <span className="evidence-name">One block for {position.name}</span>
+                 <span className="rim-tquiet"> {hasModel ? "its life model in use" : "a placeholder until it has a life model"}</span>
+               </>} />
+        <Radio className={"evidence-option" + (start === "blank" ? " selected" : "")}
+               name="nr-start" checked={start === "blank"} onChange={() => setStart("blank")}
+               label={<>
+                 <span className="evidence-name">Empty</span>
+                 <span className="rim-tquiet"> just In and Out: draw the blocks yourself</span>
+               </>} />
       </div>
       {failed && <p className="field-error" role="alert">{failed}</p>}
     </Modal>
@@ -551,16 +560,12 @@ export function ParamsModal({ position, link = null, onClose, onDone }) {
       {distribution === "exponential" && (
         <Field label="Give it as" as="fieldset">
           <div className="ml-modes">
-            <label className="ml-mode">
-              <input type="radio" name="exp-as" checked={expAs === "mtbf"}
-                     onChange={() => { setExpAs("mtbf"); setValues({}); }} />
-              MTBF ({unit} between failures)
-            </label>
-            <label className="ml-mode">
-              <input type="radio" name="exp-as" checked={expAs === "rate"}
-                     onChange={() => { setExpAs("rate"); setValues({}); }} />
-              Failure rate (failures per {unitOne(unit)})
-            </label>
+            <Radio className="ml-mode" name="exp-as" checked={expAs === "mtbf"}
+                   onChange={() => { setExpAs("mtbf"); setValues({}); }}
+                   label={<>MTBF ({unit} between failures)</>} />
+            <Radio className="ml-mode" name="exp-as" checked={expAs === "rate"}
+                   onChange={() => { setExpAs("rate"); setValues({}); }}
+                   label={<>Failure rate (failures per {unitOne(unit)})</>} />
           </div>
         </Field>
       )}
@@ -643,11 +648,9 @@ export function ModesField({ modes, value, onChange }) {
       {modes.length === 0 ? <p className="rim-tquiet">No failure modes yet: it's for every failure of this position.</p> : (
         <div className="ml-modes">
           {modes.map((m) => (
-            <label key={m.id} className="ml-mode">
-              <input type="checkbox" checked={value.includes(m.id)}
-                     onChange={(e) => onChange(e.target.checked ? [...value, m.id] : value.filter((x) => x !== m.id))} />
-              {m.text}
-            </label>
+            <Checkbox key={m.id} className="ml-mode" checked={value.includes(m.id)}
+                      onChange={(e) => onChange(e.target.checked ? [...value, m.id] : value.filter((x) => x !== m.id))}
+                      label={m.text} />
           ))}
         </div>
       )}
@@ -688,11 +691,12 @@ function ModelPicker({ kind, onKind, value, onChange }) {
             <div key={title}>
               <div className="ml-group">{title}</div>
               {g.map((m) => (
-                <label key={m.id} className={"evidence-option" + (value === m.id ? " selected" : "")}>
-                  <input type="radio" name="ml-model" checked={value === m.id} onChange={() => onChange(m.id)} />
-                  <span className="evidence-name">{m.name}</span>
-                  <span className="evidence-meta">{[m.distribution, m.unit].filter(Boolean).join(" · ")}</span>
-                </label>
+                <Radio key={m.id} className={"evidence-option" + (value === m.id ? " selected" : "")}
+                       name="ml-model" checked={value === m.id} onChange={() => onChange(m.id)}
+                       label={<>
+                         <span className="evidence-name">{m.name}</span>
+                         <span className="evidence-meta">{[m.distribution, m.unit].filter(Boolean).join(" · ")}</span>
+                       </>} />
               ))}
             </div>
           ))}
