@@ -661,3 +661,27 @@ def test_missions_over_the_tools(env):
     assert bad.status_code in (400, 422)
     gone = env.post("/api/v1/change/rbd_mission", {"rbd_id": rid, "mission_id": mid, "delete": True}).json()
     assert gone["deleted"] == mid and gone["missions"] == []
+
+
+def test_adjust_a_model_for_conditions_over_rest_and_the_cli(env):
+    """change model_adjust: a preview saves nothing; saved, a new model with the hazard ratio,
+    the original unchanged; the CLI lists it with its flags."""
+    import math
+
+    from reliafy import cli
+
+    mid = env.post("/api/v1/change/model_save", {"name": "Handbook", "distribution": "weibull",
+                                                 "params": WEIBULL}).json()["model_id"]
+    peek = env.post("/api/v1/change/model_adjust", {"model_id": mid, "hazard_ratio": 1.5, "save": False})
+    assert peek.status_code == 200, peek.text
+    assert peek.json()["saved"] is False and env.db.models.count_documents({}) == 1
+    r = env.post("/api/v1/change/model_adjust", {"model_id": mid, "hazard_ratio": 1.5})
+    assert r.status_code == 200, r.text
+    got = r.json()
+    assert got["saved"] and got["name"] == "Handbook (×1.5 hazard)" and got["adjusted"]["from_model_id"] == mid
+    assert got["after"]["b10"] == pytest.approx(1200 * (-math.log(0.9) / 1.5) ** (1 / 2.5), rel=1e-9)
+    assert got["before"]["b10"] == pytest.approx(1200 * (-math.log(0.9)) ** (1 / 2.5), rel=1e-9)
+    bad = env.post("/api/v1/change/model_adjust", {"model_id": mid})
+    assert bad.status_code >= 400 and "hazard ratio" in bad.text
+    spec = env.client.get("/api/v1/openapi.json", headers=_auth(env.token[A])).json()
+    assert "change model_adjust" in set(cli.commands_from_spec(spec))

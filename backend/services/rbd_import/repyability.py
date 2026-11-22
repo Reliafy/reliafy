@@ -322,7 +322,7 @@ def _param_map(params) -> dict:
 def _extras(extras) -> dict:
     if not isinstance(extras, dict):
         return {}
-    return {k: float(v) for k, v in extras.items() if k in ("gamma", "p", "f0") and v is not None}
+    return {k: float(v) for k, v in extras.items() if k in ("gamma", "p", "f0", "hr") and v is not None}
 
 
 def _unlinked(model: dict) -> dict:
@@ -527,6 +527,9 @@ class _Converter:
                 extras["p"] = _finite(m["p"])
             if m.get("zi") and _finite(m.get("f0")) is not None:
                 extras["f0"] = _finite(m["f0"])
+            # A known hazard ratio (SurPyval 0.29 writes "hr" only where it isn't 1).
+            if _finite(m.get("hr")) is not None and _finite(m["hr"]) > 0 and _finite(m["hr"]) != 1:
+                extras["hr"] = _finite(m["hr"])
             # A fitted model carries its covariance: "covariance" from SurPyval
             # 0.23 (#605), "cov_matrix" before.
             fitted = m.get("covariance") is not None or m.get("cov_matrix") is not None
@@ -535,7 +538,7 @@ class _Converter:
         elif kind == "parametric":  # RePyability's format before 0.10
             dist, names, values = d.get("dist"), None, d.get("params")
             raw = d.get("extras") if isinstance(d.get("extras"), dict) else {}
-            extras = {k: _finite(raw[k]) for k in ("gamma", "p", "f0") if _finite(raw.get(k)) is not None}
+            extras = {k: _finite(raw[k]) for k in ("gamma", "p", "f0", "hr") if _finite(raw.get(k)) is not None}
         else:
             return None, f"its {what} model is {_KIND_TEXT.get(kind, 'a kind Reliafy can’t read')}"
         return self._parametric(dist, names, values, extras, what)

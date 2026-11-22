@@ -1,0 +1,13 @@
+/* Adjust for conditions (AdjustModelPanel.jsx): the form and its before-and-after table. */
+.adj { padding: var(--space-3) var(--space-4) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.adj-quiet { margin: 0; color: var(--text-secondary); font-size: var(--fs-13); line-height: var(--lh-13); }
+.adj-result { display: flex; flex-direction: column; gap: var(--space-2); }
+.adj-answer { margin: 0; font-weight: 600; }
+.adj-table { border-collapse: collapse; font-variant-numeric: tabular-nums; min-width: 100%; }
+.adj-table th, .adj-table td { padding: var(--space-1-5) var(--space-3); border-bottom: 1px solid var(--border-subtle); text-align: right; white-space: nowrap; }
+.adj-table th[scope="row"], .adj-table thead th:first-child { text-align: left; font-weight: 500; }
+.adj-table thead th { background: var(--bg-subtle); color: var(--text-secondary); font-size: var(--fs-12); line-height: var(--lh-12); font-weight: 500; }
+.adj-foot { display: flex; justify-content: flex-end; gap: var(--space-2); flex-wrap: wrap; }
+.adj-from { margin: 0; }
+.adj-page { max-width: 44rem; }
+.adj-page > .card-title { margin: 0; padding: 0 var(--space-4); }

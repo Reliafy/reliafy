@@ -203,7 +203,7 @@ def update_params(db, model_id: str, owner_id: str, distribution: str, params: l
         raise fitting.FitError("Only a model saved from parameters can have its parameters changed: refit one "
                                "fitted to data.")
     distribution_id = fitting.resolve_distribution_id(distribution)
-    extras = {k: v for k, v in ((model.results or {}).get("extras") or {}).items() if k in ("gamma", "p", "f0")}
+    extras = {k: v for k, v in ((model.results or {}).get("extras") or {}).items() if k in ("gamma", "p", "f0", "hr")}
     result = fitting.result_from_params(distribution_id, params, extras or None, unit)
     before = model.results
     spec.update(distribution_id=distribution_id, unit=canonical_unit(unit), options=result.get("options") or None)
@@ -313,6 +313,10 @@ def update_fit(
     model = get_model(db, model_id, owner_id)
     if model is None or model.owner_id != owner_id:
         raise ModelNotFound(model_id)
+    if (model.spec or {}).get("adjusted"):
+        # Its numbers are another model's fit with a hazard ratio: a refit here would drop the ratio.
+        raise fitting.FitError("This model is another one adjusted for conditions: refit the original, then "
+                               "adjust it again.")
     dataset = datasets_service.get_dataset(db, model.dataset_id, owner_id=model.owner_id)
     if dataset is None:
         raise fitting.FitError(
@@ -547,7 +551,7 @@ def _live_cache_id(db, model_id: str, owner_id: str | list[str]) -> str:
             if cache_id is None:
                 cache_id = _params_live(model)  # no data to refit: the model is its parameters
             if cache_id is None:
-                cache_id = _refit(model)
+                cache_id = _with_hazard_ratio(model, _refit(model))
             if model.kind == "two_clock":
                 # The second clock's unit is the saved model's ("starts" for one saved before it had one),
                 # however the live fit came back (its to_dict, or a refit that guesses from the column).
@@ -841,6 +845,19 @@ def _refit(model: Model) -> str:
     if cache_id is None:
         raise fitting.FitError("This model has no covariate functions to evaluate.")
     return cache_id
+
+
+def _with_hazard_ratio(model: Model, cache_id: str) -> str:
+    """A refit of a model adjusted for conditions (model_adjust.py) is its original's fit: the
+    saved hazard ratio is set on it again (SurPyval's ``hr``), so the live model is the saved one."""
+    hr = ((model.results or {}).get("extras") or {}).get("hr")
+    entry = fitting._MODEL_STORE.get(cache_id) or {}
+    live = entry.get("model")
+    if hr is None or live is None or getattr(live, "hr", 1) == float(hr):
+        return cache_id
+    from backend.services import model_adjust
+
+    return fitting.store_live(model_adjust.with_hr(live, float(hr)), entry.get("grid"))
 
 
 def _refit_result(model: Model, dataset) -> dict:

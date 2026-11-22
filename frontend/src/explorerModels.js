@@ -293,6 +293,8 @@ export function rowActions(r, { viewOnly = null } = {}) {
       : link.model && /^(Weibull|Exponential|Lognormal)$/.test(link.model.kind || "") ? { id: "model-bayes", label: "Update with this position's history…", ...off } : null,
     // A covariate model (NSWC-11, ALT, PH): which covariates are fixed here, the rest set in an RBD.
     bindingOf(link) ? { id: "model-bind", label: "Fix covariates at this position…", ...off } : null,
+    // A single-distribution life model for the conditions here: a new model with a hazard ratio, in the pane.
+    link.model_type === "model" && link.model?.adjustable ? { id: "model-adjust", label: "Adjust for conditions…", ...off } : null,
     // A life model (not an RBD or a prediction) can be snapshotted into one of the user's data libraries.
     isLifeModelLink(link) ? { id: "model-to-library", label: "Add to library…", pro: true, ...off } : null,
     // Typed-in parameters (Assumed): changed in place, without unlinking and entering them again.

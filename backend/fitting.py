@@ -2500,7 +2500,7 @@ def result_from_params(
     values = param_values(distribution_id, params)
     kwargs = {
         k: float(v) for k, v in (extras or {}).items()
-        if k in ("gamma", "p", "f0") and v is not None
+        if k in ("gamma", "p", "f0", "hr") and v is not None
     }
     try:
         model = dist.from_params(values, **surpyval_extras(kwargs), unit=surpyval_unit(unit))
@@ -2979,14 +2979,16 @@ def surpyval_extras(extras: Optional[dict]) -> dict:
     Reliafy keeps the limited-failure proportion as ``p`` -- in saved models,
     the API and MCP -- and SurPyval 0.23 calls it ``lfp_p`` (``p`` warns until
     0.24, then fails; #608). ``lfp_p`` is read too. Offset ``gamma`` and
-    zero-inflation ``f0`` keep their names. ``None`` values are dropped."""
+    zero-inflation ``f0`` keep their names, as does a known hazard ratio ``hr``
+    (SurPyval 0.29: ``hr`` times the hazard at every age; "Adjust for
+    conditions", services/model_adjust.py). ``None`` values are dropped."""
     out = {}
     for key, value in (extras or {}).items():
         if value is None:
             continue
         if key in ("p", "lfp_p"):
             out["lfp_p"] = float(value)
-        elif key in ("gamma", "f0"):
+        elif key in ("gamma", "f0", "hr"):
             out[key] = float(value)
     return out
 
@@ -2996,6 +2998,7 @@ _EXTRA_LABELS = {
     "gamma": "gamma (offset)",
     "p": "p (max fraction failing)",
     "f0": "f0 (failed at t=0)",
+    "hr": "hr (hazard ratio)",
 }
 
 

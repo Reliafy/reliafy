@@ -111,6 +111,17 @@ A row's **⋯** has **Refit…** (a fitted model), **Replace with…** and
 A product's design carries models too. An item built from the product takes
 its design's models when it's built, as it takes the RCM.
 
+### Adjust a model for the conditions here
+
+A model row's **⋯ → Adjust for conditions…** opens in the table area: give a hazard ratio
+(1.5 is 1.5 times the hazard, harsher), or for a Weibull or exponential how long it lasts
+here. It shows the B10 and mean life now and adjusted, then saves a new model with the ratio
+and either uses it here in place of the row's model (the default) or adds it beside it. The
+original model, and every other position and RBD that uses it, is unchanged. Adding a record
+from the data library takes the same hazard ratio as an option (with every covariate fixed,
+for a record that has them). The [Fit your first model](/guides/fit-your-first-model)
+guide says more.
+
 ## Accelerated-life and covariate models
 
 An accelerated-life model (how life shortens with temperature, voltage or

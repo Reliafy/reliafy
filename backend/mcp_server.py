@@ -9432,6 +9432,40 @@ def update_model(
             "url": _url(f"/models/m/{m.id}" if kind == "life" else f"/models/recurrent/{m.id}")}
 
 
+def adjust_model(
+    ctx: Context,
+    model_id: Annotated[str, Field(description=(
+        "A single-distribution non-repairable model (list kind models), the user's or a sample."))],
+    hazard_ratio: Annotated[Optional[float], Field(gt=0, description=(
+        "Known hazard ratio: this many times the hazard at every age, same shape (1.5 harsher, 0.8 "
+        "milder). Or life_scale."))] = None,
+    life_scale: Annotated[Optional[float], Field(gt=0, description=(
+        "Lasts this many times as long (0.67: about 2/3 as long), converted exactly to a hazard ratio: "
+        "Weibull or exponential with no offset, LFP or zero inflation only."))] = None,
+    name: Annotated[Optional[str], Field(description="Name; default '<name> (×1.5 hazard)'.")] = None,
+    save: Annotated[bool, Field(description="False: preview only, nothing saved.")] = True,
+) -> dict[str, Any]:
+    """Adjust for conditions: a new model with a known hazard ratio (SurPyval's hr), recording the original,
+    which is unchanged; usable wherever a model is. Gives B10 and mean life before and after, 90% one-sided
+    lower bounds holding hr fixed (SurPyval gives none on the mean with hr)."""
+    from backend.services import model_adjust
+
+    user, db = _caller(ctx), _db()
+    model = models_service.get_model(db, model_id, _owners(user["uid"]))
+    if model is None:
+        raise ToolError("Model not found (list kind models).")
+    try:
+        before = model_adjust.preview(db, model, _owners(user["uid"]), hazard_ratio, life_scale)
+        if not save:
+            return {"saved": False, **before}
+        _cap(db, user, "models", "models")
+        doc = model_adjust.adjust(db, model, _owners(user["uid"]), user["uid"], hazard_ratio, life_scale, name)
+    except model_adjust.AdjustError as exc:
+        raise ToolError(str(exc)) from None
+    return {"saved": True, **model_adjust.summary(doc, before["before"]), "assumes": before["assumes"],
+            "unit": before["unit"], "url": _url(f"/models/m/{doc.id}")}
+
+
 def update_dataset(
     ctx: Context,
     dataset_id: Annotated[str, Field(description="One of the user's own dataset ids (list kind datasets).")],
@@ -10535,6 +10569,7 @@ _A = {  # new tool -> {action: the function it runs}
         "model_fit_joint": _act(fit_joint_model),
         "model_fit_degradation": _act(fit_degradation_model),
         "model_update": _act(update_model),
+        "model_adjust": _act(adjust_model),
         "model_delete": _act(delete_model),
         "dataset_upload": _act(upload_dataset),
         "dataset_add_measurements": _act(add_measurements),

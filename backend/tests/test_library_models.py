@@ -55,6 +55,43 @@ def test_a_rate_record_becomes_a_cited_exponential_model(m, db):
     assert lm.recently_used(db, OWNERS)[0]["record_id"] == RATE
 
 
+def test_a_record_adjusted_for_the_conditions_here(m, db):
+    """Adding a record with a hazard ratio saves the record's model, then that model with the ratio
+    (SurPyval's hr), and links the adjusted one: 1.5 times the hazard, cited, its parent recorded."""
+    valve = m.create_position("Valve 3")["id"]
+    link = lm.attach(m, db, ORG, valve, RATE, hazard_ratio=1.5)
+    assert link["role"] == "library" and link["source"]["adjusted"]["hazard_ratio"] == 1.5
+    doc = db.models.find_one({"_id": link["model_id"]})
+    base = db.models.find_one({"_id": link["source"]["adjusted"]["from_model_id"]})
+    rate = base["results"]["params"][0]["value"]
+    assert doc["results"]["extras"] == {"hr": 1.5} and doc["results"]["params"][0]["value"] == rate
+    assert doc["results"]["life"]["mttf"]["value"] == pytest.approx(1 / (1.5 * rate), rel=1e-9)
+    assert "rate_uncertainty" not in doc["results"] and doc["results"].get("method") != "library"
+    [row] = pm.describe(m, db, OWNERS, set(), m.position_models(valve))
+    assert row["source_text"].endswith("adjusted for conditions (×1.5 hazard)")
+    assert row["source_text"].startswith("Library: NRC/INL 2020")
+    hr = next(n for n in row["model"]["numbers"] if n["id"] == "hr")
+    assert hr["value"] == 1.5 and not any(n["id"] == "mtbf" for n in row["model"]["numbers"])
+    with pytest.raises(Invalid, match="hazard ratio"):
+        lm.attach(m, db, ORG, valve, RATE, hazard_ratio=0)
+
+
+def test_a_saved_model_adjusted_for_conditions_on_a_position(m, db):
+    from backend.services import model_adjust
+    from backend.services import models as models_service
+
+    base = models_service.import_model(db, ORG, "Pump", "weibull", unit="hours",
+                                       params=[{"name": "alpha", "value": 1000}, {"name": "beta", "value": 2}])
+    hot = model_adjust.adjust(db, base, OWNERS, ORG, hazard_ratio=1.5)
+    pump = m.create_position("Pump 1")["id"]
+    link = pm.link_saved(m, db, OWNERS, set(), pump, "model", hot.id)
+    [row] = pm.describe(m, db, OWNERS, set(), m.position_models(pump))
+    assert row["source_text"] == "From Pump, adjusted for conditions (×1.5 hazard)"
+    assert link["source"]["adjusted"]["from_model_id"] == base.id
+    b10 = next(n for n in row["model"]["numbers"] if n["id"] == "b10")
+    assert b10["value"] == pytest.approx(265.03, abs=0.01)
+
+
 def test_records_need_their_covariates_and_a_handbook_rate_is_no_prior(m, db):
     """A probability per demand is a model (and a prior) once its demands a year are given, never
     guessed; a handbook rate is a model with its environment, but a point value can't be a prior."""
@@ -126,3 +163,17 @@ def test_library_gamma_prior_curves_do_not_overflow():
     _, result, _ = bl.update(base, "guide", bl.given_rows([8400.0, 8400.0], [0, 1]), None, base["priors"])
     sf = result["curves"]["sf"]
     assert sf[0] == 1.0 and 0 < sf[-1] < 1 and all(a >= b for a, b in zip(sf, sf[1:]))
+
+
+def test_a_bound_record_with_every_covariate_fixed_is_adjusted_too(m, db):
+    from backend.maintenance import covariate_positions as cp
+
+    valve = m.create_position("Valve 4")["id"]
+    link = cp.bind(m, db, ORG, OWNERS, valve, {"source": "library", "ref": DEMAND, "fixed": {"demands_per_year": 12}},
+                   hazard_ratio=2)
+    assert link["source"]["adjusted"]["hazard_ratio"] == 2.0
+    doc = db.models.find_one({"_id": link["model_id"]})
+    assert doc["results"]["extras"] == {"hr": 2.0}
+    assert [x["id"] for x in m.position_models(valve)] == [link["id"]]  # the unadjusted link was replaced
+    with pytest.raises(Invalid, match="fix every covariate"):
+        cp.bind(m, db, ORG, OWNERS, valve, {"source": "library", "ref": DEMAND, "fixed": {}}, hazard_ratio=2)

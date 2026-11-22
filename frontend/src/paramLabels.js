@@ -47,12 +47,15 @@ const EXTRA = {
   gamma: ["Offset γ: no failures before", "time"],
   p: ["Share that can ever fail, p", "share"],
   f0: ["Share failed at time 0, f₀", "share"],
+  // Adjusted for conditions (model_adjust.py): this many times the original's hazard at every age.
+  hr: ["Hazard ratio (times the original's hazard)", "ratio"],
 };
 export function extraParamView(name, value, unit, fmt) {
   const key = String(name).split(" ")[0];
   const spec = EXTRA[key];
   const v = Number(value);
   if (!spec) return { label: name, value: fmt(value) };
+  if (spec[1] === "ratio") return { label: spec[0], value: `×${fmt(value)}` };
   const u = unit ? unitInText(unit) : "";
   if (spec[1] === "share") {
     const shown = !Number.isFinite(v) ? fmt(value) : Math.abs(v) < 1e-4 ? "about 0%" : `${fmt(v * 100)}%`;

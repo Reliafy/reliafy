@@ -425,7 +425,7 @@ def _dist_expr(model: Optional[dict], label: str, unit: str) -> tuple[str, str]:
     # header then says the script needs 0.23 or later.
     extras = []
     stored = model.get("extras") or {}
-    for key, kw in (("gamma", "gamma"), ("p", "lfp_p"), ("f0", "f0")):
+    for key, kw in (("gamma", "gamma"), ("p", "lfp_p"), ("f0", "f0"), ("hr", "hr")):
         value = stored.get(key)
         if value is None and key == "p":
             value = stored.get("lfp_p")

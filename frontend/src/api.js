@@ -446,6 +446,18 @@ export function createPerDemandModel(name, source, confidence = 0.9) {
   );
 }
 
+// Adjust for conditions (backend/services/model_adjust.py): the model with a known hazard ratio
+// (``hazard_ratio``), or the ratio that makes it last ``life_scale`` times as long. Without ``save``:
+// B10 and mean life before and after, nothing saved; with it, the new model (its detail).
+export function adjustModel(id, { hazardRatio = null, lifeScale = null, name = null, save = false } = {}) {
+  const req = request(`/api/models/${encodeURIComponent(id)}/adjust`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ hazard_ratio: hazardRatio, life_scale: lifeScale, name: name || null, save }),
+  });
+  return save ? withEvent(req, "model_save") : req;
+}
+
 // Create a model from parameters alone (no data): functions & life metrics,
 // no probability plot. ``params`` is [{name, value}]; ``extras`` may hold
 // gamma/p/f0 for offset/LFP/zero-inflated models.

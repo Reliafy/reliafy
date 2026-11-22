@@ -307,22 +307,41 @@ def _save_life_model(db, owner_id: str, rec: dict, b: dict, name: str | None, mi
 
 def attach(m, db, owner_id: str, position_id: str, record_id: str, failure_mode_ids=None, note: str = "",
            replace_link_id: str | None = None, owners=None, length_ft: float | None = None,
-           covariates: dict | None = None) -> dict:
+           covariates: dict | None = None, hazard_ratio: float | None = None) -> dict:
     """A library record as the position's model with every covariate set: an exponential at the
     record's mean rate (per hour) under them, the record's 5–95% range as its interval (a life record:
     a model of its own family with the record's parameters); the link's source names the record, cites
     it and keeps the covariates. To fix some and set the rest in an RBD, bind it instead
-    (covariate_positions.bind with source library)."""
+    (covariate_positions.bind with source library). ``hazard_ratio``: adjusted for the conditions here
+    (model_adjust.py): the record's model is saved, then a model with that hazard ratio, which is linked."""
     modes = m._mode_ids_on(position_id, failure_mode_ids)
+    if hazard_ratio is not None:
+        from backend.services import model_adjust
+
+        try:
+            model_adjust.check_hr(hazard_ratio)
+        except model_adjust.AdjustError as exc:
+            raise _sv().Invalid(str(exc)) from None
     model, rec = save_record_model(db, owner_id, record_id, owners=owners, length_ft=length_ft, covariates=covariates)
+    adjusted = None
+    if hazard_ratio is not None:
+        base = model
+        try:
+            model = model_adjust.adjust(db, base, owners if owners is not None else [owner_id], owner_id,
+                                        hazard_ratio=hazard_ratio)
+        except model_adjust.AdjustError as exc:
+            raise _sv().Invalid(str(exc)) from None
+        adjusted = {"from_model_id": base.id, "from_name": base.name, "hazard_ratio": float(hazard_ratio)}
     if rec is None:  # a component: its modes together
+        lib = dict(((base if adjusted else model).results or {}).get("library") or {})
         return m.link_position_model(position_id, "model", model.id, "library", modes, model.name, note,
-                                     {"library": dict((model.results or {}).get("library") or {})}, replace_link_id)
+                                     {"library": lib, **({"adjusted": adjusted} if adjusted else {})}, replace_link_id)
     b = brief(rec, mine_for(db, owners if owners is not None else [owner_id]))
-    lib = (model.results or {}).get("library") or {}
+    lib = ((base if adjusted else model).results or {}).get("library") or {}
     source = {"library": {"record_id": rec["id"], "source": b.get("source"), "label": b.get("label"),
                           "citation": b.get("citation"),
-                          **({"covariates": lib["covariates"]} if lib.get("covariates") else {})}}
+                          **({"covariates": lib["covariates"]} if lib.get("covariates") else {})},
+              **({"adjusted": adjusted} if adjusted else {})}
     return m.link_position_model(position_id, "model", model.id, "library", modes, model.name, note, source,
                                  replace_link_id)
 
