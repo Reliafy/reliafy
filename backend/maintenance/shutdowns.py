@@ -135,7 +135,7 @@ class ShutdownOps:
                 raise sv.Invalid("A layer visits on its top package's dates: make the top package the shutdown.")
             if pkg.get("unit") == "hours":
                 raise sv.Invalid("A shutdown is planned on the calendar: a package by operating hours can't be one.")
-            subject = self._package_subject(pkg)
+            subject = self._package_made_on(pkg)
             if subject is None or subject["label"] != "Position":
                 raise sv.Invalid("A shutdown is on a position (the plant or line it takes off-line), not a location.")
             if pkg["timing"] != "fixed" and not value.get("dates"):
@@ -181,7 +181,7 @@ class ShutdownOps:
         for pkg in self.s.nodes(self.org, "WorkPackage"):
             if pkg.get("retired") or not pkg.get("shutdown"):
                 continue
-            subject = self._package_subject(pkg)
+            subject = self._package_made_on(pkg)
             if subject is None or subject["id"] not in here:
                 continue
             sd = pkg["shutdown"]

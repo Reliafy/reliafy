@@ -381,11 +381,18 @@ export function packageMisfit(pkg, t, display) {
   const hours = pkg.cadence?.unit === "hours";
   if (hours && t.unit !== "hours") return `${pkg.name} goes by operating hours, and ${t.name} by the calendar: a package by hours holds tasks by hours.`;
   if (!hours && t.unit === "hours") return `${pkg.name} goes by the calendar, and ${t.name} by operating hours: put it in a package by hours on its position.`;
+  // A package on a position takes any task on the same asset (it then lives where its tasks meet,
+  // which moves up); one on a location, the tasks at it.
   const on = pkg.subject?.id;
   if (on && display?.rows?.has(on) && display.rows.has(t.subject?.id)) {
-    let inside = false;
-    for (let k = t.subject.id; k != null; k = display.rows.get(k)?.parent) if (k === on) { inside = true; break; }
-    if (!inside) return `${pkg.name} is on ${pkg.subject.name}, and ${t.name} isn't there or inside it.`;
+    const top = (k) => { let x = k; while (display.rows.get(x)?.parent != null && display.rows.has(display.rows.get(x).parent)) x = display.rows.get(x).parent; return x; };
+    if (pkg.subject.kind === "location") {
+      let inside = false;
+      for (let k = t.subject.id; k != null; k = display.rows.get(k)?.parent) if (k === on) { inside = true; break; }
+      if (!inside) return `${pkg.name} is at ${pkg.subject.name}, and ${t.name} isn't there or inside it.`;
+    } else if (top(on) !== top(t.subject.id)) {
+      return `${t.name} is on another asset: a package's tasks are all on one asset.`;
+    }
   }
   return null;
 }

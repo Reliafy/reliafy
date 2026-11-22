@@ -727,7 +727,8 @@ class HourCadence:
         self.first = int(info.get("first_mark", 1))
         self.counter = m.s.node(m.org, info["counter_id"]) if info.get("counter_id") else None
         self.readings = _readings(m.s, m.org, self.counter, m.tz) if self.counter else []
-        subject = m._package_subject(pkg)
+        # The hours counter's own position (where the package was made): its usage map.
+        subject = m._package_made_on(pkg)
         self.mapped = (m._usage_map(subject["id"], self.counter, self.readings)
                        if subject is not None and self.counter and self.readings else None)
         self._due_from = m._due_from
@@ -9714,11 +9715,51 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             queue += self._package_layers(pkg["id"])
         return out
 
-    def _package_subject(self, pkg: dict) -> dict | None:
-        """What a package is on: its top package's position or location."""
+    def _package_made_on(self, pkg: dict) -> dict | None:
+        """The position or location a package (its top package) was made on: the edge its
+        create wrote. Its hours counter and a shutdown's outage go by this; where it lives is
+        _package_subject."""
         root = self._package_chain(pkg)[-1]
         found = self.s.out(self.org, root["id"], "PLANNED_FOR") or self.s.out(self.org, root["id"], "PLANNED_AT")
         return found[0] if found else None
+
+    def _package_subject(self, pkg: dict) -> dict | None:
+        """Where a package lives (Derryn, 22 Nov 2026: "at the lowest point in the tree that all
+        the tasks meet"). A package made on a position lives at the deepest position that every
+        live task in it (and its layers) is on or inside, worked out on read, so a task added or
+        taken out moves it; none yet: where it was made. A package on a location stays there.
+        Its tasks are all on one asset (_package_task), so the meeting point is inside it."""
+        made = self._package_made_on(pkg)
+        if made is None or made["label"] != "Position":
+            return made
+        root = self._package_chain(pkg)[-1]
+        memo = self._memo.setdefault("package_home", {})
+        if root["id"] in memo:
+            return memo[root["id"]]
+        common = None
+        for p in self._package_tree(root):
+            for member in p.get("members") or []:
+                task = self.s.node(self.org, member["task_id"], "Task")
+                on = task and not task.get("retired") and _subject(self.s, self.org, task)
+                if not on or on["label"] != "Position":
+                    continue
+                path = [*reversed(self._ancestor_ids(on["id"])), on["id"]]
+                if common is None:
+                    common = path
+                    continue
+                i = 0
+                while i < len(common) and i < len(path) and common[i] == path[i]:
+                    i += 1
+                common = common[:i]
+        home = self.s.node(self.org, common[-1]) if common else made
+        memo[root["id"]] = home or made
+        return memo[root["id"]]
+
+    def _asset_top(self, position_id: str) -> str:
+        """The top of the position tree a position is in: its asset (the tree the Explorer
+        opens on its own)."""
+        up = self._ancestor_ids(position_id)
+        return up[-1] if up else position_id
 
     def _package_status(self, chain: list[dict]) -> str:
         """active, paused (it or a package it's layered on, now) or retired."""
@@ -10157,9 +10198,19 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                           "by operating hours (unit hours) on its position, or leave it on its own.")
         if task.get("include_positions"):
             raise Invalid(f"{task['name']} is a round (a line for each position at its location): it stays on its own.")
-        if not self._in_area(area, subject):
+        if area["label"] == "Position":
+            # Any task on the same asset (Derryn, 22 Nov 2026): the package then lives where its
+            # tasks meet (_package_subject), which moves up when a task from another branch joins.
+            if subject["label"] != "Position" or self._asset_top(subject["id"]) != self._asset_top(area["id"]):
+                there = (self.s.node(self.org, self._asset_top(subject["id"])) or subject) if subject["label"] == "Position" else subject
+                here = self.s.node(self.org, self._asset_top(area["id"])) or area
+                raise Invalid(f"{task['name']} is on {there['name']}, another asset: a package's tasks are all on "
+                              f"one asset, and this one's are on {here['name']}. Make a package on "
+                              f"{there['name']} for it.")
+        elif not self._in_area(area, subject):
             raise Invalid(f"{task['name']} is on {subject['name']}, which isn't {area['name']} or inside it: a "
-                          "package's tasks are on its position or a position inside it, or at its location.")
+                          "package on a location holds the tasks at it (positions located there, or the location "
+                          "itself).")
         home = self._package_index().get(task["id"])
         if home and home["package"]["id"] != joining:
             raise Invalid(f"{task['name']} is already in {home['package']['name']}: a task has one home package. "
@@ -10425,7 +10476,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 self._check_layer_dates(layer, {**pkg, **fields}, layer["name"])
             changes |= {k: v for k, v in fields.items() if v != pkg.get(k)}
             if by_hours:
-                area = self._package_subject(pkg)
+                area = self._package_made_on(pkg)
                 kept = (pkg.get("hours") or {}).get("anchor_reading") if anchor in (None, "") else None
                 hours = self._hours_fields(area, fields["anchor"], anchor_reading if anchor_reading not in (None, "")
                                            else kept)
@@ -10828,6 +10879,11 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                "tolerance": (root.get("tolerance") and {**root["tolerance"],
                                                         "enforced": root["tolerance"]["unit"] == "days"}),
                "trade": pkg.get("trade", ""), "subject": self._subject_brief(subject),
+               # Where it lives is where its tasks meet (subject); the asset they're all on, which
+               # any task can join from; and where it was made (its hours counter's position).
+               "asset": (self._subject_brief(self.s.node(self.org, self._asset_top(subject["id"])))
+                         if subject is not None and subject["label"] == "Position" else None),
+               "made_on": self._subject_brief(self._package_made_on(pkg)),
                "parent": {"id": chain[1]["id"], "name": chain[1]["name"]} if len(chain) > 1 else None,
                "layers": [{"id": x["id"], "name": x["name"]} for x in self._package_layers(pkg["id"])],
                "task_count": len(live), "next_visit": None, "open_work_order": None,

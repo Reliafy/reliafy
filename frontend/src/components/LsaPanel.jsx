@@ -349,14 +349,16 @@ export function RetireDialog({ pkg, onClose, onDone }) {
   );
 }
 
-// Add tasks…: the tasks where the package is (and below) that are in no package.
+// Add tasks…: the tasks on its asset (a location package: at it) that are in no package.
 function AddTasksDialog({ pkg, onClose, onDone }) {
   const [tasks, setTasks] = useState(null);
   const [error, setError] = useState(null);
   const [picked, setPicked] = useState(() => new Set());
   const [rule, setRule] = useState("every");
   const [nth, setNth] = useState("4");
-  const subject = pkg.subject;
+  // A package on a position takes any task on its asset (it then lives where its tasks meet); one
+  // on a location, the tasks at it.
+  const subject = pkg.subject?.kind === "location" ? pkg.subject : pkg.asset || pkg.subject;
   useEffect(() => {
     let live = true;
     const scope = subject?.kind === "location" ? { location_id: subject.id } : { position_id: subject?.id };
