@@ -1,8 +1,8 @@
 # WhereItLives
 
-Where a rolled-up record lives, in one table cell. The Explorer rolls up: a tab on a tree node lists the records on that node **and on everything below it**, at any depth (the server's `Maintenance.subtree_ids`, cut to the asset opened by `?root=`). Each row then needs to say where it is.
+Where a rolled-up record lives, in one table cell. The Explorer rolls up: a tab on a tree node lists the records on that node **and on everything below it**, at any depth (the server's `Maintenance.subtree_ids`, cut to the asset opened by `?root=`). A tree-table (Maintenance › Tasks, Measurements, Models) says where each row is by its nesting; a flat table in the panel needs this cell instead.
 
-`frontend/src/components/ui/WhereItLives.jsx`, with its helpers in `frontend/src/subtree.js`.
+`frontend/src/components/ui/WhereItLives.jsx`.
 
 ## What it shows
 
@@ -18,9 +18,7 @@ Both lines are cut with an ellipsis rather than wrapping, so rows keep one heigh
 
 ## Use with it
 
-- Put the node's own records first when no sort is picked (`hereFirst(key)` from `subtree.js`), then the rest by `wherePath`, so twins sit beside their parents.
-- Say how many are the node's own beside the count (`hereCount`): "7 tasks · 2 on this position".
-- Make the path searchable: a search for a parent's name finds what's inside it.
-- One cell per row, in a column named for what it is ("Position"). Never a link that leaves the tab: the tree beside it is how you go there.
+- Put the node's own records first, then the rest in the table's order.
+- One cell per row, in a column named for what it is ("Position"). Never a link that leaves the tab: the tree beside it is how you go there (a button that picks the row in the tree is fine).
 
-First used by the Maintenance tab's tasks (Assets › Explorer › Maintenance › Tasks); also the Condition monitoring table on a node with positions below it (Monitoring › Life left), inside a button that picks the position in the tree, since there the tree is beside it.
+Used by the Condition monitoring table on a node with positions below it (Monitoring › Life left).

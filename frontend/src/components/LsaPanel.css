@@ -113,6 +113,7 @@
 .lsa-full { width: 100%; box-sizing: border-box; }
 
 /* The Maintenance tab (LsaPanel variant "maintenance", MaintenanceTask.jsx). */
+.mt-below { display: inline-flex; align-items: center; gap: 6px; font-size: 0.9em; white-space: nowrap; }
 .mt-add { display: inline-flex; align-items: center; gap: 4px; }
 .mt-pane { max-width: 640px; }
 .mt-fields { display: flex; flex-direction: column; gap: 10px; margin: 10px 0; }
@@ -137,3 +138,5 @@
 .mt-restore select, .mt-restore input:not([type="checkbox"]) { max-width: 100%; box-sizing: border-box; }
 .mt-restore-row { flex-wrap: wrap; gap: 8px 12px; }
 .mt-restore-row > * { min-width: 0; flex: 1 1 10rem; }
+/* A level's forecast in the Explorer's table area (the Maintenance tab's Forecast…). */
+.mt-forecast-pane { padding: var(--space-3) var(--space-4) var(--space-4); overflow: auto; min-height: 0; flex: 1 1 auto; }

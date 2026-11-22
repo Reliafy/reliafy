@@ -12,8 +12,6 @@ import PackageParts from "./PackageParts.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { CALENDAR, HOURS_PACKAGE_NOTE, formFromPackage, howOftenProblem, packageBody, packageDates } from "../howOften.js";
 import Chip from "./ui/Chip.jsx";
-import WhereItLives from "./ui/WhereItLives.jsx";
-import { hereCount } from "../subtree.js";
 import MoreMenu from "./ui/MoreMenu.jsx";
 import { ShowMe } from "./SectionPage.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
@@ -22,7 +20,7 @@ import {
   DEFAULT_TASK_COLUMNS, DEFAULT_TOLERANCE_DAYS, DEFAULT_VISIT_DAY, TASK_COLUMNS, WEEKDAYS, cadenceFor, cadenceWords, hoursCadenceFor, cellText, countTitle, dayName, daysLate, freeTasks,
   kindText, lateText, lsaColumns, taskOnText, lsaCsv, lsaRollup, modeLine, nextSort, packageScope, parseSort, proposalBatch, proposalProblem, proposalRows,
   renameRow, rollupLines, labourYear, labourYearText, searchTasks, sortParam, sortTasks, tickAll, tickState, toggleRow, visitRuleText,
-  MAINTENANCE_COLUMNS, costFoot, costWhere, maintenanceOrder, money,
+  MAINTENANCE_COLUMNS, costFoot, costWhere, maintenanceOrder, money, tasksHere,
 } from "../lsaTab.js";
 import { saveText } from "../sparesPlan.js";
 import { exportFilename } from "../rcmImport.js";
@@ -628,9 +626,7 @@ function useTableQuery() {
   };
 }
 
-function TaskCell({ t, col, onPackage, onTask, maint = false, here = null }) {
-  // The Maintenance tab (every task here and below): where each lives, the row's own marked.
-  if (col === "position" && maint) return <WhereItLives rec={t} here={here} />;
+function TaskCell({ t, col, onPackage, onTask, maint = false }) {
   if (col === "cost") {
     const c = t.cost;
     if (c?.amount == null) return <span className="rw-blank" title={costWhere(c)}>Not set</span>;
@@ -680,8 +676,7 @@ const TICK_W = 36;
 // variant "maintenance": the Explorer's Maintenance tab (Derryn, 12 Nov 2026: "all maintenance
 // tasks … from RCM or just added directly … the costs per task"). The same table and its search,
 // sort, columns and CSV, with the planning columns first (MAINTENANCE_COLUMNS: From and Cost each
-// time among them), every task on the row and on everything below it at any depth (the row's own
-// first, each marked "This position"; the rest by their path; one read, task-table), no
+// time among them), the row's own tasks unless "Include what's inside" is ticked (?below=1), no
 // ticks or packaging (the LSA tab packages), "Add task" in its bar (?addtask=<the row>) and a task
 // opening as its own pane (?mtask=, MaintenanceTask.jsx) rather than its LSA. "Trade rates…" in the
 // heading's "…" (?rates=1) prices every task's labour.
@@ -698,12 +693,15 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
   const [search] = useSearchParams();
   const forecastable = maint && row.type === "pos";
   const forecastOn = forecastable && viewParam.open === "forecast";
+  // Held here as well as in the address, so the box answers at once.
+  const belowParam = useOpenParam("below");
+  const [belowOn, setBelowOn] = useState(belowParam.open === "1");
+  const below = !maint || belowOn;
+  const showBelow = (on) => { setBelowOn(on); belowParam.setOpen(on ? "1" : null); };
   // The row whose tasks are being packaged: only this row's (another row picked shows its table).
   const packaging = useOpenParam("packaging");
   const tq = useTableQuery();
   const scope = useMemo(() => packageScope(row), [row]);
-  // A design's rows aren't in an asset: no ?root= cut there.
-  const within = isDesignRow(row) ? null : search.get("root") || null;
   const [state, setState] = useState({ key: null, data: null, error: null });
   const [picked, setPicked] = useState(() => new Set());
   const [modal, setModal] = useState(null);
@@ -723,12 +721,11 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
   useEffect(() => {
     if (!scope) return undefined;
     let live = true;
-    // Inside the asset opened (?root=): nothing from another asset.
-    getTaskTable(within ? { ...scope, within } : scope)
+    getTaskTable(scope)
       .then((data) => live && setState({ key, data, error: null }))
       .catch((e) => live && setState({ key, data: null, error: e.message }));
     return () => { live = false; };
-  }, [scope, key, within]);
+  }, [scope, key]);
   // A new row picked: nothing ticked.
   useEffect(() => { setPicked(new Set()); }, [row.key]);
   // The search box writes the address a moment after typing stops.
@@ -738,14 +735,14 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
     return () => clearTimeout(t);
   }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
   const data = state.key === key ? state.data : null;
-  const all = data?.tasks || null;
-  const here = maint ? row.key : null;
-  const shown = useMemo(() => all && sortTasks(searchTasks(all, query), tq.sort, { here }), [all, query, tq.sort, here]);
+  const all = useMemo(() => (data?.tasks ? tasksHere(data.tasks, row.key, below) : null), [data, row.key, below]);
+  const shown = useMemo(() => all && sortTasks(searchTasks(all, query), tq.sort), [all, query, tq.sort]);
   const design = isDesignRow(row);
   // No ticks or packaging bar: a design's (packaged on the built items) and the Maintenance tab's.
   const plain = design || maint;
   const offered = lsaColumns({ design, workManagement: workManagementHere });
-  const chosenCols = offered.filter((c) => cols.includes(c.id));
+  // The row's own tasks alone are all on it: no Position column.
+  const chosenCols = offered.filter((c) => cols.includes(c.id) && (below || c.id !== "position"));
   const columns = maint ? maintenanceOrder(chosenCols) : chosenCols;
   const tickW = plain ? 0 : TICK_W;
   const total = tickW + columns.reduce((n, c) => n + c.width, 0);
@@ -845,7 +842,7 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
     <div className="td-tab-page pk-panel rw">
       <p className="lib-date pk-purpose">
         {maint
-          ? `Every maintenance task here and on everything below it: from the RCM or added directly, how often, when it's next due and what it costs each time. The RCM reads each task's cost from here. Open a task to change it.`
+          ? `Every maintenance task ${below ? "here and below" : "here"}: from the RCM or added directly, how often, when it's next due and what it costs each time. The RCM reads each task's cost from here. Open a task to change it.`
           : design
           ? "Every task in the design here and below, with what it needs: open a task to set its labour, tools, spares and method. Tasks are packaged into visits on the items built from it."
           : "Every task here and below, with what it needs: open a task to set its labour, tools, spares and method. Tick the ones done on the same visit and package them: each visit then raises one work order."}
@@ -857,11 +854,17 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
                  aria-label="Search the tasks" />
         </label>
         {maint && (
+          <label className="mt-below">
+            <input type="checkbox" checked={below} onChange={(e) => showBelow(e.target.checked)} />
+            Include what&apos;s inside
+          </label>
+        )}
+        {maint && (
           <button type="button" className="secondary sm mt-add" onClick={() => adding.setOpen(row.key)}>
             <PlusIcon /> Add task
           </button>
         )}
-        {shown && <span className="lib-date pk-count">{shown.length === all.length ? plural(all.length, "task") : `${shown.length} of ${plural(all.length, "task")}`}{maint && all.length ? ` · ${hereCount(all, here)} on this position` : ""}</span>}
+        {shown && <span className="lib-date pk-count">{shown.length === all.length ? plural(all.length, "task") : `${shown.length} of ${plural(all.length, "task")}`}</span>}
         {viewSwitch}
         {colsOpen && (
           <div className="pk-cols">
@@ -875,18 +878,19 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
       {data?.truncated && <p className="lib-date">Showing the first {all.length} of {data.total} tasks: pick a smaller branch to see the rest.</p>}
       {!shown && !state.error ? <div className="card empty">Loading…</div> : shown && all.length === 0 ? (
         <div className="card empty pk-empty">
-          <p>{maint ? `No maintenance tasks here or below yet. Add one (from the maker's manual, a regulation or your own practice), or decide the failure modes on the RCM tab: their tasks show here.`
+          <p>{maint ? `No maintenance tasks ${below ? "here or below" : "here"} yet. Add one (from the maker's manual, a regulation or your own practice), or decide the failure modes on the RCM tab: their tasks show here.`
             : design ? "No tasks in the design here or below yet. Decide the failure modes on the RCM tab: their tasks show here, to say what each needs."
             : "No tasks here or below yet. Decide the failure modes on the RCM tab: their tasks show here to package."}</p>
           {maint ? (
             <p className="section-empty-more">
               <button type="button" className="link" onClick={() => adding.setOpen(row.key)}>Add a task</button>
+              {!below && <> · <button type="button" className="link" onClick={() => showBelow(true)}>Include what&apos;s inside</button></>}
             </p>
           ) : <p className="section-empty-more"><ShowMe help={HELP}>Say what each task needs, and package tasks into visits</ShowMe></p>}
         </div>
       ) : shown && (
         <div className="maint-scroll rw-grid pk-grid">
-          <div className="pk-table" role="table" aria-label="Tasks here and below" aria-rowcount={shown.length + 1} style={{ minWidth: total }}>
+          <div className="pk-table" role="table" aria-label={below ? "Tasks here and below" : "Tasks here"} aria-rowcount={shown.length + 1} style={{ minWidth: total }}>
             <div className="rw-head" role="row">
               {!plain && (
                 <div className="rw-h pk-tick" role="columnheader" style={{ width: TICK_W }}>
@@ -923,7 +927,7 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
                 )}
                 {columns.map((c) => (
                   <div key={c.id} role="cell" className="rw-c" style={{ width: c.width }}>
-                    <TaskCell t={t} col={c.id} onPackage={open.setOpen} onTask={taskOpen.setOpen} maint={maint} here={here} />
+                    <TaskCell t={t} col={c.id} onPackage={open.setOpen} onTask={taskOpen.setOpen} maint={maint} />
                   </div>
                 ))}
                 <div className="rw-c rw-fill" aria-hidden="true" />

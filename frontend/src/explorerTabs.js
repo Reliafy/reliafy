@@ -79,9 +79,10 @@ export const TABS = [
   { id: "fmea", label: "FME(C)A", title: "The failure modes here as an FMEA worksheet: cause, effects, scores, action priority and criticality", kinds: ["pos", "loc"] },
   // Every maintenance task on the row (Derryn, 12 Nov 2026): from its RCM or added directly here,
   // with how often, its package, when it's next due and what it costs each time (the figure the
-  // RCM reads), and every task on the positions below it at any depth (Derryn, 22 Nov 2026). A design's rows have it too: their
+  // RCM reads), and every task on the positions below it at any depth: a tree-table, each level with its
+  // roll-up and Forecast… (Derryn, 22 Nov 2026; explorerTasks.js, drawn by AssetExplorer). A design's rows have it too: their
   // programme (no due dates or packages: those belong to the built items). The LSA tab's table
-  // (LsaPanel, variant "maintenance"); a task opens in the panel beside the tree.
+  // A task opens beside the table; the tab's other views (Forecast) stay in the panel (LsaPanel).
   {
     id: "maintenance", label: "Maintenance", title: "Every maintenance task here and below: from the RCM or added directly, how often, when it's next due and what it costs each time",
     kinds: ["pos", "loc"],

@@ -776,3 +776,32 @@ def test_task_table_rolls_up_every_level_below_in_one_read(m):
     at = {r["subject"]["id"] for r in m.task_table(location_id=site, within=station)["tasks"]}
     assert other not in at and station in at
     assert other in {r["subject"]["id"] for r in m.task_table(location_id=site)["tasks"]}
+
+
+def test_a_levels_forecast_covers_exactly_its_subtree(m):
+    """The Explorer's Maintenance tab: Forecast… on a level runs the forecast for that position and
+    everything below it (subtree_ids), inside the asset opened: nothing above it, beside it or in
+    another asset."""
+    from backend.maintenance import position_forecast as pf
+
+    station = m.create_position("Station")["id"]
+    pumps = [m.create_position(f"Pump {i}", parent_id=station)["id"] for i in (1, 2)]
+    motor = m.create_position("Drive motor", parent_id=pumps[0])["id"]
+    bearing = m.create_position("Bearing", parent_id=motor)["id"]
+    own = {
+        station: m.create_task(station, "Walk round", 1, "months")["id"],
+        pumps[0]: m.create_task(pumps[0], "Align", 3, "months")["id"],
+        pumps[1]: m.create_task(pumps[1], "Align", 3, "months")["id"],
+        motor: m.create_task(motor, "Check the motor", 3, "months")["id"],
+        bearing: m.create_task(bearing, "Grease", 6, "months")["id"],
+    }
+    other = m.create_position("Other site")["id"]
+    m.create_task(other, "Not ours", 1, "months")
+
+    for level in (station, pumps[0], motor, bearing):
+        out = pf.position_forecast(m, level, root=station, period="month", periods=12)
+        inside = m.subtree_ids(level, within=station)
+        assert {p["position"]["id"] for p in out["by_position"]} == inside
+        assert {t["id"] for t in out["tasks"]} == {own[p] for p in inside}
+    with pytest.raises(Invalid):
+        pf.position_forecast(m, other, root=station)

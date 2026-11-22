@@ -307,6 +307,8 @@ export function positionOf(r) {
   if (r.type === "pmodel") return r.ref.position_id;
   // A mission row (the Missions tab), or one of its phases: the position whose RBD it's flown on.
   if (r.type === "mission" || r.type === "phase" || r.type === "mcov" || r.type === "mrule") return r.ref.position_id;
+  // A task row (the Maintenance tab): the position (or place) it's on.
+  if (r.type === "mtask") return r.ref.position_id;
   return isRcmRow(r) ? r.ref.position_id : null;
 }
 

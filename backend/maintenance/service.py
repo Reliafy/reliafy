@@ -10915,8 +10915,13 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         Explorer's roll-up (``subtree_ids``), at any depth; ``within``: the asset opened, so
         nothing from another asset is listed."""
         scope = self._package_scope(position_id, location_id)
+        if scope is None and within not in (None, ""):
+            # The whole asset opened (the Explorer's Maintenance tab: its tree of tasks).
+            scope = self.s.node(self.org, str(within))
+            if scope is None or scope.get("retired") or scope["label"] not in ("Position", "Location"):
+                raise NotFound(within)
         if scope is None:
-            raise Invalid("Give position_id or location_id.")
+            raise Invalid("Give position_id or location_id (or within, the asset opened).")
         inside = self.subtree_ids(scope["id"], within)
         index = self._rcm_index()
         modes_of: dict[str, list] = {}
