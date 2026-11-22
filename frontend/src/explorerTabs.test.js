@@ -63,7 +63,7 @@ test("a position has Summary, RCM, FME(C)A, Failure reports, Parts and stock, Cl
   assert.match(TABS.find((t) => t.id === "lsa").title, /^Logistic support analysis: what each task needs/);
   assert.deepEqual(tabsFor(item).map((t) => t.id), shown(["summary", "reports", "measurements", "signals"]));
   // A place opens its positions' RCM (the Assets page opens the Explorer on the place).
-  assert.deepEqual(tabsFor(loc).map((t) => t.id), shown(["summary", "rcm", "fmea", "maintenance", "reports", "parts", "classes", "measurements", "lsa"]));
+  assert.deepEqual(tabsFor(loc).map((t) => t.id), shown(["summary", "rcm", "fmea", "maintenance", "reports", "parts", "classes", "condition", "measurements", "lsa"]));
   assert.equal(TABS.find((t) => t.id === "parts").label, "Parts and stock");
   assert.equal(TABS.find((t) => t.id === "classes").label, "Classes");
   assert.deepEqual(tabsFor({ type: "group" }).map((t) => t.id), ["summary"]);
@@ -189,7 +189,7 @@ test("a product's design locations have the design's tabs: no Failure reports, S
   // A location a built item carries is a real place on a real thing: the usual location tabs.
   const carried = { type: "loc", ref: { name: "Forward left arm", carried_by: "b" } };
   assert.ok(!isDesignRow(carried));
-  assert.deepEqual(tabsFor(carried).map((t) => t.id), shown(["summary", "rcm", "fmea", "maintenance", "reports", "parts", "classes", "measurements", "lsa"]));
+  assert.deepEqual(tabsFor(carried).map((t) => t.id), shown(["summary", "rcm", "fmea", "maintenance", "reports", "parts", "classes", "condition", "measurements", "lsa"]));
   assert.equal(rowKind(carried), "Location");
   // A design's positions keep their Parts (the parts list), and have their built items' Failure reports.
   const designPos = { type: "pos", ref: { name: "Motor 1", in_design: true } };
@@ -219,7 +219,9 @@ test("an item class has Condition monitoring, Forecast and Spares, and opens on 
   // Walking from a class to another row keeps the usual rule: the tab picked if the row has it
   // (a position on an asset does), else Summary.
   assert.equal(shownTab("condition", pos), "condition");
-  for (const r of [item, loc, { type: "group" }, { type: "pos", ref: { in_design: true } }]) {
+  // A place has it too (its positions' risk); an item, a heading and a design's position don't.
+  assert.equal(shownTab("condition", loc), "condition");
+  for (const r of [item, { type: "group" }, { type: "pos", ref: { in_design: true } }]) {
     assert.ok(!tabsFor(r).some((t) => t.id === "condition"));
     assert.equal(shownTab("condition", r), "summary");
   }
@@ -234,7 +236,7 @@ test("a position on an asset has Condition monitoring too: the same tab as a cla
   // One id and one label, so the tab stays picked from a class to a position and between positions.
   assert.equal(mine.label, "Condition monitoring");
   assert.equal(mine.label, classes.label);
-  assert.match(mine.title, /^This position's risk now/);
+  assert.match(mine.title, /^Risk now here and below/);
   assert.notEqual(mine.title, classes.title);
   assert.equal(shownTab("condition", asset), "condition");
   assert.equal(shownTab("condition", { type: "pos", ref: { id: "p2" } }), "condition");
@@ -248,14 +250,16 @@ test("a position on an asset has Condition monitoring too: the same tab as a cla
     assert.ok(!tabsFor(r).some((t) => t.id === "condition"));
     assert.equal(shownTab("condition", r), "summary");
   }
-  // Positions only: not a location, an item or a heading.
-  for (const r of [loc, item, { type: "loc", ref: { carried_by: "b" } }, { type: "item", ref: { fitted_to: { id: "p" } } }, { type: "group" }]) {
+  // A place has it (its positions' risk, Derryn 22 Nov 2026), with its own hover text.
+  assert.match(tabsFor(loc).find((t) => t.id === "condition").title, /^Risk now at this place/);
+  // Not an item (its risk is its position's) or a heading.
+  for (const r of [item, { type: "item", ref: { fitted_to: { id: "p" } } }, { type: "group" }]) {
     assert.ok(!tabsFor(r).some((t) => t.id === "condition"));
     assert.equal(shownTab("condition", r), "summary");
   }
   // The entry itself: assets only, a class and a position.
   const entry = TABS.find((t) => t.id === "condition");
-  assert.deepEqual(entry.kinds, ["cls", "pos"]);
+  assert.deepEqual(entry.kinds, ["cls", "pos", "loc"]);
   assert.equal(entry.asset, true);
 });
 
@@ -288,9 +292,11 @@ test("walking on from a class keeps its Condition monitoring on a position, when
   // The address names a tab: that one is the tab picked, so nothing is added.
   assert.equal(tabCarried(cls, asset, { named: true }), null);
   // Rows that haven't the tab (a design's position, an item, a place, a group), and another class.
-  for (const to of [{ type: "pos", ref: { in_design: true } }, item, loc, { type: "group" }, cls, null]) {
+  for (const to of [{ type: "pos", ref: { in_design: true } }, item, { type: "group" }, cls, null]) {
     assert.equal(tabCarried(cls, to), null);
   }
+  // A place has it too.
+  assert.equal(tabCarried(cls, loc), "condition");
   // Only a class shows a tab nobody picked: from any other row there's nothing to carry.
   for (const from of [asset, item, loc, { type: "group" }, null]) assert.equal(tabCarried(from, asset), null);
 });
@@ -360,7 +366,7 @@ test("a product's design position: six tabs, no Monitoring, no Packages; its His
 
 test("locations, items, classes and headings have only the tabs their kind has, in the same order", () => {
   assert.deepEqual(labels(panelTabsFor(loc)), ["Summary", "Maintenance", "Monitoring", "RCM", "FME(C)A", "History"]);
-  assert.deepEqual(panelTabsFor(loc).find((t) => t.id === "monitoring").views.map((v) => v.id), ["readings"]);
+  assert.deepEqual(panelTabsFor(loc).find((t) => t.id === "monitoring").views.map((v) => v.id), ["readings", "risk"]);
   assert.deepEqual(labels(panelTabsFor(item)), ["Summary", "Monitoring", "History"]);
   // A class: Monitoring on the risk view, then its Forecast and Spares, each a tab of its own.
   const cls = { type: "cls" };

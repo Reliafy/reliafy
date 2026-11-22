@@ -32,6 +32,12 @@ are its missions, with:
 - **Completes**: the chance the mission completes, once worked out.
 - **RBD**: the diagram it's flown on.
 
+Over the tree, beside the position you picked, a line counts its missions:
+its own, then the missions on the positions below it at any depth, and how
+many have their chance of completing worked out ("2 missions here · 5 on 3
+positions below · 4 of 7 worked out"). A closed row in the tree says the same
+in short ("5 missions here and inside").
+
 Any position with positions inside it, or with a model of its own, can have
 missions, the ones
 inside a product included. A position doesn't take the missions of the position

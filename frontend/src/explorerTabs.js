@@ -18,7 +18,11 @@
 // monitoring for an item class (the tree by Classes: the class's positions with their risk now,
 // ClassFleet; a class's first tab, so the one it opens on; Forecast and Spares beside it) and for a position on an asset, in
 // every arrangement (that position's own risk now, PositionRisk: the same summary and charts a
-// class shows for the member chosen). A tab a kind doesn't have isn't shown (never greyed out).
+// class shows for the member chosen; with positions below it, every position there and below with
+// condition monitoring, its own first) and for a place (its positions', the same table). An item
+// hasn't it: its risk is worked out at the position it's fitted to (its age and readings count from
+// that fitment), and that position's row has the tab. A tab a kind doesn't have isn't shown (never
+// greyed out).
 //
 // A product is a design, not an operated thing: its rows (a design's
 // positions) have no maintenance done to them, so no Measurements, Signals or
@@ -108,8 +112,12 @@ export const TABS = [
   // positions: nothing is fitted or read there.
   {
     id: "condition", label: "Condition monitoring", title: "Each position of this class with its risk now, highest first",
-    titleBy: { pos: "This position's risk now: its chance of failing soon and its life left, from its item's age and readings" },
-    kinds: ["cls", "pos"], asset: true,
+    titleBy: {
+      pos: "Risk now here and below: each position's chance of failing soon and its life left, from its item's age and readings",
+      loc: "Risk now at this place: each position here with condition monitoring, its chance of failing soon and its life left",
+    },
+    // A place has it too (Derryn, 22 Nov 2026: the Explorer aggregates downwards): its positions'.
+    kinds: ["cls", "pos", "loc"], asset: true,
   },
   // An item class's forecast and spares (the persona review, Nov 2026: neither could be reached
   // from a class). The forecast comes from each position class's fitted life model, counted at

@@ -23,4 +23,4 @@ Both lines are cut with an ellipsis rather than wrapping, so rows keep one heigh
 - Make the path searchable: a search for a parent's name finds what's inside it.
 - One cell per row, in a column named for what it is ("Position"). Never a link that leaves the tab: the tree beside it is how you go there.
 
-First used by the Maintenance tab's tasks (Assets › Explorer › Maintenance › Tasks).
+First used by the Maintenance tab's tasks (Assets › Explorer › Maintenance › Tasks); also the Condition monitoring table on a node with positions below it (Monitoring › Life left), inside a button that picks the position in the tree, since there the tree is beside it.

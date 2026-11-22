@@ -3500,6 +3500,19 @@ export function getClassFleet(id, within = null) {
 export function getPositionCondition(id, { curves = true } = {}) {
   return request(`/api/maintenance/positions/${encodeURIComponent(id)}/condition${curves ? "" : "?curves=false"}`);
 }
+// The Explorer's Condition monitoring tab on a node (a position or a place) with positions below
+// it: every one of them with condition monitoring, its risk now and its life left, the node's own
+// first, each with where it lives (`subject`). `within`: the asset opened (?root=).
+export function getConditionBelow(id, within = null) {
+  const q = within ? `?within=${encodeURIComponent(within)}` : "";
+  return request(`/api/maintenance/condition-below/${encodeURIComponent(id)}${q}`);
+}
+// The Explorer's Summary counts on a node: its own (`here`) and below it at any depth (`inside`):
+// positions, fitted items, tasks, failure modes, models, failure reports. `within`: as above.
+export function getRollup(id, within = null) {
+  const q = within ? `?within=${encodeURIComponent(within)}` : "";
+  return request(`/api/maintenance/rollup/${encodeURIComponent(id)}${q}`);
+}
 export function createItemClass(body) {
   return postJson("/api/maintenance/item-classes", body);
 }

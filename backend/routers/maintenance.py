@@ -2519,6 +2519,27 @@ def get_position_condition(position_id: str, curves: bool = True, session=Depend
     return _run(class_fleet.position, m, session, ctx.read_owners, ctx.hidden, position_id, curves)
 
 
+@router.get("/condition-below/{node_id}")
+def get_condition_below(node_id: str, within: str | None = None, session=Depends(get_session),
+                        ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The Explorer's Condition monitoring tab on a node (a position or a place): every position
+    there and below it with condition monitoring, its risk now and its life left, the node's own
+    first. within: the asset opened (?root=): only what's inside it."""
+    from backend.maintenance import class_fleet
+
+    return _run(class_fleet.below, m, session, ctx.read_owners, ctx.hidden, node_id, within or None)
+
+
+@router.get("/rollup/{node_id}")
+def get_rollup(node_id: str, within: str | None = None, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The Explorer's Summary roll-up: how many positions, fitted items, tasks, failure modes,
+    models and failure reports are on a node (``here``) and below it at any depth (``inside``).
+    within: the asset opened (?root=)."""
+    from backend.maintenance import rollup
+
+    return _run(rollup.rollup, m, node_id, within or None)
+
+
 @router.post("/item-classes")
 def create_item_class(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.create_item_class, body.get("name"), body.get("parent_id"), body.get("code", ""),

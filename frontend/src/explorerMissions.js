@@ -124,7 +124,7 @@ export function graftMissions(display, links = [], hasModel = [], otherModel = [
   for (const [k, r] of display.rows) rows.set(k, { ...r, kids: [...r.kids] });
   const out = { ...display, rows, missions: true };
   for (const r of rows.values()) {
-    if (r.type === "pos") Object.assign(r, { msum: { rbds: 0, missions: 0 }, mall: { rbds: 0, missions: 0 }, rbds: [], hasModel: withModel.has(r.key), otherModel: withOther.has(r.key) && !withModel.has(r.key) });
+    if (r.type === "pos") Object.assign(r, { msum: { rbds: 0, missions: 0, done: 0, with: 0 }, mall: { rbds: 0, missions: 0, done: 0, with: 0 }, rbds: [], hasModel: withModel.has(r.key), otherModel: withOther.has(r.key) && !withModel.has(r.key) });
   }
   const byPos = new Map();
   for (const link of links) {
@@ -184,6 +184,8 @@ export function graftMissions(display, links = [], hasModel = [], otherModel = [
         });
         keys.push(key);
         p.msum.missions += 1;
+        // Worked out: its chance of completing is in (not one still waiting on a value).
+        if (m.result?.reliability != null) p.msum.done += 1;
       }
     }
     p.kids = [...keys, ...p.kids];
@@ -193,12 +195,14 @@ export function graftMissions(display, links = [], hasModel = [], otherModel = [
     const r = rows.get(k);
     if (done.has(k)) return r.mall;
     done.add(k);
-    const t = { ...r.msum };
+    const t = { ...r.msum, with: r.msum.missions ? 1 : 0 };
     for (const c of r.kids) {
       if (rows.get(c)?.type === "pos") {
         const s = total(c);
         t.rbds += s.rbds;
         t.missions += s.missions;
+        t.done += s.done;
+        t.with += s.with;
       }
     }
     r.mall = t;
@@ -245,6 +249,26 @@ export function rollupText(r, open = false) {
   const all = r.mall || own;
   if (all.missions) return own.missions === all.missions ? count(all.missions, "mission") : `${count(all.missions, "mission")} here and inside`;
   return none;
+}
+
+// The roll-up over the tab for the position picked (the Explorer aggregates downwards): its own
+// missions, kept as they are, then everything below it at any depth, and how many have their
+// chance worked out. "2 missions here · 5 on 3 positions below · 4 of 7 worked out"; with none of
+// its own where one can be added, it ends "· Add a mission" (MissionRollup's button).
+export function headRollupText(r) {
+  if (!r?.msum) return "";
+  const own = r.msum;
+  const all = r.mall || own;
+  const below = all.missions - own.missions;
+  if (!all.missions) return rollupText(r, true);
+  const parts = [own.missions ? `${count(own.missions, "mission")} here` : "No missions here"];
+  if (below) {
+    const on = all.with - (own.missions ? 1 : 0);
+    parts.push(`${below.toLocaleString("en-AU")} on ${count(on, "position")} below`);
+  }
+  parts.push(`${all.done.toLocaleString("en-AU")} of ${all.missions.toLocaleString("en-AU")} worked out`);
+  if (!own.missions && canAddMission(r)) parts.push("Add a mission");
+  return parts.join(" · ");
 }
 
 // The phases cell: "3 phases: Take-off, Survey, Landing".

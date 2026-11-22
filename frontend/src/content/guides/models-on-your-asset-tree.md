@@ -335,13 +335,29 @@ the asset's tree you have open. The classes, their counts and the table list
 the positions inside that asset and nothing else.
 
 A position has **Monitoring › Life left** too, however the tree is
-arranged (**Positions**, **Locations** or **Classes**). It shows that one
-position's risk now: a line in words (its age, its readings, the three
-chances and the median life left), then the same two charts. The view stays
-picked as you go from a class to one of its positions, and from one position
-to the next. A position with no condition and life model says so, with a link
-to its **Models › Life models**; one whose model can't score it yet says what is
-missing. A product's design has no such view: nothing is fitted or read there.
+arranged (**Positions**, **Locations** or **Classes**). On a position with
+nothing inside it, it shows that one position's risk now: a line in words
+(its age, its readings, the three chances and the median life left), then the
+same two charts. A position with no condition and life model says so, with a
+link to its **Models › Life models**; one whose model can't score it yet says
+what is missing.
+
+On a position with positions inside it, and on a place, **Life left** lists
+every position there and below it, at any depth, that has condition
+monitoring (a condition and life model, or a condition measurement point).
+Each row says where it lives (its name, and what it sits in underneath), then
+its item, age, last reading, the three chances and the **Median life left**
+with its 90% lower bound. The position you picked comes first when it has
+monitoring of its own; the rest are highest risk first, over the stretch that
+tells them apart, which the table names. Choose a row for its two charts. The
+chances are never added up: each is that position's own, and chances of
+failing don't sum. With the Explorer opened on one asset, only that asset's
+positions are listed.
+
+The view stays picked as you go from a class to one of its positions, and
+from one row to the next. An item has no such view: its risk is worked out
+at the position it's fitted to. A product's design has none either: nothing
+is fitted or read there.
 
 Each position is scored with its own model: the condition and life model
 attached to it, or else its position class's. So one class can hold positions

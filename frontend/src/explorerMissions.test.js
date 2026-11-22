@@ -429,3 +429,23 @@ test("a standby block's chance of starting rides with its state (A18)", () => {
   assert.deepEqual(phases[0].start_probability, { b: 0.95 });
   assert.equal(phases[0].models.a.distribution_id, "exponential");
 });
+
+test("the roll-up over the tab counts the missions below at every depth, and how many are worked out", async () => {
+  const { headRollupText } = await import("./explorerMissions.js");
+  const links = [
+    ...LINKS,
+    { position_id: "arm-motor", link_id: "l3", in_use: true, rbd: { ...RBD, id: "r3", name: "Motor RBD" }, missions: [
+      { id: "m3", name: "Hover test", phases: 1, phase_names: ["Hover"], phase_durations: [0.5], duration: 0.5, unit: "Hours",
+        result: { reliability: 0.99, method: "exact" } },
+    ] },
+  ];
+  const d = graftMissions(buildDisplay(DATA, "positions"), links);
+  // Its own two kept as they are; the motor's, two levels down, counted below it.
+  assert.equal(headRollupText(d.rows.get("drone")), "2 missions here · 1 on 1 position below · 2 of 3 worked out");
+  assert.deepEqual(d.rows.get("drone").mall, { rbds: 3, missions: 3, done: 2, with: 2 });
+  // None of its own, one below: says so, and offers to add one.
+  assert.equal(headRollupText(d.rows.get("arm")), "No missions here · 1 on 1 position below · 1 of 1 worked out · Add a mission");
+  assert.equal(headRollupText(d.rows.get("arm-motor")), "1 mission here · 1 of 1 worked out");
+  // Nothing here or below: the row's own words.
+  assert.equal(headRollupText(d.rows.get("battery")), "No missions yet · needs a life model or positions inside");
+});
