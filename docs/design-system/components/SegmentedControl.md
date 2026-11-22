@@ -7,6 +7,11 @@ A row of mutually exclusive options: sans, sentence case, the chosen option tint
 - `options` — `[{value, label, title?, disabled?}]`.
 - `value`, `onChange(value)`.
 - `label` — accessible name of the group (shown above it with `showLabel`).
+- `fill` — opt-in: the control spans the full width and the segments split it equally (`flex: 1 1 0`), never a short row inside a long outline.
 - `size` — "sm" for the compact size inside cards and toolbars.
 
 Use to switch a VIEW of the same thing (a chart's plot, a scale). For a value that's saved, use `ChoiceChips`; for navigation between panels, `Tabs`.
+
+## Width rule
+
+One rule everywhere: the control is only as wide as its options (`width: fit-content`, `max-width: 100%`), with the same `space-3` padding on every segment, even inside a column or a form field that would stretch it. It never stretches by default, at any screen width. Where a full-width control is wanted (for example a primary choice on a phone), pass `fill`: the segments then split the width equally. Don't add `align-self` or `width` overrides in a page's CSS; use `fill` or the default.

@@ -6,6 +6,7 @@
 //   value     the chosen option's value
 //   onChange  (value) => void
 //   label     accessible name of the group (shown above it with showLabel)
+//   fill      equal-width segments across the full width (opt-in)
 //   size      "sm" for the compact size used inside cards and toolbars
 export default function SegmentedControl({
   options,
@@ -14,12 +15,13 @@ export default function SegmentedControl({
   label,
   showLabel = false,
   size,
+  fill = false,
   className,
   style,
 }) {
   const group = (
     <div
-      className={"seg" + (size === "sm" ? " seg-sm" : "") + (className ? " " + className : "")}
+      className={"seg" + (size === "sm" ? " seg-sm" : "") + (fill ? " seg-fill" : "") + (className ? " " + className : "")}
       role="radiogroup"
       aria-label={label}
       style={style}
