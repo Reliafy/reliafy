@@ -27,7 +27,7 @@ export default function KNodeModal({ initial, onClose, onSubmit }) {
   const footer = (
     <>
       <span className="hint">At least M of the N branches must work. 1ooN is a plain junction.</span>
-      <div className="row" style={{ margin: 0 }}>
+      <div className="row m-0">
         <button className="secondary" onClick={onClose}>
           Cancel
         </button>
@@ -41,7 +41,7 @@ export default function KNodeModal({ initial, onClose, onSubmit }) {
   return (
     <Modal title="Voting node (MooN)" onClose={onClose} footer={footer}>
       <BlockNameField value={name} onChange={setName} placeholder="e.g. Level transmitters vote" />
-      <p className="muted-line" style={{ marginTop: 0 }}>
+      <p className="muted-line mt-0">
         {valid
           ? `${moonText(nNum, kNum)}: at least ${nNum} of ${kNum} branches must work.`
           : "M must be between 1 and N."}

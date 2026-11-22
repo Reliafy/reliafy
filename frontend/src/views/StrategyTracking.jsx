@@ -199,7 +199,7 @@ export default function StrategyTracking() {
       )}
 
       {selected && (
-        <div className="card" style={{ marginTop: "1rem" }}>
+        <div className="card mt-4">
           <CardHeader
             title={selected.name}
             actions={activePred?.method === "bayesian" && (

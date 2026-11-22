@@ -355,8 +355,8 @@ export function LibraryPage() {
       <div className="app">
         <PageHeader crumbs={CRUMBS} title="Library not found" />
         <div className="card" role="alert">
-          <p style={{ marginTop: 0 }}>We couldn’t find this library. It may have been deleted or made private, or the link may be mistyped.</p>
-          <p style={{ marginBottom: 0 }}><Link to={LIBRARIES_PATH}>All libraries</Link></p>
+          <p className="mt-0">We couldn’t find this library. It may have been deleted or made private, or the link may be mistyped.</p>
+          <p className="mb-0"><Link to={LIBRARIES_PATH}>All libraries</Link></p>
         </div>
       </div>
     );

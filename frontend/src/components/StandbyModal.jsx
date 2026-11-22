@@ -54,7 +54,7 @@ export default function StandbyModal({ initial, onClose, onSubmit, repairable = 
         {runNum > 1 ? `${runNum} running` : "One active unit"} with {spares} standby spare(s)
         {repairable ? ", each repaired after it fails" : ""}.
       </span>
-      <div className="row" style={{ margin: 0 }}>
+      <div className="row m-0">
         <button className="secondary" onClick={onClose}>
           Cancel
         </button>

@@ -63,7 +63,7 @@ export function CreateTeamModal({ onClose, onCreated }) {
       }
     >
       {needsPro ? (
-        <p className="muted-line" style={{ margin: 0 }}>
+        <p className="muted-line m-0">
           Teams are a Pro feature: creating a team and editing in its
           workspace need a Pro plan. Free accounts can join and view
           everything.

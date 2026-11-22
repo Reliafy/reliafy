@@ -262,7 +262,7 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
             )}
             {needsPro && (
               <div className="card note alt-calc-note" role="status">
-                <p style={{ margin: 0 }}>
+                <p className="m-0">
                   <b>Bootstrap bounds are part of Pro.</b> They refit the model 200 times on Reliafy's calculation
                   service. Wald and likelihood-ratio bounds are free.
                 </p>

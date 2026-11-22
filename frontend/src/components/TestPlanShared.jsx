@@ -238,7 +238,7 @@ export function SimulationCheck({ kind, inputs }) {
         {busy ? "Simulating…" : "Simulate this test"}<ProTag />
       </button>
       {busy && (
-        <button type="button" className="secondary" onClick={cancel} style={{ marginLeft: 8 }}>
+        <button type="button" className="secondary ml-2" onClick={cancel}>
           Cancel
         </button>
       )}
@@ -246,7 +246,7 @@ export function SimulationCheck({ kind, inputs }) {
       {cancelNote && !busy && <p className="hint" role="status">{cancelNote}</p>}
       {needsPro && (
         <div className="card note" role="status">
-          <p style={{ margin: 0 }}>
+          <p className="m-0">
             <b>Checking by simulation is part of Pro.</b> It fits the model to hundreds of simulated tests on
             Reliafy&apos;s calculation service. Every plan on this page is free.
           </p>

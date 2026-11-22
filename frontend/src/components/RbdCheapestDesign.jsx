@@ -98,7 +98,7 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
 
   return (
     <div className="rbd-design rbd-cheapest">
-      <p className="muted-line" style={{ marginTop: 0 }}>
+      <p className="muted-line mt-0">
         The cheapest design: how many copies of each block with a purchase price own this system at the
         lowest total cost — buying the copies, running them (repairs, parts, maintenance, tests), and the
         lost production they save. Every design is scored exactly.
@@ -267,8 +267,8 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
               </table>
             </ScrollCue>
           )}
-          {result.note && <p className="hint" style={{ margin: 0 }}>{result.note}</p>}
-          {result.common_cause?.note && <p className="hint" style={{ margin: 0 }}>{result.common_cause.note}</p>}
+          {result.note && <p className="hint m-0">{result.note}</p>}
+          {result.common_cause?.note && <p className="hint m-0">{result.common_cause.note}</p>}
           {result.changed && (!stale || appliedCurrent) && (
             <div className="rbd-calc-actions">
               {appliedCurrent ? (
@@ -287,7 +287,7 @@ export default function RbdCheapestDesign({ graph, onApply, onView }) {
               )}
             </div>
           )}
-          <p className="muted-line" style={{ margin: 0 }}>
+          <p className="muted-line m-0">
             RePyability {result.repyability_version} · allocate_redundancy ({result.method}), up to {result.max_copies} copies
             of each priced block{result.design.trains?.length ? " and train" : ""}. Copies of a proof-tested block are tested together.{" "}
             {result.discount_rate > 0

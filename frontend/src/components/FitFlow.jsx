@@ -682,14 +682,14 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
         <button className="secondary" onClick={goBack} disabled={loading}>Cancel</button>
         {source === "saved" ? (
           <>
-            {!picked && !loading && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>Pick a dataset first.</span>}
+            {!picked && !loading && <span className="hint ds-next-why m-0" role="status">Pick a dataset first.</span>}
             <button data-wt="fit-source-next" onClick={useSaved} disabled={!picked?.detail || loading}
                     title={picked ? undefined : "Pick a dataset first"}>
               Next
             </button>
           </>
         ) : (
-          <span className="hint" style={{ margin: 0 }}>
+          <span className="hint m-0">
             {source === "paste" ? "Paste your values to continue" : "Upload a CSV or Excel file to continue"}
           </span>
         )}
@@ -702,7 +702,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     nav = (
       <>
         <button className="secondary" onClick={goBack} disabled={loading || rd.saving}>Back</button>
-        {!rd.editing && fitWhy && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{fitWhy}</span>}
+        {!rd.editing && fitWhy && <span className="hint ds-next-why m-0" role="status">{fitWhy}</span>}
         {rd.editing ? null : bayes ? (
           <button data-wt="fit-run" onClick={onFit} disabled={loading || !!priorWanting || !mappingValid} title={priorWanting || undefined}>
             {loading ? "Fitting: about 10 seconds…" : "Fit with the prior"}
@@ -748,7 +748,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
                         </p>
                       ) : null}
                       {pickedGuess.reading.z?.length > 0 && pickedGuess.problems.length === 0 && (
-                        <p className="hint" role="status" style={{ margin: 0 }}>
+                        <p className="hint m-0" role="status">
                           {zWords(pickedGuess.reading.z)}: choose <b>Regression on Z</b> on the next step to
                           see their effects. Without it, the model ignores them.
                         </p>
@@ -772,7 +772,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
                 onChange={(e) => { setPasted(e.target.value); setPasteFix(null); }}
               />
               {pasteFix && (
-                <div className="row" style={{ margin: 0 }}>
+                <div className="row m-0">
                   <button
                     type="button"
                     className="secondary"
@@ -782,12 +782,12 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
                   </button>
                 </div>
               )}
-              <p className="hint" style={{ margin: 0 }}>
+              <p className="hint m-0">
                 Times to failure, one per line (or separated by commas / spaces).
                 Add a second column for censoring: <b>0 = the unit failed</b>,{" "}
                 <b>1 = it was still running</b> when observation stopped.
               </p>
-              <div className="row" style={{ margin: 0 }}>
+              <div className="row m-0">
                 <button type="button" onClick={usePasted} disabled={loading || !pasted.trim()}>
                   {loading ? "Reading values…" : "Use these values"}
                 </button>
@@ -838,7 +838,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
 
           {onPerDemand && (
             <div className="perdemand-cta">
-              <span className="muted-line" style={{ margin: 0 }}>
+              <span className="muted-line m-0">
                 Not time-to-failure data? Model one-shot / protective equipment:
               </span>
               <button type="button" className="secondary" onClick={onPerDemand}>
@@ -931,7 +931,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
                 />
               )}
               {useZ && itemTimeline && (
-                <p className="muted-line" style={{ margin: 0 }}>Each item's covariates follow its rows over time.</p>
+                <p className="muted-line m-0">Each item's covariates follow its rows over time.</p>
               )}
             </div>
           )}
@@ -1112,7 +1112,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
       <ErrorNotice error={error} />
 
       <div className="fit-flow-foot">
-        <div className="row" style={{ margin: 0 }}>{nav}</div>
+        <div className="row m-0">{nav}</div>
       </div>
     </div>
   );

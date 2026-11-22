@@ -250,7 +250,7 @@ function EditItemModal({ item, onClose, onDone }) {
       <div className="login-field">
         <span>Nameplate fields</span>
         {plate.map((row, i) => (
-          <div key={i} className="maint-row" style={{ marginTop: "0.25rem" }}>
+          <div key={i} className="maint-row mt-1">
             <input placeholder="e.g. Capacity" value={row.k}
                    onChange={(e) => setPlate(plate.map((r, j) => (j === i ? { ...r, k: e.target.value } : r)))} />
             <input placeholder="e.g. 315 L" value={row.v}
@@ -258,7 +258,7 @@ function EditItemModal({ item, onClose, onDone }) {
             <button className="secondary" onClick={() => setPlate(plate.filter((_, j) => j !== i))}>Remove</button>
           </div>
         ))}
-        <button className="secondary" style={{ marginTop: "0.5rem" }} onClick={() => setPlate([...plate, { k: "", v: "" }])}>
+        <button className="secondary mt-2" onClick={() => setPlate([...plate, { k: "", v: "" }])}>
           Add a field
         </button>
       </div>
@@ -308,7 +308,7 @@ function DetailsModal({ item, onClose, onDone }) {
         </div>
       ))}
       <Field label="Replacement cost">
-        <div className="maint-row" style={{ marginTop: 0 }}>
+        <div className="maint-row mt-0">
           <input type="number" inputMode="decimal" min="0" step="any" value={cost.amount} placeholder="amount"
                  onChange={(e) => setCost({ ...cost, amount: e.target.value })} style={{ width: "8rem" }} />
           <input value={cost.currency} placeholder="AUD" maxLength={3} style={{ width: "5rem" }}

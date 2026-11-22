@@ -189,7 +189,7 @@ export default function NewDatasetModal({
   const readingBox = (readingSource || up.reading) && (
     <section className="ds-reading" aria-label="How the columns are read">
       <div className="ds-section-h">How the columns are read for modelling</div>
-      <p className="hint" style={{ margin: 0 }}>
+      <p className="hint m-0">
         Checked once, here: every model built from this dataset reads it this way. You can change it later.
       </p>
       {up.loading && !reading && <p className="muted-line" role="status">Reading the columns…</p>}
@@ -332,7 +332,7 @@ export default function NewDatasetModal({
   ) : split.active ? (
     <>
       {(split.waitingFor || readingWait) && (
-        <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{split.waitingFor || readingWait}</span>
+        <span className="hint ds-next-why m-0" role="status">{split.waitingFor || readingWait}</span>
       )}
       <button className="ds-foot-primary" onClick={onSaveSplit}
               disabled={!split.canSave || !!readingWait || (libraryChoice && !libraryChoiceReady(library))}>{split.saveLabel}</button>
@@ -343,7 +343,7 @@ export default function NewDatasetModal({
     <>
       {enter && <button className="secondary" onClick={() => go("upload")} disabled={busy}>Back</button>}
       {needsReading && readingWait && (step === "upload" ? !!picked : true) && (
-        <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{readingWait}</span>
+        <span className="hint ds-next-why m-0" role="status">{readingWait}</span>
       )}
       <button className="ds-foot-primary" onClick={run} disabled={!valid || busy}>
         {busy ? "Creating…" : "Create dataset"}
@@ -357,7 +357,7 @@ export default function NewDatasetModal({
              onToggle={(e) => setMeasOpen(e.target.open)}>
       <summary>Add measurements for these units (optional)</summary>
       <div className="ds-more-body">
-        <p className="hint" style={{ margin: 0 }}>{PART_WORDS.measurements.hint}</p>
+        <p className="hint m-0">{PART_WORDS.measurements.hint}</p>
         <DatasetPartInput value={measurements} onChange={setMeasurements} label="readings"
                           placeholder={PART_WORDS.measurements.placeholder} disabled={busy} />
       </div>
@@ -488,7 +488,7 @@ export default function NewDatasetModal({
             </>
           ) : (
             <div className="ds-form">
-              <p className="muted-line" style={{ margin: 0 }}>
+              <p className="muted-line m-0">
                 One value per unit, separated by commas.
               </p>
               <ListField f="x" v={vals.x} onChange={setVal} disabled={fieldDisabled("x")}

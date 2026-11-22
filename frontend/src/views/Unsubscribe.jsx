@@ -82,7 +82,7 @@ export default function Unsubscribe() {
               {email ? <> (<strong>{email}</strong>)</> : null}. You'll still get
               emails you trigger yourself, like team invites and shares.
             </p>
-            {error && <div className="error" style={{ marginTop: 0, marginBottom: 12 }}>{error}</div>}
+            {error && <div className="error mt-0 mb-3">{error}</div>}
             <button
               type="button"
               className="secondary"

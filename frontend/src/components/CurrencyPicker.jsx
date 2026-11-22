@@ -15,7 +15,7 @@ export default function CurrencyPicker({ value, onSave, readOnly = false }) {
   useEffect(() => setText(value || "$"), [value]);
 
   if (readOnly) {
-    return <p className="muted-line" style={{ margin: 0 }}>{value || "$"} · the team owner sets it.</p>;
+    return <p className="muted-line m-0">{value || "$"} · the team owner sets it.</p>;
   }
   const save = async (sym) => {
     setSaving(true);
@@ -48,7 +48,7 @@ export default function CurrencyPicker({ value, onSave, readOnly = false }) {
         </Button>
         {saved && !dirty && <span className="muted-line" role="status">Saved.</span>}
       </form>
-      {error && <div className="error" style={{ marginBottom: 0 }}>{error}</div>}
+      {error && <div className="error mb-0">{error}</div>}
     </>
   );
 }

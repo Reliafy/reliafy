@@ -64,7 +64,7 @@ function HorizonTable({ table, unit, disc }) {
           ))}
         </tbody>
       </table>
-      <p className="muted-line" style={{ margin: 0 }}>
+      <p className="muted-line m-0">
         {disc ? `Present values at ${disc}% a year. ` : ""}
         {hasNew
           ? "From new counts the early years as they are — a new system fails less (or more) than in the long run."
@@ -111,7 +111,7 @@ export function DowntimeSplit({ result, unit }) {
           {cost.not_split > 0 && bar("Not split", cost.not_split, costTotal, "Maintenance-group set-up costs (charged at failures and planned work alike) and blocks' own downtime costs.", false, fmtMoney(cost.not_split))}
         </>
       )}
-      <p className="muted-line" style={{ margin: 0 }}>
+      <p className="muted-line m-0">
         Of the {fmtPct(total, 3)} unavailability, {fmtPct(share(d.failures))} comes from failures and{" "}
         {fmtPct(share(d.maintenance))} from maintenance and test time
         {d.planned_outages_per_window != null && ` (${fmtT(d.planned_outages_per_window)} planned outages of the system per ${fmtT(result.t_simulation)}${u} window)`}.
@@ -134,7 +134,7 @@ export function PlanEffect({ result, unit }) {
     return (
       <div className="rbd-avail-nodes rbd-plan-effect">
         <div className="ds-section-h">What the plan buys</div>
-        <p className="muted-line" style={{ margin: 0 }}>{e.reason}</p>
+        <p className="muted-line m-0">{e.reason}</p>
       </div>
     );
   }
@@ -193,7 +193,7 @@ export function PlanEffect({ result, unit }) {
           </table>
         </ScrollCue>
       )}
-      <p className="muted-line" style={{ margin: 0 }}>
+      <p className="muted-line m-0">
         Against the same diagram with no scheduled replacements (proof tests kept), in the long run.
         {una.with_plan > una.run_to_failure ? " Here the plan costs more downtime than it saves: its work takes longer than the failures it avoids." : ""}
       </p>
@@ -300,7 +300,7 @@ export default function AvailabilityCosts({ result, unit }) {
         </ScrollCue>
       )}
 
-      <p className="muted-line" style={{ margin: 0 }}>
+      <p className="muted-line m-0">
         {c.priced
           ? c.cost_rate_basis === "exact"
             ? "The running cost is RePyability's exact long-run rate"

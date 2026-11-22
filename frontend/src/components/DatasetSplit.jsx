@@ -79,7 +79,7 @@ export function useDatasetSplit({ text, noHeader = false, source = "", enabled =
         <Select value={column} onChange={setColumn} ariaLabel="Split into datasets by"
                 options={[{ value: "", label: "— no split: one dataset —" }, ...columns]} />
       </div>
-      <span className="hint" style={{ margin: 0 }}>
+      <span className="hint m-0">
         Optional. Each value of the column becomes its own dataset, named by the value.
       </span>
     </div>
@@ -101,7 +101,7 @@ export function useDatasetSplit({ text, noHeader = false, source = "", enabled =
         </table>
       </div>
       {warn && <p className="ds-header-note" role="status"><span>{warn}</span></p>}
-      <p className="muted-line" style={{ margin: 0 }}>
+      <p className="muted-line m-0">
         Each is saved on its own, without the “{column}” column, and every one is read as set below.
       </p>
       {room && (
@@ -129,7 +129,7 @@ export function useDatasetSplit({ text, noHeader = false, source = "", enabled =
           </tbody>
         </table>
       </div>
-      <p className="muted-line" style={{ margin: 0 }}>
+      <p className="muted-line m-0">
         Open one to fit a model to it.
         {saved.left_out ? ` ${blankWarning(saved.left_out, column)}.` : ""}
       </p>

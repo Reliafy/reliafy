@@ -195,7 +195,7 @@ function JointCalculator({ modelId, results, name, entered, setEntered }) {
             <button type="button" onClick={onPredict} disabled={busy || !modelId}
                     title={modelId ? undefined : SIGN_IN}>{busy ? "Working…" : "Predict"}</button>
           </div>
-          {!modelId && <p className="muted-line" style={{ margin: 0 }}>{SIGN_IN}</p>}
+          {!modelId && <p className="muted-line m-0">{SIGN_IN}</p>}
           {error && <div className="error" role="alert">{error}</div>}
         </div>
       </div>

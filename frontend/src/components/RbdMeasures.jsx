@@ -167,7 +167,7 @@ export default function RbdMeasure({ graph, rbdId = null, measure, windowLen = n
       {controls && <div className="rbd-improve-controls">{controls}</div>}
       {error && <div className="card error">{error}</div>}
       {job && <p className="rbd-job-status" role="status" aria-live="polite">{jobText(job)}</p>}
-      {busy && !job && <p className="hint" role="status" style={{ margin: 0 }}>Working it out…</p>}
+      {busy && !job && <p className="hint m-0" role="status">Working it out…</p>}
       {shown && !busy && <MeasureBody data={shown} unit={unit} colorOf={colorOf} onUseSteps={onUseSteps} />}
     </div>
   );
@@ -205,7 +205,7 @@ function MeasureBody({ data, unit, colorOf, onUseSteps = null }) {
   if (data.status === "pro_required") {
     return (
       <div className="card note" role="status">
-        <p style={{ margin: 0 }}>{data.message}</p>
+        <p className="m-0">{data.message}</p>
         <div className="rbd-upgrade-actions"><Link className="cta cta-solid" to="/billing">Upgrade to Pro</Link></div>
       </div>
     );
@@ -215,7 +215,7 @@ function MeasureBody({ data, unit, colorOf, onUseSteps = null }) {
     // plainly and point at the view that works, the backend's reason folded.
     return (
       <div className="card note rbd-measure-empty" role="status">
-        <p style={{ margin: 0 }}>
+        <p className="m-0">
           <b>This view needs exact figures, and this diagram has none.</b> The ranked steps simulate
           each change instead, so they still answer what to improve.
         </p>
@@ -227,7 +227,7 @@ function MeasureBody({ data, unit, colorOf, onUseSteps = null }) {
         {data.message && (
           <details className="rbd-measure-why">
             <summary>Why</summary>
-            <p className="muted-line" style={{ margin: 0 }}>{data.message}</p>
+            <p className="muted-line m-0">{data.message}</p>
           </details>
         )}
         {data.fixed?.length > 0 && <FixedNote fixed={data.fixed} />}
@@ -237,7 +237,7 @@ function MeasureBody({ data, unit, colorOf, onUseSteps = null }) {
   if (data.status !== "ok") {
     return (
       <div className="rbd-measure-empty" role="status">
-        <p className="muted-line" style={{ margin: 0 }}>{data.message}</p>
+        <p className="muted-line m-0">{data.message}</p>
         {data.fixed?.length > 0 && <FixedNote fixed={data.fixed} />}
       </div>
     );
@@ -426,7 +426,7 @@ function Rate({ data, unit, colorOf }) {
 
 function FixedNote({ fixed }) {
   return (
-    <p className="muted-line" style={{ margin: 0 }}>
+    <p className="muted-line m-0">
       Kept fixed: {fixed.map((f) => `${f.label} (${f.reason})`).join(" · ")}.
     </p>
   );

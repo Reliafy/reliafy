@@ -152,7 +152,7 @@ export function DatasetPartModal({ datasetId, part = "measurements", replacing =
   return (
     <Modal title={replacing ? words.replace : words.title} className="ds-new" onClose={onClose} locked={busy} footer={footer}>
       <div className="fit-step">
-        <p className="hint" style={{ marginTop: 0 }}>{words.hint}</p>
+        <p className="hint mt-0">{words.hint}</p>
         <DatasetPartInput value={value} onChange={setValue} label={words.label} placeholder={words.placeholder} disabled={busy} />
         {error && <div className="error">{error}</div>}
       </div>

@@ -120,7 +120,7 @@ export function ClassStocking({ data, name, serviceLevel, reviewDays, onOptions,
       {chosen && (
         <>
           {rows.length > 1 && (
-            <p className="maint-row lib-date" style={{ gap: "0.4rem" }}>
+            <p className="maint-row lib-date gap-1-5">
               <label htmlFor="stock-part">Part</label>
               <Select id="stock-part" value={chosen.part.id} onChange={(e) => setPick(e.target.value)}>
                 {rows.map((s) => <option key={s.part.id} value={s.part.id}>{s.part.part_number} {s.part.name}</option>)}

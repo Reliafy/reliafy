@@ -74,7 +74,7 @@ export default function PublicRbd({ a, token, unlock }) {
     <RbdUnitContext.Provider value={unit}>
       <RbdRepairableContext.Provider value={repairable}>
         <RbdCcfContext.Provider value={ccfById}>
-          <div className="card" style={{ padding: "0.9rem" }}>
+          <div className="card p-3">
             <div ref={fullRef} className={"public-rbd-canvas-wrap" + (full ? " is-full" : "")}>
               <div className="rbd-canvas public-rbd-canvas">
                 <RbdDiagramCanvas graph={graph} full={full} />
@@ -93,19 +93,19 @@ export default function PublicRbd({ a, token, unlock }) {
           </div>
 
           {a.analysis_error && (
-            <div className="card note" style={{ marginTop: "1rem" }}>
+            <div className="card note mt-4">
               This diagram couldn't be analysed: {a.analysis_error}
             </div>
           )}
 
           {!analysis && a.analysis_note && (
-            <div className="card note" style={{ marginTop: "1rem" }}>
+            <div className="card note mt-4">
               {a.analysis_note}
             </div>
           )}
 
           {analysis && analysis.kind === "repairable" && (
-            <div className="card" style={{ marginTop: "1rem" }}>
+            <div className="card mt-4">
               <h2>System availability</h2>
               {analysis.cached && (
                 <p className="rbd-saved-note">{savedOn(analysis.computed_at)}</p>
@@ -115,7 +115,7 @@ export default function PublicRbd({ a, token, unlock }) {
           )}
 
           {analysis && analysis.kind !== "repairable" && (
-            <div className="card rbd-calc" style={{ marginTop: "1rem" }}>
+            <div className="card rbd-calc mt-4">
               <h2>System reliability</h2>
               <Results result={analysis} t={evalT} tMax={null} conditionalAge={analysis.conditional_age || 0} />
             </div>

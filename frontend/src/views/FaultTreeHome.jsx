@@ -105,7 +105,7 @@ export default function FaultTreeHome() {
       {imported && (
         <div className="card">
           <div style={{ display: "flex", alignItems: "baseline", gap: "0.75rem", flexWrap: "wrap" }}>
-            <h2 style={{ margin: 0 }}>Fault trees in {imported.file}</h2>
+            <h2 className="m-0">Fault trees in {imported.file}</h2>
             <span style={{ flex: 1 }} />
             <button className="link" onClick={() => setImported(null)}>Cancel</button>
           </div>

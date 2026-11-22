@@ -70,7 +70,7 @@ export function StructureTree({ tree, onEdit, onRemove, showTop = true }) {
   return (
     <>
       {all.length > 2 && (
-        <div className="maint-row" style={{ marginTop: 0, marginBottom: "0.5rem" }}>
+        <div className="maint-row mt-0 mb-2">
           <button className="link" onClick={() => setOpen(new Set(all))}>Expand all</button>
           <button className="link" onClick={() => setOpen(new Set(showTop ? [tree.id] : []))}>Collapse all</button>
         </div>
@@ -394,7 +394,7 @@ export function PositionsFromStructureModal({ structure, onClose, onDone }) {
           <Radio checked={!every} onChange={() => { setEvery(false); setPreview(null); }} label="Only these levels:" />
         )}
         {!every && (
-          <div className="maint-row" style={{ marginTop: "0.25rem" }}>
+          <div className="maint-row mt-1">
             {found.map((l) => (
               <Checkbox key={l} checked={chosen.has(l)} onChange={() => flip(l)} label={l} />
             ))}

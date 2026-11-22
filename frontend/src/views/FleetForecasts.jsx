@@ -248,7 +248,7 @@ export default function FleetForecasts() {
       {ticked.length > 0 && !comparing && (
         <div className="fleet-bulk-bar" data-testid="fleet-compare-bar">
           <b>{ticked.length} ticked</b>
-          <span className="muted-line" style={{ margin: 0 }}>
+          <span className="muted-line m-0">
             {ticked.length < 2 ? "Tick another forecast to compare them." : `Compare up to ${MAX_COMPARE} side by side.`}
           </span>
           <button className="sm" disabled={ticked.length < 2} onClick={() => setComparing(true)}>

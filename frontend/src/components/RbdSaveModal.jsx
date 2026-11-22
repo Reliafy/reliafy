@@ -27,7 +27,7 @@ export default function RbdSaveModal({ initialName, onClose, onSubmit, asNew = f
       <span className="hint">
         {asNew ? "A separate copy: this diagram stays as it was last saved." : "Saved RBDs can be embedded as sub-systems."}
       </span>
-      <div className="row" style={{ margin: 0 }}>
+      <div className="row m-0">
         <button className="secondary" onClick={onClose} disabled={saving}>
           Cancel
         </button>
