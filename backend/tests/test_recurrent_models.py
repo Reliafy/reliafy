@@ -420,3 +420,15 @@ def test_a_windowed_fit_is_the_fit_with_end_rows():
     payload, _ = rec.fit(df, {"i": "s", "x": "t", "tr": "end"}, "crow_amsaa", "hours", gof_test=False)
     ref = CrowAMSAA.fit(**_ended(df.t.to_numpy(float), df.s.to_numpy(), df.end.to_numpy(float)))
     assert [p["value"] for p in payload["params"]] == pytest.approx(list(ref.params), rel=1e-6)
+
+
+def test_get_model_matches_only_a_string_id():
+    """An id that isn't a string (a dict from a JSON body, say) matches nothing, even
+    one that would match every document as a query operator."""
+    from backend.services import recurrent as recurrent_service
+
+    db = mongomock.MongoClient()["reliafy_test"]
+    db.recurrent_models.insert_one({"_id": "abc", "owner_id": A, "name": "Pumps"})
+    assert recurrent_service.get_model(db, {"$ne": None}) is None
+    assert recurrent_service.get_model(db, "") is None
+    assert recurrent_service.get_model(db, "nope") is None

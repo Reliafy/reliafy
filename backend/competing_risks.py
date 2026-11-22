@@ -42,6 +42,7 @@ from backend.services.compare_groups import FailureModeError, _label, _named, _p
 from backend.services.strategy import fmt_num
 from backend.units import unit_in_text
 from backend.warn_capture import collect_warnings, ignore_warnings
+from backend.errors import client_reason
 
 # The mapping keys this model reads beyond x / c / n.
 CAUSE_KEY = "e"
@@ -275,7 +276,7 @@ def eliminated(prep: dict, cause: str) -> dict:
             m = Weibull.fit(x, c=cc, n=n)
             life = life_bounds.time_at_reliability(m, [1.0 - ELIMINATED_B], 1.0 - ALPHA, "lower")
     except Exception as exc:  # noqa: BLE001 - the rest of the result stands
-        out["reason"] = f"The Weibull fit didn't converge ({str(exc) or type(exc).__name__})."
+        out["reason"] = f"The Weibull fit didn't converge ({client_reason(exc, where='competing risks')})."
         return out
     point = life["points"][0]
     out.update({

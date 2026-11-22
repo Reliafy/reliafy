@@ -1254,7 +1254,7 @@ def _phase_lines(graph: dict, phases: list[dict], unit: str) -> tuple[list[str],
             try:
                 expr, desc = _dist_expr(spec, label, unit)
             except _Missing as exc:
-                model_lines.append(f"# {label} in phase {p['name']}: {exc}")
+                model_lines.append(f"# {label} in phase {p['name']}: {client_message(exc)}")
                 continue
             var = f"MODEL_{j + 1}_{len(model_lines) + 1}"
             model_lines.append(f"{var} = {expr}  # {label[:30]} in {p['name'][:20]}: {desc}"[:200])
