@@ -1050,6 +1050,7 @@ def _resolve_decision(decision: dict, fetch) -> dict:
         if checked.get("status") == "supported":
             r = artifact.results or {}
             checked = _far_shorter(checked, decision, r.get("optimal_time"), r.get("unit"), "the cost-optimal interval")
+            checked = _far_longer(checked, decision, r.get("optimal_time"), r.get("unit"), "the cost-optimal interval")
         return {**base, **_with_conversion(checked, decision,
                                            (artifact.results or {}).get("unit"),
                                            (artifact.results or {}).get("optimal_time"))}
@@ -1161,6 +1162,27 @@ def _far_shorter(result: dict, decision: dict, interval, evidence_unit, what: st
     return {**result, "status": "contradicted", "interval_share": round(share, 4),
             "summary": f"The task is set every {set_s}, far shorter than {what} its evidence supports, about "
                        f"{ev_s}: it is done about {times_s} times as often as the evidence needs. {found}".strip()}
+
+
+def _far_longer(result: dict, decision: dict, interval, evidence_unit, what: str) -> dict:
+    """The mirror of :func:`_far_shorter`, for a fixed-interval task against its
+    cost-optimal age (the calculators flag any interval longer than theirs already):
+    a task set at more than 1 / :data:`FAR_SHORTER` times the interval its evidence
+    supports reads contradicted, with both intervals and how many times as long it is,
+    then what the evidence found. Anything else is returned as it is."""
+    share = _task_share(decision, interval, evidence_unit)
+    if result.get("status") != "supported" or share is None or share <= 1 / FAR_SHORTER:
+        return result
+    task_unit = decision.get("interval_unit") or evidence_unit
+    ev_unit = evidence_unit or decision.get("interval_unit")
+    set_s = with_unit(fmt_num(float(decision["interval"])), unit_in_text(task_unit))
+    ev_s = with_unit(fmt_num(float(interval)), unit_in_text(ev_unit))
+    times = round(share)  # at least 2: the share is over 2
+    times_s = "twice" if times == 2 else f"{times:,} times"
+    found = result.get("summary") or ""
+    return {**result, "status": "contradicted", "interval_share": round(share, 4),
+            "summary": f"The task is set every {set_s}, far longer than {what} its evidence supports, about "
+                       f"{ev_s}: about {times_s} as long as the evidence supports. {found}".strip()}
 
 
 def _check_on_condition_interval(decision: dict, analysis) -> dict:
