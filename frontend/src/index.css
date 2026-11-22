@@ -4289,6 +4289,9 @@ h1 .chip,
    button competing with the primary action. */
 .seg {
   display: inline-flex;
+  /* Sized to its options, even in a column or stretching parent. */
+  width: fit-content;
+  max-width: 100%;
   border: 1px solid var(--border-control);
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -4344,6 +4347,9 @@ h1 .chip,
 @media (max-width: 720px) {
   .seg-btn, .seg-sm .seg-btn { min-height: var(--control-lg); }
 }
+
+.seg-fill { display: flex; width: 100%; }
+.seg-fill .seg-btn { flex: 1 1 0; min-width: 0; }
 
 /* A labelled control: the label sits above, like a form field's. */
 .seg-field {

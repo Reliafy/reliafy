@@ -1450,7 +1450,7 @@ button.rcm-mt-arrow:hover:not(:disabled) { background: var(--bg-subtle); }
 .ptabs-views { align-self: flex-start; margin: var(--space-2) 0; }
 @media (max-width: 560px) {
   /* A phone: the inner views share the width in equal parts, one line each. */
-  .ptabs-views { align-self: stretch; display: flex; }
+  .ptabs-views { align-self: stretch; display: flex; width: auto; }
   /* Five views (Maintenance: Tasks · What it needs · Packages · Forecast · Spares) don't fit 400 px: each
      takes its label's width and the row scrolls inside itself, never the page, rather than clipping one. */
   .ptabs-views { overflow-x: auto; }
