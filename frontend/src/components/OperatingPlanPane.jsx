@@ -16,6 +16,8 @@ import { DateInput, TimeInput } from "./ui/DateTimeInput.jsx";
 import { ReadsAs } from "./ui/InputGroup.jsx";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
 import "./OperatingPlanPane.css";
+import LoadFailed from "./LoadFailed.jsx";
+import Loading from "./ui/Loading.jsx";
 
 // A position's operating plan, in the Explorer's table area beside the tree (?plan=<position id>,
 // from the Measurements tab's row menu and the Summary's "Operating plan" line; no modal): how it
@@ -238,8 +240,8 @@ export default function OperatingPlanPane({ position, root = null, phone = false
     <TablePane title="Operating plan" subject={position.name} phone={phone} busy={saving} headingRef={headingRef} onClose={onClose}
                className="op-pane" actions={<ShowMe help={{ guide: "operating-plans-and-how-often" }} asHelp />}>
       <div className="op-body">
-        {error && <div className="card error">Couldn&apos;t load the operating plan: {error.message}</div>}
-        {!data && !error && <p className="lib-date">Loading…</p>}
+        {error && <LoadFailed what="Couldn't load the operating plan." error={error} />}
+        {!data && !error && <Loading />}
         {data && !form && (
           <section className="op-now" aria-label="How it runs now">
             {plan ? (

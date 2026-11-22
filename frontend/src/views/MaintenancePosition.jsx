@@ -62,6 +62,7 @@ import { partsPath } from "../redirects.js";
 import { classLabel, isDesignClass } from "../positionClass.js";
 import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { DateInput, TimeInput } from "../components/ui/DateTimeInput.jsx";
+import Loading from "../components/ui/Loading.jsx";
 import { Checkbox } from "../components/ui/Controls.jsx";
 
 // One position: what's fitted, its failure modes and tasks (from RCM or added
@@ -87,7 +88,7 @@ export default function MaintenancePosition() {
   };
 
   if (error && !p) return <div className="app"><LoadFailed header onRetry={() => { setError(null); refresh(); }} error={error} notFound="Position not found." to="/asset-register" label="See all assets" /></div>;
-  if (!p) return <div className="app"><div className="card empty">Loading…</div></div>;
+  if (!p) return <div className="app"><Loading card /></div>;
 
   return (
     <div className="app">

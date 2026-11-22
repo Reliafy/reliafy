@@ -1,12 +1,23 @@
-/* Placeholder rows: where a list will be while it loads (PlaceholderRows.jsx).
-   Sized like a "What changed" row, so the card barely moves when the list
-   arrives. */
+/* Loading (Loading.jsx): the inline "Loading…" and the block placeholder rows.
+   A list row is sized like a "What changed" row, so the card barely moves
+   when the list arrives. */
+
+.loading-inline {
+  color: var(--text-secondary);
+  font-size: var(--fs-13);
+  line-height: var(--lh-13);
+}
+
+p.loading-inline { margin: 0; }
+
+/* In place of a card that will load: the rows carry their own padding. */
+.loading-card { padding: var(--space-2); }
 
 .wait-row {
   display: flex;
   align-items: flex-start;
-  gap: 16px;
-  padding: 14px 16px;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
 }
 
 .wait-row + .wait-row {
@@ -15,15 +26,15 @@
 
 .wait-bar {
   display: block;
-  height: 10px;
-  border-radius: 5px;
+  height: var(--space-3);
+  border-radius: var(--radius-full);
   background: var(--border);
   animation: wait-pulse 1.6s ease-in-out infinite;
 }
 
 .wait-kind {
-  flex: 0 0 72px;
-  margin-right: 96px;
+  flex: 0 0 calc(var(--space-16) + var(--space-2));
+  margin-right: calc(var(--space-16) + var(--space-8));
 }
 
 .wait-body {
@@ -31,7 +42,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-2);
 }
 
 .wait-name {
@@ -70,12 +81,12 @@
 @media (max-width: 720px) {
   .wait-row {
     flex-direction: column;
-    gap: 10px;
+    gap: var(--space-2);
   }
 
   .wait-kind {
     flex: none;
-    width: 72px;
+    width: calc(var(--space-16) + var(--space-2));
     margin-right: 0;
   }
 

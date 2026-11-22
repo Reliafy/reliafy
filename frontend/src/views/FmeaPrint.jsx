@@ -7,6 +7,8 @@ import { fmt3 } from "../fmea.js";
 import { explorerPath } from "../assetTree.js";
 import "./Maintenance.css";
 import "../components/FmeaPanels.css";
+import LoadFailed from "../components/LoadFailed.jsx";
+import Loading from "../components/ui/Loading.jsx";
 
 // The print view of a position's FME(C)A (/asset-register/positions/:id/fmea):
 // one plain, full-width worksheet table, it and everything inside it, one row
@@ -54,9 +56,9 @@ export default function FmeaPrint() {
         </div>
       </div>
       {error ? (
-        <div className="card error"><p>The worksheet didn't load: {error}</p></div>
+        <LoadFailed what="Couldn't load the worksheet." error={error} />
       ) : !sheet ? (
-        <div className="card empty">Loading…</div>
+        <Loading card />
       ) : !shown.length ? (
         <div className="card empty"><p>No functions or failure modes here yet. Add them on the Explorer's FME(C)A tab.</p></div>
       ) : (

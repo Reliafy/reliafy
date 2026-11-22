@@ -22,6 +22,7 @@ import { ORDERS_LABEL, ORDERS_PATH } from "../navigation.js";
 import { workOrderPath } from "../maintenanceOrders.js";
 import { reportLink } from "../failureReports.js";
 import { DateInput } from "../components/ui/DateTimeInput.jsx";
+import Loading from "../components/ui/Loading.jsx";
 import { Checkbox } from "../components/ui/Controls.jsx";
 
 const STATUS_LABELS = {
@@ -49,7 +50,7 @@ export default function MaintenanceWorkOrder() {
   useEffect(() => { if (wo) setValues((prev) => mergeValues(readingRows(wo), prev)); }, [wo]);
 
   if (error && !wo) return <div className="app"><LoadFailed header onRetry={() => { setError(null); refresh(); }} error={error} notFound="Work order not found." to={ORDERS_PATH} label="Back to Orders" /></div>;
-  if (!wo) return <div className="app"><div className="card empty">Loading…</div></div>;
+  if (!wo) return <div className="app"><Loading card /></div>;
 
   return (
     <div className="app">

@@ -6,6 +6,8 @@ import { formatCost, workspaceCurrency } from "../money.js";
 import { Link, useLocation } from "react-router-dom";
 import { explorerHere } from "../products.js";
 import { taskKey } from "../explorerRcm.js";
+import LoadFailed from "./LoadFailed.jsx";
+import Loading from "./ui/Loading.jsx";
 
 // One task's LSA in the Explorer's LSA tab (?task=<id>, with a back link): the
 // task's name, kind, interval, position and the failure modes it serves, then
@@ -158,9 +160,9 @@ export default function LsaTask({ taskId, onBack, onChanged }) {
   };
 
   const back = <button type="button" className="link pk-back" onClick={onBack}>← All tasks here</button>;
-  if (state.error && state.id === taskId) return <div>{back}<div className="card error">Couldn&apos;t load the task: {state.error}</div></div>;
+  if (state.error && state.id === taskId) return <div>{back}<LoadFailed what="Couldn't load the task." error={state.error} /></div>;
   const data = state.id === taskId ? state.data : null;
-  if (!data || !draft) return <div>{back}<p className="lib-date">Loading…</p></div>;
+  if (!data || !draft) return <div>{back}<Loading /></div>;
   const t = data.task;
   const r = t.resources || {};
   const kind = kindText({ ...t, kind: t.outcome });

@@ -13,6 +13,7 @@ import {
   usedLinks,
 } from "../libraries.js";
 import "../views/LibraryPages.css";
+import Loading from "./ui/Loading.jsx";
 
 // A library's shared pieces, in the app (views/Libraries.jsx) and on the public page
 // (views/PublicLibraryPage.jsx): what the library is (purpose, source, licence, citation) and its
@@ -95,7 +96,7 @@ function EntryDetail({ libraryId, entry }) {
     return () => { live = false; };
   }, [libraryId, entry.id, entry.version]);
   if (error) return <p className="field-error" role="alert">{error}</p>;
-  if (!d) return <p className="lib-quiet">Loading…</p>;
+  if (!d) return <Loading />;
   if (d.type === "data") {
     const preview = d.data?.preview;
     return (

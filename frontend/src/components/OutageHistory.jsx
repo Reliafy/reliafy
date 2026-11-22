@@ -23,6 +23,7 @@ import "./OutageHistory.css";
 import { unitInText } from "./unitText.js";
 import Chip from "./ui/Chip.jsx";
 import ScrollCue from "./ui/ScrollCue.jsx";
+import Loading from "./ui/Loading.jsx";
 import { Checkbox } from "./ui/Controls.jsx";
 
 const FIELDS = [
@@ -700,7 +701,7 @@ export default function OutageHistory({ rbdId, graph, readOnly, onApplyModels, o
     );
   }
   if (error && !logs?.length) return <div className="error">{error}</div>;
-  if (logs == null) return <p className="muted-line">Loading…</p>;
+  if (logs == null) return <Loading />;
 
   const active = logs.find((l) => l.id === activeId);
   const onSaved = (log) => {

@@ -4,6 +4,7 @@ import { getClassForecast } from "../api.js";
 import { formatNumber, formatPercent } from "../format.js";
 import { classForecastGroups, horizonText, scopedForecast } from "../maintenanceForecast.js";
 import ResultSummary from "./ui/ResultSummary.jsx";
+import Loading from "./ui/Loading.jsx";
 
 // An item class's Forecast and Spares tabs, beside the Explorer's tree arranged by Classes.
 // A forecast is a position class's (its fitted life model, from its own history: the
@@ -18,7 +19,7 @@ import ResultSummary from "./ui/ResultSummary.jsx";
 // and the card says so.
 
 const ForecastCard = lazy(() => import("../views/MaintenanceLists.jsx").then((m) => ({ default: m.ForecastCard })));
-const loading = <p className="hint">Loading…</p>;
+const loading = <Loading />;
 const forecastsPath = (key) => `/forecasts?class=${encodeURIComponent(key)}`;
 
 // The positions not forecast, one line per reason: [[reason, names]].

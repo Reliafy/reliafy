@@ -26,6 +26,7 @@ import { tabPlace } from "../explorerTabs.js";
 import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { planWords } from "../workManagement.js";
 import "./Maintenance.css";
+import Loading from "../components/ui/Loading.jsx";
 import { Checkbox } from "../components/ui/Controls.jsx";
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -62,7 +63,7 @@ export default function MaintenancePackage() {
   if (error && !rawPkg) {
     return <div className="app"><LoadFailed onRetry={() => setAttempt((n) => n + 1)} header error={error} notFound="Package not found." to={PACKAGES_PATH} label="Back to Packages" /></div>;
   }
-  if (!rawPkg) return <div className="app"><div className="card empty">Loading…</div></div>;
+  if (!rawPkg) return <div className="app"><Loading card /></div>;
 
   const changed = (fresh, text) => {
     setModal(null);
