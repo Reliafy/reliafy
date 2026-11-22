@@ -1,3 +1,4 @@
+import { useUnsavedSignal } from "../useUnsavedSignal.js";
 import { useEffect, useRef, useState } from "react";
 import { updateMaintenancePosition } from "../api.js";
 import { CONTEXT_LIMIT, CONTEXT_PROMPT, charsLeft, checkContext, contextChanged } from "../operatingContext.js";
@@ -27,6 +28,7 @@ export default function OperatingContextCard({ positionId, state, onSaved }) {
   const [error, setError] = useState(null);
   const [note, setNote] = useState(null);
   const startBtn = useRef(null);
+  useUnsavedSignal("operating-context", editing && draft !== (saved ?? loaded ?? ""));
   const area = useRef(null);
 
   useEffect(() => {

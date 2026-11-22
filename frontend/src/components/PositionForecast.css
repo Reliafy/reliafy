@@ -24,3 +24,6 @@
 .fc-flag-word { color: var(--warning-text); font-weight: 600; }
 .fc-notes { margin: 0; padding-left: var(--space-4); }
 .mt-view { margin-left: auto; }
+.fc-enter-group + .fc-enter-group { margin-top: var(--space-3); }
+.fc-enter-title { margin: 0; font-size: var(--fs-14); line-height: var(--lh-14); font-weight: 600; }
+.fc-enter-group > .lib-date { margin: 0 0 var(--space-1); }

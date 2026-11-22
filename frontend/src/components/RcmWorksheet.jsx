@@ -26,6 +26,7 @@ import { modeAnswers } from "../decisionCheck.js";
 import RcmFunctionStandards from "./RcmFunctionStandards.jsx";
 import { COMPARATORS, COMPARATOR_LABEL, limitReads, limitWords } from "../rcmStandards.js";
 import RcmModeTasks, { RcmTaskSections, StepLabel, removeTaskFromMode } from "./RcmModeTasks.jsx";
+import FailureCostRows from "./FailureCostRows.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { getTaskLsa } from "../api.js";
 import { explorerHere } from "../products.js";
@@ -850,7 +851,11 @@ export function Details({
           </section>
         )}
         {r.type === "mode" && !fmea?.on && (
-          <section className="rw-sg" aria-label="Failure consequences">{consequenceRows}</section>
+          <section className="rw-sg" aria-label="Failure consequences">
+            {consequenceRows}
+            {/* What one failure costs: what the forecast and Optimise… charge it (failure_costs.py). */}
+            {ops && r.ref.id && <FailureCostRows key={`${r.key}:cost`} modeId={r.ref.id} readOnly={readOnly} onSaid={said} />}
+          </section>
         )}
         {(r.type === "mode" || isTask) && linkingEvidence && (isTask ? modeRow?.ref.decision : d) && (
           <EvidenceDialog r={isTask ? modeRow : r} at={linkingEvidence.at} options={options} workings={workings} ops={ops}

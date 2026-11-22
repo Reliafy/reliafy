@@ -42,18 +42,35 @@ export function rbdDirty({ tracked = true, rebasing = false, graph, savedSnap })
   return rbdSaveSnapshot(graph) !== savedSnap;
 }
 
-// The words for the status: { text, tone, title }. Tone is a hint for the
-// styling only; the text says it.
-export function rbdSaveStatus({ savedId, readOnly, dirty }) {
+// The words for the status: { text, tone, icon, title, action } (icon: "tick" | "saving" | "warn" | "dot", the status on a phone, where the words are for screen readers). Tone is a hint for the styling
+// only; the text says it. `autosave`: the diagram saves itself (on, and it's the user's to
+// write), with `saveState` the autosaver's ("idle" | "pending" | "saving" | "failed") and
+// `error` a failed save's. `action`: what the status offers ("retry", or "copy" when someone
+// else saved the diagram meanwhile and trying again can't work).
+export function rbdSaveStatus({ savedId, readOnly, dirty, autosave = false, saveState = "idle", error = null }) {
   if (!savedId) {
-    return { text: "Not saved yet", tone: "todo", title: "This diagram hasn't been saved. Save keeps it." };
+    return { text: "Not saved yet", tone: "todo", icon: "dot", title: "This diagram hasn't been saved. Save keeps it." };
   }
   if (readOnly) {
     return dirty
-      ? { text: "Unsaved changes", tone: "todo", title: "A sample or shared diagram: save a copy to keep your changes." }
-      : { text: "Read only", tone: "plain", title: "A sample or shared diagram: save a copy to change it." };
+      ? { text: "Unsaved changes", tone: "todo", icon: "dot", title: "A sample or shared diagram: save a copy to keep your changes." }
+      : { text: "Read only", tone: "plain", icon: "dot", title: "A sample or shared diagram: save a copy to change it." };
+  }
+  if (autosave) {
+    if (saveState === "failed") {
+      const conflict = error?.status === 409 || error?.code === "conflict";
+      return conflict
+        ? { text: "Couldn't save", tone: "bad", icon: "warn", action: "copy",
+          title: "Someone else saved this diagram since you opened it. Save a copy to keep your changes." }
+        : { text: "Couldn't save", tone: "bad", icon: "warn", action: "retry",
+          title: `${error?.message ? `${String(error.message).replace(/\.?$/, ".")} ` : ""}Your changes are still here: retry.` };
+    }
+    if (saveState === "saving" || saveState === "pending" || dirty) {
+      return { text: "Saving…", tone: "plain", icon: "saving", title: "Saving your changes." };
+    }
+    return { text: "Saved", tone: "ok", icon: "tick", title: "Every change saves itself. Undo with Ctrl+Z (⌘Z on a Mac)." };
   }
   return dirty
-    ? { text: "Unsaved changes", tone: "todo", title: "Changed since the last save." }
-    : { text: "Saved", tone: "ok", title: "No changes since the last save." };
+    ? { text: "Unsaved changes", tone: "todo", title: "Changed since the last save. Autosave is off." }
+    : { text: "Saved", tone: "ok", icon: "tick", title: "No changes since the last save." };
 }

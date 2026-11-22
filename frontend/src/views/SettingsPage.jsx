@@ -28,6 +28,7 @@ import { AUTH_DISABLED } from "../firebase.js";
 import Tabs from "../components/ui/Tabs.jsx";
 import { useConfirm } from "../components/ConfirmProvider.jsx";
 import Loading from "../components/ui/Loading.jsx";
+import { saveEditorPrefs, useEditorPrefs } from "../editorPrefs.js";
 
 const TABS = [
   { id: "general", label: "General" },
@@ -150,6 +151,33 @@ function EmailPreferences() {
   );
 }
 
+// How the editors behave: the RBD builder saves each change by itself unless this is off
+// (it's also in the builder's ⋯ menu). Optimistic, like the emails switch.
+function EditingPreferences() {
+  const { autosave } = useEditorPrefs();
+  const [error, setError] = useState("");
+  const onToggle = (next) => {
+    setError("");
+    saveEditorPrefs({ autosave: next }).catch(() => setError("Couldn't save that change. Try again in a moment."));
+  };
+  return (
+    <Card style={{ marginTop: "1rem" }}>
+      <CardHeader title="Editing" />
+      <Switch
+        checked={!!autosave}
+        onChange={onToggle}
+        label={<span>
+          <b>Autosave diagrams</b> — an RBD you've saved keeps each change a moment after you make it. Undo (Ctrl+Z) takes a change back.
+        </span>}
+      />
+      <p className="muted-line" style={{ marginBottom: 0 }}>
+        Off: the builder shows Save and asks before you leave with changes not saved.
+      </p>
+      {error && <div className="error" style={{ marginBottom: 0 }}>{error}</div>}
+    </Card>
+  );
+}
+
 // Account settings — profile, sample data, and the ingestion API. The single
 // home for account-level details that aren't billing (which stays on /billing).
 export default function SettingsPage() {
@@ -247,6 +275,8 @@ export default function SettingsPage() {
               </Button>
             </div>
           </Card>
+
+          <EditingPreferences />
 
           {!AUTH_DISABLED && <EmailPreferences />}
         </div>

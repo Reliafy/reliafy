@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { addPackageTask, getPositionForecast, getTaskTable, listPackages } from "../api.js";
 import Chip from "./ui/Chip.jsx";
+import Select from "./Select.jsx";
 import TablePane from "./TablePane.jsx";
 import PositionForecast from "./PositionForecast.jsx";
 import SparesYear from "./SparesYear.jsx";
@@ -393,11 +394,10 @@ function AddToPackage({ asset, tasks, display, onClose, onDone }) {
           {tasks.map((t) => (
             <label key={t.id} className="mt-pk-rule">
               <span>{t.name} <span className="lib-date">· {taskCell(t, "interval").text || "no interval"}</span></span>
-              <select value={rules[t.id] || 1} onChange={(e) => setRules((r) => ({ ...r, [t.id]: Number(e.target.value) }))}
-                      aria-label={`${t.name}: on which visits`}>
-                {[...new Set([...RULES, rules[t.id] || 1])].sort((a, b) => a - b)
-                  .map((n) => <option key={n} value={n}>{n === 1 ? "Every visit" : `Every ${ordinal(n)} visit`}</option>)}
-              </select>
+              <Select value={String(rules[t.id] || 1)} onChange={(v) => setRules((r) => ({ ...r, [t.id]: Number(v) }))}
+                      ariaLabel={`${t.name}: on which visits`}
+                      options={[...new Set([...RULES, rules[t.id] || 1])].sort((a, b) => a - b)
+                        .map((n) => ({ value: String(n), label: n === 1 ? "Every visit" : `Every ${ordinal(n)} visit` }))} />
             </label>
           ))}
         </fieldset>

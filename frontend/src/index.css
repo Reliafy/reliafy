@@ -1366,43 +1366,6 @@ h6 {
    it. Absolutely positioned so the overlay stays one row tall when collapsed. */
 .rbd-ccf-menu { position: relative; }
 
-/* "Unit [Hours]": one bordered field, its label inside the border. */
-.rbd-unit-field {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 32px;
-  box-sizing: border-box;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 0 0 0 10px;
-}
-
-.rbd-unit-field:focus-within {
-  border-color: var(--accent);
-  box-shadow: var(--focus-ring);
-}
-
-.rbd-unit-field span {
-  font-size: var(--fs-13);
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.rbd-unit-input {
-  width: 96px;
-  border: none;
-  padding: 0 10px 0 0;
-  font-size: var(--fs-14);
-  font-family: inherit;
-  color: var(--text);
-  background: transparent;
-}
-
-.rbd-unit-input:focus {
-  outline: none;
-}
 
 /* Node unit-mismatch warning */
 .react-flow__node .rbd-comp.unit-warn,
@@ -9498,42 +9461,62 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
 .rbd-intervals-check input { margin-top: 3px; flex: none; }
 .rbd-intervals .rbd-costs-table td .muted { font-size: var(--fs-12); font-weight: 400; }
 
-/* One toolbar above the canvas: the diagram's settings on the left, its
-   actions on the right, which wrap onto a second row when it is narrow. The
-   common-cause button floats over the canvas's top while blocks are selected. */
+/* The RBD builder's toolbar (docs/design-system/components/RbdToolbar.md): one row of
+   control-sm controls (control-lg on a phone, the global touch rule). The tools on the left,
+   what an action did in the middle, the state and the rest on the right; each group wraps as
+   one. The common-cause button floats over the canvas's top while blocks are selected. */
 .rbd-toolbar {
+  position: relative;
   display: flex;
-  flex-wrap: wrap;
-  /* The actions keep to the right (margin-left: auto); the settings stay beside
-     + Add block when the toolbar wraps. */
-  justify-content: flex-start;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--space-2) var(--space-3);
   padding-bottom: var(--space-3);
 }
-.rbd-toolbar-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-left: auto; align-items: center; }
-/* Save ▾, ⋯ and the validation status (#314). */
-.rbd-tb-trigger { min-height: 32px; }
+.rbd-tb-tools, .rbd-toolbar-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: nowrap; min-width: 0; }
+.rbd-tb-tools > *, .rbd-toolbar-actions > * { flex: none; }
+.rbd-toolbar-actions { margin-left: auto; }
+.rbd-tb-history { display: inline-flex; gap: 0; }
+button.rbd-icon-btn { width: var(--control-sm); padding-left: 0; padding-right: 0; justify-content: center; }
+.rbd-icon-btn.is-icon .full-screen-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .rbd-tb-caret { display: inline-flex; margin-left: 2px; color: var(--text-secondary); }
+/* The primary + Add block: its caret is the fill's text colour. */
+.rbd-add-menu .rbd-tb-trigger:not(.secondary) .rbd-tb-caret { color: inherit; }
 .rbd-tb-menu .ovm-menu { min-width: 200px; }
 .rbd-tb-menu .ovm-item:disabled { color: var(--text-tertiary); cursor: not-allowed; }
-button.rbd-valid-toggle {
-  display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 10px;
-  font-size: var(--fs-13); font-weight: 500; border-radius: var(--radius-md); border: 1px solid var(--border);
+/* Diagram settings: the trigger says what they are now; the popover holds the fields. */
+.rbd-settings-trigger { max-width: 280px; }
+.rbd-settings-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.rbd-settings-menu .ovm-menu { left: 0; right: auto; }
+.ovm-menu.rbd-settings-pop { width: min(380px, calc(100vw - 32px)); padding: var(--space-4); gap: var(--space-3); }
+.rbd-settings-pop .field { margin: 0; }
+.rbd-settings-pop .rbd-unit-input { width: 100%; }
+.rbd-settings-row { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+/* The check's answer, run after each change: a chip that opens the list. */
+.rbd-valid-toggle {
+  display: inline-flex; align-items: center; gap: 6px; height: var(--control-sm); box-sizing: border-box; padding: 0 var(--space-2);
+  font-size: var(--fs-13); line-height: var(--lh-13); font-weight: 500; border-radius: var(--radius-md); border: 1px solid var(--border);
   background: var(--bg-surface); color: var(--text); box-shadow: none; cursor: pointer; white-space: nowrap;
 }
+.rbd-valid-toggle.is-checking { color: var(--text-tertiary); border-color: transparent; background: none; cursor: default; }
 button.rbd-valid-toggle.is-ok, button.rbd-valid-toggle.is-ok:hover:not(:disabled) { color: var(--success-text); background: var(--success-bg); border-color: var(--success-border); }
 button.rbd-valid-toggle.is-caveat, button.rbd-valid-toggle.is-caveat:hover:not(:disabled) { color: var(--warning-text); background: var(--warning-bg); border-color: var(--warning-border); }
 button.rbd-valid-toggle.is-bad, button.rbd-valid-toggle.is-bad:hover:not(:disabled) { color: var(--danger-text); background: var(--danger-bg); border-color: var(--danger-border); }
 button.rbd-valid-toggle:hover:not(:disabled) { border-color: currentColor; }
 button.rbd-valid-toggle.is-todo:hover:not(:disabled) { color: var(--text); background: var(--bg-surface); }
-.ovm-menu.rbd-valid-pop { width: min(440px, calc(100vw - 48px)); padding: 8px; gap: 8px; align-items: flex-start; }
+.rbd-valid-menu .ovm-menu { right: 0; left: auto; }
+.ovm-menu.rbd-valid-pop { width: min(440px, calc(100vw - 48px)); padding: var(--space-2); gap: var(--space-2); align-items: flex-start; }
 .rbd-valid-pop .rbd-check { width: 100%; box-sizing: border-box; }
-/* The toolbar's settings inside ⋯: a phone's (#301); hidden on a wide screen. */
-.rbd-ovm-settings { display: none; }
-.rbd-mode-select .sel-trigger { min-height: 32px; }
+/* Saved, Saving…, Couldn't save: quiet words with a dot (the words carry it, not the colour). */
+.rbd-save-status { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-13); line-height: var(--lh-13); color: var(--text-secondary); white-space: nowrap; }
+.rbd-save-dot { flex: none; width: 6px; height: 6px; border-radius: var(--radius-full); background: currentColor; }
+.rbd-save-status.is-ok { color: var(--success-text); }
+.rbd-save-status.is-todo { color: var(--warning-text); }
+.rbd-save-status.is-bad { color: var(--danger-text); }
+.rbd-save-status.is-plain .rbd-save-dot { background: var(--text-tertiary); }
+button.rbd-save-retry { font-size: var(--fs-13); }
+.rbd-full-name { font-size: var(--fs-13); font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; max-width: 280px; }
 .rbd-toolbar-float { display: flex; justify-content: center; }
-.rbd-toolbar .rbd-toolbar-row { flex-wrap: wrap; row-gap: 0.4rem; min-width: 0; }
 
 /* ---- RBD builder: full screen ------------------------------------------- */
 /* The toolbar and canvas cover the screen: the browser's own full screen where
@@ -9566,34 +9549,15 @@ html.full-screen-lock, html.full-screen-lock body { overflow: hidden; overscroll
   background: var(--bg-surface);
 }
 .full-screen-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; white-space: nowrap; }
-/* Exit: after ⋯, as close as the actions are to each other. */
-.rbd-toolbar > .full-screen-btn { margin-left: calc(0.4rem - var(--space-3)); }
-/* The way in: over the canvas's top-right corner, with the view controls'
-   look (the toolbar above is full at a laptop's width). */
-.rbd-full-panel.react-flow__panel { margin: 10px; }
-.rbd-full-panel .full-screen-btn, .public-rbd-canvas-wrap > .full-screen-btn {
+.public-rbd-canvas-wrap > .full-screen-btn {
   background: var(--bg-surface); box-shadow: var(--shadow-sm);
 }
 .full-screen-btn svg { flex: none; }
-/* The diagram's name and whether it's saved (the page title is out of sight). */
-.rbd-full-status {
-  display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 340px;
-  font-size: var(--fs-13); color: var(--text-secondary); margin-right: var(--space-2);
-}
-.rbd-full-name { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.rbd-full-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-.rbd-full-saved { white-space: nowrap; }
-.rbd-full-status.is-ok { color: var(--success-text); }
-.rbd-full-status.is-todo { color: var(--warning-text); }
 @media (max-width: 640px) {
   /* A phone: the corner button is the icon alone. */
   .full-screen-word.is-compact { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .full-screen-btn:has(.is-compact) { min-width: 40px; min-height: 40px; justify-content: center; }
   .rbd-full-name { display: none; }
-  .rbd-full-status { margin-right: 0; }
-  /* Exit sits on the first row beside + Add; the actions wrap under them. */
-  .rbd-builder.is-full .rbd-toolbar > .full-screen-btn { order: 1; margin-left: auto; min-height: 40px; }
-  .rbd-builder.is-full .rbd-toolbar-actions { order: 2; }
 }
 /* The shared page's diagram: a Full screen button over its corner. */
 .public-rbd-canvas-wrap { position: relative; }
@@ -9787,33 +9751,44 @@ html.full-screen-lock, html.full-screen-lock body { overflow: hidden; overscroll
   }
   /* Big enough to tap. (The toolbar's narrow layout goes by the builder's own
      width: .rbd-builder.is-narrow, below.) */
-  .rbd-toolbar button.sm, .rbd-toolbar button.rbd-valid-toggle { min-height: 40px; }
+  .rbd-toolbar .rbd-valid-toggle { height: var(--control-lg); }
+  .rbd-toolbar button.rbd-icon-btn, .rbd-toolbar .full-screen-btn { min-width: var(--control-lg); min-height: var(--control-lg); }
   /* The standing hint (right-click, shift-click, keys) is for a mouse and
      keyboard: on a phone, show the diagram. */
   .rbd-hint {
     display: none;
   }
 }
-/* A narrow builder (rbdEditorLayout.js: a phone, or the Explorer's table area
-   beside the tree): the toolbar collapses to its actions (#301), the unit and
-   mode moving into ⋯, so the canvas keeps the room. */
-.rbd-builder.is-narrow .rbd-toolbar .rbd-tb-settings { display: none; }
-.rbd-builder.is-narrow .rbd-ovm-settings {
-  display: flex; flex-direction: column; gap: 8px; padding: 6px 8px 10px;
-  margin-bottom: 4px; border-bottom: 1px solid var(--border-subtle);
-}
-.rbd-builder.is-narrow .rbd-ovm-settings label { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-13); color: var(--text-secondary); }
-.rbd-builder.is-narrow .rbd-ovm-settings input, .rbd-builder.is-narrow .rbd-ovm-settings select, .rbd-builder.is-narrow .rbd-ovm-settings .sel-trigger { font-size: var(--fs-16); min-height: 40px; }
-/* The minimap would cover a third of a narrow canvas: show the diagram. */
+/* A narrow builder (rbdEditorLayout.js: a phone, or the Explorer's table area beside the
+   tree): the settings trigger is its icon alone, the minimap goes, and what an action did takes
+   a row of its own while it shows. */
+.rbd-builder.is-narrow .rbd-settings-summary { display: none; }
 .rbd-builder.is-narrow .rbd-canvas .react-flow__minimap { display: none; }
-/* No gap to spare: the notice takes a row of its own under the actions while
-   it shows. */
-.rbd-builder.is-narrow .rbd-tb-flash { flex-basis: 100%; order: 1; text-align: left; }
-/* "+ Add block" says "+ Add" so the toolbar keeps one row; the diagram's name
-   (in full screen, or beside the tree) leaves "Saved" alone. */
-.rbd-builder.is-tight .rbd-add-word { display: none; }
+/* What an action did floats under the toolbar's row (the toolbar never wraps). */
+.rbd-builder.is-narrow .rbd-tb-flash {
+  position: absolute; top: calc(100% - var(--space-2)); left: 0; right: 0; z-index: 5; flex: none; text-align: left;
+  background: var(--bg-surface); padding: 2px var(--space-2); border-radius: var(--radius-md); pointer-events: none;
+}
 .rbd-builder.is-narrow .rbd-full-name { display: none; }
-.rbd-builder.is-narrow .rbd-full-status { margin-right: 0; }
+/* One row at every width (docs/design-system/components/RbdToolbar.md "Running short"):
+   "+ Add block" is the "+" alone, then Full screen goes into ⋯ and the status and check show
+   their icon alone, then Undo and Redo go into ⋯. */
+.rbd-builder.is-narrow .rbd-add-word, .rbd-builder.is-narrow .rbd-add-menu .rbd-tb-caret { display: none; }
+.rbd-builder.is-narrow .rbd-add-menu .rbd-tb-trigger { min-width: var(--control-sm); justify-content: center; font-size: var(--fs-16, 16px); font-weight: 600; }
+.rbd-builder:not(.is-tight) .rbd-mi-tight, .rbd-builder:not(.is-cramped) .rbd-mi-cramped { display: none; }
+.rbd-builder.is-tight:not(.is-full) .rbd-tb-full { display: none; }
+.rbd-builder.is-cramped .rbd-tb-history-bar { display: none; }
+.rbd-builder.is-tight .rbd-save-text, .rbd-builder.is-tight .rbd-valid-text:not(.is-keep) {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+.rbd-builder.is-tight .rbd-valid-toggle { padding: 0 var(--space-2); gap: 4px; }
+.rbd-builder.is-tight .rbd-valid-toggle .rbd-valid-text { margin-left: -4px; }
+.rbd-builder.is-cramped .rbd-toolbar, .rbd-builder.is-cramped .rbd-tb-tools, .rbd-builder.is-cramped .rbd-toolbar-actions { gap: 4px; }
+.rbd-builder.is-cramped .rbd-save-main { padding-left: var(--space-2); padding-right: var(--space-2); }
+.rbd-save-icon { flex: none; }
+.rbd-save-spin { width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: currentColor; border-radius: var(--radius-full); animation: rbd-spin 0.8s linear infinite; }
+@keyframes rbd-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .rbd-save-spin { animation-duration: 3s; } }
 
 /* Reliability growth projection panel (#232). */
 .growth-projection .strategy-costs .calc-t { min-width: 0; }
@@ -9896,7 +9871,6 @@ input.rbd-rename {
   border: 1px solid var(--accent); border-radius: var(--radius-md); box-shadow: var(--focus-ring); background: var(--bg-surface);
 }
 /* The toolbar's Safety function switch (#298) and "+ Add block" (#299). */
-.rbd-safety-switch { font-size: var(--fs-13); white-space: nowrap; }
 .rbd-add-menu .rbd-tb-trigger { font-weight: 600; }
 /* It sits at the toolbar's left: its menu opens rightwards. */
 .rbd-add-menu .ovm-menu { left: 0; right: auto; }
@@ -10226,11 +10200,6 @@ main.content:focus { outline: none; }
 .spares-by-period th:first-child, .spares-by-period td:first-child { text-align: left; }
 
 /* RBD toolbar: Save saves; the arrow beside it opens the rest. */
-.rbd-save-split { display: inline-flex; align-items: stretch; }
-.rbd-save-split .rbd-save-main { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-.rbd-save-split .rbd-save-more .rbd-tb-trigger { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: 0; padding-left: 6px; padding-right: 6px; height: 100%; }
-.rbd-save-split .rbd-save-more .ovm-menu { right: 0; left: auto; }
-.rbd-plan-btn.is-on { background: var(--accent-subtle); color: var(--accent-text); border-color: var(--accent); }
 .rbd-menu-note { margin: 2px 10px 6px; font-size: var(--fs-12); color: var(--text-secondary); }
 
 /* The same task on identical positions, offered after an interval change (TaskTwins.jsx). */
