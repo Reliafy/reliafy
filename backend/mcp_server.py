@@ -4824,7 +4824,7 @@ def _as_of_now_summary(result: dict, labels: dict) -> dict:
     return out
 
 
-_EXACT_KEYS = ("status", "message", "from", "current_state", "window", "unit", "availability_start",
+_EXACT_KEYS = ("status", "message", "at_times", "from", "current_state", "window", "unit", "availability_start",
                "availability_end", "availability_min", "availability_min_at", "mission_availability",
                "expected_failures", "planned_outages", "expected_outages", "downtime", "cost", "cost_note",
                "method", "n_blocks", "cached", "mission_unavailability")
@@ -5150,6 +5150,8 @@ def analyze_rbd(
     ctx: Context,
     rbd_id: Annotated[str, Field(description="An RBD id from list kind rbds or change rbd_create.")],
     times: Annotated[Optional[list[float]], Field(max_length=200, description=(
+        "Repairable: times (diagram unit) to read the availability at, each exact (no simulation), in "
+        "exact.at_times: A(t), the mean availability over 0 to t, and the expected failures and downtime by t. "
         "Non-repairable: times (diagram unit) to report system reliability at, each evaluated exactly, in "
         "reliability_at. They don't change `curve`, which is always ~21 points over an automatic axis (sized to "
         "the system; t_max sets its end): to read the curve at given times, pass them here."))] = None,
@@ -5245,9 +5247,9 @@ def analyze_rbd(
             raise ToolError(f"times must be finite and ≥ 0 (in the diagram's unit); got {t:g}.")
     if conditional_age is not None and (not np.isfinite(conditional_age) or conditional_age < 0):
         raise ToolError(f"conditional_age must be finite and ≥ 0; got {conditional_age:g}.")
-    if graph.get("repairable") and (times or conditional_age is not None):
-        raise ToolError("times and conditional_age apply to non-repairable diagrams; this one is repairable "
-                        "(analysed for availability). Drop them — t_max sets the window (and the simulated "
+    if graph.get("repairable") and conditional_age is not None:
+        raise ToolError("conditional_age applies to non-repairable diagrams; this one is repairable "
+                        "(analysed for availability). Drop it — t_max sets the window (and the simulated "
                         "horizon); current_state starts it from now.")
     if graph.get("repairable") and (target_reliability is not None or confidence is not None
                                     or evaluate_at is not None):
@@ -5305,7 +5307,7 @@ def analyze_rbd(
             status, payload = availability_payload(db, actx, graph, t_max, rbd, recompute, owners,
                                                    simulate=True if asked else simulate, current_state=state,
                                                    exact=compute_exact, quick=asked, surface="mcp",
-                                                   auto=simulate is None)
+                                                   auto=simulate is None, at_times=list(times) if times else None)
             pending = None
             if status == 202:
                 # Queued on the calculation service: wait a little, then hand
