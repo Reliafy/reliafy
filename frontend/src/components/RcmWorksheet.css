@@ -997,11 +997,17 @@ select.rim-kindchip, .rim-kindtext, .sel-trigger.rim-kindchip {
   height: 20px; padding: 0 7px; border: 1px solid transparent; border-radius: var(--radius-md);
   background-color: var(--bg-subtle); color: inherit; font: inherit; font-size: var(--fs-12); line-height: var(--lh-12);
 }
-select.rim-kindchip, .sel-trigger.rim-kindchip {
+select.rim-kindchip {
   appearance: none; -webkit-appearance: none; cursor: pointer; padding-right: 7px;
   background-repeat: no-repeat; background-position: right 6px center; background-size: 10px 10px;
 }
-select.rim-kindchip:hover, select.rim-kindchip:focus-visible, .sel-trigger.rim-kindchip:hover, .sel-trigger.rim-kindchip:focus-visible {
+/* The shared Select as the chip: its own chevron, shown on hover or focus. */
+.sel-trigger.rim-kindchip { min-height: 0; width: auto; gap: 4px; cursor: pointer; }
+.sel-trigger.rim-kindchip .sel-chevron { display: none; }
+.sel-trigger.rim-kindchip:is(:hover, :focus-visible, .open) { border-color: var(--border); }
+.sel-trigger.rim-kindchip:is(:hover, :focus-visible, .open) .sel-chevron { display: inline-flex; }
+.sel-trigger.rim-kindchip .sel-chevron svg { width: 10px; height: 10px; }
+select.rim-kindchip:hover, select.rim-kindchip:focus-visible {
   border-color: var(--border); padding-right: 20px;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5l3 3 3-3' fill='none' stroke='%23888' stroke-width='1.4'/%3E%3C/svg%3E");
 }

@@ -23,7 +23,7 @@ import { workOrderPath } from "../maintenanceOrders.js";
 import { reportLink } from "../failureReports.js";
 import { DateInput } from "../components/ui/DateTimeInput.jsx";
 import Loading from "../components/ui/Loading.jsx";
-import { Checkbox } from "../components/ui/Controls.jsx";
+import { Checkbox, Select } from "../components/ui/Controls.jsx";
 
 const STATUS_LABELS = {
   open: "open", planned: "planned", in_progress: "in progress", waiting: "waiting", closed: "closed", cancelled: "cancelled",
@@ -100,10 +100,10 @@ export default function MaintenanceWorkOrder() {
         <section className="card">
           <div className="maint-row" style={{ marginTop: 0 }}>
             <label className="maint-row" style={{ marginTop: 0, gap: "0.4rem" }}>Status
-              <select value={wo.status} onChange={async (e) => setWo(await setWorkStatus(wo.id, e.target.value))}>
+              <Select value={wo.status} onChange={async (e) => setWo(await setWorkStatus(wo.id, e.target.value))}>
                 <option value="open">Open</option><option value="planned">Planned</option>
                 <option value="in_progress">In progress</option><option value="waiting">Waiting (parts or access)</option>
-              </select>
+              </Select>
             </label>
             <span className="lib-date">{wo.assignee ? `Assigned to ${wo.assignee}` : "Not assigned"}
               {wo.planned_for ? ` · planned for ${fmtDate(wo.planned_for)}` : ""}</span>
@@ -306,7 +306,7 @@ function CostsCard({ wo, onChanged }) {
             {form === "part" && <>
               {(choices.listed.length > 0 || choices.others.length > 0) && (
                 <Field label="From the catalogue (optional)">
-                  <select value={f.part_id || ""} onChange={pick}>
+                  <Select value={f.part_id || ""} onChange={pick}>
                     <option value="">No: type it below</option>
                     {choices.listed.length > 0 && (
                       <optgroup label="This position's parts">
@@ -318,7 +318,7 @@ function CostsCard({ wo, onChanged }) {
                         {choices.others.map((pt) => <option key={pt.id} value={pt.id}>{pt.part_number}: {pt.name} ({pt.on_hand} on hand)</option>)}
                       </optgroup>
                     )}
-                  </select>
+                  </Select>
                 </Field>
               )}
               {f.part_id ? (

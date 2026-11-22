@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { updateSignalBand } from "../api.js";
 import { fmt } from "../signals.js";
+import { Select } from "./ui/Controls.jsx";
 
 // Change a watch band: its name, its range and its levels (warn and alarm, above
 // and below). A new range does not rewrite the past: the band keeps what it
@@ -56,10 +57,10 @@ export default function SignalBandEditor({ band, rpm, onSaved, onCancel }) {
             </label>
             {(rpm || band.rule.in === "orders") && (
               <label className="sg-field">Follows
-                <select value={f.unit} onChange={set("unit")}>
+                <Select value={f.unit} onChange={set("unit")}>
                   <option value="Hz">These Hz</option>
                   <option value="orders">Running speed</option>
-                </select>
+                </Select>
               </label>
             )}
           </>

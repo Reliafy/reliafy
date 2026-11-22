@@ -1,5 +1,6 @@
 import Chip from "./ui/Chip.jsx";
 import { BLOCK_STATES, STATE_SHORT, blockState, withBlockState } from "../explorerMissions.js";
+import { Select } from "./ui/Controls.jsx";
 
 // Each block's state in each phase of a mission (MissionPane.jsx): a grid with a row per block of
 // the mission's RBD and a column per phase, each cell Working (the default), Standby, Guaranteed
@@ -42,12 +43,12 @@ export default function MissionBlockGrid({ blocks = [], phases = [], readOnly = 
                     const state = blockState(p, b.id);
                     return (
                       <td key={p.key} className={`is-${state}`}>
-                        <select value={state} disabled={readOnly}
+                        <Select value={state} disabled={readOnly}
                                 aria-label={`${b.label} in ${p.name || `phase ${i + 1}`}`}
                                 title={BLOCK_STATES.find((s) => s.id === state)?.title}
                                 onChange={(e) => onChange?.(p.key, withBlockState(p, b.id, e.target.value))}>
                           {BLOCK_STATES.map((s) => <option key={s.id} value={s.id}>{STATE_SHORT[s.id]}</option>)}
-                        </select>
+                        </Select>
                       </td>
                     );
                   })}

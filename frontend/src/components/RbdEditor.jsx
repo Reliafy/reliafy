@@ -76,6 +76,7 @@ import { applyTreePlan, treeGraph, treeKey, treePositionPath, treeRow } from "..
 import { getRbdTreePlan } from "../api.js";
 import { useRoles } from "../RolesProvider.jsx";
 import Loading from "./ui/Loading.jsx";
+import { Select as FormSelect } from "./ui/Controls.jsx";
 
 // The "Outage history" tab (an observed-history import and charts) loads on
 // first open, so the builder's own bundle doesn't carry it.
@@ -1803,11 +1804,11 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
             </label>
             <label>
               <span>System</span>
-              <select value={repairable ? "repairable" : network ? "network" : "non"} onChange={(e) => setMode(e.target.value)}>
+              <FormSelect value={repairable ? "repairable" : network ? "network" : "non"} onChange={(e) => setMode(e.target.value)}>
                 <option value="non">Non-repairable</option>
                 <option value="repairable">Repairable</option>
                 <option value="network">Network</option>
-              </select>
+              </FormSelect>
             </label>
           </div>
           <button className="ovm-item" onClick={autoLayout}>Auto-arrange</button>

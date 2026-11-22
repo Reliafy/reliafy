@@ -10,7 +10,7 @@ import { CardHeader } from "./ui/Card.jsx";
 import ResultSummary from "./ui/ResultSummary.jsx";
 import SparesWhatIf from "./SparesWhatIf.jsx";
 import { SERVICE_LEVELS, fleetSparesCsv, holdText, leadTimeHint, levelText, overText, riskText, risingText, saveText, useText, yearText } from "../sparesPlan.js";
-import { Checkbox } from "./ui/Controls.jsx";
+import { Checkbox, Select } from "./ui/Controls.jsx";
 
 const blank = (v) => v === null || v === undefined || v === "";
 const fileName = (name) => `${String(name).replace(/[^\w\- ]+/g, "").trim() || "fleet"} — spares plan.csv`;
@@ -47,11 +47,11 @@ export default function FleetSparesCard({ fleet, settings, forecast, readOnly, d
         {field("lead_time", `Lead time (${label})`, { placeholder: "required" })}
         <label className="login-field" style={{ width: 150 }}>
           <span>Service level</span>
-          <select value={sp.service_level ?? ""} disabled={readOnly}
+          <Select value={sp.service_level ?? ""} disabled={readOnly}
                   onChange={(e) => set("service_level", e.target.value === "" ? "" : Number(e.target.value))}>
             <option value="">95% (default)</option>
             {SERVICE_LEVELS.map((l) => <option key={l} value={l}>{levelText(l)}</option>)}
-          </select>
+          </Select>
         </label>
         {field("review", `Review every (${label})`, { placeholder: "0" })}
         {field("per_failure", "Parts per failure", { placeholder: "1" })}
