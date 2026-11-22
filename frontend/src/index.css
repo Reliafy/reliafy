@@ -4739,30 +4739,8 @@ h1 .chip,
 .sample-pick-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .sample-pick-blurb { font-size: var(--fs-12); color: var(--text-secondary); line-height: var(--lh-12); }
 
-/* Fit-flow source step: switch between the CSV dropzone and pasted values. */
-.source-toggle {
-  display: inline-flex;
-  gap: 4px;
-  padding: 3px;
-  margin-bottom: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-canvas);
-}
-.source-tab {
-  padding: 6px 12px;
-  font-size: var(--fs-13);
-  font-weight: 500;
-  color: var(--text-secondary);
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-md);
-  box-shadow: none;
-  cursor: pointer;
-}
-.source-tab:hover:not(:disabled) { color: var(--text); background: transparent; }
-.source-tab.active,
-.source-tab.active:hover:not(:disabled) { color: var(--accent-text); background: var(--bg-surface); box-shadow: var(--shadow-sm); }
+/* Fit-flow source step: where the data comes from (a SegmentedControl). */
+.seg.source-toggle { margin-bottom: var(--space-3); }
 .paste-source { display: flex; flex-direction: column; gap: 0.75rem; }
 .paste-source .paste-area { box-sizing: border-box; min-height: 180px; }
 
