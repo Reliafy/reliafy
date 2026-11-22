@@ -1,3 +1,4 @@
+import { useUnsavedRef } from "../useUnsavedSignal.js";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { madeTask } from "../taskStart.js";
 import { VIEW_PARAMS } from "../measurementsTab.js";
@@ -379,7 +380,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // fresh. `paneDirty`: whether anything in it has been changed
   // (leaving it for another row asks first only then).
   const [paneSeed, setPaneSeed] = useState(null);
-  const paneDirty = useRef(false);
+  const paneDirty = useUnsavedRef("explorer-pane"); // also the update bar's unsaved signal
   const paneSaving = useRef(false);
   const paneHeading = useRef(null);
   const { full, toggle: toggleFull } = useFullScreen(frame, { returnFocus: fullBtn });
@@ -851,6 +852,17 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     reveal(viewParam);
     setPanel(true);
   }, [viewParam, display]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A link to a failure mode on the RCM tab (?fm=: the forecast's What to enter): its row picked and
+  // its details open beside the table (its failure cost, its decision), once it's in the tree.
+  const fmParam = rcmOn ? params.get("fm") : null;
+  const fmShown = useRef(null);
+  useEffect(() => {
+    if (!fmParam || fmShown.current === fmParam || !display.rows.has(fmParam)) return;
+    fmShown.current = fmParam;
+    reveal(fmParam);
+    setPanel(true);
+  }, [fmParam, display]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const openAfter = useRef(null);
   useEffect(() => {

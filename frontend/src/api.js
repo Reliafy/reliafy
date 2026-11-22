@@ -1,5 +1,6 @@
 // Thin wrappers around the backend endpoints.
 import { loadAuth } from "./firebase.js";
+import { BUILD_HEADER, noteServerBuild } from "./buildCheck.js";
 import { trackEvent } from "./telemetry.js";
 import { mappingFields } from "./lifeData.js";
 import { altFields } from "./altGuess.js";
@@ -62,6 +63,16 @@ function workspaceHeaders() {
     : {};
 }
 
+// Tell the build check which build answered (the server's X-Reliafy-Build header).
+function noted(res) {
+  try {
+    noteServerBuild(res.headers?.get(BUILD_HEADER));
+  } catch {
+    /* never let the check break a request */
+  }
+  return res;
+}
+
 // fetch() with the auth + workspace headers and the same retry/self-heal as
 // every JSON call; resolves to the raw Response (for non-JSON downloads).
 async function authedFetch(url, opts = {}) {
@@ -71,7 +82,7 @@ async function authedFetch(url, opts = {}) {
       ...workspaceHeaders(),
       ...(await authHeaders(forceRefresh)),
     };
-    return fetch(url, { ...opts, headers });
+    return noted(await fetch(url, { ...opts, headers }));
   };
   let res = await send(false);
   // On a 401, the token may have just expired/been revoked — refresh once and
@@ -100,7 +111,7 @@ async function request(url, opts = {}) {
 // headers and no refresh-and-retry on a 401 (which there means "password
 // needed", and on an unlock would spend a second attempt).
 async function publicRequest(url, opts = {}) {
-  return readJson(await fetch(url, opts));
+  return readJson(noted(await fetch(url, opts)));
 }
 
 async function readJson(res) {
@@ -2886,6 +2897,10 @@ export function addFailureMode(positionId, body) {
 }
 export function updateFailureMode(id, body) {
   return patchJson(`/api/maintenance/failure-modes/${id}`, body);
+}
+// What one failure of the mode costs: its own figures, its class's and those in force (failure_costs.py).
+export function getFailureModeCosts(id) {
+  return request(`/api/maintenance/failure-modes/${id}/costs`);
 }
 export function mergeFailureMode(id, intoId) {
   return postJson(`/api/maintenance/failure-modes/${id}/merge`, { into_id: intoId });
