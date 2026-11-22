@@ -444,6 +444,30 @@ hour). Give the demands, running hours and calendar hours of the period you
 have in mind and the component page says the chance it fails over it, each
 mode's share, and the constant rate an RBD block would use.
 
+## Harsher or milder conditions: adjust a model
+
+A model fitted on one fleet, or taken from a handbook, may be for conditions milder or harsher
+than yours: a pump run hotter, a dustier site. **Adjust for conditions…**, in a saved model's
+**⋯** menu, makes a copy for those conditions; the original stays as it is.
+
+Give a **hazard ratio**: 1.5 means 1.5 times the hazard at every age (harsher), 0.8 milder.
+For a Weibull or an exponential you can say how long it lasts instead ("about 2/3 as long"),
+which Reliafy turns into the hazard ratio that does exactly that for the model's shape. For
+other distributions a life scale isn't a fixed hazard ratio, so only the hazard ratio is taken,
+and the form says so.
+
+Before you save, it shows the B10 life and mean life now and adjusted. A Weibull with α 1,000 h
+and β 2 has a B10 of 325 h; at 1.5 times the hazard its B10 is 265 h
+(1,000 × (−ln 0.9 ÷ 1.5)^½), 18% sooner. It assumes the conditions multiply the hazard by the
+same factor at every age, so the shape stays the same.
+
+The adjusted model is saved as "<name> (×1.5 hazard)", says which model it came from and the
+ratio, and goes anywhere a model goes: an RBD block, a position, a forecast, Optimise, a
+mission. A fitted model keeps its fit, so its B-lives keep their 90% one-sided lower bounds,
+with the hazard ratio held fixed as a known number. SurPyval gives no bound on the mean life of
+a model with a hazard ratio, so the mean life is shown without one, and the page says so. To
+refit an adjusted model, refit the original and adjust it again.
+
 ## Build your own library
 
 A model you fit is in no library until you put it there. Open a saved model

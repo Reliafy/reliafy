@@ -96,9 +96,36 @@ def binding_words(binding: dict, inputs: list[dict]) -> str:
 
 
 def bind(m, db, owner_id: str, owners, position_id: str, binding, failure_mode_ids=None, note: str = "",
-         replace_link_id: str | None = None) -> dict:
+         replace_link_id: str | None = None, hazard_ratio: float | None = None) -> dict:
     """Link a covariate model to the position with the covariates ``binding`` fixes (some, all or
-    none). Raises Invalid for a binding that can't be used."""
+    none). ``hazard_ratio``: with every covariate fixed, the saved model adjusted for the conditions
+    here (model_adjust.py) is linked in its place. Raises Invalid for a binding that can't be used."""
+    if hazard_ratio is None:
+        return _bind(m, db, owner_id, owners, position_id, binding, failure_mode_ids, note, replace_link_id)
+    from backend.services import model_adjust
+    from backend.services import models as models_service
+
+    sv = _sv()
+    try:
+        model_adjust.check_hr(hazard_ratio)
+    except model_adjust.AdjustError as exc:
+        raise sv.Invalid(str(exc)) from None
+    link = _bind(m, db, owner_id, owners, position_id, binding, failure_mode_ids, note, replace_link_id,
+                 need_constant=True)
+    base = models_service.get_model(db, link["model_id"], owners)
+    try:
+        child = model_adjust.adjust(db, base, owners, owner_id, hazard_ratio=hazard_ratio)
+    except model_adjust.AdjustError as exc:
+        m.unlink_position_model(link["id"])
+        raise sv.Invalid(str(exc)) from None
+    source = {**(link.get("source") or {}),
+              "adjusted": {"from_model_id": base.id, "from_name": base.name, "hazard_ratio": float(hazard_ratio)}}
+    return m.link_position_model(position_id, "model", child.id, link.get("role") or "library",
+                                 link.get("failure_mode_ids"), child.name, note, source, link["id"])
+
+
+def _bind(m, db, owner_id: str, owners, position_id: str, binding, failure_mode_ids=None, note: str = "",
+          replace_link_id: str | None = None, need_constant: bool = False) -> dict:
     from backend.services import covariate_binding as cb
 
     sv = _sv()
@@ -109,6 +136,9 @@ def bind(m, db, owner_id: str, owners, position_id: str, binding, failure_mode_i
         raise sv.Invalid(str(exc)) from None
     inputs = cb.needed_inputs(inputs, b["fixed"])  # running hours a year only with a changed clock
     open_ = [i for i in inputs if i["key"] not in b["fixed"]]
+    if need_constant and (open_ or b["source"] in ("alt", "ph")):
+        raise sv.Invalid("To adjust it for conditions here, fix every covariate at this position (a constant-rate "
+                         "model), or adjust the saved model afterwards.")
     words = binding_words(b, inputs)
     source = {"binding": b, "binding_words": words}
     if b["source"] == "component":

@@ -93,6 +93,8 @@ NEW_ACTIONS = {
     # Things the app does that agents couldn't (Nov 2026): fit and save a degradation model, add an RCM worksheet
     # or task plan from CSV, save an optimal-replacement analysis.
     ("change", "model_fit_degradation"), ("change", "import_rcm"), ("change", "optimal_replacement_save"),
+    # Adjust a model for conditions by a known hazard ratio (SurPyval 0.29's hr, Nov 2026).
+    ("change", "model_adjust"),
 }
 NEW_HEAVY = {"analyse.fault_tree", "change.model_fit_degradation", "change.import_rcm"}
 NEW_TEXT = {"get.maintainability_prediction", "list.maintainability_predictions",
@@ -256,7 +258,7 @@ def test_the_listed_tools_are_small(env):
     optimal_overhaul_replace, after shortening the change, report_problem and guide intros; 7,985 with
     list search, after shortening the get and list intros; 7,988 with change model_fit_degradation, import_rcm
     and optimal_replacement_save, after shortening the get, list, change and report_problem intros and three
-    required lines) and
+    required lines; 7,987 with change model_adjust) and
     about 1,000 for the instructions (3,663 before)."""
     from backend import mcp_server
 

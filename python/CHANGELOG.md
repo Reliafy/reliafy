@@ -13,6 +13,13 @@ Needs a server on the same release.
   read. `reliafy upload --notation "120, 310, 1000+" --name Seals --unit hours`, and
   `Client.upload_notation(text, name=…, unit=…)`. The REST twin (`POST /api/v1/change/dataset_upload`)
   takes it too.
+- **Adjust a model for conditions**: `change model_adjust` makes a new model from a non-repairable one
+  with a known hazard ratio (`hazard_ratio`: 1.5 is 1.5 times the hazard at every age, the same shape),
+  or the ratio that makes a Weibull or exponential last `life_scale` times as long. It records the
+  original, which is unchanged, and gives the B10 and mean life before and after; `save=false` only
+  previews. `reliafy change model_adjust --model-id … --hazard-ratio 1.5`.
+- `maintenance position_models.link` takes `hazard_ratio` with `library_record_id` (or `bind` with every
+  covariate fixed): the record adjusted for the conditions at that position.
 
 ## 0.12.6 (unreleased)
 

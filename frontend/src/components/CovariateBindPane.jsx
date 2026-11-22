@@ -3,6 +3,9 @@ import { getBindingInputs, linkPositionModel } from "../api.js";
 import TablePane from "./TablePane.jsx";
 import CovariateInputs from "./CovariateInputs.jsx";
 import { saveErrorText } from "../confirm.js";
+import Field from "./ui/Field.jsx";
+import { TextInput } from "./ui/Controls.jsx";
+import { adjustRequest } from "../modelAdjust.js";
 import { LIBRARY_SOURCES, bindSummary, bindingToSave, initialFix, initialValues } from "../covariate.js";
 import "./CovariateCalculator.css";
 
@@ -29,6 +32,9 @@ export default function CovariateBindPane({ position, binding, name = "", link =
   const [roles, setRoles] = useState({});
   const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState(null);
+  // Adjust for conditions (model_adjust.py): with every covariate fixed it's a constant-rate model, which a
+  // hazard ratio can scale for the conditions here. Optional: blank leaves it as the record gives it.
+  const [hr, setHr] = useState("");
   const was = link?.source?.binding || null;
 
   useEffect(() => {
@@ -42,11 +48,14 @@ export default function CovariateBindPane({ position, binding, name = "", link =
   const shown = useMemo(() => (inputs || []).map((i) => ({ ...i, role: roles[i.key] || i.role })), [inputs, roles]);
   const touch = () => onDirty?.(true);
   const out = bindingToSave({ ...binding, inputs: shown, fix, values, roles });
+  const constant = LIBRARY_SOURCES.includes(binding.source) && (inputs || []).length > 0 && shown.every((i) => fix[i.key]);
+  const hrAsk = constant && hr.trim() ? adjustRequest("hr", hr) : {};
   const save = async () => {
     setSaving(true);
     onSaving?.(true);
     try {
-      const made = await linkPositionModel(position.id, { bind: out.binding, ...(link ? { replace_link_id: link.id } : {}) });
+      const made = await linkPositionModel(position.id, { bind: out.binding, ...(link ? { replace_link_id: link.id } : {}),
+                                                          ...(hrAsk.hazardRatio ? { hazard_ratio: hrAsk.hazardRatio } : {}) });
       onSaving?.(false);
       onDone(made, `Linked ${name || "the model"} to ${position.name} with ${Object.keys(out.binding.fixed).length} covariates fixed.`);
     } catch (e) {
@@ -76,11 +85,17 @@ export default function CovariateBindPane({ position, binding, name = "", link =
         )}
         {inputs && inputs.length === 0 && <p className="rim-tquiet">It needs no covariates: it’s saved as a constant-rate model here.</p>}
         {inputs && inputs.length > 0 && <p className="bind-sum" role="status">{bindSummary(binding.source, shown, fix, values)}</p>}
+        {constant && (
+          <Field label="Adjust for conditions here" optional error={hrAsk.error || null}
+                 help="A hazard ratio: 1.5 is 1.5 times the record's hazard (harsher conditions), 0.8 milder. Saved as a new model with it.">
+            <TextInput inputMode="decimal" value={hr} placeholder="1" onChange={(e) => { setHr(e.target.value); touch(); }} />
+          </Field>
+        )}
         {out.missing.length > 0 && <p className="field-error">Give a value for {out.missing.join(", ")}, or untick it.</p>}
         {failed && <p className="field-error" role="alert">{failed}</p>}
         <div className="bind-foot">
           <button type="button" className="secondary" onClick={onClose} disabled={saving}>Cancel</button>
-          <button type="button" onClick={save} disabled={saving || !inputs || out.missing.length > 0} aria-busy={saving || undefined}>
+          <button type="button" onClick={save} disabled={saving || !inputs || out.missing.length > 0 || !!hrAsk.error} aria-busy={saving || undefined}>
             {saving ? "Saving…" : "Save at this position"}
           </button>
         </div>

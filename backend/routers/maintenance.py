@@ -1556,7 +1556,8 @@ def link_position_model(position_id: str, body: dict = Body(...), session=Depend
     """Attach a model to a position: a saved one (model_id, model_type: model default, recurrent_model,
     degradation_model, alt_model), the position class's (from_class true) or a new fit from its failure
     history (fit true; distribution, scope auto | position | class). failure_mode_ids: the failure modes it's
-    for; replace_link_id: the model on the position it takes the place of; note. An RBD: rbd_id (an existing diagram, linked as
+    for; replace_link_id: the model on the position it takes the place of; note. With library_record_id,
+    hazard_ratio adjusts it for the conditions here (a new model with that hazard ratio). An RBD: rbd_id (an existing diagram, linked as
     it is), new_rbd {repairable, start: blank | self (one block, the position's own model in use)}, or
     build_rbd true (a new one from the positions inside, named ``name`` when given; with
     replace_link_id, rebuilt into the same diagram). use_link_id: make that row the position's model in use.
@@ -1571,13 +1572,14 @@ def link_position_model(position_id: str, body: dict = Body(...), session=Depend
 
         return _run(library_models.attach, m, session, ctx.write_owner, position_id, body["library_record_id"], modes, note,
                     replace, owners=ctx.read_owners, length_ft=body.get("length_ft"),
-                    covariates=body.get("covariates") if isinstance(body.get("covariates"), dict) else None)
+                    covariates=body.get("covariates") if isinstance(body.get("covariates"), dict) else None,
+                    hazard_ratio=body.get("hazard_ratio"))
     if isinstance(body.get("bind"), dict):
         # A covariate model (NSWC-11, ALT or PH) with some, all or none of its covariates fixed here.
         from backend.maintenance import covariate_positions
 
         return _run(covariate_positions.bind, m, session, ctx.write_owner, ctx.read_owners, position_id, body["bind"],
-                    modes, note, replace)
+                    modes, note, replace, body.get("hazard_ratio"))
     if body.get("use_link_id"):
         # Which of the position's rows is the model in use.
         return _run(m.use_position_model, position_id, str(body["use_link_id"]))

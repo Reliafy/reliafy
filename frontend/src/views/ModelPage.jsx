@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import ErrorBoundary from "../components/ErrorBoundary.jsx";
 import ModelNotFound, { ModelDrawFailed } from "../components/ModelNotFound.jsx";
 import ResultView from "../components/ResultView.jsx";
@@ -27,6 +27,8 @@ import { PageTitle } from "../components/usePageTitle.js";
 import LoadFailed from "../components/LoadFailed.jsx";
 import ModelSetsInterval from "../components/ModelSetsInterval.jsx";
 import Loading from "../components/ui/Loading.jsx";
+import AdjustModelPanel from "../components/AdjustModelPanel.jsx";
+import { adjustableWhy, adjustedLine } from "../modelAdjust.js";
 
 const CRUMBS = [{ label: "Models", to: "/models" }, { label: "Non-repairable", to: "/models/life" }];
 
@@ -44,6 +46,11 @@ export default function ModelPage() {
   const [editingParams, setEditingParams] = useState(false);
   const [adding, setAdding] = useState(false);
   const [tab, setTab] = useTabParam();
+  // Adjust for conditions… opens in the page's body (?adjust=1, so a reload keeps it), not a modal.
+  const [query, setQuery] = useSearchParams();
+  const adjustOpen = query.get("adjust") === "1";
+  const savedNote = useLocation().state?.note || null; // "Saved Pump (×1.5 hazard). Pump is unchanged."
+  const setAdjust = (on) => setQuery((q) => { if (on) q.set("adjust", "1"); else q.delete("adjust"); return q; });
   const [loadError, setLoadError] = useState(null);
   const [attempt, setAttempt] = useState(0);
 
@@ -81,7 +88,10 @@ export default function ModelPage() {
   };
 
   // A competing-risks fit (#177) is refitted from the wizard, not edited here.
-  const canEdit = model && !model.read_only && model.dataset_id && model.kind !== "competing_risks";
+  // One adjusted for conditions is another model's fit with a hazard ratio: refit the original instead.
+  const canEdit = model && !model.read_only && model.dataset_id && model.kind !== "competing_risks" && !model.spec?.adjusted;
+  const canAdjust = !!model && adjustableWhy(model) == null;
+  const adjusted = adjustedLine(model?.results);
   // Any model can be added to a library of the user's (a copy of it now), whatever its kind: fitted,
   // from parameters, from a handbook or a prior. Never added automatically.
   const canAddToLibrary = !!model;
@@ -122,6 +132,7 @@ export default function ModelPage() {
           {!model.read_only && <button className="ovm-item" onClick={onRename}>Rename</button>}
           {canEdit && <button className="ovm-item" onClick={() => setEditing(true)}>Edit fit</button>}
           {entered && <button className="ovm-item" onClick={() => setEditingParams(true)}>Edit parameters</button>}
+          {canAdjust && <button className="ovm-item" onClick={() => setAdjust(true)}>Adjust for conditions…</button>}
           {canAddToLibrary && <button className="ovm-item" onClick={() => setAdding(true)}>Add to library… <ProTag /></button>}
           <button className="ovm-item danger" onClick={onDelete}>
             {model.read_only ? "Remove from my view" : "Delete"}
@@ -132,11 +143,26 @@ export default function ModelPage() {
         <>
           {model && <ModelSetsInterval modelId={model.id} />}
           {model?.from_library && <FromLibrary from={model.from_library} className="mf-notice" />}
+          {savedNote && <p className="mf-notice adj-from" role="status">{savedNote}</p>}
+          {adjusted && (
+            <p className="mf-notice adj-from">
+              Adjusted for conditions from <Link to={`/models/m/${adjusted.from}`}>{adjusted.name}</Link>:
+              {" "}{adjusted.ratio} times its hazard at every age, the same shape.
+            </p>
+          )}
           {error && <div className="card error mf-notice" role="alert">{error}</div>}
         </>
       )}
     >
-      {model ? (
+      {model && adjustOpen && canAdjust ? (
+        <div className="mf-body mf-single">
+          <section className="adj-page" aria-labelledby="adj-title">
+            <h2 id="adj-title" className="card-title">Adjust for conditions</h2>
+            <AdjustModelPanel model={model} onCancel={() => setAdjust(false)}
+                              onSaved={(doc, text) => navigate(`/models/m/${doc.id}`, { state: { note: text } })} />
+          </section>
+        </div>
+      ) : model ? (
         // A model this page can't draw shows a card here, not the whole-app error page.
         <ErrorBoundary key={model.id} fallback={<ModelDrawFailed />}>
           <ResultView

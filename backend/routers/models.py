@@ -1197,6 +1197,39 @@ def create_from_params(
     return JSONResponse(content=_model_detail(model, ctx))
 
 
+@router.post("/models/{model_id}/adjust")
+def adjust_model(
+    model_id: str,
+    hazard_ratio: float | None = Body(default=None),
+    life_scale: float | None = Body(default=None),
+    name: str | None = Body(default=None),
+    save: bool = Body(default=False),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """Adjust for conditions: the model with a known hazard ratio (``hazard_ratio`` times the hazard at
+    every age, the same shape), or the ratio that makes it last ``life_scale`` times as long (a Weibull or
+    an exponential only). Without ``save``: what it does, B10 and mean life before and after, nothing
+    saved. With ``save``: a new model (``name``, default "<name> (×1.5 hazard)") that records this one
+    and the ratio; this one is unchanged. Counts against the model cap."""
+    from backend.services import model_adjust
+
+    model, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
+    if model is None:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    try:
+        if not save:
+            return JSONResponse(content=model_adjust.preview(session, model, ctx.read_owners, hazard_ratio, life_scale))
+        denied = _creation_denied(session, ctx, "models")
+        if denied is not None:
+            return denied
+        doc = model_adjust.adjust(session, model, ctx.read_owners, ctx.write_owner, hazard_ratio, life_scale, name)
+        access_service.stamp_editor(session, "models", doc.id, ctx)
+    except (model_adjust.AdjustError, FitError) as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    return JSONResponse(content=_model_detail(doc, ctx))
+
+
 @router.post("/models/per-demand")
 def create_per_demand(
     name: str = Body(...),

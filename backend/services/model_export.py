@@ -375,6 +375,7 @@ def _distribution_script(model: Model, df: pd.DataFrame) -> str:
                     + (f" (options: {', '.join(call)})" if call else "") + "."),
         f"model = {name}.fit(**fit_inputs{''.join(', ' + c for c in call)}{unit_arg(model)})",
         "fill_covariance(model)",
+        *_hazard_ratio_lines(results),
         "print(model)",
         "print()",
         *_print_params_lines(name, with_intervals=not no_max),
@@ -384,7 +385,33 @@ def _distribution_script(model: Model, df: pd.DataFrame) -> str:
     return px.assemble(
         px.header(model.name, f"a {entry['name']} life model.", notes=[what[0].upper() + what[1:] + ".",
                                                                      *head_notes], unit=unit),
-        _imports(name), px.PRINT_HELPERS, [""], _WALD, ["", ""], body)
+        _imports(name, *(["from_dict"] if _hazard_ratio(results) else [])), px.PRINT_HELPERS, [""], _WALD,
+        ["", ""], body)
+
+
+def _hazard_ratio(results: dict) -> float | None:
+    """The known hazard ratio of a model adjusted for conditions (services/model_adjust.py), or None."""
+    try:
+        hr = float((results.get("extras") or {}).get("hr") or 1.0)
+    except (TypeError, ValueError):
+        return None
+    return hr if hr != 1.0 else None
+
+
+def _hazard_ratio_lines(results: dict) -> list[str]:
+    """Set an adjusted model's hazard ratio on the fit, as the app does: the same fit, hr times the
+    hazard at every age, by SurPyval's own save and load, so the bounds hold hr fixed."""
+    hr = _hazard_ratio(results)
+    if hr is None:
+        return []
+    return [
+        "",
+        f"# Adjusted for conditions: {px.num(hr)} times the hazard at every age, the same shape. The same fit",
+        "# with a known hazard ratio: its B-life bounds hold hr fixed; SurPyval gives no bound on its mean.",
+        "fitted = model.to_dict()",
+        f"fitted[\"hr\"] = {px.num(hr)}",
+        "model = from_dict(fitted)",
+    ]
 
 
 def _mixture_script(model: Model, df: pd.DataFrame, mapping: dict, options: dict, notes: list[str]) -> str:

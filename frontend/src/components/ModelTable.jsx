@@ -28,6 +28,7 @@ import { strategyHeadline } from "../positionStrategy.js";
 import "./MeasurementTable.css";
 import "./ModelTable.css";
 import LibraryRecordPicker, { PickedRecord } from "./LibraryRecordPicker.jsx";
+import { adjustRequest } from "../modelAdjust.js";
 
 // The Explorer's Modelling tab is the tree with each position's life models in it
 // (explorerModels.js), like the RCM and Measurements tabs. This file has what the page
@@ -589,6 +590,9 @@ export function ParamsModal({ position, link = null, onClose, onDone }) {
 // record" (a modal over this one, opened at once), which lists only the records that can be a model.
 export function LibraryAttachModal({ position, onClose, onDone, onBind = null }) {
   const [rec, setRec] = useState(null);
+  // Adjust for conditions (model_adjust.py): optional, a hazard ratio for the conditions here.
+  const [hr, setHr] = useState("");
+  const hrAsk = hr.trim() ? adjustRequest("hr", hr) : {};
   const [picking, setPicking] = useState(false);
   // Opened once this dialog is up, so the picker stacks above it (Escape closes the picker first).
   useEffect(() => setPicking(true), []);
@@ -597,8 +601,10 @@ export function LibraryAttachModal({ position, onClose, onDone, onBind = null })
   const save = async () => {
     setBusy(true);
     try {
-      const made = await linkPositionModel(position.id, { library_record_id: rec.id });
-      onDone(made, `Attached ${rec.label} (${rec.source}) to ${position.name}.`);
+      const made = await linkPositionModel(position.id, { library_record_id: rec.id,
+                                                          ...(hrAsk.hazardRatio ? { hazard_ratio: hrAsk.hazardRatio } : {}) });
+      onDone(made, hrAsk.hazardRatio ? `Attached ${rec.label} (${rec.source}) to ${position.name}, at ${hrAsk.hazardRatio} times its hazard.`
+        : `Attached ${rec.label} (${rec.source}) to ${position.name}.`);
     } catch (e) {
       setBusy(false);
       setFailed(saveErrorText(e, { offline: navigator.onLine === false }));
@@ -609,11 +615,17 @@ export function LibraryAttachModal({ position, onClose, onDone, onBind = null })
            footer={(
              <>
                <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
-               <button type="button" onClick={save} disabled={busy || !rec} aria-busy={busy || undefined}>{busy ? "Attaching…" : "Attach"}</button>
+               <button type="button" onClick={save} disabled={busy || !rec || !!hrAsk.error} aria-busy={busy || undefined}>{busy ? "Attaching…" : "Attach"}</button>
              </>
            )}>
       <p className="rw-fhelp">A published failure rate as {position.name}’s model: an exponential at the record’s mean rate, its 5–95% range as the source’s uncertainty, and the record cited.</p>
       <PickedRecord record={rec} onPick={() => setPicking(true)} />
+      {rec && (
+        <Field label="Adjust for conditions here" optional error={hrAsk.error || null}
+               help="A hazard ratio: 1.5 is 1.5 times the record's hazard (harsher conditions), 0.8 milder. Saved as a new model with it.">
+          <TextInput inputMode="decimal" value={hr} placeholder="1" onChange={(e) => setHr(e.target.value)} />
+        </Field>
+      )}
       {failed && <p className="field-error" role="alert">{failed}</p>}
       {picking && (
         <LibraryRecordPicker use={onBind ? "attach" : "model"} selectedId={rec?.id} onClose={() => setPicking(false)}

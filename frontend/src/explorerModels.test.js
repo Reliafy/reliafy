@@ -94,6 +94,11 @@ test("the row's actions: Refit only for a fitted model, Open in Models only when
   assert.equal(rowActions(bayes.rows.get(modelKey("q"))).find((a) => a.id === "model-bayes").label, "Update with new failures…");
   assert.deepEqual(rowActions(g.rows.get(modelKey("c"))).map((a) => a.id), ["model-open", "model-replace", "model-unlink"]);
   assert.ok(rowActions(g.rows.get(modelKey("a")), { viewOnly: "View only" }).find((a) => a.id === "model-unlink").disabled);
+  // A single-distribution life model (the server says adjustable) can be adjusted for conditions here.
+  const adj = graftModels(buildDisplay(DATA, "positions"), [link("j", "pump", { model: { ...WEIBULL, adjustable: true } })]);
+  const acts = rowActions(adj.rows.get(modelKey("j")));
+  assert.equal(acts.find((a) => a.id === "model-adjust").label, "Adjust for conditions…");
+  assert.ok(!rowActions(g.rows.get(modelKey("a"))).some((a) => a.id === "model-adjust"));
   assert.ok(!MODEL_USUAL.includes("b10") && MODEL_USUAL.includes("mean"));
 });
 

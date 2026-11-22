@@ -35,6 +35,7 @@ import {
   packageWhere, pickTasks, refRowActions, rollupText as taskRollup, shownTasks, taskKey, taskRowActions,
 } from "../explorerTasks.js";
 import CovariateBindPane from "../components/CovariateBindPane.jsx";
+import AdjustModelPane from "../components/AdjustModelPane.jsx";
 import RedundancyPane from "../components/RedundancyPane.jsx";
 import StrategyPane from "../components/StrategyPane.jsx";
 import { SAVED_EVENT } from "../components/SaveAnalysisButton.jsx";
@@ -1749,6 +1750,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     }
     else if (id === "model-predict") openPredict(position, link);
     else if (id === "model-bind") openBind(position, bindingOf(link), { link, name: link.model?.name || link.name });
+    else if (id === "model-adjust") leavePane().then((ok) => ok && openPane("adjust", position, { link, rbd: link.id }));
     else if (id === "model-to-library") setModelModal({ kind: "to-library", position, link });
     else if (id === "model-rebuild") askRebuild(position, link);
     else if (id === "model-use") {
@@ -3239,6 +3241,14 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       <CovariateBindPane key={`${paneAt.bind}:${seed?.n || 0}`} binding={bindingFromParam(paneAt.bind)}
                          name={seed?.start?.name || ""} link={seed?.link || null} {...paneProps} />
     </div>
+  ) : paneKind === "adjust" ? (
+    // Waits for the models, so a reload finds the row's link (its model and failure modes).
+    (seed?.link || (pmodels.links || []).find((l) => l.id === paneAt.adjust)) ? (
+      <div className="rw tt-side">
+        <AdjustModelPane key={`${paneAt.adjust}:${seed?.n || 0}`}
+                         link={seed?.link || (pmodels.links || []).find((l) => l.id === paneAt.adjust)} {...paneProps} />
+      </div>
+    ) : null
   ) : paneKind === "predict" ? (
     // Waits for the models, so a reload knows whether it refreshes one.
     seed || pmodels.links ? (

@@ -491,6 +491,13 @@ def summary(model_type: str, doc) -> dict:
         kind = getattr(doc, "kind", "distribution")
         dist = r.get("distribution_id") or getattr(doc, "distribution_id", "")
         out["path"] = f"/models/m/{doc.id}"
+        # "Adjust for conditions…" on its row (model_adjust.py): a single-distribution life model.
+        from backend.services import model_adjust
+
+        try:
+            out["adjustable"] = model_adjust.why_not(doc) is None
+        except Exception:  # noqa: BLE001 - an odd old document: not offered
+            out["adjustable"] = False
         split = r.get("split") or {}
         failed = split.get("failed")
         if failed is None and isinstance((r.get("plot") or {}).get("scatter"), dict):
@@ -578,7 +585,16 @@ def summary(model_type: str, doc) -> dict:
                               "why": bayes.get("label") or "A Bayesian update of a baseline with this history."}
             return out
         out["kind"] = label if kind == "distribution" else (r.get("distribution") or label)
-        if kind == "distribution" and dist == "weibull" and "alpha" in params and "beta" in params:
+        hr = _num((r.get("extras") or {}).get("hr"))
+        if kind == "distribution" and hr is not None and hr != 1:
+            # Adjusted for conditions (model_adjust.py): its scale isn't the parameter shown, so the
+            # row gives the ratio (and a Weibull's shape, which it keeps); mean and B10 follow, with hr.
+            out["adjusted"] = r.get("adjusted") or {"hazard_ratio": hr}
+            if dist == "weibull" and "beta" in params:
+                lo, hi = _ci(params["beta"])
+                out["numbers"].append(_number("shape", "Shape", params["beta"].get("value"), lo, hi))
+            out["numbers"].append(_number("hr", "Hazard ratio", hr, None, None, ""))
+        elif kind == "distribution" and dist == "weibull" and "alpha" in params and "beta" in params:
             lo, hi = _ci(params["alpha"])
             out["numbers"].append(_number("char_life", "Characteristic life", params["alpha"].get("value"), lo, hi, unit))
             lo, hi = _ci(params["beta"])
@@ -1066,13 +1082,23 @@ def source_text(link: dict, position_name: str = "") -> str:
         if src.get("design_role") == "prediction":
             return "From the product's design: its parts count"
         return "From the product's design"
-    if role == "library":
+    if role == "library" and not src.get("adjusted"):
         from backend.maintenance.library_models import source_text as library_source
 
         return library_source(src)
     if role == "prediction":
         env = src.get("environment_name") or src.get("environment") or ""
         return f"Predicted from its parts list (parts count{', ' + env if env else ''})"
+    if src.get("adjusted"):
+        adj = src["adjusted"]
+        base = src.get("library") and role == "library"
+        if base:
+            from backend.maintenance.library_models import source_text as library_source
+
+            start = library_source(src)
+        else:
+            start = f"From {adj.get('from_name') or 'a saved model'}"
+        return f"{start}, adjusted for conditions (×{float(adj.get('hazard_ratio') or 1):.4g} hazard)"
     return f"Assigned: {link.get('name') or 'a saved model'}"
 
 
@@ -1175,8 +1201,11 @@ def link_saved(m, db, owners, hidden, position_id: str, model_type: str, model_i
     doc = fetcher(db, owners, hidden)(model_type, str(model_id or ""))
     if doc is None:
         raise sv.NotFound(f"Model {model_id}")
+    adjusted = (getattr(doc, "spec", None) or {}).get("adjusted") if model_type == "model" else None
+    source = {"adjusted": {k: adjusted.get(k) for k in ("from_model_id", "from_name", "hazard_ratio")}} \
+        if adjusted else None
     return m.link_position_model(position_id, model_type, doc.id, "assigned", failure_mode_ids, doc.name, note,
-                                 None, replace_link_id)
+                                 source, replace_link_id)
 
 
 def cm_label(m, p: dict) -> str:
