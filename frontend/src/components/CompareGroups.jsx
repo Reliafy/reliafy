@@ -66,9 +66,14 @@ export default function CompareGroups({ dataset, splitBy, onClose }) {
   const columns = dataset.columns || [];
   const distinct = dataset.profile?.distinct;
   const repeated = dataset.profile?.repeated_units;
+  // The dataset's reading names its status column and failure mode: neither
+  // is a group (a split by "Status" compares failed units with running ones).
+  const reading = dataset.reading || {};
+  const statusCol = dataset.profile?.status_column || reading.c || "";
+  const modeCol = reading.e || "";
   const first = useMemo(
-    () => guessCompareColumns(columns, { distinct: distinct || {}, splitBy }),
-    [columns, distinct, splitBy]
+    () => guessCompareColumns(columns, { distinct: distinct || {}, splitBy, exclude: [statusCol, modeCol].filter(Boolean) }),
+    [columns, distinct, splitBy, statusCol, modeCol]
   );
   // Each column's few values (the dataset's profile), so a status column of
   // words ("Failed", "Removed, OK") is read as the fit reads it.
@@ -77,14 +82,14 @@ export default function CompareGroups({ dataset, splitBy, onClose }) {
   }])), [columns, dataset.profile]);
   // The status column the data has is preselected: still-running units are
   // never counted as failures by default.
-  const firstCensor = dataset.profile?.status_column || first.censor;
+  const firstCensor = statusCol || first.censor;
   const [timeCol, setTimeCol] = useState(first.time);
   const [groupCol, setGroupCol] = useState(first.group);
   const [censorCol, setCensorCol] = useState(firstCensor);
   // What each status value means: { c_invert, c_map } (lifeData.js). A
   // "failed"-style 0/1 column is 1 = failed, so it starts inverted.
   const [status, setStatus] = useState(() => statusFor(firstCensor, facts, first.invert));
-  const [causeCol, setCauseCol] = useState("");
+  const [causeCol, setCauseCol] = useState(modeCol);
   // The dataset's own unit ("hour" → "hours") when it names one.
   // Failing that, the unit the last model fitted to it used, or the time column's name ("Hours run").
   const [unit, setUnit] = useState(first.unit || (dataset.time_unit ? `${String(dataset.time_unit).toLowerCase()}s` : "")
@@ -231,6 +236,15 @@ export default function CompareGroups({ dataset, splitBy, onClose }) {
             <span>Failure mode (optional)</span>
             <Select value={causeCol} onChange={setCauseCol} options={optional("— none —")} />
           </label>
+          {modeCol && (
+            <p className="muted-line cg-read-as">
+              {groupCol === modeCol
+                ? "Split by groups of units (a site, a supplier), not by the failure mode. "
+                : "Compare splits the units into groups and compares each mode across them. "}
+              To see the failure modes side by side for the whole data,{" "}
+              <Link to={`/models/new?dataset=${encodeURIComponent(dataset.id)}`}>fit by failure mode</Link>.
+            </p>
+          )}
           <div className="cg-pair">
             <label className="calc-t">
               <span>Unit</span>

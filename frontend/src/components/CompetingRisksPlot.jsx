@@ -22,7 +22,7 @@ const sum = (a, b) => a.map((v, i) => (v == null || b[i] == null ? null : v + b[
 // ``only``: draw just these modes (each mode only). ``shapes``: reference
 // lines (the calculator's time or chance).
 export default function CompetingRisksPlot({ result, unit, stacked = true, download = null, fill = false,
-                                             showAll = false, only = null, shapes = null }) {
+                                             showAll = false, only = null, shapes = null, csv = null }) {
   const c = result.curves || {};
   const x = c.x || [];
   const names = (result.causes || []).map((k) => k.name);
@@ -89,6 +89,7 @@ export default function CompetingRisksPlot({ result, unit, stacked = true, downl
         ...(shapes ? { shapes } : {}),
       }}
       download={download}
+      csv={csv}
       fill={fill}
     />
   );

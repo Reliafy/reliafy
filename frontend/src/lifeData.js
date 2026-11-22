@@ -599,7 +599,14 @@ export function dataStepIssues(mapping, facts, nRows, unit = undefined) {
     }
   }
   if (mapping.e && (mapping.xl || mapping.xr || mapping.tl || mapping.tr)) {
-    add(mapping.e, "Failure modes take one exact value per unit: clear the range (xl, xr) and late entry (tl), or the failure mode.");
+    // ``kind``: a saved dataset keeps the two together (datasetReading.readingIssues skips it).
+    const what = [mapping.xl || mapping.xr ? "a range (xl to xr)" : "", mapping.tl ? "late entry (tl)" : "", mapping.tr ? "an end of observation (tr)" : ""]
+      .filter(Boolean).join(" and ");
+    out.push({
+      col: mapping.e, kind: "mode-exact",
+      text: `A fit by failure mode needs one exact value per unit, and this reading also has ${what}. To fit every failure as one, `
+        + "set the failure mode to none for this fit; to fit by failure mode, set those to none instead.",
+    });
   }
   numericCol(mapping.n, "counts");
   if (mapping.n && countProblem(f(mapping.n)) === "decimals") {
@@ -630,6 +637,18 @@ export function issueRow(issue, mapping) {
 export function statusCodesOnly(values) {
   const keys = statusValues(values).map((v) => statusKey(v.label));
   return keys.length > 0 && keys.every((k) => k === "0" || k === "1");
+}
+
+// How a 0/1 status column is read, with each code's rows, failures first:
+// "0 = failed (28 rows) · 1 = still running (12 rows)", or with ``invert``
+// "1 = failed (12 rows) · 0 = still running (28 rows)". Null without values.
+export function codeReading(values, invert) {
+  const rows = Object.fromEntries(statusValues(values).map((v) => [statusKey(v.label), v.rows]));
+  if (!Object.keys(rows).length) return null;
+  const failed = invert ? "1" : "0";
+  const running = invert ? "0" : "1";
+  const n = (k) => `${(rows[k] || 0).toLocaleString("en-GB")} ${rows[k] === 1 ? "row" : "rows"}`;
+  return `${failed} = failed (${n(failed)}) · ${running} = still running (${n(running)})`;
 }
 
 // Failures and units still running in an uploaded or pasted file, counted

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { ErrorNotice } from "./StorageCap.jsx";
 import {
   getDistributions,
@@ -422,7 +423,7 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
     ...(reading?.tr_problem ? [reading.tr_problem.text] : [])];
   // A reading the app guessed (a dataset saved before readings) is checked once before it's fitted.
   // (A sample or a view-only share can't keep one: its guess is shown, not asked about.)
-  const unconfirmed = !!detail && rd.source !== "saved" && !autoFit && !rd.readOnly;
+  const unconfirmed = !!detail && rd.source === "guessed" && !autoFit && !rd.readOnly;
   // Every fit settles its unit (a unit, or "No unit" ticked): asked beside the
   // reading when the dataset's reading has none, with no default.
   const askUnit = !!fromReading && !unitSettled(fromReading.unit);
@@ -842,6 +843,13 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
               </button>
             </div>
           )}
+          {onPerDemand && (
+            <p className="muted-line" style={{ margin: "var(--space-2) 0 0" }}>
+              Condition readings (vibration, oil analysis) on the same units as well as their failures?{" "}
+              <Link to="/models/joint/new">Fit a condition and life model</Link>: it takes the lives and the readings
+              together, and adds the readings to the dataset there.
+            </p>
+          )}
         </>
       )}
 
@@ -982,7 +990,9 @@ export default function FitFlow({ onSaved, onCancel, onPerDemand, initialDataset
             {byMode
               ? hasCovariates
                 ? `Failure modes from “${mapping.e}”, with covariates — choose a regression by mode.`
-                : `Failure modes from “${mapping.e}” — they are fitted as competing risks. To fit every failure as one, change the reading so it has no failure mode.`
+                : `Failure modes from “${mapping.e}” — they are fitted as competing risks. To fit every failure as one, Change the reading, set the failure mode to none and use it for this fit only: the dataset keeps its failure modes.`
+              : twoClocks
+              ? `Two clocks: “${mapping.x}” and “${mapping.x2}”, so the models below use both. To fit on “${mapping.x}” alone, Change the reading, set the second clock to none and use it for this fit only: the dataset keeps both clocks.`
               : tvc
               ? "Covariates change over time — choose a regression model. Each item's covariates follow its rows."
               : hasCovariates

@@ -877,7 +877,8 @@ def repeated_units(df: pd.DataFrame) -> dict | None:
         for t in numeric:
             sub = df.loc[col.index, [t]].assign(_g=col)
             steps = sub.groupby("_g")[t].diff().dropna()
-            if steps.empty or not (steps > 0).all():
+            # Ties (two events at one value) don't break a rising history.
+            if steps.empty or not (steps >= 0).all() or float((steps > 0).mean()) < 0.8:
                 continue
             # A time grid shared by the units reads as measurements over time.
             seen_in = sub.groupby(t)["_g"].nunique()
@@ -1168,15 +1169,26 @@ def _detect_with_reading(df: pd.DataFrame, reading: dict, roles: dict) -> dict:
     # rows. Ages since each part was fitted (one life per row) don't, nor does
     # inspection data (a range per row is one life found failed or passed).
     repeat = False
-    start_stop = bool(roles["tl"] and roles["tr"])
+    start_stop = bool(roles["tl"] and roles["tr"]) or _periods(df, unit, roles)
     if unit and not interval and not roles["m"] and not start_stop:
         rows = df[[unit, roles["x"]]].dropna()
         steps = rows.groupby(unit)[roles["x"]].diff().dropna()
-        repeat = bool(len(steps)) and bool((steps > 0).all())
+        # Two failures logged at the same value (a tie, or one entered twice)
+        # are still repeat failures of that unit: the time never goes back.
+        repeat = bool(len(steps)) and bool((steps >= 0).all()) and float((steps > 0).mean()) >= 0.8
     if repeat:
         tags.add("Repairable")
     elif roles["c"] or reading.get("all_failed") or not roles["m"]:
         tags.add("Non-repairable")
+    if start_stop and unit and reading.get("z"):
+        # Start and stop rows whose covariates change along a unit's rows
+        # ("Covariates" stays only for those that don't).
+        z = [c for c in reading.get("z") or [] if c in df.columns]
+        varies = [bool((df.groupby(unit)[c].nunique(dropna=True) > 1).any()) for c in z]
+        if any(varies):
+            tags.add("Time-varying covariates")
+            if all(varies):
+                tags.discard("Covariates")
     covs = "Covariates" in tags
     use_for: list[str] = []
     if roles["m"]:
@@ -1192,8 +1204,50 @@ def _detect_with_reading(df: pd.DataFrame, reading: dict, roles: dict) -> dict:
         use_for.append("Non-repairable model" + (" with covariates" if covs else ""))
         use_for.append("Condition and life model (once measurements are added)")
     out_tags = [t for t in TAGS if t in tags]
-    return {"tags": out_tags, "use_for": use_for, "summary": _reading_summary(df, reading, roles, out_tags),
+    summary = _periods_summary(df, reading, roles) if start_stop and unit and not repeat else None
+    return {"tags": out_tags, "use_for": use_for,
+            "summary": summary or _reading_summary(df, reading, roles, out_tags),
             "time_unit": _time_unit(times)}
+
+
+def _periods_summary(df: pd.DataFrame, reading: dict, roles: dict) -> str | None:
+    """The count for start and stop rows: each unit is one life, split into
+    stretches, so "80 motors · 55 failed" (its status column read with its
+    meanings), not one life per row. None when the status can't be read."""
+    unit = roles["i"]
+    noun = _noun(_id_column(df, unit))
+    n_units = int(df[unit].nunique(dropna=True))
+    units = f"{n_units:,} {_plural(noun, n_units)}"
+    c = roles["c"]
+    if not c:
+        return units
+    plain = {**reading, "xl": "", "xr": "", "tl": "", "tr": "", "x": roles["x"] or roles["xr"]}
+    codes = reading_codes(df, plain, {**roles, "xl": "", "xr": "", "tl": "", "tr": "", "x": plain["x"]})
+    if codes is None:
+        return None
+    failed = int((codes == 0).sum())
+    return f"{units} · {failed:,} failed"
+
+
+def _periods(df: pd.DataFrame, unit: str | None, roles: dict) -> bool:
+    """Whether a reading's rows are stretches of each unit's one life (start
+    and stop rows), not repeat failures: each row starts (tl, or xl of a
+    range) where the unit's previous row stopped (x, or xr), on most rows."""
+    if not unit or roles["m"]:
+        return False
+    start, stop = (roles["tl"], roles["x"]) if roles["tl"] and roles["x"] else (
+        (roles["xl"], roles["xr"]) if roles["xl"] and roles["xr"] and not roles["x"] else ("", ""))
+    if not start:
+        return False
+    try:
+        rows = df[[unit, start, stop]].dropna(subset=[unit])
+        lo = pd.to_numeric(rows[start], errors="coerce")
+        hi = pd.to_numeric(rows[stop], errors="coerce")
+    except (KeyError, TypeError):
+        return False
+    previous = hi.groupby(rows[unit]).shift(1)
+    follows = previous.notna() & lo.notna()
+    return int(follows.sum()) >= 2 and float((lo[follows] == previous[follows]).mean()) >= 0.8
 
 
 def reading_codes(df: pd.DataFrame, reading: dict, roles: dict | None = None) -> pd.Series | None:

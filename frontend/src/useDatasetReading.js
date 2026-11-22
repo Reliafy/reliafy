@@ -7,6 +7,7 @@
 //   rd.reading, rd.source ("saved" | "guessed"), rd.cols, rd.facts
 //   rd.startChange() → rd.draft (edit with <ReadingEditor reading={rd.draft} onChange={rd.setDraft} />)
 //   rd.keep(rd.draft) → PUT /api/datasets/{id}/reading (a sample or view-only share: this fit only)
+//   rd.useOnce(rd.draft) → this fit only, the dataset's reading unchanged (rd.source "once")
 //   rd.confirm() → keeps a guessed reading as it is ("Looks right")
 //   rd.keepMeasurements({ i, x, m, unit, m_unit }) → the measurements part's reading only
 import { useEffect, useMemo, useState } from "react";
@@ -48,6 +49,15 @@ export function useDatasetReading(detail) {
     }
   };
 
+  // This fit only: the reading changed here, the dataset's own left as it is
+  // (fit on one clock of two, or without the failure mode, say).
+  const useOnce = (next) => {
+    setReading(next);
+    setSource("once");
+    setDraft(null);
+    setError(null);
+  };
+
   // Only the measurements part's reading: a guessed main reading stays guessed.
   const keepMeasurements = async (sub) => {
     setSaving(true);
@@ -71,6 +81,7 @@ export function useDatasetReading(detail) {
     startChange: () => setDraft(reading),
     cancelChange: () => setDraft(null),
     keep,
+    useOnce,
     confirm: () => keep(reading),
   };
 }
