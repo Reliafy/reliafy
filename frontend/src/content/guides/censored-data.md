@@ -151,6 +151,14 @@ the pump sample), so you can see at once whether the codes are the right way
 round: a fit where nearly every row is "still running" almost always means they
 aren't.
 
+Before you fit, the dataset's page draws the same reading as **Lifetimes**:
+one line per unit, a dot where it failed, an open ▷ where it was still running,
+a thick bar for a failure between inspections, an open ◁ for one found already
+failed, and a short bar where a unit entered late. Every line ending in a dot
+when you know some units are still running is the codes read backwards: press
+**Change how it's read** and watch the lines change before you save. See
+[Fit your first model](/guides/fit-your-first-model).
+
 Fit the same data with and without the censoring column chosen and compare. The
 censored fit will show a longer characteristic life — often dramatically so — and
 that difference is the reliability your equipment actually has and was previously

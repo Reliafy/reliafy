@@ -16,6 +16,8 @@ const SIGNED_IN = [
   ["GET", "/api/extensions"], // optional extensions' pages (an empty list without any)
   ["GET", "/api/search?q=pump"], // the one search for everything (the header's search, ⌘K)
   ["GET", "/api/datasets/sample-ds-pumps/csv"], // a dataset's Download CSV
+  ["GET", "/api/datasets/sample-ds-pumps/lifetimes"], // a dataset's Lifetimes view
+  ["POST", "/api/datasets/smoke/lifetimes"], // the same, with a reading being changed
   // The asset tree in a spreadsheet, both ways (the Explorer's Import from Excel and Export).
   ["GET", "/api/maintenance/hierarchy/export"],
   ["POST", "/api/maintenance/hierarchy/import"],
