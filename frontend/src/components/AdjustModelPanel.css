@@ -11,3 +11,6 @@
 .adj-from { margin: 0; }
 .adj-page { max-width: 44rem; }
 .adj-page > .card-title { margin: 0; padding: 0 var(--space-4); }
+@media (max-width: 720px) {
+  .adj-table th, .adj-table td { padding: var(--space-1-5) var(--space-2); }
+}
