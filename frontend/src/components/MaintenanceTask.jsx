@@ -55,6 +55,7 @@ function startFrom(task) {
     how: formFromTask(task),
     outcome: task?.outcome || "", source: task && !fromRcm(task) ? task.source : "manual", reference: task?.reference || "",
     cost: task?.cost?.typed != null ? String(task.cost.typed) : "",
+    visitCost: task?.visit_cost != null ? String(task.visit_cost) : "",
     modes: new Set((task?.failure_modes || []).map((m) => m.id)),
     ...restorationForm(task),
   };
@@ -138,7 +139,7 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
   const missing = task?.cost?.lsa?.missing_rates?.filter((t) => t !== "no trade") || [];
   const restoreProblem = f.outcome === "fixed_interval" ? restorationProblem(f) : null;
   const howProblem = howOftenProblem(f.how);
-  const can = ready && !!f.name.trim() && !tooLong(f.name) && !howProblem && validMoney(f.cost)
+  const can = ready && !!f.name.trim() && !tooLong(f.name) && !howProblem && validMoney(f.cost) && validMoney(f.visitCost)
     && Object.values(rates).every(validMoney) && !restoreProblem;
   const subject = { kind: row.type === "loc" ? "location" : "position", id: row.key, name: row.ref?.name };
 
@@ -161,6 +162,7 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
     await updateMaintenanceTask(task.id, {
       ...fields, ...(rcm ? {} : { source: f.source, reference: f.reference }),
       ...((task.cost?.typed ?? null) !== num(f.cost) ? { cost: num(f.cost) } : {}),
+      ...(!task.package && (task.visit_cost ?? null) !== num(f.visitCost) ? { visit_cost: num(f.visitCost) } : {}),
     });
     // What it leaves the item as, how it's counted, its age at a shutdown: after its kind is saved.
     const extra = restorationBody(task, f);
@@ -313,6 +315,16 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
             </p>
           )}
           {!adding && f.cost === "" && <RateBoxes trades={missing} rates={rates} onRates={setRates} disabled={send.busy} />}
+          {/* A task in no package is a visit of its own: its call-out and setup (backend/maintenance/visit_costs.py). */}
+          {!adding && !task.package && (
+            <Field label={`Call-out and setup each time (${workspaceCurrency()})`} optional
+                   help="Travel, setting up, the crew standing by: counted in the forecast's planned cost besides the task.">
+              <TextInput type="number" inputMode="decimal" min="0" step="any" value={f.visitCost} onChange={set("visitCost")} />
+            </Field>
+          )}
+          {!adding && task.package && (
+            <p className="field-help" role="note">Done on {task.package.name}&apos;s visits: a visit&apos;s call-out and setup are set on the package.</p>
+          )}
         </Section>
         {uses}
         {send.error && <p className="field-error" role="alert">{send.error}</p>}
@@ -404,6 +416,12 @@ function RestorationFields({ f, setF, task, problem }) {
           : `An overhaul that takes away ${f.restores || "X"}% of ${f.restoreKind === "kijima1" ? "the age gained since the last task" : "its whole age"}: 100% is as good as new, 0% as old as before.`}
         {f.replaceEvery !== "" && f.replacementCost === "" ? " With no replacement cost, a replacement is charged nothing until you set one." : ""}
       </p>
+      {r?.source === "assumed" && (
+        <p className="field-help" role="note">
+          Not set yet: taken as restoring none of its age, as servicing work (greasing, cleaning, adjusting) usually
+          does, so the forecast counts no failures off for it. Choose As new if it replaces or fully restores the item.
+        </p>
+      )}
       {r?.source === "decision" && (
         <p className="field-help" role="note">
           Its failure modes&apos; decisions set this for themselves ({r.by_mode.map((x) => `${x.text}: ${x.words}`).join("; ")}).

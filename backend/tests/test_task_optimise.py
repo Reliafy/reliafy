@@ -120,7 +120,7 @@ def test_mcp_optimise_task_action(api):
 
     mcp_tools.register()
     try:
-        assert "rcm.optimise_task" in mcp_tools.TOOL_TABLES["maintenance"][1]
+        assert "rcm.optimise" in mcp_tools.TOOL_TABLES["maintenance"][1]
     finally:
         mcp_tools.unregister()
 
@@ -133,3 +133,13 @@ def test_an_lsa_with_an_unpriced_trade_is_never_the_whole_planned_cost(api):
     row = api.post(f"{M}/tasks/{task_id}/optimise", json={"unplanned_cost": 900}).json()["modes"][0]
     planned = row["inputs"]["planned_cost"]
     assert planned["source"] == "task_partial" and "Unpriced fitter" in planned["text"]
+
+
+def test_the_failure_modes_own_failure_cost_is_what_optimise_reads(api):
+    """The failure cost entered on the mode (failure_costs.py), with its downtime at the cost of an hour
+    down, is the unplanned cost Optimise starts from: the same figure the forecast charges."""
+    mode_id, task_id, _position_id, _model_id = _plug(api)
+    api.patch(f"{M}/failure-modes/{mode_id}", json={"failure_cost": 800, "downtime_hours": 4, "downtime_rate": 25})
+    row = api.post(f"{M}/tasks/{task_id}/optimise", json={}).json()["modes"][0]
+    assert row["inputs"]["unplanned_cost"]["value"] == 900 and row["inputs"]["unplanned_cost"]["source"] == "mode"
+    assert row["use"] == {"value": 96, "unit": "hours"}

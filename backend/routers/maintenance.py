@@ -441,19 +441,24 @@ def add_failure_mode(position_id: str, body: dict = Body(...), m: Maintenance = 
 
 @router.patch("/failure-modes/{mode_id}")
 def update_failure_mode(mode_id: str, body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """The mode's words and RCM analysis (text, function, failure, consequence, effects, notes) and its
+    """The mode's words and RCM analysis (text, function, failure, consequence, effects, notes), its
     FME(C)A fields (fmea.FIELDS: severity, occurrence, detection, cause, the effects, the recommended
-    action, the criticality figures; null clears one). With any FME(C)A field the answer carries rpn, ap
-    and cm."""
+    action, the criticality figures; null clears one) and what a failure costs (failure_cost,
+    downtime_hours, downtime_rate; null clears one: failure_costs.py). With any FME(C)A field the answer
+    carries rpn, ap and cm; with a cost, costs."""
     from backend.maintenance import fmea
 
     def go():
+        from backend.maintenance import failure_costs
+
         words = {k: body[k] for k in ("text", "function", "failure", "consequence", "effects", "notes") if k in body}
         scores = {k: body[k] for k in fmea.FIELDS if k in body}
-        out = m.update_failure_mode(mode_id, **words) if words or not scores else None
+        costs = {k: body[k] for k in failure_costs.FIELDS if k in body}
+        out = m.update_failure_mode(mode_id, **words) if words or not (scores or costs) else None
         if scores:
-            scored = m.score_failure_mode(mode_id, scores)
-            return {**(out or m._mode_view(m._get(mode_id, "FailureMode"))), **scored}
+            out = {**(out or m._mode_view(m._get(mode_id, "FailureMode"))), **m.score_failure_mode(mode_id, scores)}
+        if costs:
+            out = {**(out or m._mode_view(m._get(mode_id, "FailureMode"))), "costs": m.set_mode_costs(mode_id, **costs)}
         return out
     return _run(go)
 
@@ -807,6 +812,13 @@ def link_task_failure_mode(task_id: str, mode_id: str, m: Maintenance = Depends(
 def unlink_task_failure_mode(task_id: str, mode_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """Take that one failure mode off the task (its other links stay)."""
     return _run(m.unlink_task, task_id, mode_id)
+
+
+@router.get("/failure-modes/{mode_id}/costs")
+def failure_mode_costs(mode_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """What one failure of the mode costs: its own figures, its class's, and those in force (each the
+    mode's own, else its class's: failure_costs.py)."""
+    return _run(m.mode_costs, mode_id)
 
 
 @router.delete("/failure-modes/{mode_id}")
@@ -1209,6 +1221,9 @@ def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(m
         if "cost" in body:
             # What it costs each time, typed (null: its LSA's figure again).
             view = m.set_task_cost(task_id, body["cost"])
+        if "visit_cost" in body:
+            # A task in no package: its call-out and setup each time (null: none; visit_costs.py).
+            view = m.set_task_visit_cost(task_id, body["visit_cost"])
         if "restoration" in body:
             # What a fixed-interval task leaves the item as (null: as new); failure_mode_id inside it:
             # that mode's decision only.
@@ -1320,7 +1335,7 @@ def get_class(position_class: str, m: Maintenance = Depends(maintenance)) -> JSO
 @router.put("/classes/costs")
 def set_class_costs(body: dict = Body(...), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     return _run(m.set_class_costs, body.get("position_class"), body.get("planned_cost"), body.get("failure_cost"),
-                body.get("availability_target"))
+                body.get("availability_target"), body.get("downtime_hours", ...), body.get("downtime_rate", ...))
 
 
 @router.put("/classes/replacement-cost")
@@ -2946,6 +2961,9 @@ def update_package(package_id: str, body: dict = Body(...), m: Maintenance = Dep
             m.check_shutdown(body["shutdown"])
         out = m.update_package(package_id, clear_pattern=bool(body.get("clear_pattern")),
                                season=body["season"] if "season" in body else ..., **{k: body.get(k) for k in _PACKAGE_FIELDS})
+        if "visit_cost" in body:
+            # Each visit's cost besides its tasks (call-out, setup); null: none (visit_costs.py).
+            out = m.set_package_visit_cost(package_id, body["visit_cost"])
         # shutdown: its visits are planned outages; null makes it an ordinary package again.
         return m.set_package_shutdown(package_id, body["shutdown"]) if "shutdown" in body else out
     return _run(go)

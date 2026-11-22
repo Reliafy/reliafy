@@ -108,7 +108,7 @@ test("mission tree: details for missions and phases; covariate and node status r
   await side.getByRole("button", { name: "Open in the RBD builder" }).click();
   const rbdPane = page.getByRole("region", { name: "RBD", exact: true });
   await expect(rbdPane.locator(".react-flow__node", { hasText: `Rear bearing ${tag}` })).toBeVisible({ timeout: 20_000 });
-  await rbdPane.getByRole("button", { name: "More diagram settings" }).click();
+  await rbdPane.getByRole("button", { name: "More", exact: true }).click();
   await page.getByRole("button", { name: /^Phased mission/ }).click();
   const modal = page.locator(".rbd-phases-modal");
   await modal.locator(".rbd-phase-needs summary").nth(1).click();

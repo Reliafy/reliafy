@@ -581,11 +581,19 @@ the date comes from the counter's recent rate, as before. `limits[].basis` says 
 `get forecast` (`id` a position; `root` the asset opened; `period` `month`, `quarter` or `year`;
 `periods`, default 12) is the forecast for the position and everything inside it, from today to
 the end of the last whole period: `answer` (the whole forecast in a line), `rows` per period
-(the position's operating `hours`, `tasks`, `labour_hours`, `planned_cost`, expected `failures`
-and `failure_cost`, and the tasks `due`), `totals` with a 90% range (the 5th to 95th percentile
-of outcomes), each task's dates with what they rest on, the life models it used (`models`, each
-with its age, cost per failure and `rests_on`; `placeholder` when typed in) and what it left out
-(`not_on_dates`, `not_forecast`, `states`). Nothing is saved. `maintenance guide` topic
+(the position's operating `hours`, `tasks`, `labour_hours`, `planned_cost` split into
+`labour_cost`, `materials_cost` and `other_planned_cost`, expected `failures`, `unplanned_cost`
+(also `failure_cost`), `downtime_hours`, `downtime_cost` and `total_cost`, and the tasks `due`),
+`totals` with a 90% range (the 5th to 95th percentile of outcomes) and `total_complete`,
+`cost_basis` (what planned and unplanned rest on), each task's dates with what they rest on, the
+life models it used (`models`, each with its age, cost per failure and `rests_on`; `placeholder`
+when typed in), what it left out (`not_on_dates`, `not_forecast`, `states`) and `prompts`: what to
+enter, each with a link (`no_failure_cost`, `no_pf`, `no_effect`). Nothing is saved.
+
+What one failure costs lives on the failure mode (`failure_modes.update` with `failure_cost`,
+`downtime_hours`, `downtime_rate`; `clear` unsets them; `PATCH /api/maintenance/failure-modes/{id}`,
+`GET …/failure-modes/{id}/costs`), else on its position class (`reliability.set_class_costs` with
+`failure_cost`, `downtime_hours`, `downtime_rate`). Each figure is the mode's own, else the class's. `maintenance guide` topic
 `forecast` has the detail. The app's route: `GET /api/maintenance/positions/{id}/forecast`
 (`?root=&period=&periods=`).
 

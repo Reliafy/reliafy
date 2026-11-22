@@ -233,11 +233,11 @@ test("build an RBD from what's inside: the builder in the table area, its row, a
   await expect(pane.getByRole("tab", { name: "Builder" })).toHaveAttribute("aria-selected", "true");
   await expect(pane.locator(".react-flow__node").filter({ hasText: `Pump A ${tag}` })).toBeVisible();
   await expect(pane.locator(".react-flow__node").filter({ hasText: `Pump B ${tag}` })).toBeVisible();
-  await expect(pane.locator(".rbd-full-status")).toContainText("Saved");
+  await expect(pane.locator(".rbd-save-status")).toContainText("Saved");
   // Open full page is the builder's ⋯ menu's last item; × ends its toolbar.
-  await pane.getByRole("button", { name: "More diagram settings" }).click();
+  await pane.getByRole("button", { name: "More", exact: true }).click();
   await expect(pane.getByRole("link", { name: "Open full page" })).toHaveAttribute("href", `/systems/b/${rbdOf(page)}`);
-  await pane.getByRole("button", { name: "More diagram settings" }).click();  // closes the menu
+  await pane.getByRole("button", { name: "More", exact: true }).click();  // closes the menu
   await expect(pane.getByRole("link", { name: "Open full page" })).toHaveCount(0);
   await expect(pane.getByRole("button", { name: "Close the RBD" })).toBeVisible();
   // The whole diagram is in view: every block inside the canvas.
@@ -323,23 +323,16 @@ test("an RBD row opens in the table area: reload, edit and save, unsaved changes
   await expect(nodes.filter({ hasText: `Pump B ${tag}` })).toBeVisible();
   const count = await nodes.count();
 
-  // An edit: unsaved, so × asks; keeping it leaves the edit there.
-  await pane.getByRole("button", { name: "Add block" }).click();
-  await pane.locator(".ovm-item", { hasText: /^Component$/ }).click();
+  const savedBlocks = async () => ((await (await request.get(`/api/rbds/${built.model_id}`)).json()).graph.nodes || []).length;
+  const addBlock = async () => {
+    await pane.getByRole("button", { name: "Add block" }).click();
+    await pane.locator(".ovm-item", { hasText: /^Component$/ }).click();
+  };
+  // An edit saves itself (autosave), so × closes without asking.
+  await addBlock();
   await expect(nodes).toHaveCount(count + 1);
-  await expect(pane.locator(".rbd-full-status")).toContainText("Unsaved changes");
-  await pane.getByRole("button", { name: "Close the RBD" }).click();
-  const discard = page.getByRole("alertdialog", { name: "Discard your changes to this RBD?" });
-  await expect(discard).toBeVisible();
-  await discard.getByRole("button", { name: "Keep editing" }).click();
-  await expect(pane).toBeVisible();
-  await expect(nodes).toHaveCount(count + 1);
-  // Another row asks too. (A row beside this one: a new root can be far down a long tree that only
-  // draws the rows in view, as on CI with every other test's plants.)
-  await page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: `Pump B ${tag}` }) }).locator(".tp-nm").click();
-  await expect(discard).toBeVisible();
-  await discard.getByRole("button", { name: "Keep editing" }).click();
-  await expect(pane).toBeVisible();
+  await expect.poll(savedBlocks, { timeout: 10_000 }).toBe(count + 1);
+  await expect(pane.locator(".rbd-save-status")).toContainText("Saved");
   // Esc in the block's name box is the builder's (the rename stops), not the pane's.
   await nodes.filter({ hasText: `Pump B ${tag}` }).click();
   await page.keyboard.press("F2");
@@ -348,10 +341,34 @@ test("an RBD row opens in the table area: reload, edit and save, unsaved changes
   await expect(pane.locator(".react-flow__node input")).toHaveCount(0);
   await expect(pane).toBeVisible();
 
+  // Autosave off (⋯ › Autosave): an edit is unsaved, so × asks; keeping it leaves the edit there.
+  await pane.getByRole("button", { name: "More", exact: true }).click();
+  await pane.getByRole("menuitemcheckbox", { name: /Autosave/ }).click();
+  try {
+  await addBlock();
+  await expect(nodes).toHaveCount(count + 2);
+  await expect(pane.locator(".rbd-save-status")).toContainText("Unsaved changes");
+  await pane.getByRole("button", { name: "Close the RBD" }).click();
+  const discard = page.getByRole("alertdialog", { name: "Discard your changes to this RBD?" });
+  await expect(discard).toBeVisible();
+  await discard.getByRole("button", { name: "Keep editing" }).click();
+  await expect(pane).toBeVisible();
+  await expect(nodes).toHaveCount(count + 2);
+  // Another row asks too. (A row beside this one: a new root can be far down a long tree that only
+  // draws the rows in view, as on CI with every other test's plants.)
+  await page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: `Pump B ${tag}` }) }).locator(".tp-nm").click();
+  await expect(discard).toBeVisible();
+  await discard.getByRole("button", { name: "Keep editing" }).click();
+  await expect(pane).toBeVisible();
+
   // Saved the same way as the RBD's page: the diagram has the new block.
-  await pane.locator(".rbd-save-main").click(); // Save saves in one click
-  await expect(pane.locator(".rbd-full-status")).toContainText("Saved");
-  await expect.poll(async () => ((await (await request.get(`/api/rbds/${built.model_id}`)).json()).graph.nodes || []).length).toBe(count + 1);
+  await pane.getByRole("button", { name: "Save", exact: true }).click(); // Save saves in one click
+  await expect(pane.locator(".rbd-save-status")).toContainText("Saved");
+  await expect.poll(savedBlocks).toBe(count + 2);
+  } finally {
+    // The preference is the account's: put it back for the other tests.
+    await request.put("/api/me/editor-preferences", { data: { autosave: true } });
+  }
   // Saved: × closes without asking, the position picked.
   await pane.getByRole("button", { name: "Close the RBD" }).click();
   await expect(pane).toHaveCount(0);
@@ -369,7 +386,7 @@ test("an RBD row opens in the table area: reload, edit and save, unsaved changes
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
   await ask.getByRole("button", { name: "Cancel" }).click();
   await expect(ask).toHaveCount(0);
-  await expect(nodes).toHaveCount(count + 1);
+  await expect(nodes).toHaveCount(count + 2);
   await page.keyboard.press("Escape");
   await expect(pane).toHaveCount(0);
   await postOk(request, `${M}/positions`, { name: `Pump C ${tag}`, parent_id: st.id });
@@ -379,7 +396,7 @@ test("an RBD row opens in the table area: reload, edit and save, unsaved changes
   await expect(ask).toHaveCount(0);
   await expect(page).toHaveURL(new RegExp(`[?&]rbd=${built.model_id}&on=${st.id}`));
   await expect(nodes.filter({ hasText: `Pump C ${tag}` })).toBeVisible();
-  await expect(nodes).toHaveCount(count + 2);  // the saved edit kept, the new position's block added
+  await expect(nodes).toHaveCount(count + 3);  // the saved edits kept, the new position's block added
 
   // Link an existing RBD…: a picker, then the linked diagram in the pane (a sample: read only).
   await page.keyboard.press("Escape");
@@ -391,12 +408,12 @@ test("an RBD row opens in the table area: reload, edit and save, unsaved changes
   await expect(pane).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`[?&]rbd=sample-rbd-pump-station&on=${st.id}`));
   await expect(nodes.filter({ hasText: "PLC controller" })).toBeVisible();
-  await expect(pane.locator(".rbd-full-status")).toContainText("Read only");
+  await expect(pane.locator(".rbd-save-status")).toContainText("Read only");
   await expectHealthy(page, problems, { label: "the RBD pane" });
 });
 
-// At 400 px the RBD takes the screen with ‹ Back: the builder fits, its toolbar on one row (the
-// settings in ⋯), nothing sideways. The address alone opens it (a link, or a reload).
+// At 400 px the RBD takes the screen with ‹ Back: the builder fits, its toolbar in two rows at most
+// (the settings behind their icon), nothing sideways. The address alone opens it (a link, or a reload).
 test("an RBD at 400 px takes the screen: the builder fits, nothing sideways, Back", async ({ page, request }) => {
   const tag = `rn${Date.now()}`;
   const st = await station(request, tag);
@@ -409,12 +426,16 @@ test("an RBD at 400 px takes the screen: the builder fits, nothing sideways, Bac
   expect(Math.round((await pane.boundingBox()).width)).toBe(400);
   expect(await sideways(page)).toBeLessThanOrEqual(400);
   expect(await pane.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
-  // The narrow toolbar: the unit and kind in ⋯, + Add, Validate and Save on one row.
+  // The narrow toolbar: + Add, Undo, Redo and the settings icon on one row, the state and ⋯ wrapped
+  // under them as one group.
   await expect(pane.locator(".rbd-builder")).toHaveClass(/is-narrow/);
-  await expect(pane.locator(".rbd-tb-settings")).toBeHidden();
+  await expect(pane.locator(".rbd-settings-summary")).toBeHidden();
   const add = await pane.getByRole("button", { name: "Add block" }).boundingBox();
-  const save = await pane.locator(".rbd-save-main").boundingBox();
-  expect(Math.abs(add.y - save.y)).toBeLessThan(4);
+  const settings = await pane.getByRole("button", { name: /^Diagram settings/ }).boundingBox();
+  expect(Math.abs(add.y - settings.y)).toBeLessThan(4);
+  const more = await pane.getByRole("button", { name: "More", exact: true }).boundingBox();
+  expect(more.x + more.width).toBeLessThanOrEqual(400.5);
+  expect((await pane.locator(".rbd-toolbar").boundingBox()).height).toBeLessThan(110);
   const canvas = await pane.locator(".rbd-canvas").boundingBox();
   expect(canvas.height).toBeGreaterThan(300);
   expect(canvas.x + canvas.width).toBeLessThanOrEqual(400.5);
@@ -473,7 +494,7 @@ test("a position's row menu on the Modelling tab is two levels, and Enter parame
   await open(page, `/asset-register/explorer?arrange=positions&sel=${pump.id}&tab=models`);
   await row(page, pump.id).locator(".tp-nm").click({ button: "right" });
   const menu = page.getByRole("menu", { name: new RegExp(`^Actions for Menu pump ${tag}`) });
-  await expect(menu.locator(":scope > [role='menuitem']")).toHaveText(["Life model", "RBD", "Prediction", "Add a mission…", "Rename…", "Focus here", "Focus", "Pin this branch"]);
+  await expect(menu.locator(":scope > [role='menuitem']")).toHaveText(["Life model", "RBD", "Prediction", "Add a mission…", "Rename…", "Focus models", "Focus models", "Pin this branch"]);
   await expect(menu.getByRole("separator")).toHaveCount(1);
   for (const gone of ["New position inside", "Add failure report…", "Log an event…", "Move to…", "Delete…"]) {
     await expect(menu.getByRole("menuitem", { name: gone })).toHaveCount(0);
