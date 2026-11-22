@@ -68,8 +68,8 @@ test("missions: a product's mission by phase, its covariates with the blocks the
   await nameRow(page, gimbalRbd.name).first().locator(".tp-chev").click();
   await expect(nameRow(page, `Stabilise ${tag}`)).toBeVisible();
   await expect(nameRow(page, `Corridor inspection ${tag}`)).toHaveCount(1);
-  // The drone's roll-up counts its models and then its missions.
-  await expect(nameRow(page, `Survey drone ${tag}`).first()).toContainText("2 missions");
+  // The drone's roll-up counts its own models and then its own missions (open: its own).
+  await expect(nameRow(page, `Survey drone ${tag}`).first()).toContainText("1 model · 1 mission");
   // + Mission on a model's row: the RBD's menu leads with it.
   await rbdRow.locator(".tp-nm").click({ button: "right" });
   await expect(page.getByRole("menuitem").first()).toHaveText(/Add a mission…/);

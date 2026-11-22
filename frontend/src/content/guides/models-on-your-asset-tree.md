@@ -25,8 +25,8 @@ Open **Assets → Explorer**, pick a position and choose the **Models** tab (on 
 screen it may be under **⋯** at the end of the tabs). It's one tree-table: the
 tree stays in the first column; under each position are the models attached to
 it (RBDs and predictions included), before the positions inside it, and under a
-model the missions flown on it, with their phases under them (see
-[Missions and phases](/guides/missions-and-phases)). Each model row shows:
+model the missions flown on it, with their phases under them (the guide
+**Missions and phases** covers them). Each model row shows:
 
 - **Kind**: Weibull, exponential, lognormal, repairable, degradation, or
   condition and life.

@@ -44,7 +44,7 @@ test("attach a sample model to a position, see its row and its details, then unl
   const pump = await postOk(request, `${M}/positions`, { name: `Model pump ${tag}` });
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${pump.id}&tab=models`);
-  await expect(page.getByRole("treegrid", { name: /and their life models/ })).toBeVisible();
+  await expect(page.getByRole("treegrid", { name: /and their models and missions/ })).toBeVisible();
   await expect(page.locator(".tt-headslot .mt-rollup")).toHaveText("No models here yet");
 
   // Assign a saved model… from the heading's "…": the library's samples, picked and attached.
@@ -285,7 +285,9 @@ test("build an RBD from what's inside: the builder in the table area, its row, a
   await page.keyboard.press("Escape");
   await rbd.locator(".tp-nm").click({ button: "right" });
   const menu = page.getByRole("menu").last();
-  await expect(menu.getByRole("menuitem").first()).toHaveText("Open in the pane");
+  // An RBD's menu leads with its add (a mission flown on a copy of it), then Open in the pane.
+  await expect(menu.getByRole("menuitem").first()).toHaveText("Add a mission…");
+  await expect(menu.getByRole("menuitem").nth(1)).toHaveText("Open in the pane");
   await expect(menu.getByRole("menuitem", { name: "Open full page" })).toBeVisible();
   await menu.getByRole("menuitem", { name: "Use this one" }).click();
   await expect(rbd.locator(".ml-inuse")).toHaveText("In use");
@@ -471,7 +473,7 @@ test("a position's row menu on the Modelling tab is two levels, and Enter parame
   await open(page, `/asset-register/explorer?arrange=positions&sel=${pump.id}&tab=models`);
   await row(page, pump.id).locator(".tp-nm").click({ button: "right" });
   const menu = page.getByRole("menu", { name: new RegExp(`^Actions for Menu pump ${tag}`) });
-  await expect(menu.locator(":scope > [role='menuitem']")).toHaveText(["Life model", "RBD", "Prediction", "Rename…", "Focus here", "Focus", "Pin this branch"]);
+  await expect(menu.locator(":scope > [role='menuitem']")).toHaveText(["Life model", "RBD", "Prediction", "Add a mission…", "Rename…", "Focus here", "Focus", "Pin this branch"]);
   await expect(menu.getByRole("separator")).toHaveCount(1);
   for (const gone of ["New position inside", "Add failure report…", "Log an event…", "Move to…", "Delete…"]) {
     await expect(menu.getByRole("menuitem", { name: gone })).toHaveCount(0);
