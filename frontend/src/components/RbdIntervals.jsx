@@ -11,6 +11,7 @@ import { intervalBasis, withTaskBasis } from "../rbdMaintenancePlan.js";
 import "./RbdIntervals.css";
 import ScrollCue from "./ui/ScrollCue.jsx";
 import ProTag from "./ProTag.jsx";
+import { Checkbox } from "./ui/Controls.jsx";
 
 // Maintenance and proof-test intervals chosen together (#172, #228), on the
 // Design tab of a repairable diagram: RePyability's
@@ -368,13 +369,11 @@ export default function RbdIntervals({ graph, onApply, onView }) {
         )}
       </div>
       {kind === "proof_test" && tested > 1 && (
-        <label className="rbd-intervals-check">
-          <input type="checkbox" checked={stagger} onChange={(e) => setStagger(e.target.checked)} />
-          <span>
-            Stagger the tests — choose when each block is first tested too, so redundant channels are tested apart
-            and a common-cause failure is found sooner
-          </span>
-        </label>
+        <Checkbox className="rbd-intervals-check" checked={stagger} onChange={(e) => setStagger(e.target.checked)}
+                  label={<span>
+                    Stagger the tests — choose when each block is first tested too, so redundant channels are tested apart
+                    and a common-cause failure is found sooner
+                  </span>} />
       )}
       <div className="rbd-calc-actions">
         <button type="button" onClick={choose}

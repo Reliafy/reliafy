@@ -4194,6 +4194,53 @@ def _exact_grid(horizon: float) -> np.ndarray:
     return np.unique(np.concatenate([even, early]))
 
 
+def availability_at_times(graph: dict, times, resolve_model=None, state: Optional[dict] = None) -> dict:
+    """Availability read at the times asked about, exact (no simulation): for each ``t`` the point
+    availability A(t) (the chance it's up at that moment), the mean availability over 0 to ``t``
+    (the mission availability), and the expected system failures and downtime by ``t``. All from
+    RePyability (``point_availability``, ``mission_availability``, ``expected_events``) for the
+    diagram as the exact figures build it. ``status`` is ``simulation_only`` when RePyability has
+    no exact or numerical route for one of them, and nothing is computed then."""
+    graph, _ = model_units.convert_graph(graph)
+    rbd, labels, _gates, working_nodes, broken_nodes = _build_repairable_rbd(graph, resolve_model, state=state)
+    overrides = {"working_nodes": working_nodes, "broken_nodes": broken_nodes}
+    node_states = _node_states(state, labels)
+    state_kw = {"state": node_states} if node_states else {}
+    summary = _routes_summary(rbd.analysis_routes(), labels, _priced(rbd))
+    ts = [float(t) for t in times]
+    base: dict[str, Any] = {"from": "now" if node_states else "new", "unit": (graph.get("unit") or "").strip(),
+                            "times": ts}
+    for key in ("point_availability", "mission_availability", "expected_events"):
+        route = summary.get(key) or {}
+        if route.get("route") not in _OVER_TIME_OK:
+            return {**base, "status": "simulation_only", "rows": [],
+                    "message": ("The exact availability at a time isn't available for this diagram, so only the "
+                                f"simulation gives it. {route.get('reason') or ''}").strip()}
+    rows = []
+    try:
+        with ignore_warnings(RuntimeWarning), np.errstate(all="ignore"):
+            for t in ts:
+                if t <= 0:
+                    rows.append({"t": t, "availability": 1.0 if not node_states else None,
+                                 "mission_availability": None, "expected_failures": 0.0, "downtime": 0.0})
+                    continue
+                point = float(np.asarray(rbd.point_availability(np.array([t]), **overrides, **state_kw),
+                                         dtype=float)[0])
+                events = rbd.expected_events(t, **overrides, **state_kw)
+                rows.append({
+                    "t": t,
+                    "availability": _f(point),
+                    "mission_availability": _f(rbd.mission_availability(t, **overrides, **state_kw)),
+                    "expected_failures": _f(events.system_failures),
+                    "downtime": _f(events.system_downtime),
+                })
+    except NotImplementedError as exc:
+        return {**base, "status": "simulation_only", "rows": [], "message": _with_labels(client_message(exc), labels)}
+    return {**base, "status": "ok", "rows": rows, "method": "exact",
+            "methods": {k: (summary.get(k) or {}).get("route")
+                        for k in ("point_availability", "mission_availability", "expected_events")}}
+
+
 def exact_availability(graph: dict, resolve_model=None, horizon: Optional[float] = None,
                        state: Optional[dict] = None) -> dict:
     """The exact availability over time and the window's figures for a

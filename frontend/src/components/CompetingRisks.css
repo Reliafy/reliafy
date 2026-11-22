@@ -15,7 +15,7 @@
 .detail-panel .aside.mf-side.cr-side > .mf-scroll-card { flex: 0 1 auto; }
 .detail-panel .aside.mf-side.cr-side-wide { width: 340px; }
 .detail-panel .aside.cr-side .life-reading { margin-top: 0; }
-.mf-note.cr-warn { color: var(--danger, #b91c1c); }
+.mf-note.cr-warn { color: var(--danger); }
 
 /* The calculator: the table of modes above the chart scrolls inside itself. */
 .cr-calc .cr-calc-table { flex: 0 1 auto; min-height: 0; max-height: 34%; overflow: auto; margin-bottom: 8px; }
@@ -24,7 +24,7 @@
 .cr-table th:not(:first-child), .cr-table td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
 .cr-coef-table th:nth-child(2), .cr-coef-table td:nth-child(2) { text-align: left; }
 .cr-table tr.cr-sig td { background: var(--accent-subtle); }
-.cr-few { color: var(--warning, #b45309); font-size: var(--fs-12); }
+.cr-few { color: var(--warning); font-size: var(--fs-12); }
 .cr-table-wrap { overflow-x: auto; }
 .cr-table-wrap .mini-table { width: 100%; }
 .gof-card .cr-table-wrap .mini-table th:first-child,

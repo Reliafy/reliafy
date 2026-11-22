@@ -5,6 +5,7 @@ import { useRoles } from "../RolesProvider.jsx";
 import { formatNumber } from "../format.js";
 import { EXPLORER_PARTS_CLASSES_TABS, tabPlace } from "../explorerTabs.js";
 import { classesPath } from "../redirects.js";
+import Loading from "./ui/Loading.jsx";
 // The class's whole forecast (the class page's own card), read only when a row is opened.
 const ForecastCard = lazy(() => import("../views/MaintenanceLists.jsx").then((mod) => ({ default: mod.ForecastCard })));
 
@@ -71,7 +72,7 @@ export default function ClassForecastList() {
         {linked && <Link to={classesPath()}>All classes →</Link>}
       </div>
       {classes === null ? (
-        <div className="card empty">Loading…</div>
+        <Loading card />
       ) : classes.length === 0 ? (
         <div className="card empty">
           {linked
@@ -116,7 +117,7 @@ export default function ClassForecastList() {
               Close {classes.find((c) => (c.class_key || c.position_class) === open)?.position_class || open}
             </button>
           </div>
-          <Suspense fallback={<div className="card empty">Loading…</div>}>
+          <Suspense fallback={<Loading card />}>
             <ForecastCard key={open} name={open} label={classes.find((c) => (c.class_key || c.position_class) === open)?.position_class || open} />
           </Suspense>
         </div>

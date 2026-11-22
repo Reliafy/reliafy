@@ -6,6 +6,8 @@ import { CONSEQUENCES, defaultFoundBy, itemText } from "../failureReports.js";
 import { useAuth } from "../AuthProvider.jsx";
 import { FailureModePicker, Field, FormModal } from "./MaintenanceParts.jsx";
 import { DateInput } from "./ui/DateTimeInput.jsx";
+import Loading from "./ui/Loading.jsx";
+import { Radio } from "./ui/Controls.jsx";
 
 // A new failure report at a position (the tree's row menu "Add failure
 // report…", or the Failure reports tab's button), or the same fields on one
@@ -96,18 +98,15 @@ export default function NewFailureReportModal({ positionId, positionName, today,
       <Field label="Item involved">
         <p className="fr-modal-item">
           {positionError ? <span className="lib-date">Couldn't read what's fitted: {positionError}</span>
-            : !position && !editing ? <span className="lib-date">Loading…</span>
+            : !position && !editing ? <Loading inline />
             : itemLine || <span className="lib-date">Nothing fitted at this position. The report is kept at the position, with no item.</span>}
         </p>
       </Field>
       <fieldset className="fr-radios">
         <legend>Consequence</legend>
         {CONSEQUENCES.map((c) => (
-          <label key={c.id || "none"} className="fr-radio">
-            <input type="radio" name="fr-consequence" value={c.id} checked={consequence === c.id}
-                   onChange={() => setConsequence(c.id)} />
-            <span>{c.label}</span>
-          </label>
+          <Radio key={c.id || "none"} className="fr-radio" name="fr-consequence" value={c.id} checked={consequence === c.id}
+                 onChange={() => setConsequence(c.id)} label={<span>{c.label}</span>} />
         ))}
       </fieldset>
       <Field label="Failure mode">

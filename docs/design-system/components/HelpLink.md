@@ -19,6 +19,6 @@ Name the kind in the label so nobody is surprised; never a generic "Show me how"
 - The link sits beside the purpose while there's room, else on its own line. Its padding bleeds left (`margin-inline-start: -space-2`), so the icon lines up with the text above.
 - `text-secondary` at `fs-13`/500, icon `text-tertiary`. On hover it turns `accent-text` on `accent-wash`. No underline: it is a button, not running text.
 - Never as loud as the primary action. One help link per header.
-- Inside a sentence (an empty state's "…or show me how"), keep an inline text link instead.
+- Inside a sentence (an empty state's "…or read the guide"), keep an inline text link instead, with the same words: "Read the guide" for a how-to, "Take the tour" for a walkthrough (`ShowMe` and `ShowMeHow` default to these). `helpLabels.test.js` fails on a "Show me how" label.
 
 Source: `frontend/src/components/ui/HelpLink.jsx`, used by `SectionHeader` (`components/SectionPage.jsx`).

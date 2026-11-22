@@ -75,6 +75,7 @@ import { builderWidthClass } from "../rbdEditorLayout.js";
 import { applyTreePlan, treeGraph, treeKey, treePositionPath, treeRow } from "../rbdTreePlan.js";
 import { getRbdTreePlan } from "../api.js";
 import { useRoles } from "../RolesProvider.jsx";
+import Loading from "./ui/Loading.jsx";
 
 // The "Outage history" tab (an observed-history import and charts) loads on
 // first open, so the builder's own bundle doesn't carry it.
@@ -2474,7 +2475,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     </div>
     {tab === "outages" && (
       <div className="rbd-calc-panel">
-        <Suspense fallback={<p className="muted-line">Loading…</p>}>
+        <Suspense fallback={<Loading />}>
           <OutageHistory
             rbdId={savedRbdId}
             graph={{ nodes, edges, unit: rbdUnit }}

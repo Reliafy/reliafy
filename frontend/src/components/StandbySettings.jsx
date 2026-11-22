@@ -6,6 +6,7 @@ import { lifeLine } from "./rbdModelText.js";
 import { standbyRoute } from "../api.js";
 import { describeStandby, MAX_OWN_UNITS, standbyUnits, tidyOwn } from "../standbyWords.js";
 import "./RbdBlockOptions.css";
+import { Checkbox } from "./ui/Controls.jsx";
 
 // The standby settings of a standby block (#84, #363: standby as plants run
 // it): how many units run (k), how many spares, how they wait (cold, warm at
@@ -178,13 +179,11 @@ export default function StandbySettings({ initial, model, repairable = false, un
           {route.route === "simulated" && (
             <>
               <p className="rbd-limit">{route.reason}</p>
-              <label className="rbd-instant-repair">
-                <input type="checkbox" checked={simulate} onChange={(e) => setSimulate(e.target.checked)} />
-                <span>
+              <Checkbox className="rbd-instant-repair" checked={simulate} onChange={(e) => setSimulate(e.target.checked)}
+                label={<span>
                   Simulate this block <span className="muted">— Pro: its reliability is estimated from{" "}
                   {Number(route.lives || 200000).toLocaleString("en-GB")} simulated lifetimes, the same every run</span>
-                </span>
-              </label>
+                </span>} />
             </>
           )}
         </div>

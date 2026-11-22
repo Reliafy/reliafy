@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import Plot from "./Plot.jsx";
 import { CheckCard } from "./model/ModelLayouts.jsx";
-import { fitLine, referenceLine } from "../plotTheme.js";
+import { fitLine, referenceLine, legendBg } from "../plotTheme.js";
 import { degradationInducedLife } from "../api.js";
 import { formatNumber, formatPercent } from "../format.js";
 import { routesVerdict } from "../degradationFrame.js";
@@ -90,7 +90,7 @@ export function InducedLifeCheck({ induced, unit, name }) {
           ...SMALL,
           showlegend: true,
           // Bottom left: the curves start at the top left and fall away right.
-          legend: { x: 0.01, xanchor: "left", y: 0.02, yanchor: "bottom", bgcolor: "rgba(255,255,255,0.85)" },
+          legend: { x: 0.01, xanchor: "left", y: 0.02, yanchor: "bottom", bgcolor: legendBg() },
           xaxis: { title: { text: unit ? `Time (${unit})` : "Time" }, rangemode: "tozero" },
           yaxis: { title: { text: "Reliability" }, range: [0, 1.02] },
         }}

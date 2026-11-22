@@ -40,7 +40,7 @@ export default function StrategyReplacement() {
         ]}
       />
       <Card>
-        {/* "Show me how" started here sets ?model=&planned=&unplanned= on this
+        {/* "Take the tour" started here sets ?model=&planned=&unplanned= on this
             page: a new key starts the tool again from them, so the tour's costs fill in. */}
         {mode === "calendar" ? <CalendarReplacement />
           : <OptimalReplacement key={["model", "planned", "unplanned"].map((k) => params.get(k) || "").join("|")} />}

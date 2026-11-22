@@ -24,6 +24,8 @@ import Card, { CardHeader } from "../components/ui/Card.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, renamePrompt } from "../confirm.js";
+import LoadFailed from "../components/LoadFailed.jsx";
+import Loading from "../components/ui/Loading.jsx";
 
 const TrashIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -97,8 +99,8 @@ export default function TeamSettingsPage() {
   const askText = useAskText();
 
   if (workspace === "personal") return <NoTeam />;
-  if (error && !team) return <div className="app"><div className="card error">{error}</div></div>;
-  if (!team) return <div className="app"><div className="card empty">Loading…</div></div>;
+  if (error && !team) return <div className="app"><LoadFailed what="Couldn't load the team." error={error} header /></div>;
+  if (!team) return <div className="app"><Loading card /></div>;
 
   const isOwner = team.role === "owner";
 

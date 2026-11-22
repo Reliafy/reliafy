@@ -27,6 +27,8 @@ import {
 } from "../predictions.js";
 import { productPath } from "../products.js";
 import "./Predictions.css";
+import LoadFailed from "../components/LoadFailed.jsx";
+import Loading from "../components/ui/Loading.jsx";
 
 const HELP = { guide: PREDICTIONS_GUIDE };
 const PASTE_HINT = "One part per line: name, quantity, assembly (commas or tabs), or \"4 x Motor\". The quantity is 1 when left out.";
@@ -191,11 +193,11 @@ export default function ReliabilityPredictionNew() {
     return (
       <div className="app">
         <PageHeader crumbs={[{ label: PREDICTIONS_LABEL, to: PREDICTIONS_PATH }]} title="New prediction" />
-        <div className="card error">It didn't load: {loadError} <Link to={PREDICTIONS_PATH}>Back to predictions</Link></div>
+        <LoadFailed what="It didn't load." error={loadError} to={PREDICTIONS_PATH} label="Back to predictions" />
       </div>
     );
   }
-  if (loading) return <div className="app"><div className="card empty">Loading…</div></div>;
+  if (loading) return <div className="app"><Loading card /></div>;
 
   return (
     <div className="app pred-new">

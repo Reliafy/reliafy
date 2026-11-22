@@ -273,7 +273,7 @@
 }
 
 .sg-over {
-  border-color: var(--warning, #b45309);
+  border-color: var(--warning);
   color: var(--text);
 }
 
@@ -321,7 +321,7 @@
 
 .sg-seg button[aria-pressed="true"] {
   background: var(--accent);
-  color: #fff;
+  color: var(--text-on-fill);
 }
 
 .sg-settings {

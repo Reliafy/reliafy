@@ -12,7 +12,7 @@ import InputGroup, { ReadsAs } from "./ui/InputGroup.jsx";
 import MoreMenu from "./ui/MoreMenu.jsx";
 import Section from "./ui/Section.jsx";
 import { InlineAddButton, InlineAddRow, useInlineAdd } from "./ui/InlineAdd.jsx";
-import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
+import { Checkbox, Select, TextArea, TextInput } from "./ui/Controls.jsx";
 import { Highlight } from "./OutlineBits.jsx";
 import { ancestorsOf } from "../outlineTree.js";
 import {
@@ -1256,11 +1256,9 @@ export function ColumnChooser({ cols, onCols, usual = DEFAULT_COLUMNS, columns =
       {open && (
         <div className="rw-pop" role="group" aria-label="Columns to show">
           {columns.map((c) => (
-            <label key={c.id} className="rw-pop-item" title={c.title}>
-              <input type="checkbox" checked={cols.includes(c.id)}
-                     onChange={(e) => onCols(e.target.checked ? columns.map((x) => x.id).filter((id) => id === c.id || cols.includes(id)) : cols.filter((x) => x !== c.id))} />
-              {c.label}{c.sum ? <span className="rw-sig" title="A parent row counts what's inside it"> Σ</span> : null}
-            </label>
+            <Checkbox key={c.id} className="rw-pop-item" title={c.title} checked={cols.includes(c.id)}
+                      onChange={(e) => onCols(e.target.checked ? columns.map((x) => x.id).filter((id) => id === c.id || cols.includes(id)) : cols.filter((x) => x !== c.id))}
+                      label={<>{c.label}{c.sum ? <span className="rw-sig" title="A parent row counts what's inside it"> Σ</span> : null}</>} />
           ))}
           <button type="button" className="link rw-pop-reset" onClick={() => onCols(usual, { reset: true })}>Show the usual columns</button>
         </div>

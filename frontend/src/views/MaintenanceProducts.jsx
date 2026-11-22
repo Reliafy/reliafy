@@ -22,6 +22,7 @@ import AssetExplorer from "./AssetExplorer.jsx";
 import { PRODUCTS_GUIDE, PRODUCTS_PATH, productPath, productTab } from "../products.js";
 import "./Maintenance.css";
 import "./MaintenanceProducts.css";
+import Loading from "../components/ui/Loading.jsx";
 
 const HELP = { guide: PRODUCTS_GUIDE };
 
@@ -126,7 +127,7 @@ export function ProductDetail() {
       </div>
     );
   }
-  if (!product) return <div className="app"><div className="card empty">Loading…</div></div>;
+  if (!product) return <div className="app"><Loading card /></div>;
   return (
     <>
       <PageTitle name={product.name} />

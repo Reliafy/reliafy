@@ -22,6 +22,7 @@ import ScrollCue from "./ui/ScrollCue.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import Switch from "./ui/Switch.jsx";
 import Tabs from "./ui/Tabs.jsx";
+import Loading from "./ui/Loading.jsx";
 
 // A page added by an optional extension (extensions.js): fetch its module with
 // the user's credentials, import it, and hand it an element and a context.
@@ -131,7 +132,7 @@ export default function ExtensionPage({ mount }) {
   return (
     <>
       {error && <div className="card empty">{error}</div>}
-      {!ready && !error && <div className="card empty view-loading">Loading…</div>}
+      {!ready && !error && <Loading card />}
       <div ref={ref} className="extension-page" data-extension={`${mount.extension}/${mount.id}`} />
     </>
   );

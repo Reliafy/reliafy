@@ -18,6 +18,7 @@ import { ResultDetails } from "../components/ui/ResultSummary.jsx";
 import OverhaulReplaceResult from "../components/OverhaulReplaceResult.jsx";
 import { inputRows, reopenLink } from "../analysisInputs.js";
 import { useCurrency } from "../WorkspaceProvider.jsx";
+import Loading from "../components/ui/Loading.jsx";
 
 const KIND_LABEL = {
   optimal_replacement: "Optimal replacement",
@@ -52,7 +53,7 @@ export default function StrategyAnalysisPage() {
       </div>
     );
   }
-  if (!doc) return <div className="app"><div className="card empty">Loading…</div></div>;
+  if (!doc) return <div className="app"><Loading card /></div>;
 
   return (
     <div className="app">

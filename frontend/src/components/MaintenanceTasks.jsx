@@ -11,6 +11,7 @@ import { TaskMeasurementField } from "./TaskMeasurement.jsx";
 import HowOften from "./HowOften.jsx";
 import { LAST_DONE_NOTE, planWords } from "../workManagement.js";
 import { formFromTask, howOftenPreview, howOftenProblem, taskAnchor, taskBody } from "../howOften.js";
+import { Checkbox } from "./ui/Controls.jsx";
 
 // What a task's "how often" shows under it: the next dates, from when it was last done (else today).
 function preview(how, task) {
@@ -150,11 +151,9 @@ function AddTaskModal({ subject, modes, counters, onClose, onDone }) {
         </Field>
       )}
       {kind === "location" && (
-        <label className="maint-row" style={{ gap: "0.5rem" }}>
-          <input type="checkbox" checked={f.include_positions} onChange={(e) => setF({ ...f, include_positions: e.target.checked })} />
-          {workOrders ? "List every position here on its work orders (a walkdown: one line each)"
-            : "List every position here (a walkdown: one line each)"}
-        </label>
+        <Checkbox className="maint-row" checked={f.include_positions} onChange={(e) => setF({ ...f, include_positions: e.target.checked })}
+                  label={workOrders ? "List every position here on its work orders (a walkdown: one line each)"
+                    : "List every position here (a walkdown: one line each)"} />
       )}
       <Field label="What kind of task">
         <select value={f.outcome} onChange={set("outcome")}>
@@ -235,10 +234,8 @@ function TaskModal({ task, modes = [], onClose, onDone }) {
         </Field>
       )}
       {kind === "location" && (
-        <label className="maint-row" style={{ gap: "0.5rem" }}>
-          <input type="checkbox" checked={includePositions} onChange={(e) => setIncludePositions(e.target.checked)} />
-          {workOrders ? "List every position here on its work orders" : "List every position here"}
-        </label>
+        <Checkbox className="maint-row" checked={includePositions} onChange={(e) => setIncludePositions(e.target.checked)}
+                  label={workOrders ? "List every position here on its work orders" : "List every position here"} />
       )}
       <Field label="Who may do it: trade, licence or competency (optional)"><input value={trade}
              placeholder="e.g. Licensed electrician" onChange={(e) => setTrade(e.target.value)} /></Field>
