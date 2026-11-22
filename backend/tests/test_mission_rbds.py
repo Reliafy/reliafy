@@ -420,9 +420,12 @@ def test_a_mission_added_on_a_model_row_is_flown_on_that_model_and_says_so(m, db
     assert graph["mission_of"] == {"position_id": plant, "from_rbd": other.id, "on_link": second["id"], "built_from": "copy"}
     row = next(r for r in rm.position_missions(m, db, OWNERS) if r["rbd"] and r["rbd"]["id"] == made["rbd"]["id"])
     assert (row["rbd"]["from_rbd"], row["rbd"]["on_link"], row["rbd"]["built_from"]) == (other.id, second["id"], "copy")
-    # The default pick is unchanged: the RBD built there.
+    # From the position (no row): the default pick, as before (the RBD in use, else the one built
+    # there), and no row of its own kept.
     plain = pm.build_mission_rbd(m, db, OWNERS, set(), plant, ORG, "Day")
-    assert db.rbds.find_one({"_id": plain["rbd"]["id"]})["graph"]["mission_of"]["from_rbd"] == first["model_id"]
+    owner = db.rbds.find_one({"_id": plain["rbd"]["id"]})["graph"]["mission_of"]
+    in_use = next(x for x in m.position_models(plant) if x.get("in_use"))
+    assert owner["from_rbd"] == in_use["model_id"] in (first["model_id"], other.id) and "on_link" not in owner
     # A leaf's model in use: one block, kept as its row.
     pump = m.create_position("Lone pump")["id"]
     life = pm.link_saved(m, db, OWNERS, set(), pump, "model", SAMPLE)
@@ -433,11 +436,11 @@ def test_a_mission_added_on_a_model_row_is_flown_on_that_model_and_says_so(m, db
     # A row that isn't the position's, or a model not in use: refused, in words.
     with pytest.raises(Invalid, match="isn't on this position"):
         pm.build_mission_rbd(m, db, OWNERS, set(), pump, ORG, "Again", link_id=second["id"])
-    # A second model linked becomes the one in use, so the first isn't any more.
+    # With a second model linked, whichever isn't in use is refused.
     pm.link_saved(m, db, OWNERS, set(), pump, "model", "sample-model-bearings-lognormal")
-    assert not next(x for x in m.position_models(pump) if x["id"] == life["id"]).get("in_use")
+    idle = next(x for x in m.position_models(pump) if not x.get("in_use"))
     with pytest.raises(Invalid, match="model in use"):
-        pm.build_mission_rbd(m, db, OWNERS, set(), pump, ORG, "Spare", link_id=life["id"])
+        pm.build_mission_rbd(m, db, OWNERS, set(), pump, ORG, "Spare", link_id=idle["id"])
     # A covariate (PH) model in use flies a one-block mission too: its phases set the covariates.
     seal = m.create_position("Seal")["id"]
     ph = pm.link_saved(m, db, OWNERS, set(), seal, "model", "sample-model-seal-weibull-ph")
