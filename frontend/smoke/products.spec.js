@@ -214,7 +214,7 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     await top.locator(".tt-tree").click({ button: "right" });
     const menu = page.getByRole("menu", { name: new RegExp(`^Actions for ${SMOKE_PRODUCT}`) });
     // As on the Explorer's FME(C)A tab: Add function, the worksheet in and out, Print view, Isolate, Pin, Delete… last.
-    await expect(menu.getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Print view", "Focus", "Pin this branch", "Delete…"]);
+    await expect(menu.getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Print view", "Focus here", "Focus", "Pin this branch", "Delete…"]);
     await page.keyboard.press("Escape");
     // The RCM tab: Focus on incomplete rows on the design (the winding mode has no decision, on purpose).
     await page.getByRole("tab", { name: "RCM" }).click();

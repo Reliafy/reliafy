@@ -61,6 +61,12 @@ import "./RedundancyPane.css";
 // in the same place (the column header; the counts on a phone) when the page
 // un-pinned to show something outside the branch.
 //
+// A row's Focus here / Focus › (treeRowMenu.js isolateItems) closes every
+// other branch and opens that row; nothing is hidden. While it's on
+// (`focused`: {name, onClear}) the tree column's header says "Focused: <name>"
+// in an accent pill with a Clear focus button (on a phone, a line under the
+// search box), and the ⋯ menu offers Clear focus too: what was open before, back.
+//
 // Presentational: the page (AssetExplorer) holds the state.
 
 const LEVELS = [1, 2, 3, 4];
@@ -619,7 +625,7 @@ export default function TreePane({
   onToggle, onLevel, onCloseAll, level = null, changed = [], onReset, phone, width, onWidth, collapsed, onCollapse,
   addRow = null, canArrange = true, arrangements = null, menuActions = [], notice, statusText, empty, scrollTo, onEnter, rcmMarks = false, table: tableIn = null,
   head = null, headTabs = null, phoneTabs = null, layoutKey = "", anchorKey = null, side = null, arrangeLocked = null,
-  rowMenu = null, branch = null, branchNote = null, fullScreenKey = false, design = false, titleLevel = 2,
+  rowMenu = null, branch = null, branchNote = null, focused = null, fullScreenKey = false, design = false, titleLevel = 2,
   chipCounts = null, floor = null,
 }) {
   const TitleTag = titleLevel === 1 ? "h1" : "h2";
@@ -884,6 +890,7 @@ export default function TreePane({
       </label>
       <TreeControlsMenu
         pinned={branch ? { name: branch.name, onUnpin: branch.onUnpin } : null}
+        focused={focused}
         levels={{ value: level, onLevel, onCloseAll }}
         // Each Show only filter with the marker it matches in the tree: the
         // markers' key (the "not analysed" one only where it shows).
@@ -916,6 +923,13 @@ export default function TreePane({
       <button type="button" onClick={tfilter.onClear} aria-label="Clear the filters" title="Show every row again">Clear</button>
     </span>
   ) : null;
+  // A row focused: the tree column's header says on what, with Clear focus (what was open before).
+  const focusHead = focused ? (
+    <span className="tt-filtered tt-focused" role="group" aria-label="Focus">
+      <span className="tt-filtered-nm" title={`Focused: ${focused.name}`}>Focused: {focused.name}</span>
+      <button type="button" onClick={focused.onClear} title="Open the tree as it was before the focus">Clear focus</button>
+    </span>
+  ) : null;
   // The two slim rows over the tree (a wide screen, both tabs): the tree's
   // title, counts and ⋯ over the tree column, beside the panel's heading (the
   // way up over the row's name, and its actions); then the search box over the
@@ -938,6 +952,7 @@ export default function TreePane({
       {titleRow}
       {phoneTabs}
       {search}
+      {focusHead && <div className="tt-filterline">{focusHead}</div>}
       {tfilter && (
         <div className="tt-filterline">
           <ColumnFilter wide label="Filter" facets={tfilter.facetsAll()} chosen={tfilter.chosen} onChange={tfilter.onChange} onClear={tfilter.onClear} />
@@ -955,12 +970,13 @@ export default function TreePane({
   const pinRootOf = (key) => (phone && branch && key === branch.key ? branch : undefined);
   const menuProps = (key) => (itemsFor(key).length ? { onMenu: openMenu, menuOpen: rowOpen?.key === key } : {});
   const columnHeads = !phone && (
-    <div className="tt-head" role={wideTable ? "row" : undefined} aria-hidden={wideTable || pinHead ? undefined : "true"}
+    <div className="tt-head" role={wideTable ? "row" : undefined} aria-hidden={wideTable || pinHead || focusHead ? undefined : "true"}
          style={{ width: wideTable ? table.total : width, height: HEAD_H }}>
       <div className="tt-h tt-h-tree" role={wideTable ? "columnheader" : undefined} style={{ width: wideTable ? table.treeW : width }}
-           aria-label={wideTable && pinHead ? table.treeHead || TREE_HEAD : undefined}
-           title={wideTable && !pinHead && !table.treeHead ? TREE_HEAD_TIP : undefined}>
-        {pinHead || (wideTable && filterHead ? null : wideTable ? table.treeHead || TREE_HEAD : treeLabel || title)}
+           aria-label={wideTable && (pinHead || focusHead) ? table.treeHead || TREE_HEAD : undefined}
+           title={wideTable && !pinHead && !focusHead && !table.treeHead ? TREE_HEAD_TIP : undefined}>
+        {pinHead || ((wideTable && filterHead) || focusHead ? null : wideTable ? table.treeHead || TREE_HEAD : treeLabel || title)}
+        {focusHead}
         {wideTable && filterHead}
       </div>
       {wideTable && table.cols.map((c) => {

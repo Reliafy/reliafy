@@ -20,6 +20,7 @@ import { menuMove } from "../treeControls.js";
 //
 //   pinned   {name, onUnpin} while a branch is pinned: "Show whole tree" heads
 //            the menu; or null
+//   focused  {name, onClear} while a row's Focus is on: "Clear focus" after it; or null
 //   levels   {value (1..4, Infinity, 0, or null), onLevel(n), onCloseAll} or null
 //   chips    [{id, label, title, on, mark}]; onChip(id) turns one on or off;
 //            mark {kind, text}: the tree's marker the filter matches, drawn
@@ -46,7 +47,7 @@ const Tick = ({ on }) => (
 );
 
 export default function TreeControlsMenu({
-  pinned = null, levels = null, chips = [], onChip, changed = [], onReset, actions = [], markNote = null, floor = null,
+  pinned = null, focused = null, levels = null, chips = [], onChip, changed = [], onReset, actions = [], markNote = null, floor = null,
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null);
@@ -162,13 +163,16 @@ export default function TreeControlsMenu({
          onKeyDown={onKeyDown} onFocus={(e) => { if (e.target.dataset?.id) last.current = e.target.dataset.id; }}
          onContextMenu={(e) => e.preventDefault()}>
       {pinned && (
-        <>
-          <button type="button" role="menuitem" tabIndex={-1} data-id="unpin" className="ovm-item tm-item tm-plain"
-                  title={`Showing only ${pinned.name}: show the whole tree again`}
-                  onClick={() => { close(true); pinned.onUnpin(); }}>Show whole tree</button>
-          <div className="tm-sep" role="separator" />
-        </>
+        <button type="button" role="menuitem" tabIndex={-1} data-id="unpin" className="ovm-item tm-item tm-plain"
+                title={`Showing only ${pinned.name}: show the whole tree again`}
+                onClick={() => { close(true); pinned.onUnpin(); }}>Show whole tree</button>
       )}
+      {focused && (
+        <button type="button" role="menuitem" tabIndex={-1} data-id="focus-clear" className="ovm-item tm-item tm-plain"
+                title={`Focused on ${focused.name}: open the tree as it was before`}
+                onClick={() => { close(true); focused.onClear(); }}>Clear focus</button>
+      )}
+      {(pinned || focused) && <div className="tm-sep" role="separator" />}
       {levels && (
         <div className="tm-sec" role="group" aria-labelledby={`${id}-lvl`}>
           <div className="tm-label" id={`${id}-lvl`}>Open to level</div>
