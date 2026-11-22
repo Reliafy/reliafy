@@ -57,7 +57,7 @@ import Chip from "./ui/Chip.jsx";
 import Switch from "./ui/Switch.jsx";
 import { formatPercent } from "../format.js";
 import {
-  RBD_EVALUATE_AT_EVENT, STEP_Y, allInstant, bridgeEdges, chainPairs, clearSpot, copyForAlongside, inPlaceItems, insertAfter, insertAlongside, insertFirst, insertOnEdge, setInstantRepair, trackSelection,
+  RBD_EVALUATE_AT_EVENT, STEP_Y, addParallelPair, allInstant, bridgeEdges, chainPairs, clearSpot, copyForAlongside, inPlaceItems, insertAfter, insertAlongside, insertFirst, insertOnEdge, setInstantRepair, trackSelection,
 } from "../rbdBuilderOps.js";
 // Phased missions and undirected networks (#160).
 import RbdPhasesModal from "./RbdPhasesModal.jsx";
@@ -1478,6 +1478,26 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     );
   }, [nodes, edges, repairable, network, newId, setNodes, setEdges, fitWhenMeasured]);
 
+  // "+ Add block > Parallel" on a repairable diagram: a block for n identical units can't go there
+  // (each unit is repaired on its own), so two components side by side through a junction, each
+  // its own block to give a failure and repair model.
+  const addPairFromMenu = useCallback(() => {
+    const instant = repairable && allInstant(nodes) ? { instant_repair: true } : {};
+    const i = idRef.current;
+    idRef.current += 2;
+    const mk = (k) => ({ id: `c${i + k}`, type: "component", data: { label: `Component ${i + k}`, model: null, ...instant },
+      position: { x: 0, y: 0 }, ...HORIZONTAL });
+    const a = mk(0);
+    const b = mk(1);
+    const out = addParallelPair({ nodes, edges }, a, b, { junctionId: newId("knode"), look: EDGE_OPTIONS, pos: centrePos() });
+    setNodes(out.nodes);
+    setEdges(out.edges.map((e) => (e.type ? e : { ...EDGE_OPTIONS, ...e })));
+    fitWhenMeasured([a, b]);
+    setConnectHint(out.wired
+      ? `Added ${a.data.label} and ${b.data.label} side by side (1 of 2 needed). Give each its failure and repair.`
+      : `Added ${a.data.label} and ${b.data.label} side by side, joined at a junction (1 of 2 needed). Connect what feeds them and what the junction feeds.`);
+  }, [nodes, edges, repairable, newId, centrePos, setNodes, setEdges, fitWhenMeasured]);
+
   // "+ Add block > Component": on a new diagram (only Input and Output) the
   // first block is wired Input → block → Output and selected, so "add after"
   // and "add alongside" build on a connected diagram; otherwise it lands in
@@ -1633,16 +1653,27 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           Voting node (MooN)…
         </button>
         <button className="ovm-item" onClick={() => addBlock("standby", centrePos())}>Standby group</button>
+        {repairable && (
+          <button className="ovm-item" onClick={addPairFromMenu}
+                  title="Two components side by side through a junction: either one keeps the system up. Each is repaired on its own">
+            Parallel (two units, 1 of 2)
+          </button>
+        )}
         {/* On a repairable diagram these are shown greyed, with why, rather than vanishing. */}
         {[["loadshare", "Load-sharing"], ["series", "Series (n identical)"], ["parallel", "Parallel (n identical)"],
-          ["subsystem", "Sub-system"]].map(([kind, text]) => (
+          ["subsystem", "Sub-system"]].filter(([kind]) => !(repairable && kind === "parallel")).map(([kind, text]) => (
           <button key={kind} className="ovm-item" disabled={repairable}
-                  title={repairable ? "Not on repairable diagrams yet: use components, a standby group or a voting node" : undefined}
+                  title={repairable ? REPAIRABLE_GREYED : undefined}
                   onClick={() => addBlock(kind, centrePos())}>
             {text}
           </button>
         ))}
-        {repairable && <p className="rbd-menu-note">Greyed: not on repairable diagrams yet.</p>}
+        {repairable && (
+          <p className="rbd-menu-note">
+            Greyed: not on repairable diagrams yet. For more units side by side, select a block and use Add alongside;
+            for k of n, a voting node; for a spare that starts when needed, a standby group.
+          </p>
+        )}
       </ToolbarMenu>
       <div className="rbd-toolbar-row rbd-tb-settings">
         <label className="rbd-unit-field">
@@ -2475,6 +2506,10 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
 //   onMeta({id, name, readOnly})   onTab(tab)   onDirty(changed since opened or saved)
 //   onLoadError(err) the diagram couldn't be opened (not there, not yours, offline)
 //   addModel, onModelAdded   a model's "Add to an RBD" (#294), on the page
+// Why a block is greyed on a repairable diagram, and what to use instead.
+const REPAIRABLE_GREYED = "Not on repairable diagrams yet: each unit is repaired on its own, so draw each as a component "
+  + "(Parallel, or select a block and Add alongside), use a voting node for k of n, or a standby group for a spare";
+
 export default function RbdEditor({ embedded = false, ...props }) {
   return (
     <div className={embedded ? "rbd-wrap rbd-wrap-embedded" : "card rbd-wrap"}>
