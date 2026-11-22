@@ -2546,7 +2546,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     fmeaOn && excel && { id: "export-excel", label: "Export Excel", onSelect: () => exportExcel(posRow) },
     !phone && { id: "columns", label: "Columns…", onSelect: () => setColsOpen(true) },
     fmeaOn && { id: "print", label: "Print view", onSelect: () => openPrint(posRow.key) },
-    fmeaOn && { id: "guide", label: "Show me how", onSelect: () => openGuide(HELP_FMEA.guide) },
+    fmeaOn && { id: "guide", label: "Read the guide", onSelect: () => openGuide(HELP_FMEA.guide) },
   ].filter(Boolean) : [];
   const moreButton = () => frame.current?.querySelector(".tt-headslot .ovm-trigger");
   const columns = colsOpen && !phone && (fmeaOn ? (
