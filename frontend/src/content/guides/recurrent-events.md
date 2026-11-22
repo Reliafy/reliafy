@@ -53,9 +53,13 @@ can't tell the difference between a machine that stopped failing and a machine
 you stopped watching, and it will quietly read the gap as a fleet whose failures are slowing.
 The upload guesses it from names like "observed to", "records end" or "end
 of record", and the Model step says so while the reading has none. With no
-such column, enter the time in **When did the test end?** on the Model step:
-one value for every system (a growth test on one prototype that ran to 1,000
-hours, say). Leave it empty only if the test stopped at the last failure. The
+such column, enter the time in **Where the record ends** when you set the
+dataset's reading (More columns, under i), so the dataset itself carries it,
+for example 216,000 fleet hours, and says so on its page. Every fit then
+starts from it; **When did the test end?** on the Model step can still give
+another end for one fit. Either way it is one value for every system (a growth
+test on one prototype that ran to 1,000 hours, say). Leave it empty only if
+the test stopped at the last failure. The
 result says which it is: *time-terminated at 1,000 hours*, or
 *failure-terminated: ended at the last failure*. A dataset
 saved before it kept a reading starts from the columns and unit its last
@@ -199,7 +203,11 @@ chance of not running out you pick (90% unless you choose another), with the
 chance of running out at that stock and at one fewer; and **At the record's
 average rate** shows the same stretch on the whole record's average, the way a
 store ordering on the average would see it. That sizes a spares order or a
-maintenance budget; the dollars stay with you.
+maintenance budget; the dollars stay with you. Use it for a stream of
+replacements counted as one process, such as a fleet's replacements against fleet
+hours. For a fleet of individual items with known ages and a life model, with a
+lead time, use the spares card in a
+[fleet forecast](/guides/forecast-fleet-failures-and-spares) instead.
 
 ## Plan ahead
 
