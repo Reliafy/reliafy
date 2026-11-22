@@ -39,14 +39,14 @@
 .tp-head {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  padding: 14px 12px 0;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3) 0;
 }
 
 .tp-title-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1-5);
 }
 .tp-title-row > :not(.tp-title):not(.tt-title) { flex: none; }
 
@@ -67,7 +67,7 @@
 .tt-actions button.tp-icon-btn {
   min-width: var(--control-md);
   height: var(--control-md);
-  padding: 0 7px;
+  padding: 0 var(--space-2);
   justify-content: center;
   border: 1px solid var(--border);
   background: var(--bg-surface);
@@ -100,7 +100,7 @@
 .tp .tp-arrange button.tp-arrange-btn {
   min-height: 0;
   height: 100%;
-  padding: 0 9px;
+  padding: 0 var(--space-2);
   border: none;
   border-left: 1px solid var(--border);
   border-radius: 0;
@@ -124,7 +124,7 @@
 .tp-search-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1-5);
   min-width: 0;
 }
 .tp-search-row .tp-filter { flex: 1 1 auto; min-width: 0; }
@@ -144,8 +144,8 @@
   min-height: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 8px 0 26px; /* under the top-level names */
+  gap: var(--space-1-5);
+  padding: 0 var(--space-2) 0 var(--space-6); /* under the top-level names */
   border: none;
   border-radius: 0;
   background: transparent;
@@ -165,7 +165,7 @@
 .tp .ovm-trigger {
   min-height: 30px;
   height: 30px;
-  padding: 0 6px;
+  padding: 0 var(--space-1-5);
 }
 
 .tp-notice {
@@ -173,13 +173,13 @@
   font-size: var(--fs-13);
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-1-5);
   align-items: center;
 }
 
 .tp-status {
   margin: 0;
-  padding: 0 0 6px;
+  padding: 0 0 var(--space-1-5);
   font-size: var(--fs-12);
   color: var(--text-secondary);
 }
@@ -219,8 +219,8 @@
   right: 0;
   display: flex;
   align-items: center;
-  gap: 3px;
-  padding: 0 8px 0 6px;
+  gap: var(--space-1);
+  padding: 0 var(--space-2) 0 var(--space-1-5);
   font-size: var(--fs-13);
   white-space: nowrap;
   cursor: pointer;
@@ -296,7 +296,7 @@
 .tp-ic {
   flex: none;
   color: var(--text-secondary);
-  margin-right: 3px;
+  margin-right: var(--space-1);
 }
 
 .tp-nm {
@@ -308,9 +308,9 @@
 
 .tp-mk {
   margin-left: auto;
-  padding-left: 6px;
+  padding-left: var(--space-1-5);
   display: flex;
-  gap: 3px;
+  gap: var(--space-1);
   align-items: center;
   flex: none;
 }
@@ -320,7 +320,7 @@
   place-items: center;
   min-width: 18px;
   height: 17px;
-  padding: 0 4px;
+  padding: 0 var(--space-1);
   border-radius: var(--radius-full);
   border: 1px solid transparent;
   font-size: var(--fs-12);
@@ -349,7 +349,7 @@
 }
 
 .tp-empty {
-  padding: 24px 14px;
+  padding: var(--space-6) var(--space-3);
   overflow-wrap: anywhere;
   color: var(--text-secondary);
   text-align: center;
@@ -384,11 +384,11 @@
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
   border-top: 1px solid var(--border);
-  padding: 16px 32px 56px;
+  padding: var(--space-4) var(--space-8) 56px;
 }
 
 .td .page-header {
-  margin-bottom: 6px;
+  margin-bottom: var(--space-1-5);
 }
 
 .td-title {
@@ -417,11 +417,11 @@
 
 
 .td-error p {
-  margin: 0 0 10px;
+  margin: 0 0 var(--space-2);
 }
 
 .td .td-back {
-  margin-bottom: 10px;
+  margin-bottom: var(--space-2);
 }
 
 /* ---- phone: the tree is the screen; picking a row slides to the detail ---------- */
@@ -440,7 +440,7 @@
     display: none;
     overflow: visible;
     border-top: 0;
-    padding: 16px 16px 48px;
+    padding: var(--space-4) var(--space-4) var(--space-12);
   }
   .tx.phone.show-detail .tp {
     display: none;
@@ -450,7 +450,7 @@
   }
   .tx.phone .tp-row {
     font-size: var(--fs-14);
-    padding-right: 12px;
+    padding-right: var(--space-3);
   }
   .tx.phone .tp-chev,
   .tx.phone .tp-chev-sp {
@@ -485,13 +485,13 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 /* ---- the panel's tabs; the RCM tab: the tree and the RCM as one table ------------ */
 
 .td-tabs {
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-3);
 }
 a.rw-cklink {
   text-decoration: none;
@@ -529,7 +529,7 @@ button.rw-cklink {
   flex: none;
   display: flex;
   align-items: center;
-  padding: 0 8px;
+  padding: 0 var(--space-2);
   font-size: var(--fs-12);
   font-weight: 600;
   color: var(--text-secondary);
@@ -544,7 +544,7 @@ button.rw-cklink {
   left: 0;
   z-index: var(--z-sticky);
   background: var(--bg-subtle);
-  padding-left: 12px;
+  padding-left: var(--space-3);
 }
 .tp-table .tt-h-tree,
 .tx:not(.phone) .tt-h-tree { border-right: 1px solid var(--border); }
@@ -552,7 +552,7 @@ button.rw-cklink {
 /* The last cell only fills what's left: no width of its own, so a table
    fitted to its pane doesn't overflow it by the cell's padding. */
 .tt-h.rw-fill:empty, .tp-row.tt > .rw-fill { padding: 0; min-width: 0; }
-.tt-h .rw-cols .rw-btn, .tt-h .rw-cols > button { min-height: 22px; padding: 0 8px; font-size: var(--fs-12); }
+.tt-h .rw-cols .rw-btn, .tt-h .rw-cols > button { min-height: 22px; padding: 0 var(--space-2); font-size: var(--fs-12); }
 
 /* A wide screen, both tabs: the pane is the page's width, with two slim rows
    over the tree (TreePane): the bar (the tree's title, then the panel's
@@ -605,7 +605,7 @@ button.rw-cklink {
   display: flex;
   align-items: center;
   box-sizing: border-box;
-  padding: 0 12px;
+  padding: 0 var(--space-3);
   border-right: 1px solid var(--border);
   min-width: 0;
 }
@@ -615,7 +615,7 @@ button.rw-cklink {
    beside it have room. */
 .tt-cell { container: ttcell / inline-size; }
 @container ttcell (max-width: 420px) {
-  .tp .tp-arrange button.tp-arrange-btn { padding: 0 8px; }
+  .tp .tp-arrange button.tp-arrange-btn { padding: 0 var(--space-2); }
   .tp-arrange-lbl { display: none; }
   .tp-arrange-ico { display: block; }
 }
@@ -636,9 +636,9 @@ button.rw-cklink {
   display: flex;
   align-items: stretch;
   flex-wrap: wrap; /* a narrow window: the actions go under, never off the edge */
-  column-gap: 12px;
+  column-gap: var(--space-3);
   min-width: 0;
-  padding: 0 12px 0 6px;
+  padding: 0 var(--space-3) 0 var(--space-1-5);
 }
 /* The tabs under the heading fill their row's height; the active one's
    underline is the row's bottom edge. */
@@ -650,17 +650,19 @@ button.rw-cklink {
 }
 .tt-tabs .scroll-cue-body { display: flex; }
 .tt-tabs .tabs { background: none; align-items: stretch; }
-.tt-tabs .tab { display: flex; align-items: center; padding: 0 12px; }
-.tt-tabs .tab:first-child { padding-left: 6px; }
+.tt-tabs .tab { display: flex; align-items: center; padding: 0 var(--space-3); }
+.tt-tabs .tab:first-child { padding-left: var(--space-1-5); }
 .tt-name {
   flex: 1 1 9em; /* narrower than this and the actions go under */
   min-width: 9em;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 3px 0;
+  /* 2px, not 4: the way up, the name and a save message must fit the 47px
+     heading row without growing it (explorersteady.spec.js). */
+  padding: var(--space-0-5) 0;
 }
-.tt-sub { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.tt-sub { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
 .tt-sub .tt-crumb { flex: 0 1 auto; }
 /* The way up, small: each step shrinks (the nearest one last) so every step
    stays on show and can be clicked; the full name is in its tooltip. */
@@ -696,7 +698,7 @@ button.rw-cklink {
 .tt-name-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
   white-space: nowrap;
 }
@@ -728,8 +730,8 @@ button.rw-cklink {
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  gap: 8px;
-  padding: 6px 0;
+  gap: var(--space-2);
+  padding: var(--space-1-5) 0;
 }
 .tt-actions > .rw-cols { position: absolute; right: 0; top: 100%; }
 /* Square: the icon centred in 30 × 30, border included (36 on a phone). */
@@ -740,8 +742,8 @@ button.rw-cklink {
 /* The Summary tab's heading: the same two slim rows as the RCM tab's (the way
    up over the name, the actions; then the tabs), over the panel. */
 .td-head {
-  margin: 0 -32px 16px;
-  padding: 0 20px 0 26px;
+  margin: 0 calc(-1 * var(--space-8)) var(--space-4);
+  padding: 0 var(--space-5) 0 var(--space-6);
   border-bottom: 1px solid var(--border);
   background: var(--bg-surface);
 }
@@ -749,12 +751,12 @@ button.rw-cklink {
 .td-head .tt-h1 { font-size: var(--fs-20); }
 .td-head .tt-tabs { min-height: 40px; }
 .td-head .tt-tabs .tab:first-child { padding-left: 0; }
-.td > .td-head:first-child { margin-top: -22px; }
+.td > .td-head:first-child { margin-top: calc(-1 * var(--space-5)); }
 .td-head .tt-crumb button.crumb-link { color: var(--text-secondary); }
 .td-head .tt-crumb button.crumb-link:hover:not(:disabled) { color: var(--accent-text); }
 @media (max-width: 720px) {
-  .tx.phone .td-head { margin: 0 -16px 14px; padding: 0 16px; }
-  .tx.phone .td > .td-head:first-child { margin-top: -16px; }
+  .tx.phone .td-head { margin: 0 calc(-1 * var(--space-4)) var(--space-3); padding: 0 var(--space-4); }
+  .tx.phone .td > .td-head:first-child { margin-top: calc(-1 * var(--space-4)); }
   /* The whole name on a phone (it wraps), the two controls beside it. */
   .tx.phone .td-head .tt-name { flex: 1 1 0; min-width: 0; }
   .tx.phone .td-head .tt-name-row { flex-wrap: wrap; white-space: normal; }
@@ -766,19 +768,19 @@ button.rw-cklink {
   position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
 }
 .tt-row2 {
-  gap: 10px;
+  gap: var(--space-2);
   min-height: 40px;
-  padding-right: 12px;
+  padding-right: var(--space-3);
   align-items: stretch;
 }
 .tt-row2 .tt-cell .tp-filter { align-self: center; }
-.tt-row2 .tp-filter input { padding: 5px 0; }
+.tt-row2 .tp-filter input { padding: var(--space-1) 0; }
 .tt-tabslot {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
   align-items: stretch;
-  padding-left: 6px;
+  padding-left: var(--space-1-5);
 }
 .tt-row2 .tp-notice { flex: none; align-self: center; }
 /* The tree's title, with a short message under it only when there is one. */
@@ -874,8 +876,8 @@ button.rw-cklink {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 3px;
-  padding: 0 8px 0 6px;
+  gap: var(--space-1);
+  padding: 0 var(--space-2) 0 var(--space-1-5);
   min-width: 0;
   background: var(--bg-surface);
   border-right: 1px solid var(--border);
@@ -896,7 +898,7 @@ button.rw-cklink {
 .tp-row.tt.tt-fail .tp-nm { font-weight: 500; }
 .tp-row.tt.pin, .tp-row.tt.pin .tt-tree { background: var(--bg-subtle); }
 .tp-row.tt .rw-c { font-size: var(--fs-13); }
-.tp-row.tt .tp-ic.rw-ic { margin: 0 4px 0 1px; }
+.tp-row.tt .tp-ic.rw-ic { margin: 0 var(--space-1) 0 1px; }
 .tt-fn .tp-ic { color: var(--accent-text); }
 .tt-fail .tp-ic, .tt-unassigned .tp-ic { color: var(--warning-text); }
 /* The panel beside the table keeps its width whatever the table's (every tab:
@@ -910,7 +912,7 @@ button.rw-cklink {
      main columns (failure effects, consequence, decision, task). */
   width: clamp(300px, 25vw, 360px);
   display: flex;
-  padding: 8px;
+  padding: var(--space-2);
   border-left: 1px solid var(--border);
   background: var(--bg-canvas);
   min-height: 0;
@@ -922,10 +924,10 @@ button.rw-cklink {
 /* The details expanded: the tree column stays (TreePane sets its width) and
    the panel takes the rest of the table's room. */
 .tt-main.tt-expanded > .tp-scroll { flex: none; }
-.tt-main.tt-expanded > .tt-side { flex: 1 1 auto; width: auto; min-width: 0; padding: 8px 10px; }
+.tt-main.tt-expanded > .tt-side { flex: 1 1 auto; width: auto; min-width: 0; padding: var(--space-2) var(--space-3); }
 .tt-side > .rw-panel-empty { flex: 1 1 auto; }
 .tp-tabs {
-  margin: 2px 0 0;
+  margin: var(--space-0-5) 0 0;
 }
 
 /* Full screen (F; Esc leaves): the tree and the panel cover the screen, the
@@ -970,34 +972,34 @@ button.rw-cklink {
     flex-direction: column;
     align-items: stretch;
     justify-content: flex-start;
-    padding-top: 4px;
+    padding-top: var(--space-1);
     right: 0;
   }
   .tt-l1 {
     display: flex;
     align-items: center;
-    gap: 3px;
+    gap: var(--space-1);
     min-width: 0;
-    padding: 0 10px 0 6px;
+    padding: 0 var(--space-3) 0 var(--space-1-5);
   }
   .tt-l1 .tp-nm { flex: 0 1 auto; }
   .tt-st { margin-left: auto; flex: none; }
   /* Markers and the status side by side at the row's end (the status's own
      auto margin would split the room and leave the markers mid-row). */
-  .tt-l1 .tp-mk ~ .tt-st { margin-left: 4px; }
+  .tt-l1 .tp-mk ~ .tt-st { margin-left: var(--space-1); }
   /* Room for a whole line of 12 px text under the 36 px first line (its
      touch targets' height, the text centred higher), so descenders
      ("analysed yet") aren't cut: it starts 2 px into the first line's box. */
   .tt-l2 {
     flex: none;
-    margin-top: -2px;
+    margin-top: calc(-1 * var(--space-0-5));
     font-size: var(--fs-12);
     line-height: var(--lh-12);
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    padding-right: 10px;
+    padding-right: var(--space-3);
   }
 }
 
@@ -1022,7 +1024,7 @@ button.rw-cklink {
   cursor: pointer;
   opacity: 0;
 }
-.tp-mk + .tt-more, .tt-st + .tt-more { margin-left: 2px; }
+.tp-mk + .tt-more, .tt-st + .tt-more { margin-left: var(--space-0-5); }
 .tt-more:hover:not(:disabled), .tt-more.open { background: var(--accent-subtle); color: var(--accent-text); }
 .tp-row:hover .tt-more, .tp-row:focus-visible .tt-more, .tp-row.focus .tt-more,
 .tp-row.menu-open .tt-more { opacity: 1; }
@@ -1036,7 +1038,7 @@ button.rw-cklink {
   flex: none;
   display: flex;
   align-items: center;
-  padding: 0 12px;
+  padding: 0 var(--space-3);
   color: var(--text-secondary);
   font-style: italic;
   white-space: nowrap;
@@ -1056,9 +1058,9 @@ button.rw-cklink {
 }
 
 /* The row menu's look (RowMenu) is shared: it lives in index.css. */
-.row-menu .ovm-item.row-menu-radio { display: flex; align-items: center; gap: 6px; }
+.row-menu .ovm-item.row-menu-radio { display: flex; align-items: center; gap: var(--space-1-5); }
 .row-menu-tick { display: inline-block; width: 1em; color: var(--accent-text); }
-.row-menu-why { display: block; max-width: 260px; margin-top: 2px; font-size: var(--fs-12); color: var(--text-secondary); white-space: normal; line-height: var(--lh-12); }
+.row-menu-why { display: block; max-width: 260px; margin-top: var(--space-0-5); font-size: var(--fs-12); color: var(--text-secondary); white-space: normal; line-height: var(--lh-12); }
 
 /* The tree's ⋯ menu (TreeControlsMenu), beside the filter box: the levels,
    Close everything, Show only, the pane's other actions; it stays open while you
@@ -1071,7 +1073,7 @@ button.rw-cklink {
   right: -6px;
   min-width: 17px;
   height: 17px;
-  padding: 0 4px;
+  padding: 0 var(--space-1);
   box-sizing: border-box;
   display: inline-grid;
   place-items: center;
@@ -1093,19 +1095,19 @@ button.rw-cklink {
   overflow-y: auto;
   overscroll-behavior: contain;
   gap: 0;
-  padding: 6px;
+  padding: var(--space-1-5);
 }
-.tm-sec { display: flex; flex-direction: column; gap: 2px; padding: 4px 0; }
+.tm-sec { display: flex; flex-direction: column; gap: var(--space-0-5); padding: var(--space-1) 0; }
 .tm-label {
-  padding: 2px 6px 3px;
+  padding: var(--space-0-5) var(--space-1-5) var(--space-1);
   font-size: var(--fs-12);
   font-weight: 600;
   color: var(--text-secondary);
 }
-.tm-note { margin: 0; padding: 6px; font-size: var(--fs-12); color: var(--text-secondary); }
+.tm-note { margin: 0; padding: var(--space-1-5); font-size: var(--fs-12); color: var(--text-secondary); }
 .tm-seg {
   display: flex;
-  margin: 0 4px 2px;
+  margin: 0 var(--space-1) var(--space-0-5);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -1114,7 +1116,7 @@ button.rw-cklink {
   flex: 1 1 0;
   min-width: 0;
   min-height: 30px;
-  padding: 0 4px;
+  padding: 0 var(--space-1);
   border: none;
   border-left: 1px solid var(--border);
   border-radius: 0;
@@ -1132,7 +1134,7 @@ button.rw-cklink {
 .tm-menu button.tm-seg-btn:first-child { border-left: none; }
 .tm-menu button.tm-seg-btn:hover:not(:disabled) { background: var(--accent-wash); color: var(--text); }
 .tm-menu button.tm-seg-btn.on { background: var(--accent-subtle); color: var(--accent-text); font-weight: 600; }
-.tm-menu .tm-item { display: flex; align-items: center; gap: 8px; min-height: 30px; }
+.tm-menu .tm-item { display: flex; align-items: center; gap: var(--space-2); min-height: 30px; }
 .tm-menu .tm-item.on { font-weight: 600; }
 .tm-tick {
   flex: none;
@@ -1146,8 +1148,8 @@ button.rw-cklink {
   color: var(--text-on-fill);
 }
 .tm-tick.on { background: var(--accent); border-color: var(--accent); }
-.tm-sep { height: 1px; margin: 4px 2px; background: var(--border); }
-.tm-foot { display: flex; gap: 4px; }
+.tm-sep { height: 1px; margin: var(--space-1) var(--space-0-5); background: var(--border); }
+.tm-foot { display: flex; gap: var(--space-1); }
 .tm-menu .tm-reset { flex: 1 1 auto; min-width: 0; color: var(--accent-text); font-weight: 600; }
 .tm-menu .tm-done { flex: none; width: auto; margin-left: auto; justify-content: center; font-weight: 600; }
 .tm-menu button:focus-visible { outline-offset: -2px; }
@@ -1160,8 +1162,8 @@ button.rw-cklink {
    the add row is as tall as the rows (44 px). */
 @media (max-width: 720px) {
   .tx.phone .tp-arrange { height: auto; }
-  .tx.phone .tp .tp-arrange button.tp-arrange-btn { height: 44px; min-width: 44px; padding: 0 12px; font-size: var(--fs-14); }
-  .tx.phone .tp-filter input { padding: 11px 0; }
+  .tx.phone .tp .tp-arrange button.tp-arrange-btn { height: 44px; min-width: 44px; padding: 0 var(--space-3); font-size: var(--fs-14); }
+  .tx.phone .tp-filter input { padding: var(--space-3) 0; }
   .tx.phone .tp button.tp-addrow { font-size: var(--fs-14); padding-left: 40px; }
 }
 
@@ -1172,7 +1174,7 @@ button.rw-cklink {
 .tt-h-tree .tt-pinned {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--space-1);
   flex: 1 1 auto;
   min-width: 0;
   height: 100%;
@@ -1220,7 +1222,7 @@ button.rw-cklink {
 }
 /* On a phone (no column header) the pinned row itself: the pin before its
    name, and the ✕ at its end, always shown, a 36 px target. */
-.tp-pinmark { flex: none; display: inline-flex; color: var(--accent-text); margin-right: 4px; }
+.tp-pinmark { flex: none; display: inline-flex; color: var(--accent-text); margin-right: var(--space-1); }
 .tp-row button.tp-unpin {
   flex: none;
   margin-left: auto;
@@ -1239,7 +1241,7 @@ button.rw-cklink {
   cursor: pointer;
 }
 .tp-row button.tp-unpin:hover { background: var(--accent-subtle); }
-.tp-mk + .tp-unpin, .tt-st + .tp-unpin, .tp-unpin + .tt-more { margin-left: 2px; }
+.tp-mk + .tp-unpin, .tt-st + .tp-unpin, .tp-unpin + .tt-more { margin-left: var(--space-0-5); }
 
 /* A functional failure caused by lower ones: its reference rows and the ↑ n marker. */
 .tp-row.tt.tt-cause .tp-nm { font-weight: 400; }
@@ -1247,7 +1249,7 @@ button.rw-cklink {
 .tp-on {
   flex: 0 1 auto;
   min-width: 0;
-  margin-left: 6px;
+  margin-left: var(--space-1-5);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1289,7 +1291,7 @@ button.rw-cklink {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  margin-left: 6px;
+  margin-left: var(--space-1-5);
   color: var(--text-secondary);
   opacity: 0;
   pointer-events: none;
@@ -1319,7 +1321,7 @@ button.rw-cklink {
   top: 50%;
   transform: translateY(-50%);
   z-index: calc(var(--z-sticky) + 2);
-  padding: 1px 8px;
+  padding: 1px var(--space-2);
   border-radius: var(--radius-lg);
   background: var(--accent);
   color: var(--text-on-fill);
@@ -1337,8 +1339,8 @@ html.rcm-dragging.rcm-nodrop, html.rcm-dragging.rcm-nodrop * { cursor: no-drop !
   max-width: 300px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 6px 10px;
+  gap: var(--space-1);
+  padding: var(--space-1-5) var(--space-3);
   border-radius: var(--radius-lg);
   background: var(--bg-surface);
   border: 1px solid var(--border);
@@ -1347,13 +1349,13 @@ html.rcm-dragging.rcm-nodrop, html.rcm-dragging.rcm-nodrop * { cursor: no-drop !
   line-height: 1.35;
   white-space: normal;
 }
-.rcm-ghost-what { font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.rcm-ghost-what { font-weight: 600; display: flex; align-items: center; gap: var(--space-1-5); }
 .rcm-ghost-n {
   display: inline-grid;
   place-items: center;
   min-width: 20px;
   height: 20px;
-  padding: 0 5px;
+  padding: 0 var(--space-1);
   border-radius: var(--radius-full);
   background: var(--accent);
   color: var(--text-on-fill);
@@ -1371,11 +1373,11 @@ html.rcm-dragging.rcm-nodrop, html.rcm-dragging.rcm-nodrop * { cursor: no-drop !
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
   /* Its own width (not half the screen's, which is all left: 50% leaves it). */
   width: max-content;
   max-width: min(640px, calc(100vw - 32px));
-  padding: 8px 8px 8px 14px;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
   border-radius: var(--radius-lg);
   background: var(--bg-surface);
   border: 1px solid var(--border);
@@ -1385,17 +1387,17 @@ html.rcm-dragging.rcm-nodrop, html.rcm-dragging.rcm-nodrop * { cursor: no-drop !
 .rcm-toast.error { border-color: var(--danger); color: var(--danger-text); }
 .rcm-toast > span { flex: 1 1 auto; min-width: 0; }
 .rcm-toast button { flex: none; }
-.rcm-toast-x { background: none; border: 0; color: inherit; padding: 4px 8px; min-height: 32px; cursor: pointer; }
-.rcm-move-say { margin: 4px 0 0; color: var(--text-secondary); }
+.rcm-toast-x { background: none; border: 0; color: inherit; padding: var(--space-1) var(--space-2); min-height: 32px; cursor: pointer; }
+.rcm-move-say { margin: var(--space-1) 0 0; color: var(--text-secondary); }
 .rcm-move-say.no { color: var(--danger-text); }
 /* The Move to… picker: the tree with the RCM in it, the places it can't go greyed. */
 .rcm-move-tree {
-  position: relative; list-style: none; margin: 0; padding: 4px 0; max-height: min(52vh, 420px); overflow: auto;
+  position: relative; list-style: none; margin: 0; padding: var(--space-1) 0; max-height: min(52vh, 420px); overflow: auto;
   border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-surface);
 }
 .rcm-mt-row {
-  display: flex; align-items: center; gap: 6px; min-height: 36px; padding-right: 8px; cursor: pointer;
-  border-radius: var(--radius-md); margin: 0 4px; color: var(--text); min-width: 0;
+  display: flex; align-items: center; gap: var(--space-1-5); min-height: 36px; padding-right: var(--space-2); cursor: pointer;
+  border-radius: var(--radius-md); margin: 0 var(--space-1); color: var(--text); min-width: 0;
 }
 .rcm-mt-row:hover { background: var(--accent-wash); }
 .rcm-mt-row:focus-visible { outline-offset: -2px; }
@@ -1403,8 +1405,8 @@ html.rcm-dragging.rcm-nodrop, html.rcm-dragging.rcm-nodrop * { cursor: no-drop !
 .rcm-mt-row.no { color: var(--text-disabled); cursor: default; }
 .rcm-mt-row.no:hover { background: none; }
 .rcm-mt-row .tp-ic { flex: none; }
-.rcm-mt-name { flex: 1; min-width: 0; overflow-wrap: anywhere; line-height: 1.3; padding: 6px 0; }
-.rcm-mt-here { flex: none; font-size: var(--fs-12); color: var(--text-secondary); border: 1px solid var(--border); border-radius: var(--radius-full); padding: 0 6px; }
+.rcm-mt-name { flex: 1; min-width: 0; overflow-wrap: anywhere; line-height: 1.3; padding: var(--space-1-5) 0; }
+.rcm-mt-here { flex: none; font-size: var(--fs-12); color: var(--text-secondary); border: 1px solid var(--border); border-radius: var(--radius-full); padding: 0 var(--space-1-5); }
 button.rcm-mt-arrow, span.rcm-mt-arrow {
   flex: none; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
   padding: 0; border: 0; background: none; box-shadow: none; min-height: 0; color: var(--text-secondary); border-radius: var(--radius-md);
@@ -1417,8 +1419,8 @@ button.rcm-mt-arrow:hover:not(:disabled) { background: var(--bg-subtle); }
    marker it matches, at its end. */
 .tm-menu .tm-item .tm-mark { margin-left: auto; }
 /* A Show only filter's count, and the "RPN at least" number under the filters. */
-.tm-menu .tm-item .tm-n { margin-left: auto; padding-left: 8px; font-size: var(--fs-12); line-height: var(--lh-12); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-.tm-menu .tm-floor { padding: 0 6px 0 30px; cursor: default; }
+.tm-menu .tm-item .tm-n { margin-left: auto; padding-left: var(--space-2); font-size: var(--fs-12); line-height: var(--lh-12); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.tm-menu .tm-floor { padding: 0 var(--space-1-5) 0 var(--space-8); cursor: default; }
 .tm-menu .tm-floor-l { white-space: nowrap; }
 .tm-menu .tm-floor input { width: 72px; height: var(--control-sm); font-variant-numeric: tabular-nums; }
 
@@ -1445,7 +1447,7 @@ button.rcm-mt-arrow:hover:not(:disabled) { background: var(--bg-subtle); }
   flex-direction: column;
 }
 .ptabs > .tabs-strip.tt-tabs { flex: none; min-height: 40px; }
-.ptabs > .tabs-strip.tp-tabs { margin: 2px 0 0; }
+.ptabs > .tabs-strip.tp-tabs { margin: var(--space-0-5) 0 0; }
 .tabs-fit > .tabs { flex: 1 1 auto; }
 .ptabs-views { align-self: flex-start; margin: var(--space-2) 0; }
 @media (max-width: 560px) {
