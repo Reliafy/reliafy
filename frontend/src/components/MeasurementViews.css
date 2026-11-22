@@ -4,33 +4,33 @@
    narrow (a phone, or a narrow panel beside the tree). Nothing is wider than
    the panel. */
 .mv-view { container: mview / inline-size; }
-.mv-back { margin: 0 0 8px; display: inline-block; }
+.mv-back { margin: 0 0 var(--space-2); display: inline-block; }
 .mv-name { margin: 0; font-size: var(--fs-16); overflow-wrap: anywhere; }
-.mv-meta { margin: 2px 0 12px; }
-.mv-section { margin: 18px 0 0; }
-.mv-section > h4 { margin: 0 0 8px; font-size: var(--fs-14); }
+.mv-meta { margin: var(--space-0-5) 0 var(--space-3); }
+.mv-section { margin: var(--space-4) 0 0; }
+.mv-section > h4 { margin: 0 0 var(--space-2); font-size: var(--fs-14); }
 .mp-facts {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 14px 20px;
-  padding: 12px 0;
+  gap: var(--space-3) var(--space-5);
+  padding: var(--space-3) 0;
   border-top: 1px solid var(--border-subtle);
   border-bottom: 1px solid var(--border-subtle);
 }
-.mp-fact { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mp-fact { display: flex; flex-direction: column; gap: var(--space-0-5); min-width: 0; }
 .mp-fact-label { font-size: var(--fs-12); color: var(--text-secondary); }
 .mp-fact-value { font-size: var(--fs-16); font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .mp-fact .lib-date { overflow-wrap: anywhere; }
 .mp-range-sep { font-weight: 400; color: var(--text-secondary); }
-.mp-intro { margin: 0 0 10px; }
+.mp-intro { margin: 0 0 var(--space-2); }
 .mp-chart-empty { margin: 0; }
 .mp-empty { margin: 0; }
 @container mview (max-width: 480px) {
-  .mp-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; }
+  .mp-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3) var(--space-3); }
 }
 
 /* A setting's changes: one line each, newest first. */
-.mv-summary { margin: 0 0 8px; }
+.mv-summary { margin: 0 0 var(--space-2); }
 .mv-changes { list-style: none; margin: 0; padding: 0; }
-.mv-changes li { padding: 6px 0; border-bottom: 1px solid var(--border-subtle); overflow-wrap: anywhere; }
+.mv-changes li { padding: var(--space-1-5) 0; border-bottom: 1px solid var(--border-subtle); overflow-wrap: anywhere; }
 .mv-change-text { font-weight: 600; }

@@ -95,7 +95,7 @@ export function RolesCard({ offer = false, style }) {
           </>
         )}
       </div>
-      {error && <div className="error" style={{ marginBottom: 0 }}>{error}</div>}
+      {error && <div className="error mb-0">{error}</div>}
     </Card>
   );
 }

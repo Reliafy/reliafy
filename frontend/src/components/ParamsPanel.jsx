@@ -61,7 +61,7 @@ export default function ParamsPanel({ onCreated, onCancel, onPerDemand }) {
 
   return (
     <div className="card">
-      <p className="muted-line" style={{ marginTop: 0 }}>
+      <p className="muted-line mt-0">
         For known parameters — a handbook value, a figure from a report, or a
         fit done elsewhere. You get the reliability functions and life metrics;
         fit to data instead if you want a probability plot.
@@ -73,7 +73,7 @@ export default function ParamsPanel({ onCreated, onCancel, onPerDemand }) {
                onChange={(e) => setName(e.target.value)} />
       </label>
 
-      <div className="dist-field" style={{ marginTop: "0.8rem" }}>
+      <div className="dist-field mt-3">
         <span className="dist-label">Distribution</span>
         <Select
           value={distribution}
@@ -95,11 +95,11 @@ export default function ParamsPanel({ onCreated, onCancel, onPerDemand }) {
         ))}
       </div>
 
-      <div style={{ marginTop: "0.8rem" }}>
+      <div className="mt-3">
         <Units value={unit} onChange={setUnit} listId="params-units" />
       </div>
 
-      <div className="fitopts" style={{ marginTop: "0.8rem" }}>
+      <div className="fitopts mt-3">
         <button type="button" className="fitopts-toggle" onClick={() => setAdvanced((a) => !a)}>
           {advanced ? "▾" : "▸"} Advanced (offset / LFP / zero-inflation)
         </button>
@@ -131,8 +131,8 @@ export default function ParamsPanel({ onCreated, onCancel, onPerDemand }) {
       <ErrorNotice error={error} />
 
       <div className="fit-flow-foot">
-        {why ? <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{why}</span> : <span />}
-        <div className="row" style={{ margin: 0 }}>
+        {why ? <span className="hint ds-next-why m-0" role="status">{why}</span> : <span />}
+        <div className="row m-0">
           <button className="secondary" onClick={onCancel} disabled={busy}>Back</button>
           <button onClick={onSave} disabled={!canSave}>{busy ? "Creating…" : "Create model"}</button>
         </div>

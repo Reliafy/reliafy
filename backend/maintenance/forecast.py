@@ -266,7 +266,7 @@ def _forecast(m: Maintenance, name: str, period: str, periods: int, days: float,
     model = node.get("model")
     if not model:
         raise Invalid(f"{m._class_label(name)} has no fitted life model yet, so there's nothing to forecast from. "
-                      "Fit one from the class's pooled history: on any of its positions, open the Modelling tab "
+                      "Fit one from the class's pooled history: on any of its positions, open the Models tab "
                       "and choose Fit a life model.", agent="Fit it with maintenance reliability.fit_class_model.")
     unit = svc._norm_unit(model.get("unit")) or "days"
     calendar = unit in svc.CALENDAR_UNITS

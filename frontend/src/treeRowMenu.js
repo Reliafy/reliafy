@@ -140,7 +140,7 @@ export function tabMenu(tab, items, { lead = [], pin = [] } = {}) {
 
 // A row's Focus (closes the rest of the tree, opens this row so far). The same
 // words on every tab and in every tree-table (Summary, RCM, FME(C)A,
-// Maintenance tasks, Measurements, Modelling, Missions):
+// Maintenance tasks, Measurements, Models with its missions):
 //   "Focus here" — this row opened at every level below it, so everything in
 //     it shows (its tasks, failure modes, measuring points, models), every
 //     other branch closed (id isolate:all);
@@ -148,7 +148,7 @@ export function tabMenu(tab, items, { lead = [], pin = [] } = {}) {
 //     the RCM tab, where a row goes five deep, 4 and 5 too where they exist).
 // On a tab with its own table the words name what it shows: "Focus tasks"
 // (Maintenance), "Focus failure modes" (RCM, FME(C)A), "Focus measurements",
-// "Focus models", "Focus missions" (focusNoun), and "Focus tasks ›" likewise.
+// "Focus models" (the Models tab, its missions included; focusNoun), and "Focus tasks ›" likewise.
 // A row with nothing inside it has just "Focus here" (it closes the rest;
 // there's nothing to open). While a focus is on (`focused`: the tree has one),
 // "Clear focus" follows them: what was open before the focus, back again.

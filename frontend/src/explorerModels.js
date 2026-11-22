@@ -33,7 +33,7 @@ export const MODEL_COLUMNS = [
   { id: "used", label: "Used by", width: 150, title: "RCM decisions that link it as evidence, and RBD blocks on it" },
 ];
 export const MODEL_USUAL = MODEL_COLUMNS.filter((c) => c.usual !== false).map((c) => c.id);
-export const MODEL_TREE_HEAD = "Position, and the life models on it";
+export const MODEL_TREE_HEAD = "Position, its models and their missions";
 
 // A number to 3–4 significant figures, thousands separated; "—" for none.
 export function fmt(v) {

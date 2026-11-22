@@ -4,39 +4,39 @@
 .modal.lib-pick { max-width: 1000px; height: min(760px, calc(100dvh - 48px)); }
 .lib-pick .modal-body { padding: 0; overflow: hidden; display: flex; flex-direction: column; min-height: 0; flex: 1; }
 .lib-pick-body { display: flex; flex-direction: column; min-height: 0; flex: 1; }
-.lib-pick-filters { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 18px 6px; }
+.lib-pick-filters { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-3) var(--space-4) var(--space-1-5); }
 .lib-pick-filters > * { flex: 1 1 150px; min-width: 0; }
 .lib-pick-filters > .lib-pick-q { flex: 2 1 240px; }
-.lib-pick-status { margin: 0; padding: 0 18px 8px; font-size: var(--fs-12); color: var(--text-secondary); }
+.lib-pick-status { margin: 0; padding: 0 var(--space-4) var(--space-2); font-size: var(--fs-12); color: var(--text-secondary); }
 .lib-pick-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; border-top: 1px solid var(--border-subtle); }
-.lib-pick-row { display: grid; align-items: start; gap: 4px 10px; padding: 7px 18px; border-bottom: 1px solid var(--border-subtle);
+.lib-pick-row { display: grid; align-items: start; gap: var(--space-1) var(--space-2); padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--border-subtle);
   grid-template-columns: minmax(180px, 2.4fr) minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 0.8fr) minmax(0, 1.2fr) minmax(0, 1.3fr) minmax(0, 0.9fr) auto;
   font-size: var(--fs-13); }
 .lib-pick-row > span { min-width: 0; overflow-wrap: anywhere; }
 .lib-pick-row .num { text-align: right; font-variant-numeric: tabular-nums; }
-.lib-pick-head { position: sticky; top: 0; z-index: 1; background: var(--bg-surface); font-size: var(--fs-12); font-weight: 600; color: var(--text-secondary); }
+.lib-pick-head { position: sticky; top: 0; z-index: var(--z-raised); background: var(--bg-surface); font-size: var(--fs-12); font-weight: 600; color: var(--text-secondary); }
 [role="option"].lib-pick-row { cursor: pointer; }
 .lib-pick-row.hi { background: var(--accent-subtle); box-shadow: inset 3px 0 0 var(--accent); }
 .lib-pick-name { font-weight: 600; }
 .lib-pick-now { font-weight: 400; color: var(--text-secondary); }
 .lib-pick-detail { display: none; }
-.lib-pick-empty { padding: 24px 18px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.lib-pick-empty { padding: var(--space-6) var(--space-4); display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
 .lib-pick-empty p { margin: 0; }
 @media (max-width: 640px) {
   .overlay.lib-pick-overlay { padding: 0; }
   .modal.lib-pick { max-width: none; height: 100dvh; max-height: 100dvh; border-radius: 0; border: 0; }
   .lib-pick-head { display: none; }
-  .lib-pick-row { grid-template-columns: minmax(0, 1fr) auto; padding: 8px 16px; }
+  .lib-pick-row { grid-template-columns: minmax(0, 1fr) auto; padding: var(--space-2) var(--space-4); }
   .lib-pick-col { display: none; }
   .lib-pick-name { grid-column: 1; }
   .lib-pick-detail { display: block; grid-column: 1; font-size: var(--fs-12); color: var(--text-secondary); line-height: var(--lh-12); }
   .lib-pick-link { grid-column: 2; grid-row: 1; }
-  .lib-pick-filters { padding: 10px 16px 6px; }
-  .lib-pick-status { padding: 0 16px 8px; }
+  .lib-pick-filters { padding: var(--space-2) var(--space-4) var(--space-1-5); }
+  .lib-pick-status { padding: 0 var(--space-4) var(--space-2); }
   .lib-pick-keys { display: none; }
 }
 /* The picked record's one line in the dialog that opened the picker. */
-.lib-picked { display: flex; flex-direction: column; gap: 4px; }
+.lib-picked { display: flex; flex-direction: column; gap: var(--space-1); }
 .lib-picked-line { margin: 0; font-size: var(--fs-13); overflow-wrap: anywhere; line-height: var(--lh-13); }
-.lib-picked-acts { display: inline-flex; align-items: center; gap: 10px; font-size: var(--fs-13); }
+.lib-picked-acts { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--fs-13); }
 .lib-picked-pick { align-self: flex-start; }

@@ -52,7 +52,7 @@ export default function SaveAnalysisButton({ kind, inputs, defaultName }) {
           onClose={() => setOpen(false)}
           locked={busy}
           footer={
-            <div className="row" style={{ margin: 0, marginLeft: "auto" }}>
+            <div className="row m-0 ml-auto">
               <button className="secondary" onClick={() => setOpen(false)} disabled={busy}>Cancel</button>
               <button onClick={onSave} disabled={busy || !name.trim()}>
                 {busy ? "Saving…" : "Save"}

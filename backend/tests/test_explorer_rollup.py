@@ -103,6 +103,12 @@ def test_rollup_counts_everything_beneath_at_every_depth(m, db):
     site = rollup.rollup(m, t["site"])
     assert site["inside"]["positions"] == 8 and site["here"]["positions"] == 0 and site["inside"]["tasks"] == 3
     assert rollup.rollup(m, t["site"], within=t["a"])["inside"]["positions"] == 2
+    # An RBD on a position counts as one of its models (the Models tab lists it, its missions under it).
+    from backend.maintenance import position_models as pm
+
+    pm.build_rbd(m, db, OWNERS, set(), t["b"])
+    assert rollup.rollup(m, t["b"])["here"]["models"] == 1
+    assert rollup.rollup(m, t["station"])["inside"]["models"] == 3
 
 
 def test_both_over_rest(client):  # noqa: F811

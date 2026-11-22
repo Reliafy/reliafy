@@ -124,7 +124,11 @@ export function graftMissions(display, links = [], hasModel = [], otherModel = [
   for (const [k, r] of display.rows) rows.set(k, { ...r, kids: [...r.kids] });
   const out = { ...display, rows, missions: true };
   for (const r of rows.values()) {
-    if (r.type === "pos") Object.assign(r, { msum: { rbds: 0, missions: 0, done: 0, with: 0 }, mall: { rbds: 0, missions: 0, done: 0, with: 0 }, rbds: [], hasModel: withModel.has(r.key), otherModel: withOther.has(r.key) && !withModel.has(r.key) });
+    if (r.type === "pos") {
+      Object.assign(r, { msum: { rbds: 0, missions: 0, done: 0, with: 0 }, mall: { rbds: 0, missions: 0, done: 0, with: 0 }, rbds: [], hasModel: withModel.has(r.key), otherModel: withOther.has(r.key) && !withModel.has(r.key) });
+      // Positions inside it (its kids may be model rows too, on the Models tab).
+      r.inside = r.kids.some((k) => rows.get(k)?.type === "pos");
+    }
   }
   const byPos = new Map();
   for (const link of links) {
@@ -212,8 +216,114 @@ export function graftMissions(display, links = [], hasModel = [], otherModel = [
   return out;
 }
 
+// ---- missions as rows of the Models tab (Derryn, 22 Nov 2026) ----------------------------------
+//
+// "A mission is a sub item on the tree to covariate and RBD models": the Models tab is one
+// tree-table, position › model › mission › phase › (covariates, node status rules). A mission
+// hangs under the model row it is flown on: the RBD it was copied from (or that stores it), or the
+// position's model in use when its one block is that model (a life distribution or a covariate
+// model, whose covariates the phases set). A mission built from the positions inside, where the
+// position has no RBD of its own, has no model row to go under: it stays a row of the position.
+
+const MODEL_ROW = "pmodel";
+const modelRows = (rows, p) => (p?.kids || []).map((k) => rows.get(k)).filter((r) => r?.type === MODEL_ROW && !r.ref?.strategy);
+
+// The key of the model row a mission link (a row of GET /position-missions) is flown on, or null.
+export function missionHost(rows, link, positionKey) {
+  const p = rows.get(positionKey);
+  if (!p) return null;
+  const models = modelRows(rows, p);
+  const byLink = (id) => (id ? models.find((r) => r.ref.link?.id === id)?.key || null : null);
+  // Missions stored on one of the position's linked RBDs: that RBD's row.
+  if (link?.link_id) return byLink(link.link_id);
+  const rbd = link?.rbd || {};
+  const on = byLink(rbd.on_link);
+  if (on) return on;
+  if (rbd.from_rbd) {
+    const src = models.find((r) => r.ref.link?.model_type === "rbd" && r.ref.link?.model_id === rbd.from_rbd);
+    if (src) return src.key;
+  }
+  // One block, the position's own model in use (said so, or, made before that was kept, a leaf).
+  const leaf = !(p.kids || []).some((k) => rows.get(k)?.type === "pos");
+  if (rbd.built_from === "model" || (!rbd.built_from && !rbd.from_rbd && leaf)) {
+    return models.find((r) => r.ref.link?.in_use && r.ref.link?.model_type !== "rbd")?.key || null;
+  }
+  return null;
+}
+
+// The Models tab's tree: `graftModels`' tree (model rows under their positions) with each
+// position's missions grafted (graftMissions) and moved under the model row each is flown on, a
+// level deeper. A position's kids: its models (each with its Strategy and missions), then the
+// missions with no model row, then the positions inside. Roll-ups (msum, mall) stay the position's.
+export function nestMissions(tree, links = [], hasModel = [], otherModel = []) {
+  const out = graftMissions(tree, links, hasModel, otherModel);
+  const { rows } = out;
+  const deeper = (k) => {
+    const r = rows.get(k);
+    if (!r) return;
+    r.depth += 1;
+    for (const c of r.kids || []) deeper(c);
+  };
+  for (const link of links) {
+    if (!link?.rbd) continue;
+    const pk = link.position_id;
+    const p = rows.get(pk);
+    if (!p || p.type !== "pos") continue;
+    const host = missionHost(rows, link, pk);
+    for (const m of link.missions || []) {
+      const key = missionKey(link.rbd.id, m.id);
+      const r = rows.get(key);
+      if (!r) continue;
+      r.ref.host = host;
+      if (!host) continue;
+      p.kids = p.kids.filter((k) => k !== key);
+      const h = rows.get(host);
+      h.kids = [...h.kids, key];
+      r.parent = host;
+      deeper(key);
+    }
+  }
+  for (const r of rows.values()) {
+    if (r.type !== "pos" || !r.kids.length) continue;
+    const kind = (k) => (rows.get(k)?.type === MODEL_ROW ? 0 : rows.get(k)?.type === MISSION_TYPE ? 1 : 2);
+    r.kids = [...r.kids].sort((a, b) => kind(a) - kind(b));
+  }
+  return { ...out, models: true };
+}
+
+// "2 missions" (open: the position's own) or "5 missions" (closed: here and inside); "" for none.
+// On the Models tab it follows the models' roll-up ("3 models · 1 stale · 2 missions").
+export function missionCountText(r, open = false) {
+  const s = open ? r?.msum : r?.mall || r?.msum;
+  return s?.missions ? count(s.missions, "mission") : "";
+}
+
+// The missions a position has, wherever they hang (under a model row or the position itself).
+export function missionsOf(rows, positionKey) {
+  const out = [];
+  for (const r of rows.values()) if (r.type === MISSION_TYPE && r.ref.position_id === positionKey) out.push(r);
+  return out;
+}
+
+// A model row's own Add a mission (first in its menu, the tab's add): on an RBD (a copy of it, wired
+// as drawn) or on the position's model in use where it can be the one block (a life distribution or
+// a covariate model: GET /position-missions has_model). [] for a model a mission can't be flown on.
+export function modelMissionActions(r, position, { viewOnly = null } = {}) {
+  const link = r?.ref?.link;
+  if (!link || r.ref.strategy || !link.model) return [];
+  const off = viewOnly ? { disabled: true, reason: viewOnly, title: viewOnly } : {};
+  if (link.model_type === "rbd") {
+    if (link.model.network) return [];
+    return [{ id: "mission-new-on", label: "Add a mission…", title: viewOnly || "A mission on a copy of this RBD: its phases, block states and covariate values", ...off }];
+  }
+  if (link.in_use && position?.hasModel) {
+    return [{ id: "mission-new-on", label: "Add a mission…", title: viewOnly || "A mission flown on this model as one block: each phase's length and covariate values", ...off }];
+  }
+  return [];
+}
+
 // Positions inside it to build an RBD from (a leaf has none: its own life model is what it has).
-const hasInside = (r) => (r?.kids || []).some((k) => !String(k).startsWith("MS:"));
+const hasInside = (r) => (r?.inside != null ? r.inside : (r?.kids || []).some((k) => !/^(MS|L):/.test(String(k))));
 const count = (n, one, many = `${one}s`) => `${n.toLocaleString("en-AU")} ${n === 1 ? one : many}`;
 
 // The position's own linked RBDs (not a mission's own) a mission can start from a copy of.

@@ -50,7 +50,7 @@ test("panel tabs: the flat row, inner views, an old address", async ({ page, req
   await expect(bar(page).getByRole("tab", { name: "Monitoring" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("radiogroup", { name: "Monitoring: what to show" }).getByRole("radio", { name: "Life left" }))
     .toHaveAttribute("aria-checked", "true");
-  // ?tab=missions is Models › Missions.
+  // ?tab=missions (the old Missions view) is the Models tab: missions are rows under their models.
   await open(page, at(id, "&tab=missions"));
   await expect(bar(page).getByRole("tab", { name: "Models" })).toHaveAttribute("aria-selected", "true");
 });

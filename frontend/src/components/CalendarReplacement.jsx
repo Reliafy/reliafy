@@ -261,7 +261,7 @@ export default function CalendarReplacement({ modelId = null, failure = null, ex
       )}
       {needsPro && (
         <div className="card note" role="status">
-          <p style={{ margin: 0 }}>
+          <p className="m-0">
             <b>Sampling is part of Pro.</b> It runs the calendar many times on Reliafy's calculation service. The
             exact methods are free.
           </p>

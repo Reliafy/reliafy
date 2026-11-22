@@ -267,14 +267,14 @@ test("a position's Condition monitoring: its risk in words and two charts, or wh
   await expect(risk).toContainText("can't score this position");
   await expect(risk).toContainText("No measurement point for");
   await expect(risk.getByRole("link", { name: /feed pumps/i })).toBeVisible();
-  await expect(risk.getByRole("button", { name: "Open Models › Life models" })).toHaveCount(0);
+  await expect(risk.getByRole("button", { name: "Open Models", exact: true })).toHaveCount(0);
   await shot(page, "position-condition-not-scored-1440");
 
   // And the next: no model linked says so, and how to link one.
   await rowC.click();
   await expect(tabOn).toHaveAttribute("aria-selected", "true");
   await expect(risk).toContainText("No risk to show yet: no condition and life model is linked to this position.");
-  await expect(risk).toContainText("open this position's Models › Life models");
+  await expect(risk).toContainText("open this position's Models and choose");
   await expect(risk).toContainText(`Fitted here: Feed pump C unit ${tag}`);
   await expect(risk).not.toContainText(/NaN|Infinity|undefined/);
   await shot(page, "position-condition-no-model-1440");
@@ -303,7 +303,7 @@ test("a position's Condition monitoring: its risk in words and two charts, or wh
   await expect(risk).toContainText(`Fitted here: Feed pump C unit ${tag}`);
 
   // The way to link a model: the position's Modelling tab, opened from the note.
-  await risk.getByRole("button", { name: "Open Models › Life models" }).click();
+  await risk.getByRole("button", { name: "Open Models", exact: true }).click();
   await expect(page).toHaveURL(/tab=models/);
   await expect(page.getByRole("tab", { name: "Models", exact: true })).toHaveAttribute("aria-selected", "true");
   await expect(page).toHaveURL(new RegExp(`sel=${bare.id}`));
@@ -371,7 +371,7 @@ test("a position's Condition monitoring on a phone: the words and the charts fit
   await page.getByRole("radiogroup", { name: "Monitoring: what to show" }).getByRole("radio", { name: "Life left" }).click();
   await expect(tabOn).toHaveAttribute("aria-selected", "true");
   await expect(risk).toContainText("No risk to show yet: no condition and life model is linked to this position.");
-  await expect(risk.getByRole("button", { name: "Open Models › Life models" })).toBeVisible();
+  await expect(risk.getByRole("button", { name: "Open Models", exact: true })).toBeVisible();
   await expect.poll(() => sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "position-condition-no-model-400");
   await panel.getByRole("button", { name: /Explorer/ }).click();

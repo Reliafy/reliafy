@@ -11,7 +11,7 @@ const ROLLUP = [
   { id: "items", one: "fitted item", below: true, asset: true },
   { id: "tasks", one: "task", tab: "maintenance" },
   { id: "failure_modes", one: "failure mode", tab: "rcm" },
-  { id: "models", one: "model", tab: "models", title: "Life models and predictions linked to positions (RBDs are under Missions)" },
+  { id: "models", one: "model", tab: "models", title: "Life models, RBDs and predictions linked to positions (each RBD's missions are under it on the Models tab)" },
   { id: "failure_reports", one: "failure report", tab: "reports", open: "open_reports" },
 ];
 

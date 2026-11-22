@@ -294,7 +294,7 @@ function ChecksModal({ d, residualsPath, unit, onClose }) {
       title="Model checks"
       className="modal-xl"
       onClose={onClose}
-      footer={<div className="row" style={{ margin: 0, marginLeft: "auto" }}><button onClick={onClose}>Done</button></div>}
+      footer={<div className="row m-0 ml-auto"><button onClick={onClose}>Done</button></div>}
     >
       {ph.available && (
         <section className="checks-section">

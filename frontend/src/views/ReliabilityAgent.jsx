@@ -277,19 +277,19 @@ export default function ReliabilityAgent() {
           )}
           <h1>Reliability Agent <span className="agent-poc">POC</span></h1>
           {view === "list" && info?.enabled && (
-            <p className="muted-line" style={{ margin: 0 }}>
+            <p className="muted-line m-0">
               Analyse data, fit models, and build RBDs — each run is saved here to reopen or continue.
             </p>
           )}
           {!info?.enabled && (
-            <p className="muted-line" style={{ margin: 0 }}>
+            <p className="muted-line m-0">
               Not configured yet — set ANTHROPIC_API_KEY on the server to enable.
             </p>
           )}
         </div>
         <div className="row" style={{ margin: 0, gap: "0.6rem", alignItems: "center" }}>
           {credit != null && info?.billing_enabled && (
-            <span className="muted-line" style={{ margin: 0 }}>{credit} credits</span>
+            <span className="muted-line m-0">{credit} credits</span>
           )}
           {view === "chat" && (
             <button className="secondary" onClick={backToList} disabled={busy}>← All chats</button>
@@ -352,7 +352,7 @@ export default function ReliabilityAgent() {
             ))}
           </div>
 
-          {error && <div className="card error" style={{ marginTop: "0.6rem" }}>{error}</div>}
+          {error && <div className="card error mt-2">{error}</div>}
 
           <div className="chat-composer">
             <label className="chat-attach" title={file ? file.name : "Attach a CSV or Excel file"}>

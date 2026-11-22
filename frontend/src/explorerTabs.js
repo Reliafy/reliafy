@@ -13,8 +13,9 @@
 // inside it with what it needs to be done, and how the tasks are packaged into
 // visits, LsaPanel; it was "Packages" until 9 Nov 2026, and ?tab=packages
 // still opens it); Signals for a
-// position or an item (sensor snapshots and their spectra); Modelling for a position (the
-// life models attached to it and to the positions inside it, a design's too); Condition
+// position or an item (sensor snapshots and their spectra); Models for a position (the
+// models attached to it and to the positions inside it, a design's too, with the missions flown
+// on them as rows under each); Condition
 // monitoring for an item class (the tree by Classes: the class's positions with their risk now,
 // ClassFleet; a class's first tab, so the one it opens on; Forecast and Spares beside it) and for a position on an asset, in
 // every arrangement (that position's own risk now, PositionRisk: the same summary and charts a
@@ -108,13 +109,13 @@ export const TABS = [
     notDesignLoc: true,
   },
   { id: "classes", label: "Classes", title: "The classes used here and inside it, and every class in the register", kinds: ["pos", "loc"] },
-  // The life models on each position (Derryn, 9 Nov 2026): a design's positions carry them too
-  // (a built item inherits its design's), so no `asset`. Drawn as a tree-table (explorerModels.js).
-  { id: "models", label: "Modelling", title: "The life models on this position and the positions inside it: what each says, where it came from and what uses it", kinds: ["pos"] },
-  // The missions flown on each position's RBD (Derryn, 9 Nov 2026: "Products need an RBD tab,
-  // called Missions"; "Missions are RBDs, so they belong to positions"): a design's positions too,
-  // so no `asset`. Drawn as a tree-table (explorerMissions.js); a mission opens in the table area.
-  { id: "missions", label: "Missions", title: "The missions flown on this position's RBD and the positions inside it: each mission's phases and its chance of completing", kinds: ["pos"] },
+  // The models on each position (Derryn, 9 Nov 2026): a design's positions carry them too
+  // (a built item inherits its design's), so no `asset`. One tree-table (Derryn, 22 Nov 2026: "It
+  // just needs to be modelling. A mission is a sub item on the tree to covariate and RBD models"):
+  // position › model › mission › phase › covariates and node status rules (explorerModels.js,
+  // explorerMissions.js nestMissions). It was two views, Life models and Missions, until then;
+  // ?tab=missions opens this one (TAB_ALIASES).
+  { id: "models", label: "Models", title: "The models on this position and the positions inside it, with the missions flown on them: what each says, where it came from and what uses it", kinds: ["pos"] },
   // An item class (a row of the tree by Classes) has this one tab and no Summary: its fleet. A
   // position on an asset has it too, in every arrangement: its own risk now (one id and one label,
   // so the tab stays picked from a class to a position and on to the next). Not a design's
@@ -154,7 +155,8 @@ export const DEFAULT_TAB = "summary";
 
 // Earlier tab ids and the tab they open now (Derryn, 9 Nov 2026: Packages became
 // the LSA tab, packaging included).
-export const TAB_ALIASES = EXPLORER_LSA_TAB ? { packages: "lsa" } : { packages: "maintenance", lsa: "maintenance" };
+// Missions became rows of the Models tab, under the model each is flown on (22 Nov 2026).
+export const TAB_ALIASES = EXPLORER_LSA_TAB ? { packages: "lsa", missions: "models" } : { packages: "maintenance", lsa: "maintenance", missions: "models" };
 
 // An old address of the Maintenance tab's inner views (?tab=lsa: What it needs, Packages, Spares;
 // ?tab=maintenance&mview=forecast), as the one table opens the same thing: a package open
@@ -315,8 +317,8 @@ export function classesInBranch(display, branch) {
 //   Summary · Maintenance · Monitoring · RCM · FME(C)A · Models · History
 // Maintenance is one view (its tasks, packages and forecasts in the tree: no inner views since
 // 22 Nov 2026); Monitoring has Readings (Measurements) · Life left (Condition
-// monitoring: the chance of failing soon and the life left); Models has Life models (the Modelling
-// tab) · Missions. History is the Failure reports; on a product's design it's "Field reports" (the
+// monitoring: the chance of failing soon and the life left); Models is one view, its missions rows
+// under their models (it had Life models · Missions until 22 Nov 2026). History is the Failure reports; on a product's design it's "Field reports" (the
 // reports on the items built from the product).
 //
 // It's a layer over the tabs above, not a new set of them: every view is one of TABS (plus the
@@ -344,13 +346,8 @@ export const PANEL_TABS = [
   },
   { id: "rcm", label: "RCM", views: [{ id: "rcm", tab: "rcm" }] },
   { id: "fmea", label: "FME(C)A", views: [{ id: "fmea", tab: "fmea" }] },
-  {
-    id: "models", label: "Models", title: "The life models on this position and the positions inside it, and the missions flown on its RBD",
-    views: [
-      { id: "life", label: "Life models", tab: "models" },
-      { id: "missions", label: "Missions", tab: "missions" },
-    ],
-  },
+  // One view (22 Nov 2026): the models, each with the missions flown on it as rows under it.
+  { id: "models", label: "Models", views: [{ id: "models", tab: "models" }] },
   { id: "history", label: "History", designLabel: "Field reports", views: [{ id: "reports", label: "Failure reports", tab: "reports" }] },
 ];
 

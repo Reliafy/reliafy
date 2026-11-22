@@ -94,7 +94,7 @@ function FleetView({ a }) {
         </div>
       )}
       {(a.items || []).length > 0 && (
-        <div className="card" style={{ marginTop: "1rem" }}>
+        <div className="card mt-4">
           <h2>Items</h2>
           <table className="lib-table">
             <thead>
@@ -122,7 +122,7 @@ function FleetView({ a }) {
         </div>
       )}
       {f.status === "ok" && (f.per_period || []).some((v) => v > 0) && (
-        <div className="card" style={{ marginTop: "1rem" }}>
+        <div className="card mt-4">
           <h2>Expected failures per {String(f.period_label || "period").replace(/s$/, "")}</h2>
           <Plot
             data={[{

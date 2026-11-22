@@ -27,7 +27,7 @@ p.td-quiet { margin: 0; }
 
 /* Facts: label/value rows in a small bordered card (the model page's Parameters card). */
 .td-kv { margin: 0; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-surface); padding: var(--space-2) var(--space-3); }
-.td-kv > div { display: grid; grid-template-columns: 8rem minmax(0, 1fr); gap: var(--space-2); padding: 4px 0; }
+.td-kv > div { display: grid; grid-template-columns: 8rem minmax(0, 1fr); gap: var(--space-2); padding: var(--space-1) 0; }
 .td-kv > div + div { border-top: 1px solid var(--border-subtle); }
 .td-kv dt { color: var(--text-secondary); font-size: var(--fs-13); line-height: var(--lh-13); }
 .td-kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; line-height: 20px; }
@@ -45,7 +45,7 @@ p.td-quiet { margin: 0; }
 .td-row + .td-row { border-top: 1px solid var(--border-subtle); }
 .td-row.is-go { cursor: pointer; }
 .td-row.is-go:hover { background: var(--bg-subtle); }
-.td-row > .tp-ic { flex: none; margin-top: 3px; color: var(--text-secondary); }
+.td-row > .tp-ic { flex: none; margin-top: var(--space-1); color: var(--text-secondary); }
 .td-row-main { flex: 1 1 auto; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .td-row-title { font-size: var(--fs-14); line-height: var(--lh-14); overflow-wrap: anywhere; }
 .td-row-title a { text-decoration: none; }
@@ -54,12 +54,12 @@ p.td-quiet { margin: 0; }
 .td-row-chips { flex: 0 1 auto; justify-content: flex-end; margin-top: 1px; }
 .td-row button.td-go { font-size: var(--fs-14); font-weight: 500; color: var(--text); text-align: left; text-decoration: none; padding: 0; overflow-wrap: anywhere; }
 .td-row button.td-go:hover:not(:disabled) { color: var(--accent-text); text-decoration: underline; }
-.td-row a:focus-visible, .td-row button.td-go:focus-visible {  border-radius: 2px; }
+.td-row a:focus-visible, .td-row button.td-go:focus-visible {  border-radius: var(--radius-sm); }
 a.td-more { align-self: flex-start; font-size: var(--fs-13); }
 
 /* The sort beside "Directly inside". */
 .td-sort { margin-left: auto; }
-.td-sort .ctl.td-sort-sel { min-height: var(--control-sm); padding: 2px 28px 2px 8px; font-size: var(--fs-13); width: auto; max-width: 12rem; }
+.td-sort .ctl.td-sort-sel { min-height: var(--control-sm); padding: var(--space-0-5) var(--space-6) var(--space-0-5) var(--space-2); font-size: var(--fs-13); width: auto; max-width: 12rem; }
 
 /* The row's own changes: small, at the foot; Retire as red text. */
 .td-foot { display: flex; flex-wrap: wrap; gap: var(--space-2); border-top: 1px solid var(--border-subtle); padding-top: var(--space-3); }
@@ -69,7 +69,7 @@ a.td-more { align-self: flex-start; font-size: var(--fs-13); }
 @media (max-width: 600px) {
   .td-kv > div { grid-template-columns: 6.5rem minmax(0, 1fr); }
   .td-row { flex-wrap: wrap; }
-  .td-row-chips { flex-basis: 100%; justify-content: flex-start; padding-left: 22px; }
+  .td-row-chips { flex-basis: 100%; justify-content: flex-start; padding-left: var(--space-5); }
   .td-row:not(:has(> .tp-ic)) .td-row-chips { padding-left: 0; }
   .td-row-chips:empty { display: none; }
   .td-foot button { min-height: 40px; }
@@ -79,21 +79,21 @@ a.td-more { align-self: flex-start; font-size: var(--fs-13); }
 /* The Parts and stock and Classes tabs (TreeDetail): the pages they were, at
    the panel's text size, their tables scrolling inside the panel. */
 .td-tab-page {
-  font-size: 0.875rem;
+  font-size: var(--fs-14);
 }
 .td-tab-page .maint-section {
-  font-size: 1rem;
-  margin: 16px 0 8px;
+  font-size: var(--fs-16);
+  margin: var(--space-4) 0 var(--space-2);
 }
 .td-tab-page .td-tab-check {
-  font-size: 0.875rem;
+  font-size: var(--fs-14);
   white-space: nowrap;
 }
 .td-tab-page .td-tab-actions {
   flex-wrap: wrap;
-  gap: 8px;
-  margin: 0 0 12px;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
 }
 .td-tab-page .card {
-  font-size: 0.875rem;
+  font-size: var(--fs-14);
 }

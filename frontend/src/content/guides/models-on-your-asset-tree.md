@@ -5,13 +5,13 @@ category: "Maintenance strategy"
 prerequisites: "A position in your asset tree (or a product's design), and a saved model or some failure history."
 order: 27
 # Reliafy Maintenance is operators-only for now: this guide is linked from the
-# Models › Life models view itself and stays out of the index until Maintenance opens.
+# Explorer's Models tab itself and stays out of the index until Maintenance opens.
 hidden: true
 ---
 
 A life model on a position says how that functional location fails over time:
 how long it usually lasts, whether it wears out, and how sure we are. In
-Reliafy it's the Explorer's **Models** tab, on its **Life models** view. Each position can carry
+Reliafy it's the Explorer's **Models** tab. Each position can carry
 several models, for example one for every failure there and one for a single
 failure mode.
 
@@ -21,10 +21,12 @@ uses it, and one model can sit on many positions.
 
 ## See the models on your tree
 
-Open **Assets → Explorer**, pick a position, choose the **Models** tab (on a narrow
-screen it may be under **⋯** at the end of the tabs) and then **Life models**.
-The tree stays in the first column; under each position are the models attached
-to it, before the positions inside it. Each row shows:
+Open **Assets → Explorer**, pick a position and choose the **Models** tab (on a narrow
+screen it may be under **⋯** at the end of the tabs). It's one tree-table: the
+tree stays in the first column; under each position are the models attached to
+it (RBDs and predictions included), before the positions inside it, and under a
+model the missions flown on it, with their phases under them (the guide
+**Missions and phases** covers them). Each model row shows:
 
 - **Kind**: Weibull, exponential, lognormal, repairable, degradation, or
   condition and life.
@@ -226,7 +228,7 @@ you build: **Every one needed**, **Fewer will do** (with how many are needed,
 for three or more) or **Duty and standby**. The last two are saved as a set,
 as below. To say
 two or more positions inside one back each other up, open the position's
-**⋯** menu on **Models › Life models** (or **Models › Missions**) and choose **RBD ›
+**⋯** menu on the **Models** tab and choose **RBD ›
 Redundancy inside…**. It fills the table area beside the tree, with no dialog:
 tick the positions, then say how they back each other up:
 
@@ -339,7 +341,7 @@ arranged (**Positions**, **Locations** or **Classes**). On a position with
 nothing inside it, it shows that one position's risk now: a line in words
 (its age, its readings, the three chances and the median life left), then the
 same two charts. A position with no condition and life model says so, with a
-link to its **Models › Life models**; one whose model can't score it yet says
+link to its **Models** tab; one whose model can't score it yet says
 what is missing.
 
 On a position with positions inside it, and on a place, **Life left** lists
@@ -364,7 +366,7 @@ attached to it, or else its position class's. So one class can hold positions
 on different models, and positions with none. For a number, a position needs:
 
 - **A model.** A position with none shows a dash. Attach one on its
-  **Models › Life models**.
+  **Models** tab.
 - **Readings.** A condition point on the position or its item, in the model's
   unit (mm/s for a model fitted on mm/s), with at least one reading since the
   item went into service. Readings taken on the position before that belonged
