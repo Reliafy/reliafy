@@ -2254,7 +2254,7 @@ select.ctl { padding-right: 30px; }
 /* The box alone (a row-select in a table): no row padding; on a phone an invisible
    40 px target around it, so the row keeps its height. */
 .check.check-bare { display: inline-flex; vertical-align: middle; padding: 0; position: relative; }
-.check.check-bare > input { margin: 0; }
+.check.check-bare > input { margin: 0; position: relative; z-index: 1; }
 @media (max-width: 720px) {
   .check { min-height: var(--control-lg); align-items: center; }
   .check > input:is([type="checkbox"], [type="radio"]) { margin-top: 0; }
