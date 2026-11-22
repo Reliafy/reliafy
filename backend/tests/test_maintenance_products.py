@@ -570,3 +570,30 @@ def test_products_over_mcp(env):  # noqa: F811
     assert batch["applied"] == 1
     assert no_build.is_error
     assert "products.build" in guide["guide"] and "dry_run" in guide["guide"]
+
+
+def test_an_item_built_from_a_product_leaves_its_retired_tasks_behind(m):
+    """A task a decision dropped is retired on the design: building an item doesn't copy
+    it (the dry run doesn't count it either), and the retired task reads retired, with
+    when and why."""
+    p = m.create_product("Mower", part_number="MW-1", rev="A")
+    root = p["id"]
+    fm = m.add_failure_mode(root, "Fins blocked")["id"]
+    m.decide_failure_mode(fm, "operational", {"outcomes": [
+        {"outcome": "on_condition", "task": "Daily check", "interval": 6, "interval_unit": "hours"},
+        {"outcome": "fixed_interval", "task": "Clean fins", "interval": 25, "interval_unit": "hours"}]})
+    ids = {t["name"]: t["id"] for t in m._tasks_on(root)}
+    m.decide_failure_mode(fm, "operational", {"outcome": "on_condition", "task": "Daily check", "interval": 6,
+                                              "interval_unit": "hours", "task_id": ids["Daily check"]})
+    dropped = m.explain_task(ids["Clean fins"])["task"]
+    assert dropped["retired"] is True and dropped["retired_on"] == m.today()
+    assert dropped["retired_reason"]
+    live = m.explain_task(ids["Daily check"])["task"]
+    assert (live["retired"], live["retired_on"], live["retired_reason"]) == (False, None, "")
+
+    assert m.build_item(root, "S1")["counts"]["tasks"] == 1
+    out = m.build_item(root, "S1", dry_run=False)
+    built = out["top_position_id"]
+    assert [t["name"] for t in m._tasks_on(built)] == ["Daily check"]
+    assert not [t for t in m.s.inn(m.org, built, "ON") if t["label"] == "Task" and t["name"] == "Clean fins"]
+    _rebuilt_matches(m)

@@ -3279,7 +3279,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 return
             seen.add(src["id"])
             modes = self._modes_on(src["id"])
-            tasks = [t for t in self.s.inn(self.org, src["id"], "ON") if t["label"] == "Task"]
+            # Live tasks only: a retired one (a decision dropped it) is history, not part of the copy.
+            tasks = [t for t in self.s.inn(self.org, src["id"], "ON") if t["label"] == "Task" and not t.get("retired")]
             listings = self._listings_at(src["id"])
             size += 1 + len(modes) + len(tasks) + len(listings)
             if size > MAX_COPY_NODES:
@@ -6763,6 +6764,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         subject = _subject(self.s, self.org, task)
         out = {
             "id": task["id"], "name": task["name"], "outcome": task.get("outcome"),
+            # Retired: off the schedule (its decision dropped it, or it was retired by hand), with when and why.
+            "retired": bool(task.get("retired")),
+            "retired_on": task.get("retired_on") if task.get("retired") else None,
+            "retired_reason": (task.get("retired_reason") or "") if task.get("retired") else "",
             # What it's on: a position (its job), an item (it follows the serial number) or a location.
             "subject": self._subject_brief(subject),
             # A task with no source of its own is a decision's (maintenance failure_modes.decide).
