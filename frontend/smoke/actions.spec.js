@@ -3,6 +3,7 @@
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { SMOKE_PRODUCT } from "./seed.js";
 import { EXPLORER_PARTS_CLASSES_TABS } from "../src/explorerTabs.js";
+import { choose, expectChosen } from "./select.js";
 
 test("fit and save a Weibull model from a sample dataset", async ({ page, problems }) => {
   await open(page, "/data/sample-ds-bearings");
@@ -58,7 +59,7 @@ test("fit a new model from a saved dataset picked in the list", async ({ page, p
   try {
     await open(page, "/models/new");
     await page.getByRole("button", { name: /Fit to data/ }).click();
-    await expect(page.getByRole("tab", { name: "Saved data" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("radio", { name: "Saved data" })).toHaveAttribute("aria-checked", "true");
     await page.getByRole("searchbox", { name: "Search datasets" }).fill("smoke saved");
     await page.getByRole("radio", { name: /Smoke saved lives/ }).click();
     await expect(page.locator('[data-wt="reading-summary"]')).toContainText("c = censored");
@@ -95,7 +96,7 @@ test("fit a new model with a prior and save it with its prior", async ({ page, p
   await open(page, "/models/new?dataset=sample-ds-bearings");
   await expect(page.locator('[data-wt="reading-summary"]')).toBeVisible();
   await page.getByRole("radio", { name: "With a prior" }).click();
-  await page.getByLabel("Prior", { exact: true }).selectOption("params");
+  await choose(page.getByLabel("Prior", { exact: true }), "params");
   await expect(page.getByRole("button", { name: "Fit with the prior" })).toBeDisabled();
   await page.getByLabel("Characteristic life (alpha)").fill("1000");
   await page.getByLabel("Shape (beta)").fill("2");
@@ -140,7 +141,7 @@ test("repairable, accelerated, degradation and condition-and-life flows share th
   await expect(page.getByRole("combobox", { name: "Stress 1 column" })).toBeVisible();
   // The upload tab still takes a file.
   await open(page, "/models/alt/new");
-  await page.getByRole("tab", { name: "Upload a file" }).click();
+  await page.getByRole("radio", { name: "Upload a file" }).click();
   await expect(page.locator('input[type="file"]')).toHaveCount(1);
 
   await open(page, "/models/degradation");
@@ -184,7 +185,7 @@ test("a class's spares stock levels and the what-if", async ({ page, problems })
   await expect(page.getByTestId("spares-summary")).toContainText(/^Hold \d+: a 95% chance of no stock-out/);
   await page.getByLabel("If we hold").fill("0");
   await expect(page.getByTestId("spares-whatif")).toContainText("chance of running out over the lead time");
-  await stocking.getByLabel("Service level").selectOption("0.99");
+  await choose(stocking.getByLabel("Service level"), "0.99");
   await expect(row).toContainText("at 99%");
   await expectHealthy(page, problems, { label: "class stock levels", chart: true });
 });
@@ -263,7 +264,7 @@ async function uploadAndFit(page) {
   await expect(dialog.getByText(/beside c/)).toBeVisible();
   await dialog.getByLabel("No status column: every row failed").check();
   // No unit can be guessed from "col 1": the unit box is empty, but nothing is blocked.
-  await expect(dialog.getByRole("combobox", { name: "Unit of the values" })).toHaveValue("");
+  await expectChosen(dialog.getByRole("combobox", { name: "Unit of the values" }), "");
   await dialog.getByRole("button", { name: "Create dataset" }).click();
   await expect(page.locator('[data-wt="reading-summary"]')).toContainText("c = every row failed");
   // The unit is one required choice on the Model step: these numbers have none.
@@ -369,8 +370,8 @@ test("move a photo from a work order to its position", async ({ page, problems }
   await page.getByRole("button", { name: "Link or move…" }).click();
   const picker = page.locator(".modal").filter({ hasText: "Link or move this photo" });
   await picker.getByLabel(/Move it there/).check();
-  await picker.getByLabel("Kind").selectOption("Position");
-  await picker.getByLabel("Which position").selectOption(wo.position.id);
+  await choose(picker.getByLabel("Kind"), "Position");
+  await choose(picker.getByLabel("Which position"), wo.position.id);
   await picker.getByRole("button", { name: "Move", exact: true }).click();
   await expect(page.getByRole("button", { name: /Smoke nameplate/ })).toHaveCount(0);
   await expectHealthy(page, problems, { label: "work order after moving a photo" });

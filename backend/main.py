@@ -94,6 +94,7 @@ from backend.routers import field_reports as field_reports_router
 from backend.routers import maintenance_sync as maintenance_sync_router
 from backend.routers import support as support_router
 from backend.routers import email_prefs as email_prefs_router
+from backend.routers import editor_prefs as editor_prefs_router
 from backend.routers import walkthroughs as walkthroughs_router
 from backend.routers import lifecycle as lifecycle_router
 from backend.routers import content_jobs as content_jobs_router
@@ -199,6 +200,10 @@ from backend.security_headers import SecurityHeadersMiddleware  # noqa: E402
 app.add_middleware(BodySizeLimitMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 
+from backend.build_id import BuildIdMiddleware, current_build_id  # noqa: E402
+
+app.add_middleware(BuildIdMiddleware)
+
 
 def _startup() -> None:
     init_db()
@@ -292,6 +297,7 @@ app.include_router(field_reports_router.router)
 app.include_router(maintenance_sync_router.router)
 app.include_router(api_tools_router.router)
 app.include_router(email_prefs_router.router)
+app.include_router(editor_prefs_router.router)
 app.include_router(walkthroughs_router.router)
 # Lifecycle emails (#272): the daily day-3 trigger (Cloud Scheduler, OIDC).
 app.include_router(lifecycle_router.router)
@@ -335,6 +341,7 @@ def health() -> dict:
     return {
         "status": "ok",
         "storage": "simulator" if db.is_simulated() else "mongodb",
+        "build": current_build_id() or None,
     }
 
 

@@ -196,6 +196,24 @@ def words(r: dict | None) -> str:
     return out
 
 
+# What a fixed-interval task leaves the item as when nobody has said (Nov 2026): a task whose name
+# starts with servicing work (greasing, cleaning, adjusting) restores none of the item's age; any other
+# (a replacement, an overhaul, a change of oil) leaves it as new, as before. Shown as assumed, always
+# changeable on the task or its failure mode's decision.
+SERVICING = ("grease", "regrease", "re-grease", "lubricate", "lube", "oil", "clean", "wash", "blow", "flush",
+             "adjust", "tighten", "retighten", "re-tighten", "torque", "retorque", "re-torque", "top", "align",
+             "tension", "retension", "re-tension", "drain", "purge", "wipe", "dust")
+ASSUMED_NONE = {"kind": "kijima1", "q": 1.0}
+
+
+def default_for(task: dict) -> dict | None:
+    """The restoration a task with none set is taken to have: restores none of the age (``q`` = 1)
+    for servicing work by its name's first word, else None (as new)."""
+    words_ = str(task.get("name") or "").strip().lower().split()
+    first = words_[0].strip(",.:;") if words_ else ""
+    return dict(ASSUMED_NONE) if first in SERVICING else None
+
+
 def effective(task: dict, modes: list[dict]) -> dict:
     """What a task leaves the item as, for the plan: {restoration (None: as new), words, source
     ('task' | 'decision' | None), by_mode [{failure_mode_id, text, restoration, words}], conflict
@@ -204,6 +222,10 @@ def effective(task: dict, modes: list[dict]) -> dict:
     and ``conflict`` says so."""
     own = task.get("restoration")
     mine = task.get("restorations") or {}
+    assumed = None
+    if own is None:
+        assumed = default_for(task)
+        own = assumed
     rows = []
     for fm in modes:
         r = mine.get(fm["id"])
@@ -211,10 +233,10 @@ def effective(task: dict, modes: list[dict]) -> dict:
                      "own": r is not None, "words": words(r or own)})
     if not rows:
         chosen = own
-        source = "task" if own else None
+        source = "task" if own and not assumed else None
     else:
         chosen = max((x["restoration"] for x in rows), key=_rank)
-        source = "decision" if any(x["own"] for x in rows) else ("task" if own else None)
+        source = "decision" if any(x["own"] for x in rows) else ("task" if own and not assumed else None)
     distinct = {words(x["restoration"]) for x in rows}
     conflict = None
     if len(distinct) > 1:
@@ -223,7 +245,11 @@ def effective(task: dict, modes: list[dict]) -> dict:
                     + f"). The RBD takes the least restoring: {words(chosen)}.")
     if chosen and chosen.get("kind") == "as_new":
         chosen = None
-    return {"restoration": chosen, "words": words(chosen), "source": source, "by_mode": rows, "conflict": conflict}
+    # Assumed from its name (no figure set on the task or a decision for this choice).
+    is_assumed = bool(assumed) and chosen == assumed and source is None
+    return {"restoration": chosen, "words": words(chosen) + (" (assumed: servicing work; say if it does more)"
+                                                              if is_assumed else ""),
+            "source": "assumed" if is_assumed else source, "by_mode": rows, "conflict": conflict}
 
 
 # ---- the operations (methods added to ``Maintenance``) ---------------------------------------

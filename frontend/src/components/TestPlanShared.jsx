@@ -7,6 +7,7 @@ import { cancelRbdJob, downloadTestPlanPython, getRbdJob, simulateTestPlan, test
 import { CANCELLED_TEXT, createRunGuard } from "../jobCancel.js";
 import { percentApiMessage } from "../percent.js";
 import ProTag from "./ProTag.jsx";
+import { Select } from "./ui/Controls.jsx";
 
 export function Field({ label, value, onChange, type = "number", ...props }) {
   return (
@@ -27,11 +28,11 @@ export function Choice({ label, value, onChange, options }) {
   return (
     <label className="calc-t">
       <span>{label}</span>
-      <select value={value} onChange={(e) => onChange(e.target.value)}>
+      <Select value={value} onChange={(e) => onChange(e.target.value)}>
         {Object.entries(options).map(([v, text]) => (
           <option key={v} value={v}>{text}</option>
         ))}
-      </select>
+      </Select>
     </label>
   );
 }

@@ -150,14 +150,17 @@ export function openForTasks(display, key) {
 // asset: the forecast for it and everything inside it, in the table area).
 export const TASK_OPEN = "mtask-open";
 export const TASK_FORECAST = "mtask-forecast";
+// Optimise…: how often to do it, from its failure modes' life models, in the table area.
+export const TASK_OPTIMISE = "mtask-optimise";
 export const TASK_PACKAGE = "mtask-package";
 export const TASK_ADD_TO = "mtask-add-to";
 export const TASK_CLEAR = "mtask-clear";
-// A task row's menu: Open…, then Package… and Add to package… for the tasks selected (the row
+// A task row's menu: Open…, Optimise… (this row's task), then Package… and Add to package… for the tasks selected (the row
 // itself when it isn't one of them), each greyed with the reason when none of them can go.
 // `tasks`: the task-table rows it acts on; `canPackage`: false on a product's design, or view only.
 export function taskRowActions(r, { tasks = null, canPackage = true } = {}) {
-  const out = [{ id: TASK_OPEN, label: "Open…" }];
+  const out = [{ id: TASK_OPEN, label: "Open…" },
+    { id: TASK_OPTIMISE, label: "Optimise…", title: "How often to do it, worked out from the life model of the failure modes it prevents" }];
   if (!canPackage) return out;
   const list = tasks?.length ? tasks : r?.ref?.task ? [r.ref.task] : [];
   const free = list.filter((t) => !t.why_not && !t.package);

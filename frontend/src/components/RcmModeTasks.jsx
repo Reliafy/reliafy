@@ -24,7 +24,7 @@ import Chip from "./ui/Chip.jsx";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
 import Field, { SavedMark } from "./ui/Field.jsx";
 import InputGroup from "./ui/InputGroup.jsx";
-import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
+import { Checkbox, Select, TextArea, TextInput } from "./ui/Controls.jsx";
 import { PlusIcon } from "./icons.jsx";
 import TaskTwins from "./TaskTwins.jsx";
 import { tabPlace } from "../explorerTabs.js";
@@ -868,10 +868,8 @@ function TriggerFields({ task, trig, setTrig, busy, onBack, backLabel = "Back to
           <TextInput value={trig.eventType} readOnly={busy} placeholder="e.g. Lightning strike" onChange={setT("eventType")} />
         </Field>
       )}
-      <label className="rim-check">
-        <input type="checkbox" checked={trig.withInterval} disabled={busy} onChange={setT("withInterval")} />
-        Keep the interval too (whichever comes first)
-      </label>
+      <Checkbox className="rim-check" checked={trig.withInterval} disabled={busy} onChange={setT("withInterval")}
+                label="Keep the interval too (whichever comes first)" />
       {!trig.withInterval && <p className="rw-fhelp">It waits for the event: never overdue, and each event raises one work order.</p>}
     </fieldset>
   );
@@ -978,10 +976,10 @@ export function KindChip({ mode, task, kind, ops = null, can = false, onSaid = n
   };
   return (
     <>
-      <select className="rim-kindchip" aria-label={`Kind of “${task.name || task.text}”`} title={tip} value={kind} disabled={busy}
+      <Select className="rim-kindchip" aria-label={`Kind of “${task.name || task.text}”`} title={tip} value={kind} disabled={busy}
               onChange={(e) => change(e.target.value)}>
         {kinds.map((k) => <option key={k} value={k}>{OUTCOME_LABEL[k] || k}</option>)}
-      </select>
+      </Select>
       {failed && <span className="field-error" role="alert"> {failed}</span>}
     </>
   );

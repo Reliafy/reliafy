@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { getRbdJob, rbdSensitivity } from "../api.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
+import Tabs from "./ui/Tabs.jsx";
 import RbdMeasure, { TABS } from "./RbdMeasures.jsx";
 import ScrollCue from "./ui/ScrollCue.jsx";
 import { prefixCurrency, workspaceCurrency } from "../money.js";
@@ -225,15 +226,8 @@ export default function WhatToImprove({ graph, rbdId = null, result: availabilit
   return (
     <div className="rbd-improve">
       <div className="ds-section-h">What to improve</div>
-      <div className="rbd-improve-tabs" role="tablist" aria-label="What to improve">
-        {TABS.map((t) => (
-          <button key={t.value} type="button" role="tab" aria-selected={tab === t.value}
-                  className={"rbd-improve-tab" + (tab === t.value ? " active" : "")} title={t.question}
-                  onClick={() => setTab(t.value)}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <Tabs className="rbd-improve-tabs" label="What to improve" value={tab} onChange={setTab}
+            tabs={TABS.map((t) => ({ id: t.value, label: t.label, title: t.question }))} />
       <h3 className="rbd-improve-q">{question}</h3>
       {tab !== "levers" ? (
         <RbdMeasure graph={graph} rbdId={rbdId} measure={tab} windowLen={windowLen} over={over}

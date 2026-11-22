@@ -91,7 +91,7 @@ To find your way around a big tree:
   in that row's menu.
 - The search box filters the tree and its RCM: descriptions, effects, tasks
   and notes, keeping the rows each match sits inside.
-- **Focus** in any row's menu (a position, function, performance standard, functional
+- **Focus failure modes** in any row's menu (a position, function, performance standard, functional
   failure, failure mode or task) closes every other branch of the tree and opens
   that row **with 1 level open**, **2 levels open**, **3 levels open** or
   **everything open** below it. On the RCM tab, where a row can go five levels
@@ -459,6 +459,42 @@ went in and what came out. When the decision has no evidence yet, the
 calculation is saved as a strategy analysis and linked as its evidence, so the
 evidence check can read it: a task further apart than the P-F interval, or than
 the longest that meets the target, shows as contradicted.
+
+## Optimise a task from its model
+
+How often a task is done rests on the life model of the failure it prevents,
+so the task itself has **Optimise…**: on the Maintenance tab, in its row's ⋯
+menu and beside **How often** in its details. It opens across the table, the
+tree kept beside it, with one section for each failure mode the task prevents:
+
+- **The model it rests on.** The one the interval was last optimised on, the
+  decision's evidence, or the position's model for that failure mode, said
+  which. A degradation model counts by its time to the limit. Pick another
+  from the position's models or your own; with none linked, it says so and
+  offers the same choice, or fitting one on the Modelling tab.
+- **What it works out, by the kind of task.** Replace at age: the replacement
+  age with the lowest long-run cost, the planned cost being the task's own
+  (its LSA's labour and parts, or the figure typed on it) and the unplanned
+  cost what a failure costs (a figure saved before, its class's, or typed
+  here). The answer comes first in words, with how far the best age moves
+  across the model's 90% parameter bounds, then the cost curve. Check
+  condition: half the P-F interval. Check a hidden function: the longest test
+  interval that meets the target unavailability. Routine work, a task that
+  restores only part of the age, and run to failure have nothing to optimise,
+  and say so.
+- Change any input and press **Work it out again**.
+
+**Use every 96 h** (or whatever it found) sets the task's interval in its own
+unit (running hours meet the calendar at the position's duty), saves the
+calculation as a strategy analysis, so it's listed under Strategy too, links
+it as the failure mode's evidence, and adds one line to the notes. The
+evidence check then reads it: *supported* when the task matches.
+
+Both places show the link: the task's details say which model its interval
+rests on, and the model's row on the Modelling tab (and the model's own page)
+say *Sets the interval of: Replace spark plugs (every 96 h)*. When the model is
+refitted, the task's evidence says its optimum may have moved and offers
+**Re-optimise…**. The interval never changes by itself.
 
 ## Read the evidence check
 

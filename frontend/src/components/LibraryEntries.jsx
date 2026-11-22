@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { getLibraryEntry, refreshLibraryEntry, removeLibraryEntry, copyLibraryEntry } from "../api.js";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import Chip from "./ui/Chip.jsx";
-import { Select, TextInput } from "./ui/Controls.jsx";
+import { Checkbox, Select, TextInput } from "./ui/Controls.jsx";
 import PreviewTable from "./PreviewTable.jsx";
 import { ErrorNotice } from "./StorageCap.jsx";
 import { isCapRefusal } from "../plan.js";
@@ -13,6 +13,7 @@ import {
   usedLinks,
 } from "../libraries.js";
 import "../views/LibraryPages.css";
+import Loading from "./ui/Loading.jsx";
 
 // A library's shared pieces, in the app (views/Libraries.jsx) and on the public page
 // (views/PublicLibraryPage.jsx): what the library is (purpose, source, licence, citation) and its
@@ -95,7 +96,7 @@ function EntryDetail({ libraryId, entry }) {
     return () => { live = false; };
   }, [libraryId, entry.id, entry.version]);
   if (error) return <p className="field-error" role="alert">{error}</p>;
-  if (!d) return <p className="lib-quiet">Loading…</p>;
+  if (!d) return <Loading />;
   if (d.type === "data") {
     const preview = d.data?.preview;
     return (
@@ -154,10 +155,8 @@ function UseEntry({ libraryId, entry, signedIn }) {
         {busy ? "Copying…" : label}
       </button>
       {fittedOn && !made && (
-        <label className="lib-tick">
-          <input type="checkbox" checked={withData} onChange={(e) => setWithData(e.target.checked)} />
-          Also copy the dataset it was fitted on
-        </label>
+        <Checkbox className="lib-tick" checked={withData} onChange={(e) => setWithData(e.target.checked)}
+                  label="Also copy the dataset it was fitted on" />
       )}
       {links.length > 0 && (
         <p className="lib-made" role="status">

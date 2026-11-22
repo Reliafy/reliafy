@@ -38,7 +38,10 @@ for (const [w, h, label] of [[1440, 900, "desktop"], [400, 860, "phone"]]) {
     const { a, b, rbdId } = await station(request, tag);
     await page.setViewportSize({ width: 1440, height: 900 });
     await open(page, `/systems/b/${rbdId}`);
-    await page.locator('[data-wt="rbd-plan-chip"]').click();
+    // The Maintenance plan's switch is in the diagram's settings.
+    await page.getByRole("button", { name: /^Diagram settings/ }).click();
+    await page.getByRole("switch", { name: "Show the maintenance plan" }).click();
+    await page.keyboard.press("Escape");
     await page.setViewportSize({ width: w, height: h });
     const plan = page.getByRole("region", { name: "Maintenance plan" });
     await expect(plan.getByText(/take their maintenance from\s+that position's tasks/)).toBeVisible({ timeout: 15_000 });

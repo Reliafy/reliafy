@@ -24,7 +24,7 @@
   font-size: var(--fs-13);
 }
 
-.rbd-runs-filter select {
+.rbd-runs-filter select, .rbd-runs-filter .sel-trigger {
   min-height: 36px;
   max-width: 100%;
   font-size: var(--fs-14);
@@ -41,11 +41,6 @@
 }
 .rbd-runs-table td.rbd-runs-pick {
   padding-right: 0;
-}
-.rbd-runs-pick input {
-  width: 16px;
-  height: 16px;
-  margin: 0;
 }
 
 .rbd-runs-note {
@@ -66,11 +61,7 @@
   .rbd-runs-ci {
     display: block;
   }
-  .rbd-runs-pick input {
-    width: 22px;
-    height: 22px;
-  }
-  .rbd-runs-filter select {
+  .rbd-runs-filter select, .rbd-runs-filter .sel-trigger {
     min-height: 44px;
     max-width: 60vw;
   }

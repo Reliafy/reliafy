@@ -5,6 +5,7 @@
 // Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy } from "./health.js";
 import { details, headMenu, phoneTree } from "./explorer.js";
+import { expectChosen } from "./select.js";
 
 const M = "/api/maintenance";
 
@@ -217,7 +218,7 @@ test("adding at the top of the asset from the tree's last row, and the old addre
   await arrangeSwitch(page).getByRole("radio", { name: "Locations" }).click();
   await page.getByRole("button", { name: `New location inside Tree site ${tag}`, exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "New location" });
-  await expect(dialog.getByRole("combobox")).toHaveValue(p.site.id);
+  await expectChosen(dialog.getByRole("combobox"), p.site.id);
   await dialog.getByLabel("Name").fill(`Tree new place ${tag}`);
   await dialog.getByRole("button", { name: "Create" }).click();
   await expect(dialog).toHaveCount(0);

@@ -15,6 +15,7 @@ import { percentApiMessage } from "../percent.js";
 import "./RbdTargets.css";
 import "./RbdDesignPanel.css";
 import ScrollCue from "./ui/ScrollCue.jsx";
+import { Checkbox } from "./ui/Controls.jsx";
 
 // The Targets tab (#53): design to a system target. Enter a target — a
 // reliability at a mission time, or a repairable diagram's long-run
@@ -311,8 +312,8 @@ export default function RbdTargets({ graph, onBuild }) {
                       <td className="rbd-design-block">{n.data?.label || n.id}</td>
                       {columns.includes("fixed") && (
                         <td>
-                          <input
-                            type="checkbox" aria-label={`Fix ${n.data?.label || n.id}`} checked={!!o.fixed}
+                          <Checkbox
+                            aria-label={`Fix ${n.data?.label || n.id}`} checked={!!o.fixed}
                             onChange={(e) => setOpt(n.id, "fixed", e.target.checked)}
                           />
                         </td>

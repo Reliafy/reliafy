@@ -184,7 +184,7 @@ export function MeasSide({ r, phone, expanded, onExpand, onCollapse, onClose, he
   return (
     <aside className={"rw-panel mt-panel" + (phone ? " sheet" : "") + (expanded ? " is-expanded" : "")} aria-label="Details"
            onKeyDown={(e) => {
-             if (e.key !== "Escape" || e.defaultPrevented || e.target.closest("input, textarea, select")) return;
+             if (e.key !== "Escape" || e.defaultPrevented || e.target.closest("input, textarea, select, .sel-trigger, .sel-menu")) return;
              e.stopPropagation();
              if (expanded) onCollapse(); else onClose();
            }}>

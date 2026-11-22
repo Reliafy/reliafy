@@ -4,6 +4,7 @@ import { formatNumber } from "../format.js";
 import { riskText } from "../sparesPlan.js";
 import { countedText, dayText } from "../sparesYear.js";
 import { ResultDetails } from "./ui/ResultSummary.jsx";
+import { Checkbox } from "./ui/Controls.jsx";
 
 // A package's next visit against stock (maintenance get.package_parts): each part its tasks use,
 // how many the visit needs and how many are usable now, when an order placed today lands (before
@@ -57,13 +58,13 @@ export default function PackageParts({ packageId, version = 0, className = "" })
         <ul className="pk-members">
           {data.parts.flatMap((r) => r.jobs.map((j) => ({ ...j, part: r.part }))).map((j) => (
             <li key={`${j.task.id}-${j.part.id}`} className="pk-member">
-              <label className="pk-member-main">
-                <span><input type="checkbox" checked={!j.left_out} disabled={j.too_young} onChange={() => flip(j.task.id)} />{" "}
-                  {j.task.name} · {j.position.name}</span>
-                <span className="lib-date pk-sub">{j.part.part_number} × {formatNumber(j.qty)}
-                  {j.too_young ? " · skipped: the item is younger than its shutdown age" : j.older_than
-                    ? ` · only if older than ${j.older_than.value} ${j.older_than.unit} (${Math.round(j.chance_done * 100)}% likely)` : ""}</span>
-              </label>
+              <Checkbox className="pk-member-main" checked={!j.left_out} disabled={j.too_young} onChange={() => flip(j.task.id)}
+                        label={<>
+                          <span>{j.task.name} · {j.position.name}</span>{" "}
+                          <span className="lib-date pk-sub">{j.part.part_number} × {formatNumber(j.qty)}
+                            {j.too_young ? " · skipped: the item is younger than its shutdown age" : j.older_than
+                              ? ` · only if older than ${j.older_than.value} ${j.older_than.unit} (${Math.round(j.chance_done * 100)}% likely)` : ""}</span>
+                        </>} />
             </li>
           ))}
         </ul>

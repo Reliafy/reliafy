@@ -18,6 +18,7 @@ import ProductSummary, { ProductPartsList } from "./ProductSummary.jsx";
 import "./TreeSummary.css";
 import { createRecent } from "../recentCache.js";
 import { withFullPage } from "../panelMenu.js";
+import Loading from "./ui/Loading.jsx";
 
 // The Parts and stock and Classes tabs' bodies (the pages they were, with their
 // charts): loaded when one of the tabs is first opened.
@@ -149,7 +150,7 @@ function useTabQuery() {
   };
 }
 
-const loading = <div className="card empty">Loading…</div>;
+const loading = <Loading card />;
 
 // Whether a position has positions below it in the tree on show (at any depth: the display's sums),
 // so its Condition monitoring tab lists them with it rather than its own risk alone.
