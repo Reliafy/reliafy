@@ -8495,7 +8495,7 @@ _UPLOAD_FALLBACK = (
     "change rbd_upload_outage_log csv, change import_rbd content (Open-PSA XML or Galileo .dft). Any other file of up "
     "to a few hundred KB (an .xlsx workbook, a BlockSim project): send it through this connection with change "
     "upload_send_part (base64 parts, this upload_id), then import as usual (an FMEA / RCM worksheet goes onto a "
-    "position with change import_excel target rcm and position_id). A larger file: ask the user to upload it in "
+    "position with change import_rcm position_id). A larger file: ask the user to upload it in "
     "the Reliafy app ({app}).")
 # #212: url is the app's direct service address (fast, but sandboxes and
 # corporate egress proxies often refuse its host); the same path on the public
