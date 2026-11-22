@@ -455,6 +455,65 @@ def plans_for_graph(m: Maintenance, rbd_id: str, graph: dict) -> dict:
             "shutdowns": shuts, "supports": can, "gone": gone}
 
 
+def block_age(m: Maintenance, position: dict, unit: str) -> dict:
+    """How long the item fitted at ``position`` has run, in the diagram's ``unit``, for the
+    Calculator's "As of now": {age, basis, note, item, fitted_on, counter?} or {reason} in plain
+    words. Calendar units count the days since it was fitted; any other unit reads the position's
+    counter in it (or, for hours with no counter, the position's duty, else all the time), as the
+    position's forecast does. ``basis`` says which, so the Calculator can show what it assumed."""
+    from backend.maintenance import forecast as class_fc
+    from backend.maintenance import service as svc
+
+    u = svc._norm_unit(unit) if unit else ""
+    if not u:
+        return {"reason": "the diagram has no time unit, so an age can't be put in it"}
+    fitment = m.current_fitment(position["id"])
+    if fitment is None:
+        return {"reason": f"nothing is fitted at {position['name']}"}
+    held = m.s.inn(m.org, fitment["id"], "IN")
+    item = m._item_brief(held[0] if held else None)
+    base = {"item": (item or {}).get("name"), "fitted_on": fitment["from"], "position": position["name"]}
+    if u in svc.CALENDAR_UNITS:
+        age = class_fc._calendar_age(m, position["id"], fitment) / svc._DAYS_PER[u]
+        return {**base, "age": age, "basis": "calendar", "note": f"{u} since it was fitted on {fitment['from']}"}
+    # The item's own counter first (it travels with the item, like an hour meter on a pump): its
+    # latest reading is the item's age in that unit, wherever it has been fitted.
+    own = svc._counter_on(m.s, m.org, held[0]["id"], u) if held else None
+    if own is not None:
+        readings = svc._readings(m.s, m.org, own, m.tz)
+        if readings:
+            last = readings[-1]
+            counter = {"id": own["id"], "name": own["name"], "reading": last["value"], "read_on": last["on"]}
+            return {**base, "age": max(0.0, float(last["value"])), "basis": "counter", "counter": counter,
+                    "note": f"its own {own['name']}, read {last['on']}"}
+    use = class_fc._use_age(m, position["id"], fitment, u)
+    if "reason" in use:
+        return {**base, "reason": use["reason"]}
+    counter = use.get("counter")
+    if counter:
+        note = f"from its {counter['name']} (read {counter['read_on']}) since it was fitted on {fitment['from']}"
+    else:
+        note = use.get("note") or f"since it was fitted on {fitment['from']}"
+    return {**base, "age": float(use["age"]), "basis": use.get("basis") or "counter", "note": note,
+            **({"counter": counter} if counter else {})}
+
+
+def ages_for_graph(m: Maintenance, rbd_id: str, graph: dict) -> dict:
+    """{position, unit, blocks: {block id: block_age}} for the diagram's blocks that stand for a
+    position (the diagram built from, or linked to, a position), and ``unlinked``: the blocks that
+    stand for none, so the Calculator can say which have no age to read."""
+    unit = (graph or {}).get("unit") or ""
+    blocks = _component_blocks(graph)
+    positions = positions_of_rbd(m, rbd_id)
+    if not positions:
+        return {"position": None, "unit": unit, "blocks": {}, "unlinked": [b["id"] for b in blocks]}
+    top = positions[0]
+    mapped = block_positions(m, top["id"], blocks)
+    out = {bid: block_age(m, c, unit) for bid, c in mapped.items()}
+    return {"position": {"id": top["id"], "name": top["name"]}, "unit": unit, "blocks": out,
+            "unlinked": [b["id"] for b in blocks if b["id"] not in mapped]}
+
+
 def _shutdowns(m: Maintenance, top: dict, unit: str, blocks: list[dict], mapped: dict, rows: dict,
                can: dict) -> list[dict]:
     """The shutdown packages on the diagram's position or inside it, each in RePyability's

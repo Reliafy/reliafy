@@ -13,7 +13,8 @@ import CovariatesModal from "./CovariatesModal.jsx";
 import { covariateWords } from "../rbdTvc.js";
 import BoundCovariatesModal from "./BoundCovariatesModal.jsx";
 import { boundNodes } from "../covariate.js";
-import { getBoundBlocks } from "../api.js";
+import { getBoundBlocks, getRbdAgesNow } from "../api.js";
+import { prefillAges, takenAsNew } from "../rbdAgesNow.js";
 import { BandControls, BandInterval, BandNote, BandTargets, bandTraces, hasBand } from "./RbdBand.jsx";
 import AvailabilityCompare from "./AvailabilityCompare.jsx";
 import RbdCompareDesigns from "./RbdCompareDesigns.jsx";
@@ -159,13 +160,18 @@ function ImportanceHelp({ structural }) {
         <dt>Fussell-Vesely</dt>
         <dd>The share of the system's failure probability that involves this block failing.</dd>
         <dt>Risk achievement</dt>
-        <dd>How many times more likely the system is to fail if this block has failed (1 means no change).</dd>
+        <dd>How many times more likely the system is to fail if this block has failed (1 means no change). A block
+          every path needs scores 1 ÷ the system's failure probability, the most any block can: at 90% reliability
+          that is 1 ÷ 0.1 = 10, so several blocks showing exactly 10 is expected, not a cap.</dd>
         <dt>Risk reduction</dt>
         <dd>How many times less likely the system is to fail if this block never failed.</dd>
         <dt>Criticality</dt>
         <dd>The share of system failures this block accounts for.</dd>
         <dt>Improvement potential</dt>
-        <dd>How much the system's reliability would rise if this block never failed.</dd>
+        <dd>How much the system's reliability would rise if this block never failed. To choose what to improve
+          first, read it at the time that matters to you (a mission or a service life): the ranking can change
+          with time. With no time typed, the table opens at the design life (where the system reliability falls
+          to 90%), the one time every diagram has.</dd>
         {structural && (
           <>
             <dt>Structural</dt>
@@ -197,11 +203,15 @@ function AsOfNote({ result, idToLabel }) {
   const parts = Object.entries(result.current_state || {}).map(([id, st]) =>
     st.failed ? `${idToLabel[id] || id} failed` : `${idToLabel[id] || id} running ${fmtLife(st.age)}${unit}`
   );
-  const failed = result.reliability_now === 0;
+  const failed = parts.length > 0 && result.reliability_now === 0;
+  const asNew = takenAsNew(result);
   return (
     <div className={"rbd-asof-note" + (failed ? " is-failed" : "")} role="status">
-      <b>As of now:</b> {parts.join(" · ")}.{" "}
-      {failed
+      <b>As of now:</b> {parts.length ? `${parts.join(" · ")}.` : "every block taken as new."}{" "}
+      {parts.length > 0 && asNew.length > 0 && <>Taken as new (no age given): {asNew.join(", ")}.{" "}</>}
+      {!parts.length
+        ? "No block has an age or a failure set, so these are the figures for new equipment. Set each block's age above (a diagram built from the tree reads them from what's fitted)."
+        : failed
         ? "The system has failed: the failed blocks leave no working path."
         : `Curves, lives and importance run from now (system reliability now ${fmtPctLevel(result.reliability_now ?? 1)}).`}
     </div>
@@ -327,7 +337,7 @@ export function Results({ result, t, tMax, conditionalAge = 0, name = null, onBa
       {(result.unit_conversions || []).map((c) => (
         <p className="muted-line" key={`${c.id}-${c.repair}`}>{c.note}</p>
       ))}
-      {now && <AsOfNote result={result} idToLabel={idToLabel} />}
+      {(now || result.as_of_all_new) && <AsOfNote result={result} idToLabel={idToLabel} />}
       <JointAgesNote result={result} />
       <AnswerAtTime result={result} t={t} now={now} survived={cond ? conditionalAge : 0} />
       <DesignLife result={result} />
@@ -1352,7 +1362,7 @@ function AvailabilityUpgrade({ graph, offer = null, capMessage = null, onQuick =
 // "As of now": each block's state now. A repairable block can be down (with
 // how long it has been in repair, #155); a non-repairable one has failed for
 // good (#173). Either can have run some time since new.
-function AsOfPanel({ blocks, states, onChange, unitLabel, repairable }) {
+function AsOfPanel({ blocks, states, onChange, unitLabel, repairable, sources = {}, agesNote = null }) {
   const outMode = repairable ? "down" : "failed";
   return (
     <div className="rbd-asof-panel">
@@ -1363,6 +1373,7 @@ function AsOfPanel({ blocks, states, onChange, unitLabel, repairable }) {
           : "Mark blocks that have failed, or set how long they've been running. Results then run " +
             "from now: the remaining life. Blocks left as New start new."}
       </p>
+      {agesNote && <p className="hint" style={{ margin: 0 }}>{agesNote}</p>}
       <ScrollCue className="rbd-avail-imp-scroll">
         <table className="calc-table rbd-asof-table">
           <thead>
@@ -1380,7 +1391,14 @@ function AsOfPanel({ blocks, states, onChange, unitLabel, repairable }) {
               const timed = mode === "age" || (repairable && mode === "down");
               return (
                 <tr key={b.id} className={mode === outMode ? "is-down" : ""}>
-                  <td className="calc-row-label">{b.label}</td>
+                  <td className="calc-row-label">
+                    {b.label}
+                    {sources[b.id] && (
+                      <small className={"rbd-asof-source" + (sources[b.id].missing || sources[b.id].guessed ? " is-caveat" : "")}>
+                        {sources[b.id].text}
+                      </small>
+                    )}
+                  </td>
                   <td>
                     <select
                       value={mode}
@@ -1470,6 +1488,9 @@ export default function RbdCalculator({
   // non-repairable (#173, where a failed block stays failed).
   const [asOf, setAsOf] = useState(false);
   const [blockStates, setBlockStates] = useState({}); // {nodeId: {mode: "new"|"age"|"down"|"failed", value}}
+  // Each block's age from the item fitted at its position (a diagram built from the tree), read
+  // when "As of now" is ticked: {sources: {nodeId: {text, missing?, guessed?}}, note}.
+  const [treeAges, setTreeAges] = useState({ sources: {}, note: null });
   // Non-repairable (#173): the design life, the time R(t) falls to this (%).
   const [targetPct, setTargetPct] = useState("90");
   const [busy, setBusy] = useState(null); // null | "exact" | "simulate": what the running request adds
@@ -1564,6 +1585,33 @@ export default function RbdCalculator({
         .map((n) => ({ id: n.id, label: n.data?.label || n.id })),
     [graph.nodes]
   );
+
+  // "As of now" on a diagram saved from (or linked to) the tree: read each block's age from the
+  // item fitted at its position, fill the blocks not set yet, and say where each came from (or why
+  // a block has none). Without the tree (a hand-drawn diagram, Maintenance off) nothing changes.
+  const stateBlocksRef = useRef(stateBlocks);
+  stateBlocksRef.current = stateBlocks;
+  useEffect(() => {
+    if (!asOf || !rbdId) return undefined;
+    let live = true;
+    getRbdAgesNow(rbdId, graphRef.current)
+      .then((ages) => {
+        if (!live || !ages) return;
+        // The words beside each block don't depend on what the user set; the states do, so they're
+        // filled from the latest states inside the updater (a block the user set keeps its value).
+        const { sources } = prefillAges(ages, stateBlocksRef.current, {});
+        setBlockStates((prev) => prefillAges(ages, stateBlocksRef.current, prev).states);
+        const filled = Object.values(ages.blocks || {}).filter((r) => r.age != null).length;
+        setTreeAges({
+          sources,
+          note: ages.position
+            ? `Ages read from what's fitted on the tree under ${ages.position.name}${filled ? "" : " (none found)"}: change any you know better.`
+            : null,
+        });
+      })
+      .catch(() => { if (live) setTreeAges({ sources: {}, note: null }); });
+    return () => { live = false; };
+  }, [asOf, rbdId, graphSig]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const jointBlocks = useMemo(
     () => (graph.nodes || []).filter((n) => n.data?.model?.kind === "joint").map((n) => n.data?.label || n.id),
@@ -1690,7 +1738,9 @@ export default function RbdCalculator({
       );
       if (superseded()) return; // cancelled while it ran
       runGuard.current.finish(token);
-      setResult(res);
+      // "As of now" asked with every block left New: the figures are the new-equipment ones, and the
+      // result says so rather than reading as an answer from today's ages.
+      setResult(asOf && !graph.repairable && !res?.current_state ? { ...res, as_of_all_new: true } : res);
       setResultSig(sentSig);
       // The blocks' states the figures are from, for the phased mission beside them.
       if (onCurrentState && !graph.repairable) onCurrentState(res.current_state || null);
@@ -1860,7 +1910,7 @@ export default function RbdCalculator({
   }, [rbdId, graph.repairable]);
 
   const setBlockState = (id, patch) =>
-    setBlockStates((prev) => ({ ...prev, [id]: { mode: "new", value: "", ...prev[id], ...patch } }));
+    setBlockStates((prev) => ({ ...prev, [id]: { mode: "new", value: "", ...prev[id], ...patch, fromTree: false } }));
 
   // Nothing to calculate yet (#271): a next step in place of the controls
   // (and of any result from before the blocks went).
@@ -2014,6 +2064,8 @@ export default function RbdCalculator({
             onChange={setBlockState}
             unitLabel={unitLabel}
             repairable={false}
+            sources={treeAges.sources}
+            agesNote={treeAges.note}
           />
           {jointBlocks.length > 0 && (
             <p className="hint" style={{ margin: "4px 0 0" }}>
@@ -2077,6 +2129,8 @@ export default function RbdCalculator({
               onChange={setBlockState}
               unitLabel={unitLabel}
               repairable
+              sources={treeAges.sources}
+              agesNote={treeAges.note}
             />
           )}
           {asOf && action}

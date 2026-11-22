@@ -3821,6 +3821,11 @@ export function linkPositionModel(positionId, body) {
 export function getRbdTreePlan(rbdId, graph) {
   return postJson("/api/maintenance/rbd-tree-plan", { rbd_id: rbdId, ...(graph ? { graph } : {}) });
 }
+// Each block's age now from the item fitted at the position it stands for (the Calculator's "As of
+// now"): {position, unit, blocks: {id: {age, basis, note, item} | {reason}}, unlinked}.
+export function getRbdAgesNow(rbdId, graph) {
+  return postJson("/api/maintenance/rbd-ages-now", { rbd_id: rbdId, ...(graph ? { graph } : {}) });
+}
 // The repairable RBDs whose plans read these tasks: {uses: [{rbd, block, task, used, last, outdated}]}.
 export function getRbdPlanUses(taskIds) {
   return request(`/api/maintenance/rbd-plan-uses?task_ids=${encodeURIComponent((taskIds || []).join(","))}`);
