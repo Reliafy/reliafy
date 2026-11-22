@@ -204,7 +204,8 @@ def test_interval_far_shorter_than_the_evidence_supports_says_so(session):
     every 25 h against a cost-optimal change at about 101 h reads shorter_than_evidence
     (amber, a fact rather than a verdict); 100 h
     and 60 h (over half of it) read supported. Longer than a P-F check interval
-    allows stays contradicted as before."""
+    allows stays contradicted (it misses failures); an on-condition check far shorter than
+    its P-F evidence reads shorter_than_evidence like the fixed interval."""
     from backend.services import strategy_store
 
     oil = strategy_store.save_analysis(session, "oil", "optimal_replacement", {
@@ -239,7 +240,7 @@ def test_interval_far_shorter_than_the_evidence_supports_says_so(session):
                                     "evidence": {"type": "strategy_analysis", "id": pf.id}})
 
     r = check(25)
-    assert r["status"] == "contradicted" and "set every 25 hours" in r["summary"]
+    assert r["status"] == "shorter_than_evidence" and "set every 25 hours" in r["summary"]
     assert check(50)["status"] == "supported"
     longer = check(200)
     assert longer["status"] == "contradicted" and "longer than" in longer["summary"]
