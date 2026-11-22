@@ -60,6 +60,7 @@ import { ASSETS_LIST_PATH } from "../maintenanceAssets.js";
 import { partsPath } from "../redirects.js";
 import { classLabel, isDesignClass } from "../positionClass.js";
 import { useWorkManagementOn } from "../ConfigProvider.jsx";
+import { DateInput, TimeInput } from "../components/ui/DateTimeInput.jsx";
 
 // One position: what's fitted, its failure modes and tasks (from RCM or added
 // here), its work orders, and the life data its fitments give.
@@ -880,8 +881,8 @@ export function PointReadingModal({ point, onClose, onDone }) {
                onSubmit={async () => onDone(await recordMeasurementReading(point.id, Number(value), on, time ? workspaceMoment(on, time) : undefined))}>
       <Field label={`${setting ? "Set to" : "Reading"}${point.unit ? ` (${point.unit})` : ""}`}><input type="number" step="any" autoFocus value={value}
              placeholder={point.reading != null ? `${setting ? "now" : "last"}: ${point.reading}` : ""} onChange={(e) => setValue(e.target.value)} /></Field>
-      <Field label={setting ? "Changed on" : "Read on"}><input type="date" value={on} max={today()} onChange={(e) => setOn(e.target.value)} /></Field>
-      <Field label={`At, ${zone} time (clear it if not known)`}><input type="time" value={time} onChange={(e) => setTime(e.target.value)} /></Field>
+      <Field label={setting ? "Changed on" : "Read on"}><DateInput value={on} max={today()} onChange={(e) => setOn(e.target.value)} /></Field>
+      <Field label={`At, ${zone} time (clear it if not known)`}><TimeInput value={time} onChange={(e) => setTime(e.target.value)} /></Field>
       {deviceClockDiffers() && (
         <p className="lib-date">The date and time are on this workspace&apos;s clock ({zone}), not this device&apos;s.</p>
       )}

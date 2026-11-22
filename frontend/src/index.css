@@ -2273,6 +2273,16 @@ select.ctl { padding-right: 30px; }
 .ctl-group > select.ctl { flex: 0 1 auto; min-width: 5.5rem; }
 .ctl-group > .ctl:not(select) { min-width: 3.5rem; }
 .ctl-group > .ctl-unit { flex: 0 1 4.5rem; background-color: var(--bg-subtle); color: var(--text); }
+/* DateTimeInput.jsx: a date as "22 Nov 2026" and a time as "16:00", whatever the browser's language. */
+.ctl-group.dti { display: inline-flex; width: fit-content; position: relative; }
+.ctl-group.dti > .ctl.dti-text { flex: 0 1 auto; width: 9.5em; }
+.ctl-group.dti > button.dti-btn { flex: none; min-height: 0; padding: 0 var(--space-2); border: 0; border-left: 1px solid var(--border);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0; color: var(--text-secondary); background: var(--bg-subtle); }
+.ctl-group.dti > button.dti-btn:hover:not(:disabled) { color: var(--text); }
+.ctl-group.dti.is-disabled { background: var(--bg-subtle); }
+.ctl-group.dti > .dti-native { position: absolute; right: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
+.ctl.dti-time { width: 5em; font-variant-numeric: tabular-nums; }
+.dti-pair { display: inline-flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
 .ctl-addon {
   flex: none; display: inline-flex; align-items: center; padding: 0 var(--space-3);
   background: var(--bg-subtle); color: var(--text-secondary); font-size: var(--fs-14); border-radius: 0 var(--radius-md) var(--radius-md) 0;

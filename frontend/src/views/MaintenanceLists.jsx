@@ -62,6 +62,7 @@ import { NewPartModal } from "../components/PartForms.jsx";
 import { partsInBranch } from "../explorerTabs.js";
 import { countIsOld, countedText } from "../sparesYear.js";
 import { itemTreePath, productPath } from "../products.js";
+import { DateInput } from "../components/ui/DateTimeInput.jsx";
 
 const crumbs = [{ label: "Assets", to: "/asset-register" }];
 
@@ -1049,7 +1050,7 @@ export function StockModal({ part, locations, onClose, onDone }) {
             <input type="number" inputMode="decimal" min="0" step="any" value={qty} placeholder="e.g. 2" onChange={(e) => setQty(e.target.value)} />
           </Field>
           <Field label="Counted on">
-            <input type="date" value={on} max={workspaceToday()} onChange={(e) => setOn(e.target.value)} />
+            <DateInput value={on} max={workspaceToday()} onChange={(e) => setOn(e.target.value)} />
           </Field>
           <Field label="Counted by (optional)"><input value={by} maxLength={120} onChange={(e) => setBy(e.target.value)} /></Field>
           <p className="lib-date">
@@ -1060,7 +1061,7 @@ export function StockModal({ part, locations, onClose, onDone }) {
       ) : (
         <>
           <Field label="Received (+) or issued (−)"><input type="number" step="any" value={qty} placeholder="e.g. 3 or -1" onChange={(e) => setQty(e.target.value)} /></Field>
-          <Field label="On (default today)"><input type="date" value={on} max={workspaceToday()} onChange={(e) => setOn(e.target.value)} /></Field>
+          <Field label="On (default today)"><DateInput value={on} max={workspaceToday()} onChange={(e) => setOn(e.target.value)} /></Field>
         </>
       )}
       <Field label="Reorder at (optional)"><input type="number" inputMode="decimal" min="0" step="any" value={reorder} onChange={(e) => setReorder(e.target.value)} /></Field>

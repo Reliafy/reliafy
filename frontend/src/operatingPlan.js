@@ -15,12 +15,14 @@
 // the background counts only the time the runs don't cover, pro rata, so no hours appear or
 // vanish at the handover and each day's total is the sum of its parts.
 
+// [kind, label, what it means]. The words say what each kind is, never an example that could
+// be read as the user's own times (the form's "Reads as" line says those, from what's entered).
 export const PLAN_KINDS = [
-  ["shifts", "Repeating week", "The same clock times each week: Monday to Friday, 06:00 to 22:00"],
-  ["roster", "Roster", "Days on and days off: 4 on, 4 off, 07:00 to 19:00"],
-  ["rate", "Rate", "A rough amount of running: about 3 hours a day"],
+  ["shifts", "Repeating week", "The same clock times every week, on the days you tick"],
+  ["roster", "Roster", "A run of days on, then days off, over and over"],
+  ["rate", "Rate", "A rough amount of running, spread over each day"],
   ["runs", "Runs", "Only the runs you list, each an on and an off time"],
-  ["continuous", "All the time", "Runs around the clock"],
+  ["continuous", "All the time", "Around the clock, every day"],
 ];
 export const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 export const RATE_PER = { day: 1, week: 7, month: 365.25 / 12, year: 365.25 };
@@ -278,6 +280,15 @@ const hrs = (h) => {
 };
 export { hrs as hoursShort };
 
+// The form's times that run past midnight ("22:00 to 06:00" ends the next morning), each once:
+// [[start, stop], ...]. Only the repeating week's shifts and the roster have clock times.
+export function overnightTimes(form) {
+  const pairs = form.kind === "shifts" ? form.shifts.map((s) => [s.start, s.stop])
+    : form.kind === "roster" ? [[form.roster.start, form.roster.stop]] : [];
+  const seen = new Set();
+  return pairs.filter(([a, b]) => CLOCK.test(a || "") && CLOCK.test(b || "") && b < a && !seen.has(`${a}-${b}`) && seen.add(`${a}-${b}`));
+}
+
 // The plan in words: "Monday to Friday, 06:00 to 22:00", "3 hours a day".
 export function planWords(plan) {
   const bg = plan.background;
@@ -290,7 +301,8 @@ export function planWords(plan) {
     text = bg.shifts.map((s) => {
       const idx = s.days.map((d) => WEEKDAYS.indexOf(d));
       const run = idx.length > 2 && idx.every((v, i) => i === 0 || v === idx[i - 1] + 1);
-      return `${run ? `${s.days[0]} to ${s.days[s.days.length - 1]}` : s.days.map((d) => d.slice(0, 3)).join(", ")}, ${s.start} to ${s.stop}`;
+      const days = s.days.length === 7 ? "Every day" : run ? `${s.days[0]} to ${s.days[s.days.length - 1]}` : s.days.map((d) => d.slice(0, 3)).join(", ");
+      return `${days}, ${s.start} to ${s.stop}`;
     }).join("; ");
   }
   if (plan.utilisation) text += `, ${Math.round(plan.utilisation * 100)}% utilisation`;

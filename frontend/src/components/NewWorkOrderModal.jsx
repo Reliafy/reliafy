@@ -2,6 +2,7 @@ import { useState } from "react";
 import { openWorkOrder } from "../api.js";
 import { Field, FormModal, PositionPicker } from "./MaintenanceParts.jsx";
 import { tooLong } from "../maintenanceText.js";
+import { DateInput } from "./ui/DateTimeInput.jsx";
 
 // A new work order on a position: what needs doing, its type and when it's due.
 // On a position's page the position is that one (`positionId`); on the
@@ -30,7 +31,7 @@ export default function NewWorkOrderModal({ positionId = null, positions = null,
           <option value="other">Other</option>
         </select>
       </Field>
-      <Field label="Due (optional)"><input type="date" value={due} onChange={(e) => setDue(e.target.value)} /></Field>
+      <Field label="Due (optional)"><DateInput value={due} onChange={(e) => setDue(e.target.value)} /></Field>
     </FormModal>
   );
 }

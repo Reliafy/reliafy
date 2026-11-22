@@ -81,3 +81,14 @@ test("other use at a rate (400 km a day) goes with the plan and back", () => {
   assert.match(planFromForm({ ...form, use: { amount: "5", meter: "starts", per: "day" } }).problem, /come from how it runs/);
   assert.equal(planFromForm(formFromPlan(null, "2026-11-23")).plan.meters, undefined);
 });
+
+test("the plan's words say what's entered: every day, and only real overnight times", async () => {
+  const { overnightTimes, PLAN_KINDS } = await import("./operatingPlan.js");
+  const form = { ...formFromPlan(null, "2026-11-22"), shifts: [{ days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], start: "08:00", stop: "16:00" }] };
+  assert.equal(planWords(planFromForm(form).plan), "Every day, 08:00 to 16:00");
+  assert.deepEqual(overnightTimes(form), []);
+  assert.deepEqual(overnightTimes({ ...form, shifts: [{ days: ["Friday"], start: "22:00", stop: "06:00" }, { days: ["Saturday"], start: "22:00", stop: "06:00" }] }), [["22:00", "06:00"]]);
+  assert.deepEqual(overnightTimes({ ...form, kind: "roster", roster: { ...form.roster, start: "19:00", stop: "07:00" } }), [["19:00", "07:00"]]);
+  // No kind's description quotes clock times or amounts that could be read as the user's.
+  for (const [, , hint] of PLAN_KINDS) assert.doesNotMatch(hint, /\d/);
+});

@@ -15,6 +15,7 @@ import { ACCENT } from "../plotTheme.js";
 import "../views/Maintenance.css";
 import "./MeasurementViews.css";
 import { useWorkManagementOn } from "../ConfigProvider.jsx";
+import { DateInput } from "./ui/DateTimeInput.jsx";
 
 // Consumables (salt added to the pool; acid; a stabiliser): the Measurements
 // tab's monthly bars, the dialogs to record a use (Record use…: another date,
@@ -59,7 +60,7 @@ export function ConsumableUseModal({ consumable: c, onClose, onDone }) {
       <Field label={`How much${c.unit ? ` (${c.unit})` : ""}`}>
         <input type="number" inputMode="decimal" step="any" min="0" autoFocus value={qty} onChange={(e) => setQty(e.target.value)} />
       </Field>
-      <Field label="Added on"><input type="date" value={on} max={workspaceToday()} onChange={(e) => setOn(e.target.value)} /></Field>
+      <Field label="Added on"><DateInput value={on} max={workspaceToday()} onChange={(e) => setOn(e.target.value)} /></Field>
       <Field label="Cost (optional)">
         <input type="number" inputMode="decimal" step="any" min="0" value={cost} onChange={(e) => setCost(e.target.value)}
                placeholder={unitCost != null && n > 0 ? `${(n * unitCost).toFixed(2)} at ${unitCost} each` : ""} />
