@@ -104,9 +104,17 @@ The bar also adds up what the ticked tasks need: labour hours by trade, the
 tools (each once), the spares to stage and the consumables. So when you
 package a visit, you can see what to bring.
 
-The **Package** column fills in at once. Tasks counted by use (run hours) and
-rounds stay on their own, so their boxes can't be ticked; tasks already in a
-package stay where they are.
+The **Package** column fills in at once. Rounds, and tasks counted on a meter
+other than operating hours (km, cycles), stay on their own, so their boxes
+can't be ticked; tasks already in a package stay where they are.
+
+Tasks counted in **operating hours** make a package by hours, such as a 50 h
+service: tick them together (not with calendar tasks). The visit goes by the
+shortest interval, and a task at a whole multiple of it goes on every Nth
+visit, so a 100 h oil change comes on every second 50 h service. The package
+counts from the position's hour meter reading now, and its page shows each
+visit's hours and the date it's expected, from the operating plan (else the
+meter's recent rate). It needs an hour meter on its position.
 
 To let Reliafy draft the packages for you, right-click the row in the tree (or
 press its **⋯**) and choose **Package the tasks here…**, the first item on

@@ -8,6 +8,8 @@ import { CALENDAR, formFromPackage, howOftenProblem, packageBody } from "./howOf
 
 // A package's cadence is edited with the shared "How often" control (HowOften.jsx).
 export const PACKAGE_UNITS = CALENDAR;
+// The units a package's edit offers: it stays on the calendar, or on operating hours, for good.
+export const unitsFor = (pkg) => (pkg?.cadence?.unit === "hours" ? ["hours"] : PACKAGE_UNITS);
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 

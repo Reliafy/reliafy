@@ -14,11 +14,11 @@ import { SubjectCell } from "./MaintenanceHome.jsx";
 import usePhone from "../usePhone.js";
 import { rollupLines, visitRuleText } from "../lsaTab.js";
 import HowOften from "../components/HowOften.jsx";
-import { packageDates } from "../howOften.js";
+import { HOURS_PACKAGE_NOTE, packageDates } from "../howOften.js";
 import { PACKAGES_PATH, linesText, packagePath, workOrderPath } from "../maintenanceOrders.js";
 import {
-  PACKAGE_UNITS, editBody, formProblem, initialForm, outcomeText, packageSentence, packageWithoutWorkOrders,
-  taskLabel, visitDay, visitTasksText,
+  editBody, formProblem, initialForm, outcomeText, packageSentence, packageWithoutWorkOrders,
+  taskLabel, unitsFor, visitDay, visitTasksText,
 } from "../packagePage.js";
 import { ORDERS_PATH, PACKAGES_LABEL } from "../navigation.js";
 import { subjectPath } from "../maintenanceSubjects.js";
@@ -143,7 +143,16 @@ function Details({ pkg }) {
     <section className="card">
       <dl className="maint-dl">
         {pkg.subject && <><dt>On</dt><dd><Link to={subjectPath(pkg.subject)}>{pkg.subject.name}</Link></dd></>}
-        <dt>Timing</dt><dd>{pkg.cadence?.text}{pkg.timing === "from_last_visit" ? "" : " (set dates)"}</dd>
+        <dt>Timing</dt><dd>{pkg.cadence?.text}{pkg.cadence?.unit === "hours" ? "" : pkg.timing === "from_last_visit" ? "" : " (set dates)"}</dd>
+        {pkg.cadence?.by_hours && (
+          <><dt>Hour meter</dt><dd>
+            {pkg.cadence.by_hours.counter?.name || "None"}
+            {pkg.cadence.by_hours.reading ? `: ${Number(pkg.cadence.by_hours.reading.value).toLocaleString("en-GB")} h on ${fmtDate(pkg.cadence.by_hours.reading.on)}` : ""}
+            {` · counted from ${Number(pkg.cadence.by_hours.anchor_reading).toLocaleString("en-GB")} h`}
+            {pkg.cadence.by_hours.basis?.text ? <div className="lib-date">Dates: {pkg.cadence.by_hours.basis.text}</div> : null}
+            {pkg.cadence.by_hours.note ? <div className="lib-date">No dates yet: {pkg.cadence.by_hours.note}.</div> : null}
+          </dd></>
+        )}
         {pkg.tolerance?.amount ? <><dt>On time within</dt><dd>{pkg.tolerance.amount} {unitWord(pkg.tolerance.amount, pkg.tolerance.unit)} after the visit date</dd></> : null}
         {pkg.season?.text && <><dt>Season</dt><dd>{pkg.season.text}</dd></>}
         {pkg.trade && <><dt>Trade</dt><dd>{pkg.trade}</dd></>}
@@ -213,6 +222,7 @@ function NextVisits({ pkg, today, onRaise, canRaiseAny = true }) {
               <tr key={v.on} className="maint-plain-row">
                 <td className="maint-nowrap">
                   {visitDay(v.on, today)}
+                  {v.hours != null && <div className="lib-date">at {Number(v.hours).toLocaleString("en-GB")} h</div>}
                   {v.open_work_order && (
                     <div>
                       <Link to={workOrderPath(v.open_work_order.id)}>#{v.open_work_order.number} open</Link>
@@ -308,6 +318,7 @@ function EditPane({ pkg, phone, onClose, onSaved }) {
   const fixed = layer || form.timing === "fixed";
   const today = workspaceToday();
   const dates = problem ? null : packageDates(form.how, { anchor: pkg.cadence?.anchor, today, timing: fixed ? "fixed" : "from_last_visit" });
+  const hours = form.how.unit === "hours";
   const save = async (e) => {
     e.preventDefault();
     if (problem || nothing) return;
@@ -335,8 +346,8 @@ function EditPane({ pkg, phone, onClose, onSaved }) {
         )}
         <fieldset className="mt-how">
           <legend>How often</legend>
-          <HowOften value={form.how} onChange={(how) => setForm((f) => ({ ...f, how }))} units={PACKAGE_UNITS} patterns={fixed}
-                    dates={dates} datesNote={fixed ? "" : "Counted from the last visit: each visit is the interval after the one before closes."} />
+          <HowOften value={form.how} onChange={(how) => setForm((f) => ({ ...f, how }))} units={unitsFor(pkg)} patterns={fixed && !hours}
+                    dates={dates} datesNote={hours ? HOURS_PACKAGE_NOTE : fixed ? "" : "Counted from the last visit: each visit is the interval after the one before closes."} />
         </fieldset>
         {layer ? (
           <p className="lib-date">A layer visits on some of {pkg.parent.name}&apos;s set dates; its on-time window is {pkg.parent.name}&apos;s.</p>
