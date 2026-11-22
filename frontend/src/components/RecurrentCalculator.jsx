@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
 import { fitLine, pointMarker, referenceShape } from "../plotTheme.js";
 import Select from "./Select.jsx";
@@ -366,7 +367,12 @@ function CountRows({ res, unit, perSystem = false }) {
       {res.stock && (
         <div>
           <dt>Stock to hold</dt>
-          <dd>{res.stock.hold.toLocaleString("en-US")}{each} <span className="gof-sub">for a {stockLevel} chance of not running out; {runoutText(res.stock)}</span></dd>
+          <dd>{res.stock.hold.toLocaleString("en-US")}{each} <span className="gof-sub">for a {stockLevel} chance of not running out; {runoutText(res.stock)}</span>
+            <span className="gof-sub" data-testid="stock-when-to-use" style={{ display: "block" }}>
+              Use this for a stream of replacements counted as one process, such as a fleet's replacements against fleet hours.
+              For a fleet of individual items with known ages and a lead time, use the spares card in <Link to="/forecasts">Forecasts</Link>.
+            </span>
+          </dd>
         </div>
       )}
       {res.constant_rate && (

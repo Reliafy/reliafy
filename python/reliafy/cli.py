@@ -417,6 +417,8 @@ def cmd_upload(client: Client, ns) -> int:
                                      ("tr_col", ns.tr_col), ("i_col", ns.i_col), ("m_col", ns.m_col),
                                      ("e_col", ns.e_col), ("s_col", ns.s_col), ("unit", ns.unit),
                                      ("c_invert", True if ns.c_invert else None),
+                                     ("one_stream", True if getattr(ns, "one_stream", False) else None),
+                                     ("record_end", getattr(ns, "record_end", None)),
                                      ("z_cols", [c.strip() for c in ns.z_cols.split(",") if c.strip()]
                                       if ns.z_cols is not None else None),
                                      ("library_id", getattr(ns, "library_id", None))) if v is not None}
@@ -689,6 +691,10 @@ def builtin_parser() -> argparse.ArgumentParser:
         sp.add_argument(f"--{role}-col", dest=f"{role}_col", metavar="COLUMN", help=f"The column for {words}.")
     sp.add_argument("--z-cols", metavar="A,B", help="The covariates (Z), comma-separated; \"\" for none.")
     sp.add_argument("--c-invert", action="store_true", help="The c column's 0/1 codes use 1 = failed.")
+    sp.add_argument("--one-stream", dest="one_stream", action="store_true",
+                    help="No item column: every row is one stream of events (one system); tags it repairable.")
+    sp.add_argument("--record-end", dest="record_end", type=float, metavar="X",
+                    help="Repairable data: where observation stopped, in x's unit (216000); later fits use it.")
     sp.add_argument("--unit", help="x's unit (hours, cycles, km…).")
     sp.add_argument("--library-id", dest="library_id", metavar="LIBRARY_ID",
                     help="Also add the dataset to this library of yours, as a snapshot.")

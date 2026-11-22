@@ -2,6 +2,7 @@
 // and service level (saved with the fleet, in its periods) give how many to hold,
 // when to reorder and the chance the stock in hand runs out, read off the
 // forecast's own distribution.
+import { Link } from "react-router-dom";
 import { formatNumber } from "../format.js";
 import { money } from "../maintenanceForecast.js";
 import { costLabel, prefixCurrency, workspaceCurrency } from "../money.js";
@@ -37,6 +38,11 @@ export default function FleetSparesCard({ fleet, settings, forecast, readOnly, d
     <div className="card" style={{ marginTop: "1rem" }} data-testid="fleet-spares">
       <CardHeader title="Spares: how many to hold"
                   subtitle="For the replacement part: the stock that covers the lead time at your service level, from this forecast's own distribution." />
+      <p className="hint" data-testid="fleet-spares-when-to-use" style={{ margin: "0 0 0.6rem" }}>
+        Use this for a fleet of individual items with known ages and a life model, with a lead time. For a stream of
+        replacements counted as one process, such as a fleet's replacements against fleet hours, use the Calculator's
+        stock to hold on a <Link to="/models/recurrent">repairable model</Link>.
+      </p>
       <div className="row" style={{ gap: "0.8rem", alignItems: "flex-end", flexWrap: "wrap", marginTop: 0 }}>
         {field("lead_time", `Lead time (${label})`, { placeholder: "required" })}
         <label className="login-field" style={{ width: 150 }}>

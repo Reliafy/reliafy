@@ -35,7 +35,7 @@ const LABEL = { e: "failure mode", x2: "second clock" };
 
 export const emptyReading = () => ({
   ...Object.fromEntries(ROLES.map((r) => [r, ""])),
-  c_invert: false, c_map: null, all_failed: false, one_stream: false, unit: "", m_unit: "", x2_unit: "", z: [], z_units: {}, not_used: [],
+  c_invert: false, c_map: null, all_failed: false, one_stream: false, record_end: null, unit: "", m_unit: "", x2_unit: "", z: [], z_units: {}, not_used: [],
 });
 
 // The second clock's unit: as typed ("cycles"), else from its column's name; blank without one.
@@ -284,6 +284,9 @@ export function readingParts(r) {
   else if (r.all_failed) out.push({ key: "c", label: "c", value: "every row failed" });
   if (r.one_stream && !r.i) out.push({ key: "i", label: "i", value: "none: every row is one stream" });
   for (const k of ["n", "tl", "tr", "i", "m", "e", "s"]) {
+    if (k === "i" && r.record_end > 0 && !r.tr) {
+      out.push({ key: "record_end", label: "record ends at", value: `${r.record_end.toLocaleString("en-GB", { maximumSignificantDigits: 10 })}${r.unit && r.unit !== "units" ? ` ${r.unit.toLowerCase()}` : ""}` });
+    }
     if (r[k]) out.push({ key: k, label: LABEL[k] || k, value: r[k] + (k === "m" && r.m_unit ? ` (${r.m_unit})` : "") });
   }
   if (r.x2) {

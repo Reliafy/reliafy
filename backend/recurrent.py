@@ -226,6 +226,18 @@ def parse_record_end(value) -> float | None:
     return v
 
 
+def dataset_record_end(dataset) -> float | None:
+    """The end of record a dataset's reading carries (``record_end``), or
+    ``None``: where observation stopped, the default for a fit's end of test."""
+    reading = getattr(dataset, "reading", None)
+    if not isinstance(reading, dict):
+        return None
+    try:
+        return parse_record_end(reading.get("record_end"))
+    except FitError:
+        return None
+
+
 def with_record_end(df: pd.DataFrame, mapping: dict, record_end) -> tuple[pd.DataFrame, dict]:
     """``(df, mapping)`` with one typed end of test (``record_end``) as each
     system's end of record: it fills an end-of-record column (``tr``) where
