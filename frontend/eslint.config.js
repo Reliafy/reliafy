@@ -19,8 +19,7 @@ export default [
   },
   {
     // The shared Select itself draws no <select>; these files only name it in comments.
-    // TaskTreeTable.jsx moves over with its own work (it is being built now).
-    files: ["src/components/Select.jsx", "src/components/ui/Controls.jsx", "src/components/TaskTreeTable.jsx"],
+    files: ["src/components/Select.jsx", "src/components/ui/Controls.jsx"],
     rules: { "no-restricted-syntax": "off" },
   },
 ];
