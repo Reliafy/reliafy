@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+import math
 import logging
 
 import os
 
-from fastapi import APIRouter, Body, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, Query, UploadFile
 from fastapi.responses import JSONResponse, Response
 
 from backend import config
@@ -353,6 +354,16 @@ def _matches_saved(doc: dict | None, graph: dict) -> bool:
     return rbds_service.availability_cache_key(graph) == rbds_service.availability_cache_key(doc.get("graph") or {})
 
 
+def _availability_at(session, graph: dict, times, state, resolve_owners) -> dict:
+    """Availability read at the times asked about (:func:`rbd_analysis.availability_at_times`)."""
+    from backend.services import rbd_analysis
+
+    def resolve_model(model_id: str) -> dict | None:
+        return models_service.get_live_model(session, model_id, resolve_owners)
+
+    return rbd_analysis.availability_at_times(graph, times, resolve_model=resolve_model, state=state)
+
+
 def exact_payload(session, graph: dict, t_max, state, doc, writable: bool, resolve_owners,
                   requested: bool) -> dict:
     """The free part of an availability result (#154): the exact long-run
@@ -415,6 +426,7 @@ def availability_payload(
     session, ctx: AccessCtx, graph: dict, t_max, rbd, force: bool, resolve_owners,
     *, simulate: bool | None = None, current_state=None, exact: bool = False,
     quick: bool = False, surface: str = "app", auto: bool = False, run_token: str | None = None,
+    at_times: list[float] | None = None,
 ) -> tuple[int, dict]:
     """A repairable (availability) analysis as ``(status, payload)``.
 
@@ -482,6 +494,9 @@ def availability_payload(
     writable = rbd is not None and access_service.can_write(ctx, rbd.owner_id)
     entitled = billing_service.premium_compute_allowed(session, ctx.user)
     free = exact_payload(session, graph, t_max, state, doc, writable, resolve_owners, exact)
+    if at_times:
+        free = {**free, "exact": {**(free.get("exact") or {}), "at_times": _availability_at(
+            session, graph, at_times, state, resolve_owners)}}
     on_request = False
     if auto and simulate is None and not force:
         if state is None and exact_complete(free):
@@ -572,10 +587,18 @@ def availability_payload(
     return 200, out
 
 
+def _check_times(times):
+    """The times to read a repairable diagram's availability at: finite and not negative."""
+    out = [float(t) for t in (times or [])]
+    if any(not math.isfinite(t) or t < 0 for t in out):
+        raise AnalysisError("times must be finite and 0 or more, in the diagram's unit.")
+    return out or None
+
+
 def _availability(
     session, ctx: AccessCtx, graph: dict, t_max, rbd, force: bool, resolve_owners,
     simulate: bool | None = None, current_state=None, exact: bool = False, quick: bool = False,
-    run_token: str | None = None,
+    run_token: str | None = None, at_times: list[float] | None = None,
 ) -> JSONResponse:
     # The exact figures (free) unless the simulation runs or meets the paywall.
     usage_service.set_feature("availability_exact")
@@ -584,7 +607,7 @@ def _availability(
     status, payload = availability_payload(
         session, ctx, graph, t_max, rbd, force, resolve_owners,
         simulate=simulate, current_state=current_state, exact=exact, quick=quick, surface="app",
-        run_token=run_token)
+        run_token=run_token, at_times=at_times)
     sim_state = (payload.get("simulation_status") or {}).get("state")
     if status in (202, 402) or sim_state == "done":
         usage_service.set_feature("availability_sim")
@@ -652,6 +675,7 @@ def analyze_graph(
     quick: bool = Body(default=False),
     run_token: str | None = Body(default=None),
     evaluate_at: float | None = Body(default=None),
+    times: list[float] | None = Body(default=None, max_length=20),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -691,7 +715,7 @@ def analyze_graph(
                 rbd, _ = access_service.fetch_readable(session, "rbds", Rbd, rbd_id, ctx)
             return _availability(session, ctx, graph, t_max, rbd, force, ctx.read_owners,
                                  simulate=simulate, current_state=current_state, exact=exact,
-                                 quick=quick, run_token=run_token)
+                                 quick=quick, run_token=run_token, at_times=_check_times(times))
         with standby_simulation(session, ctx):
             content = rbds_service.analyze_graph(
                 session,
@@ -726,6 +750,7 @@ def analyze_rbd(
     exact: bool = False,
     quick: bool = False,
     run_token: str | None = None,
+    times: list[float] | None = Query(default=None, max_length=20),
     session=Depends(get_session),
     ctx: AccessCtx = Depends(get_access),
 ) -> JSONResponse:
@@ -739,7 +764,8 @@ def analyze_rbd(
     try:
         if graph.get("repairable"):
             return _availability(session, ctx, graph, t_max, rbd, force, owners,
-                                 simulate=simulate, exact=exact, quick=quick, run_token=run_token)
+                                 simulate=simulate, exact=exact, quick=quick, run_token=run_token,
+                                 at_times=_check_times(times))
         with standby_simulation(session, ctx):
             content = rbds_service.analyze_graph(session, graph, owners, t_max=t_max)
         return JSONResponse(content=content)

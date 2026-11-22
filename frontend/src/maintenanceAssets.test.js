@@ -27,6 +27,17 @@ test("what's inside and what's due, in words", () => {
   assert.deepEqual(dueText({ due: 1, overdue: 0, next_due: "2026-11-04" }), { text: "1 due, next 2026-11-04", overdue: "" });
 });
 
+test("a past date is never said as the next one", () => {
+  // Work management off (a plan, so nothing counts as overdue) with an old last done: the
+  // date has passed, and the line says so instead of "next 18 May 2023".
+  const row = { due: 1, overdue: 0, next_due: "2023-05-18" };
+  assert.deepEqual(dueText(row, (d) => d, "2026-11-22"), { text: "1 due, overdue since 2023-05-18", overdue: "" });
+  assert.deepEqual(dueText({ ...row, next_due: "2026-11-22" }, (d) => d, "2026-11-22"),
+    { text: "1 due, next 2026-11-22", overdue: "" });
+  assert.deepEqual(dueText({ ...row, next_due: "2026-12-01" }, (d) => d, "2026-11-22"),
+    { text: "1 due, next 2026-12-01", overdue: "" });
+});
+
 test("the list's summary line", () => {
   assert.equal(assetsSummary(null), "");
   assert.equal(assetsSummary({ places: [{ positions: 24 }], not_placed: { positions: 13 } }),
