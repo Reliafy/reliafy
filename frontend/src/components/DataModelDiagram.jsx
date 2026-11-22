@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { caption, nodeSize, WARN } from "../dataModel.js";
+import { ACCENT, INK as INK_HEX, MUTED as MUTED_HEX, SURFACE, token } from "../plotTheme.js";
 
 // The Data model page's diagram: one circle per kind of thing, one arrow per
 // connection, drawn with cytoscape.js (MIT), which loads only when this
@@ -9,12 +10,16 @@ import { caption, nodeSize, WARN } from "../dataModel.js";
 // The parent drives it through the ref: fit(), relayout(), png() (a data URL)
 // and positions() (where each node is, for the Arrows export).
 
-const INK = "#1b1915";
-const MUTED = "#5f5e57";
-const ACC = "#235edf";
-const SURF = "#ffffff";
+// Its colours are the tokens', read when a diagram is drawn (cytoscape takes no CSS).
+const colours = () => ({
+  INK: token("--text", INK_HEX),
+  MUTED: token("--text-secondary", MUTED_HEX),
+  ACC: token("--accent", ACCENT),
+  SURF: token("--bg-surface", SURFACE),
+  ON_FILL: token("--text-on-fill", SURFACE),
+});
 
-const STYLE = [
+const style = ({ INK, MUTED, ACC, SURF, ON_FILL }) => [
   {
     selector: "node",
     style: {
@@ -22,7 +27,7 @@ const STYLE = [
       width: "data(size)",
       height: "data(size)",
       label: "data(caption)",
-      color: "#ffffff",
+      color: ON_FILL,
       "font-family": "Inter, system-ui, sans-serif",
       "font-size": 11,
       "font-weight": 600,
@@ -123,7 +128,7 @@ const DataModelDiagram = forwardRef(function DataModelDiagram(
         cy = cytoscape({
           container: box.current,
           elements: elementsFor(model, showCounts),
-          style: STYLE,
+          style: style(colours()),
           layout: LAYOUT,
           wheelSensitivity: 0.3,
           minZoom: 0.15,
@@ -179,7 +184,7 @@ const DataModelDiagram = forwardRef(function DataModelDiagram(
   useImperativeHandle(ref, () => ({
     fit: () => cyRef.current?.fit(undefined, 36),
     relayout: () => cyRef.current?.layout({ ...LAYOUT, randomize: true }).run(),
-    png: () => cyRef.current?.png({ full: true, scale: 2, bg: SURF }),
+    png: () => cyRef.current?.png({ full: true, scale: 2, bg: colours().SURF }),
     positions: () => {
       const out = {};
       cyRef.current?.nodes().forEach((n) => {

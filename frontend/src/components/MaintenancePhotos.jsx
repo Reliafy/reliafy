@@ -22,6 +22,7 @@ import Modal from "./Modal.jsx";
 import { Field, FormModal, flatten, fmtDate } from "./MaintenanceParts.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { EXPLORER_PATH } from "../navigation.js";
+import { Checkbox, Radio } from "./ui/Controls.jsx";
 
 // What the picker can choose from, loaded once per kind when it's first asked for.
 const LOADERS = {
@@ -80,14 +81,10 @@ function PhotoPlaceModal({ photo, here, hereLabel, related, onClose, onDone }) {
     <FormModal title="Link or move this photo" submitLabel={mode === "move" ? "Move" : "Link"} canSubmit={!!to}
                onClose={onClose} onSubmit={submit}>
       <div className="maint-place-modes" role="radiogroup" aria-label="Link or move">
-        <label>
-          <input type="radio" name="photo-place-mode" checked={mode === "link"} onChange={() => setMode("link")} />
-          {" "}Also show it there <span className="lib-date">(it stays here too)</span>
-        </label>
-        <label>
-          <input type="radio" name="photo-place-mode" checked={mode === "move"} onChange={() => setMode("move")} />
-          {" "}Move it there <span className="lib-date">(off {hereLabel})</span>
-        </label>
+        <Radio name="photo-place-mode" checked={mode === "link"} onChange={() => setMode("link")}
+               label={<>Also show it there <span className="lib-date">(it stays here too)</span></>} />
+        <Radio name="photo-place-mode" checked={mode === "move"} onChange={() => setMode("move")}
+               label={<>Move it there <span className="lib-date">(off {hereLabel})</span></>} />
       </div>
       {hints.length > 0 && (
         <div>
@@ -114,10 +111,8 @@ function PhotoPlaceModal({ photo, here, hereLabel, related, onClose, onDone }) {
         </select>
       </Field>
       {within && (
-        <label className="maint-place-any">
-          <input type="checkbox" checked={anyAsset} onChange={(e) => { setAnyAsset(e.target.checked); setTo(""); }} />
-          {" "}Any asset <span className="lib-date">(not only the one open)</span>
-        </label>
+        <Checkbox className="maint-place-any" checked={anyAsset} onChange={(e) => { setAnyAsset(e.target.checked); setTo(""); }}
+                  label={<>Any asset <span className="lib-date">(not only the one open)</span></>} />
       )}
     </FormModal>
   );

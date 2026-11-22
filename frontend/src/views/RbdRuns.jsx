@@ -10,6 +10,8 @@ import { availabilityText, byText, keptLine, runtimeText, statusChip, viaText } 
 import "../components/RbdRuns.css";
 import { RBDS_PATH, SYSTEM_MODELS_LABEL } from "../navigation.js";
 import { RowLink, rowOpen } from "../components/LibRows.jsx";
+import Loading from "../components/ui/Loading.jsx";
+import { Checkbox } from "../components/ui/Controls.jsx";
 
 const MAX_COMPARE = 6;
 const PURPOSE = "Availability simulations from the app and your connectors.";
@@ -96,7 +98,7 @@ export default function RbdRuns() {
       </div>
 
       {data === null && !error ? (
-        <div className="card empty">Loading…</div>
+        <Loading card />
       ) : runs.length === 0 && !error ? (
         <div className="card empty">
           <h2>No simulation runs yet</h2>
@@ -125,8 +127,7 @@ export default function RbdRuns() {
                 return (
                   <tr key={r.run_id} className="lib-row" onClick={rowOpen(navigate, `/systems/runs/${r.run_id}`)}>
                     <td className="rbd-runs-pick" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         aria-label="Compare this run"
                         disabled={r.status !== "done"}
                         checked={picked.includes(r.run_id)}

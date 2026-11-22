@@ -95,13 +95,13 @@ export const RECURRENT_NONE = {
 
 // What stops a repairable mapping, or needs saying, beside its selector:
 // [{ row, text, note? }] (``note``: said, but doesn't stop Next).
-export function recurrentIssues(map, windows = "", recordEnd = "") {
+export function recurrentIssues(map, windows = "", recordEnd = "", datasetEnd = null) {
   const out = [];
   if (!map.i && !map.one_stream) out.push({ row: "i", text: "Pick i: the column saying which item each row belongs to." });
   if (!map.x) out.push({ row: "x", text: "Pick x: the column with the value at each failure." });
   if (map.i && map.x && map.i === map.x) out.push({ row: "x", text: "x and i are the same column: pick a different one for each." });
   if (out.length === 0 && !map.tr && !map.c && !(map.ws && map.we) && !String(windows || "").trim()
-      && !String(recordEnd ?? "").trim()) {
+      && !String(recordEnd ?? "").trim() && !(datasetEnd > 0)) {
     out.push({ row: "tr", text: NO_RECORD_END, note: true });
   }
   return out;

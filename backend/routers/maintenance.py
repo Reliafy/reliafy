@@ -2241,8 +2241,9 @@ def list_locations(of: str | None = None, m: Maintenance = Depends(maintenance))
 def list_places(m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """The assets: each top-level location with the positions, items, open work orders
     and tasks due in 30 days anywhere inside it; not_placed: the positions with no
-    location (and their ids)."""
-    return _run(m.places)
+    location (and their ids). today: the workspace's date, so a next date already past is
+    said as one (overdue since…), never as "next"."""
+    return _run(lambda: {**m.places(), "today": m.today()})
 
 
 @router.get("/locations/{location_id}")

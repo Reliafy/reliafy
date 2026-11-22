@@ -13,6 +13,7 @@ import {
 } from "../api.js";
 import { MAINTAINABILITY_PATH } from "../maintainability.js";
 import "./Maintainability.css";
+import Loading from "../components/ui/Loading.jsx";
 
 // A saved maintainability prediction, read-only from its stored results.
 // "Edit a copy" opens the calculator with its lines, to change and save anew.
@@ -39,7 +40,7 @@ export default function MaintainabilityPage() {
       </div>
     );
   }
-  if (!doc) return <div className="app"><div className="card empty">Loading…</div></div>;
+  if (!doc) return <div className="app"><Loading card /></div>;
 
   const onRename = async () => {
     const name = changedText(await askText(renamePrompt({ kind: "prediction", name: doc.name })), doc.name);

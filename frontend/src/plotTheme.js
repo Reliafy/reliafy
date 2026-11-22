@@ -35,6 +35,34 @@ export const NEUTRAL_BAND_FILL = "rgba(27, 25, 21, 0.08)"; // a band around obse
 // deficiency on adjacent pairs. Assign in order, never by rank.
 export const COLORWAY = [ACCENT, "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
 
+// A token's value as the page has it now (tokens.css), for what CSS can't reach:
+// Plotly's and cytoscape's colours. `fallback` outside a browser (node tests) or
+// before the stylesheet loads.
+export function token(name, fallback = "") {
+  if (typeof document === "undefined" || typeof getComputedStyle !== "function") return fallback;
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+}
+
+// A colour at an opacity: "#ffffff", 0.85 → "rgba(255, 255, 255, 0.85)"; an rgb()/rgba()
+// keeps its channels with the new alpha. Anything else is returned as it is.
+export function withAlpha(colour, alpha) {
+  const c = String(colour || "").trim();
+  let m = c.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (m) {
+    const h = m[1].length === 3 ? m[1].replace(/./g, (x) => x + x) : m[1];
+    const n = parseInt(h, 16);
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+  }
+  m = c.match(/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i);
+  return m ? `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${alpha})` : c;
+}
+
+// A legend's ground: the surface (bg-surface) at 85%, so what's behind it still shows.
+export function legendBg(alpha = 0.85) {
+  return withAlpha(token("--bg-surface", SURFACE), alpha);
+}
+
 const FONT = '"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
 // Date axes read day first: Plotly's own tick and hover text is "Nov 1, 2026".

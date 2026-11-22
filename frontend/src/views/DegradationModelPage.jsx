@@ -16,6 +16,7 @@ import { relativeTime } from "../instrument.js";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 import { PageTitle } from "../components/usePageTitle.js";
+import Loading from "../components/ui/Loading.jsx";
 
 // One saved degradation model in the model frame: the answer line, the
 // result's tabs (in the address, ?tab=), "Track items" (the fleet of tracked
@@ -94,7 +95,7 @@ export default function DegradationModelPage() {
                                  datasetId={model.dataset_id} tab={tab} onTab={(t) => setTab(t, "paths")} />
         </ErrorBoundary>
       ) : missing ? <ModelNotFound id={id} kind="degradation" />
-        : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
+        : !error && <div className="mf-body mf-single"><Loading /></div>}
       <PageTitle name={model && itemName(model)} />
     </ModelFrame>
   );

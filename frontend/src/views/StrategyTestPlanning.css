@@ -20,7 +20,4 @@
   max-width: 72ch;
 }
 
-.tp-check input[type="checkbox"] {
-  width: auto;
-  align-self: flex-start;
-}
+.tp-check { align-self: flex-end; }

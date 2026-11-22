@@ -19,7 +19,7 @@ import { PlotCard, PlotPanel } from "./model/ModelLayouts.jsx";
 import Effects from "./model/Effects.jsx";
 import Diagnostics from "./model/Diagnostics.jsx";
 import DataTab from "./model/DataTab.jsx";
-import { COLORWAY } from "../plotTheme.js";
+import { COLORWAY, legendBg } from "../plotTheme.js";
 import { baseLevels, intervalLevel, modelTabs, pmfFromCurves, resolveTab } from "../modelFrame.js";
 import { unitInText } from "./unitText.js";
 
@@ -147,7 +147,7 @@ function ChanceByCount({ result, split, modelId, onStats, name }) {
           <Plot fill data={traces} download={`${name || result.distribution} — chance by count`}
                 layout={{ bargap: 0.25, showlegend: true, xaxis: { title: { text: `Failed at (${u})` } },
                           yaxis: { title: { text: "Chance of failing there" }, tickformat: ".0%", rangemode: "tozero" },
-                          legend: { x: 1, xanchor: "right", y: 1, yanchor: "top", bgcolor: "rgba(255,255,255,0.85)" } }} />
+                          legend: { x: 1, xanchor: "right", y: 1, yanchor: "top", bgcolor: legendBg() } }} />
         </PlotCard>
       }
       side={<LifeAside result={result} split={split} modelId={modelId} onStats={onStats} showUse={false} />}

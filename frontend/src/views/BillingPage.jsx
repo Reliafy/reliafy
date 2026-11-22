@@ -9,6 +9,8 @@ import { CardHeader } from "../components/ui/Card.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
 import ScrollCue from "../components/ui/ScrollCue.jsx";
 import { CAPPED_KINDS } from "../plan.js";
+import LoadFailed from "../components/LoadFailed.jsx";
+import Loading from "../components/ui/Loading.jsx";
 
 // AI usage is denominated in "credits" — users never see a dollar balance.
 // (Internally 1 credit == 1 cent; only pack purchase prices show as dollars.)
@@ -54,12 +56,12 @@ export default function BillingPage() {
     return (
       <div className="app">
         <PageHeader title={title} />
-        <div className="card error">{error}</div>
+        <LoadFailed what="Couldn't load your billing." error={error} />
       </div>
     );
   }
   if (!data) {
-    return <div className="app"><div className="card empty">Loading…</div></div>;
+    return <div className="app"><Loading card /></div>;
   }
 
   // free | pro — or agent: the retired Agent plan (MCP only), which existing

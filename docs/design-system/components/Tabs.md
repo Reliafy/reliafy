@@ -5,6 +5,8 @@ The shared tab row (`components/ui/Tabs.jsx`). It comes in two forms:
 - **Scrolling** (the default). On a narrow screen the row scrolls sideways: the hidden side fades out with a chevron that scrolls it, and the active tab is kept in view.
 - **With overflow** (`overflow`). The row never scrolls: the tabs that don't fit fold, from the right, into a last tab "⋯ N" (N: how many) that opens a list of them. Use it for a panel with more tabs than a phone's width holds, such as the Explorer's detail panel.
 
+Every tab row is this component: never hand-roll `role="tab"` or `role="tablist"`. A guard test (`frontend/src/guardTabs.test.js`) fails on one anywhere else. A choice between a few ways in to the same step (Saved data · Paste or type · Upload a file; File · Paste) is a `SegmentedControl`, not tabs.
+
 Follows the ARIA tab pattern: only the active tab is in the Tab order (roving tabindex); arrow keys, Home and End move to and open the next tab.
 
 ## Props

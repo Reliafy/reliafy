@@ -1,0 +1,125 @@
+/* A tree-table column's filter (ColumnFilter.jsx; docs/design-system/components/ColumnFilter.md). */
+.cf-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  width: 20px;
+  height: 20px;
+  margin-left: var(--space-1);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background-color 150ms, color 150ms, border-color 150ms;
+}
+.cf-btn:hover { background: var(--accent-wash); color: var(--text); }
+.cf-btn:focus-visible { outline-offset: -2px; }
+.cf-btn.on { background: var(--accent-subtle); border-color: var(--accent-border); color: var(--accent-text); }
+.cf-btn.wide {
+  width: auto;
+  height: var(--control-sm);
+  padding: 0 var(--space-3);
+  margin: 0;
+  border-color: var(--border-control);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text);
+  font-size: var(--fs-13);
+  line-height: var(--lh-13);
+  font-weight: 500;
+}
+.cf-btn.wide.on { background: var(--accent-subtle); border-color: var(--accent-border); color: var(--accent-text); }
+
+.cf-pop {
+  position: fixed;
+  z-index: 1000;
+  width: 240px;
+  max-width: calc(100vw - 16px);
+  max-height: 60vh;
+  overflow: auto;
+  padding: var(--space-1);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.cf-group + .cf-group { border-top: 1px solid var(--border-subtle); padding-top: var(--space-1); }
+.cf-head {
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--fs-12);
+  line-height: var(--lh-12);
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.cf-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 28px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-13);
+  line-height: var(--lh-13);
+  color: var(--text);
+  cursor: pointer;
+}
+.cf-item:hover { background: var(--accent-wash); }
+.cf-item > .check-label { display: flex; flex: 1 1 auto; align-items: center; gap: var(--space-2); min-width: 0; }
+.cf-lbl { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cf-n { flex: none; color: var(--text-secondary); font-variant-numeric: tabular-nums; font-size: var(--fs-12); }
+.cf-item.zero .cf-lbl, .cf-item.zero .cf-n { color: var(--text-tertiary); }
+.cf-none { margin: 0; padding: var(--space-1) var(--space-2); font-size: var(--fs-12); color: var(--text-tertiary); }
+.cf-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+}
+.cf-note { font-size: var(--fs-12); line-height: var(--lh-12); color: var(--text-tertiary); }
+.cf-foot .link { font-size: var(--fs-13); }
+@media (max-width: 720px) {
+  .cf-item { min-height: 40px; }
+  .cf-pop { width: calc(100vw - 32px); }
+}
+
+/* The column filter on (TreePane): the tree column's header says so, with a one-click clear. */
+.tt-filtered {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-full);
+  background: var(--accent-subtle);
+  color: var(--accent-text);
+  font-size: var(--fs-12);
+  line-height: var(--lh-12);
+  font-weight: 500;
+}
+.tt-filtered-nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tt-filtered button {
+  flex: none;
+  padding: 0 var(--space-1);
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.tt-filterline { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; padding: var(--space-1) 0; }
+
+/* A row picked with the others (multi-select): its box before the icon. */
+.tt-pick { flex: none; margin: 0 var(--space-1) 0 0; width: 14px; height: 14px; cursor: pointer; }
+@media (max-width: 720px) { .tt-pick { width: 20px; height: 20px; } }
+.tt-h-lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; }

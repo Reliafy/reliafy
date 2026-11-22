@@ -2,6 +2,7 @@
 // and service level (saved with the fleet, in its periods) give how many to hold,
 // when to reorder and the chance the stock in hand runs out, read off the
 // forecast's own distribution.
+import { Link } from "react-router-dom";
 import { formatNumber } from "../format.js";
 import { money } from "../maintenanceForecast.js";
 import { costLabel, prefixCurrency, workspaceCurrency } from "../money.js";
@@ -9,6 +10,7 @@ import { CardHeader } from "./ui/Card.jsx";
 import ResultSummary from "./ui/ResultSummary.jsx";
 import SparesWhatIf from "./SparesWhatIf.jsx";
 import { SERVICE_LEVELS, fleetSparesCsv, holdText, leadTimeHint, levelText, overText, riskText, risingText, saveText, useText, yearText } from "../sparesPlan.js";
+import { Checkbox } from "./ui/Controls.jsx";
 
 const blank = (v) => v === null || v === undefined || v === "";
 const fileName = (name) => `${String(name).replace(/[^\w\- ]+/g, "").trim() || "fleet"} — spares plan.csv`;
@@ -36,6 +38,11 @@ export default function FleetSparesCard({ fleet, settings, forecast, readOnly, d
     <div className="card" style={{ marginTop: "1rem" }} data-testid="fleet-spares">
       <CardHeader title="Spares: how many to hold"
                   subtitle="For the replacement part: the stock that covers the lead time at your service level, from this forecast's own distribution." />
+      <p className="hint" data-testid="fleet-spares-when-to-use" style={{ margin: "0 0 0.6rem" }}>
+        Use this for a fleet of individual items with known ages and a life model, with a lead time. For a stream of
+        replacements counted as one process, such as a fleet's replacements against fleet hours, use the Calculator's
+        stock to hold on a <Link to="/models/recurrent">repairable model</Link>.
+      </p>
       <div className="row" style={{ gap: "0.8rem", alignItems: "flex-end", flexWrap: "wrap", marginTop: 0 }}>
         {field("lead_time", `Lead time (${label})`, { placeholder: "required" })}
         <label className="login-field" style={{ width: 150 }}>
@@ -53,11 +60,9 @@ export default function FleetSparesCard({ fleet, settings, forecast, readOnly, d
       </div>
       {!readOnly && leadHint && <p className="hint" data-testid="fleet-spares-lead-hint" style={{ margin: "0.4rem 0 0" }}>Lead time: {leadHint}.</p>}
       <div className="row" style={{ gap: "0.8rem", alignItems: "flex-end", flexWrap: "wrap" }}>
-        <label style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-          <input type="checkbox" checked={!!sp.repairable} disabled={readOnly}
-                 onChange={(e) => set("repairable", e.target.checked || null)} />
-          Repairable: failed ones are repaired and come back
-        </label>
+        <Checkbox checked={!!sp.repairable} disabled={readOnly}
+                  onChange={(e) => set("repairable", e.target.checked || null)}
+                  label="Repairable: failed ones are repaired and come back" />
         {sp.repairable && field("turnaround", `Repair turnaround (${label})`)}
       </div>
       {dirty && <p className="lib-date">Save &amp; forecast to update the answer.</p>}

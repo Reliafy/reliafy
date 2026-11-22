@@ -25,7 +25,7 @@ export default function RbdEmptyState({ gap, goal, onBuild }) {
         {empty ? (
           <>
             Right-click the canvas to add a component, then drag from Input to it and from it to Output.{" "}
-            <ShowMeHow id="rbd">Show me how, on a sample</ShowMeHow>
+            <ShowMeHow id="rbd">Take the tour, on a sample</ShowMeHow>
           </>
         ) : (
           <>

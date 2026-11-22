@@ -22,6 +22,8 @@ import { ORDERS_LABEL, ORDERS_PATH } from "../navigation.js";
 import { workOrderPath } from "../maintenanceOrders.js";
 import { reportLink } from "../failureReports.js";
 import { DateInput } from "../components/ui/DateTimeInput.jsx";
+import Loading from "../components/ui/Loading.jsx";
+import { Checkbox } from "../components/ui/Controls.jsx";
 
 const STATUS_LABELS = {
   open: "open", planned: "planned", in_progress: "in progress", waiting: "waiting", closed: "closed", cancelled: "cancelled",
@@ -48,7 +50,7 @@ export default function MaintenanceWorkOrder() {
   useEffect(() => { if (wo) setValues((prev) => mergeValues(readingRows(wo), prev)); }, [wo]);
 
   if (error && !wo) return <div className="app"><LoadFailed header onRetry={() => { setError(null); refresh(); }} error={error} notFound="Work order not found." to={ORDERS_PATH} label="Back to Orders" /></div>;
-  if (!wo) return <div className="app"><div className="card empty">Loading…</div></div>;
+  if (!wo) return <div className="app"><Loading card /></div>;
 
   return (
     <div className="app">
@@ -114,15 +116,15 @@ export default function MaintenanceWorkOrder() {
           <div className="maint-head"><h2>Instructions</h2></div>
           {wo.instructions && <p style={{ whiteSpace: "pre-wrap" }}>{wo.instructions}</p>}
           {wo.checklist.map((c, i) => (
-            <label key={i} className="maint-row" style={{ marginTop: "0.25rem", gap: "0.5rem" }}>
-              <input type="checkbox" checked={c.done} disabled={["closed", "cancelled"].includes(wo.status)}
-                     onChange={async (e) => setWo(await checkWorkItem(wo.id, i, e.target.checked))} />
-              <span style={c.done ? { textDecoration: "line-through", color: "var(--text-secondary)" } : null}>
-                {c.position_id ? <Link to={`/asset-register/positions/${c.position_id}`}>{c.text}</Link> : c.text}</span>
-              {c.task_id && !c.step && progressText(wo.readings_by_task?.[c.task_id]) && (
-                <span className="lib-date maint-line-readings">{progressText(wo.readings_by_task[c.task_id])}</span>
-              )}
-            </label>
+            <Checkbox key={i} className="maint-row" checked={c.done} disabled={["closed", "cancelled"].includes(wo.status)}
+                      onChange={async (e) => setWo(await checkWorkItem(wo.id, i, e.target.checked))}
+                      label={<>
+                        <span style={c.done ? { textDecoration: "line-through", color: "var(--text-secondary)" } : null}>
+                          {c.position_id ? <Link to={`/asset-register/positions/${c.position_id}`}>{c.text}</Link> : c.text}</span>
+                        {c.task_id && !c.step && progressText(wo.readings_by_task?.[c.task_id]) && (
+                          <> <span className="lib-date maint-line-readings">{progressText(wo.readings_by_task[c.task_id])}</span></>
+                        )}
+                      </>} />
           ))}
         </section>
       )}
