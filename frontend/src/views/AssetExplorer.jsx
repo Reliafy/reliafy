@@ -21,17 +21,12 @@ import {
   NEW_MISSION, changedPhases, graftMissions, isMissionRow, isPhaseRow, missionKey, missionParam, missionRowActions, movePhase, openForMissions,
   parseMissionParam, phaseKey, positionMissionActions, rollupText as missionRollup, headRollupText as missionHeadRollup, withNewPhase, withoutPhase,
 } from "../explorerMissions.js";
-<<<<<<< HEAD
 import TaskOptimisePane from "../components/TaskOptimisePane.jsx";
-import { ForecastPane, TASK_COLUMNS, TASK_TREE_HEAD, TaskCell, TaskSide, taskPhoneRow, useTreeTasks } from "../components/TaskTreeTable.jsx";
-import { TASK_FORECAST, TASK_OPEN, TASK_OPTIMISE, forecastItem, graftTasks, isTaskRow, openForTasks, rollupText as taskRollup, taskKey, taskRowActions } from "../explorerTasks.js";
-=======
 import { ForecastPane, PackagePane, TASK_COLUMNS, TASK_TREE_HEAD, TaskCell, TaskSide, taskPhoneRow, useTreeTasks } from "../components/TaskTreeTable.jsx";
 import {
-  TASK_ADD_TO, TASK_CLEAR, TASK_FORECAST, TASK_OPEN, TASK_PACKAGE, anyFilter, commonHolder, facetValues, facetsOf, filterTasks, filterWords, forecastItem,
+  TASK_ADD_TO, TASK_CLEAR, TASK_FORECAST, TASK_OPEN, TASK_OPTIMISE, TASK_PACKAGE, anyFilter, commonHolder, facetValues, facetsOf, filterTasks, filterWords, forecastItem,
   graftTasks, isTaskRow, keepShown, openForTasks, pickTasks, rollupText as taskRollup, shownTasks, taskKey, taskRowActions,
 } from "../explorerTasks.js";
->>>>>>> origin/dev
 import CovariateBindPane from "../components/CovariateBindPane.jsx";
 import RedundancyPane from "../components/RedundancyPane.jsx";
 import StrategyPane from "../components/StrategyPane.jsx";
@@ -1852,17 +1847,16 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setTimeout(() => detailsHeading.current?.focus({ preventScroll: true }), 0);
   };
   const openForecast = (r) => leavePane().then((ok) => ok && openPane("forecast", { id: r.key, name: r.ref.name || "(no name)" }));
-<<<<<<< HEAD
   // Optimise… on a task (its row's ⋯, or its panel): how often to do it, in the table area beside the
   // tree (?optimise=<task id>&on=<its position>).
   const openOptimise = (taskId, positionId) => leavePane().then((ok) => {
     const at = whole.rows.get(positionId);
     if (!ok || !at) return;
+    setPkgPane(null);
     openPane("optimise", { id: positionId, name: at.ref?.name || "(no name)" }, {
       rbd: taskId, query: (q) => { for (const k of ["mtask", "addtask", "rates"]) q.delete(k); },
     });
   });
-=======
   // The tasks a task row's menu acts on: the ones picked together when it's one of them, else itself.
   const tasksFor = (r) => (tpicked.has(r.key) && tpicked.size > 1 ? [...tpicked] : [r.key])
     .map((k) => display.rows.get(k)).filter(isTaskRow);
@@ -1894,7 +1888,6 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       for (const k of ["mtask", "addtask", "rates", "below", "forecast", "task", "packaging", ...PANE_PARAMS]) q.delete(k);
     });
   };
->>>>>>> origin/dev
   const rowMenu = {
     // The moves a drag does: on a phone, or from the keyboard (no dragging there).
     actions: (r, { keyboard = false } = {}) => {
@@ -1966,13 +1959,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       if (id === "maint-add-task") return addTaskAt(r);
       if (id === TASK_OPEN) return openTaskRow(r);
       if (id === TASK_FORECAST) return openForecast(r);
-<<<<<<< HEAD
       if (id === TASK_OPTIMISE) return openOptimise(r.ref.task.id, r.ref.position_id);
-=======
       if (id === TASK_PACKAGE) return openPackaging("new", r);
       if (id === TASK_ADD_TO) return openPackaging("add", r);
       if (id === TASK_CLEAR) return setTpicked(new Set());
->>>>>>> origin/dev
       if (id === "pos-here") {
         setNewParent(TOP);
         setNewAt(r.key);

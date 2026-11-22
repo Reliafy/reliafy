@@ -25,11 +25,8 @@ import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
 import { changedText, deleteOrRemoveConfirm, renamePrompt } from "../confirm.js";
 import { PageTitle } from "../components/usePageTitle.js";
 import LoadFailed from "../components/LoadFailed.jsx";
-<<<<<<< HEAD
 import ModelSetsInterval from "../components/ModelSetsInterval.jsx";
-=======
 import Loading from "../components/ui/Loading.jsx";
->>>>>>> origin/dev
 
 const CRUMBS = [{ label: "Models", to: "/models" }, { label: "Non-repairable", to: "/models/life" }];
 

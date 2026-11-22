@@ -9,7 +9,7 @@ import Select from "./Select.jsx";
 import ResultSummary from "./ui/ResultSummary.jsx";
 import ReplacementResult from "./ReplacementResult.jsx";
 import LoadFailed from "./LoadFailed.jsx";
-import PlaceholderRows from "./PlaceholderRows.jsx";
+import Loading from "./ui/Loading.jsx";
 import { listDegradationModels, listModels, optimiseTask, useTaskOptimise } from "../api.js";
 import { saveErrorText } from "../confirm.js";
 import { explorerHere } from "../products.js";
@@ -49,7 +49,7 @@ export default function TaskOptimisePane({ task, position, phone = false, headin
           {t?.interval != null && <> Now every <b>{every(t.interval, t.unit)}</b>.</>}
         </p>
         {state.error && <LoadFailed what="Couldn't work out this task's interval." error={state.error} onRetry={() => setAttempt((n) => n + 1)} />}
-        {!state.data && !state.error && <PlaceholderRows shape="fields" rows={4} label="Working it out…" />}
+        {!state.data && !state.error && <Loading shape="fields" rows={4} label="Working out the interval…" />}
         {state.data && !modes.length && (
           <p className="to-none">This task prevents no failure mode yet, so there&apos;s no failure model to work its interval
             out from. Link the failure modes it prevents on its panel, or decide them on the RCM tab.</p>
@@ -159,7 +159,7 @@ function ModeOptimise({ task, start, many, position, onUsed }) {
           )}
           <Field label={m?.usable ? "Use another model" : "Link a model"} optional={!!m?.usable}>
             <Select value={m?.id ? `${m.type}:${m.id}` : ""} onChange={pick} options={options} searchable
-                    placeholder={library ? "Choose a model…" : "Reading your models…"} ariaLabel={`Model for ${row.text}`}
+                    placeholder={library ? "Choose a model…" : "Loading your models…"} ariaLabel={`Model for ${row.text}`}
                     disabled={!!busy} />
           </Field>
         </div>
