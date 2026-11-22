@@ -77,7 +77,7 @@ export function RoughDateField({ label, value, onChange, max }) {
       : <DateInput value={text} max={max} onChange={(e) => onChange({ text: e.target.value, precision })} />;
   return (
     <Field label={label}>
-      <div className="maint-row" style={{ marginTop: 0 }}>
+      <div className="maint-row mt-0">
         <FormSelect value={precision} aria-label={`${label}: how well it's known`} onChange={(e) => setPrecision(e.target.value)}>
           {PRECISIONS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
         </FormSelect>
@@ -183,7 +183,7 @@ export function DocumentsCard({ title = "Documents", documents, target, onChange
       <div className="maint-head">
         <h2>{title}</h2>
         {!adding && (
-          <div className="maint-row" style={{ marginTop: 0 }}>
+          <div className="maint-row mt-0">
             <button className="secondary" onClick={() => setAdding("link")}>Add a link</button>
             <button onClick={() => setAdding("pdf")}>Add a PDF</button>
           </div>
@@ -428,7 +428,7 @@ export function Proposals({ proposals, onDecided, showPosition = true }) {
               : <strong>stop scheduling it (run to failure)</strong>}
           </p>
           <p className="lib-date">{p.reason}</p>
-          <div className="maint-row" style={{ marginTop: 0 }}>
+          <div className="maint-row mt-0">
             <button disabled={busy === p.id} onClick={() => decide(p, true)}>Accept</button>
             <button className="secondary" disabled={busy === p.id} onClick={() => decide(p, false)}>Reject</button>
           </div>
@@ -508,7 +508,7 @@ export function FailureModePicker({ modes = [], aboveModes = [], classModes = []
         <option value="new">Something else (describe it)…</option>
       </FormSelect>
       {v.choice === "new" && (
-        <input autoFocus value={v.typed || ""} placeholder="e.g. Seal leaking" style={{ marginTop: "0.4rem" }}
+        <input autoFocus value={v.typed || ""} placeholder="e.g. Seal leaking" className="mt-1-5"
                onChange={(e) => onChange({ ...v, typed: e.target.value })} />
       )}
     </>

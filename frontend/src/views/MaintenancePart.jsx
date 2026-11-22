@@ -82,7 +82,7 @@ export default function MaintenancePart() {
       <section className="card">
         <div className="maint-head">
           <h2>Structure</h2>
-          <div className="maint-row" style={{ marginTop: 0 }}>
+          <div className="maint-row mt-0">
             {lines.length > 0 && <button className="secondary" onClick={() => setModal("positions")}>Create positions from it</button>}
             <button className="secondary" onClick={() => setModal({ line: null })}>Add a part</button>
           </div>

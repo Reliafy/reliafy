@@ -164,7 +164,7 @@ function WarningCard({ result }) {
   if (!warnings.length) return null;
   return (
     <div className="life-reading caveat">
-      {warnings.map((w) => <p key={w} style={{ margin: 0 }}>{w}</p>)}
+      {warnings.map((w) => <p key={w} className="m-0">{w}</p>)}
     </div>
   );
 }

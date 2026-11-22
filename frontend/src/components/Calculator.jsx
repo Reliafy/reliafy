@@ -999,7 +999,7 @@ export default function Calculator({ functions, unit, params, state, setState, n
           className="modal-sm calc-axis-modal"
           onClose={() => setAxisOpen(false)}
           footer={
-            <div className="row" style={{ margin: 0, marginLeft: "auto" }}>
+            <div className="row m-0 ml-auto">
               {manualX && (
                 <button type="button" className="secondary" onClick={() => { setXMin(""); setXMax(""); }}>
                   Reset to auto
@@ -1036,12 +1036,12 @@ export default function Calculator({ functions, unit, params, state, setState, n
           title="Covariate combinations"
           onClose={() => setCovModal(false)}
           footer={
-            <div className="row" style={{ margin: 0, marginLeft: "auto" }}>
+            <div className="row m-0 ml-auto">
               <button onClick={() => setCovModal(false)}>Done</button>
             </div>
           }
         >
-          <p className="hint" style={{ marginTop: 0 }}>
+          <p className="hint mt-0">
             Each combination is evaluated by the model and overlaid on the chart.
             Changes apply live.
           </p>

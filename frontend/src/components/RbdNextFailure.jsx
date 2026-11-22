@@ -29,7 +29,7 @@ export default function RbdNextFailure({ result, unit }) {
         Next system failure from now
       </div>
       {nf.down_now > 0 && (
-        <p className="muted-line" style={{ margin: 0 }}>
+        <p className="muted-line m-0">
           The system is down now{nf.down_now < 1 ? ` in ${fmtPct(nf.down_now)} of the histories` : ""}: its next
           failure is counted from now, after it is restored.
         </p>

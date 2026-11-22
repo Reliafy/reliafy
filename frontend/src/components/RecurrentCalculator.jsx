@@ -312,7 +312,7 @@ function FromNow({ modelId, unit, renewal }) {
       <div className="calc-eval-body">
         <label className="calc-t">
           <span>The next{ut ? ` (${ut})` : ""}, from where each system is now</span>
-          <span className="row" style={{ gap: 8, margin: 0 }}>
+          <span className="row gap-2 m-0">
             <input type="number" inputMode="decimal" min={0} step="any" placeholder="e.g. 8000" value={h}
                    onChange={(e) => setH(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") run(); }} />
             <button type="button" className="btn" onClick={() => run()} disabled={busy || !(Number(h) > 0)}>

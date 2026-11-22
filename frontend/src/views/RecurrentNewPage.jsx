@@ -358,7 +358,7 @@ export default function RecurrentNewPage() {
     nav = (
       <>
         <button className="secondary" onClick={goBack} disabled={loading}>Cancel</button>
-        <span className="hint" style={{ margin: 0 }}>Pick a saved dataset, or upload a CSV or Excel file, to continue</span>
+        <span className="hint m-0">Pick a saved dataset, or upload a CSV or Excel file, to continue</span>
       </>
     );
   } else if (step === 2) {
@@ -366,9 +366,9 @@ export default function RecurrentNewPage() {
       <>
         <button className="secondary" onClick={goBack} disabled={loading}>Back</button>
         <button onClick={onFit} disabled={loading || !!fitBlock}>{loading ? "Fitting…" : `Fit ${modelEntry?.short || modelName}`}</button>
-        {fitBlock && !loading && <span className="hint ds-next-why" role="status" style={{ margin: 0 }}>{fitBlock}</span>}
+        {fitBlock && !loading && <span className="hint ds-next-why m-0" role="status">{fitBlock}</span>}
         {loading && model !== "crow_amsaa" && (
-          <span className="hint" role="status" style={{ margin: 0 }}>
+          <span className="hint m-0" role="status">
             The fit check refits this model up to 200 times: allow 10–30 seconds.
           </span>
         )}
@@ -491,7 +491,7 @@ export default function RecurrentNewPage() {
             {!rd.editing && <ErrorNotice error={rd.error} />}
             {missing ? (
               <div className="xcn-below" role="status">
-                <p className="xcn-issue" style={{ margin: 0 }}>{missing}</p>
+                <p className="xcn-issue m-0">{missing}</p>
                 {!rd.editing && (
                   <button type="button" className="secondary" style={{ alignSelf: "flex-start" }}
                           onClick={() => rd.setDraft(reading)}>Change the reading</button>
@@ -530,7 +530,7 @@ export default function RecurrentNewPage() {
                                 options={[{ value: "all", label: "Every system" }, { value: "some", label: "Only some" }]}
                                 style={{ alignSelf: "flex-start", maxWidth: "100%" }} />
               {someOnly && (
-                allSystems == null ? <p className="muted-line" style={{ margin: 0 }}>Reading the systems…</p> : (
+                allSystems == null ? <p className="muted-line m-0">Reading the systems…</p> : (
                   <span className="chip-row" role="group" aria-label="Systems to fit">
                     {allSystems.map((sid) => (
                       <Chip key={sid} tone={systems.includes(sid) ? "accent" : "neutral"}
@@ -543,7 +543,7 @@ export default function RecurrentNewPage() {
                 )
               )}
               {someOnly && allSystems != null && (
-                <p className="muted-line" style={{ margin: 0 }}>
+                <p className="muted-line m-0">
                   {systems.length ? `${systems.length} of ${allSystems.length} systems chosen.` : "None chosen yet."}
                 </p>
               )}
@@ -551,7 +551,7 @@ export default function RecurrentNewPage() {
             <p className="muted-line">Choose how repairs work, then the model to fit to the fleet's event history.</p>
             <SegmentedControl options={FAMILIES} value={family} onChange={pickFamily} label="Kind of model"
                               style={{ alignSelf: "flex-start", maxWidth: "100%" }} />
-            <p className="muted-line" style={{ margin: 0 }}>{FAMILY_DESC[family]}</p>
+            <p className="muted-line m-0">{FAMILY_DESC[family]}</p>
             <div className="dist-field" style={{ width: 320, maxWidth: "100%" }}>
               <span className="dist-label">Model</span>
               <Select value={model} onChange={(v) => { setModel(v); setOptions({}); }}
@@ -559,13 +559,13 @@ export default function RecurrentNewPage() {
                         .map((m) => ({ value: m.id, label: m.name }))} />
             </div>
             {(MODEL_DESC[model] || modelEntry?.desc) && (
-              <p className="muted-line" style={{ margin: 0 }}>
+              <p className="muted-line m-0">
                 {MODEL_DESC[model] || modelEntry.desc}
                 {MODEL_DESC[model] && <RefLink entryId={model} label="What is this growth model?" />}
               </p>
             )}
             {(model === "ara" || model === "ari") && (
-              <p className="muted-line" style={{ margin: 0 }}>
+              <p className="muted-line m-0">
                 Each repair acts on{" "}
                 <b>{(MEMORY.find((m) => m.value === String(options.m ?? (model === "ara" ? "2" : "1")))?.label || "").toLowerCase()}</b>
                 {options.m == null ? " (the default)" : ""}: change it under Advanced.
@@ -593,7 +593,7 @@ export default function RecurrentNewPage() {
               </ResultDetails>
             )}
             <ResultDetails summary="Downtime and cost (optional)" open={!!(costs.downtime || costs.cost)}>
-              <p className="muted-line" style={{ margin: 0 }}>
+              <p className="muted-line m-0">
                 Columns with each failure's hours stopped and its cost: the Data tab then totals them for each system.
               </p>
               <div className="row" style={{ gap: 12, flexWrap: "wrap", margin: 0 }}>
@@ -616,7 +616,7 @@ export default function RecurrentNewPage() {
                              onChange={(m) => setGaps({ ws: m.ws || "", we: m.we || "" })}
                              windows={windows} onWindowsChange={setWindows} />
             </ResultDetails>
-            {modelBlock && <p className="hint" style={{ margin: 0 }}>{modelBlock}</p>}
+            {modelBlock && <p className="hint m-0">{modelBlock}</p>}
               </>
             )}
           </div>
@@ -629,7 +629,7 @@ export default function RecurrentNewPage() {
               <input type="text" autoFocus value={name} placeholder="e.g. Delivery trucks — engines"
                      onChange={(e) => setName(e.target.value)} />
             </label>
-            <p className="muted-line" style={{ margin: 0 }}>
+            <p className="muted-line m-0">
               Review the fit below. Go <b>Back</b> to change the model or how the columns are read and fit again, or save it.
             </p>
             {/* The model page's frame, inside the wizard: the answer line over the tabs. */}
@@ -642,7 +642,7 @@ export default function RecurrentNewPage() {
         <ErrorNotice error={error} />
 
         <div className="fit-flow-foot">
-          <div className="row" style={{ margin: 0 }}>{nav}</div>
+          <div className="row m-0">{nav}</div>
         </div>
       </div>
       )}

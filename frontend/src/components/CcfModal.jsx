@@ -38,7 +38,7 @@ export default function CcfModal({ initial, memberLabels, repairable, onClose, o
   const footer = (
     <>
       <span className="hint">Typical β is 1–20%.</span>
-      <div className="row" style={{ margin: 0 }}>
+      <div className="row m-0">
         <button className="secondary" onClick={onClose}>Cancel</button>
         <button onClick={() => valid && onSubmit({ beta: b, basis, mgl: useMgl ? mglNums : null })} disabled={!valid}>
           {initial?.groupId ? "Update group" : "Create group"}
@@ -49,7 +49,7 @@ export default function CcfModal({ initial, memberLabels, repairable, onClose, o
 
   return (
     <Modal title="Common-cause group" onClose={onClose} footer={footer}>
-      <p className="muted-line" style={{ marginTop: 0 }}>
+      <p className="muted-line mt-0">
         These redundant components share a failure cause:{" "}
         <strong>{memberLabels.join(", ")}</strong>. Give the <em>β-factor</em> —
         the fraction of each one's failures that are common-cause.

@@ -7,7 +7,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-2);
 }
 /* The gap is PAIR_GAP in chartPair.js. */
 .chart-pair-cells {
@@ -17,7 +17,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-auto-rows: minmax(0, 1fr);
-  gap: 14px;
+  gap: var(--space-3);
 }
 .chart-pair-side > .chart-pair-cells { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 /* One under the other in a tab that fits the screen: each keeps a readable
@@ -30,7 +30,7 @@
 .chart-pair-cell { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .chart-pair-cell > * { flex: 1 1 auto; min-height: 0; }
 .chart-pair-pick { flex: none; align-self: flex-start; flex-wrap: wrap; max-width: 100%; }
-.chart-pair-pick .seg-btn { display: inline-flex; align-items: center; gap: 6px; }
+.chart-pair-pick .seg-btn { display: inline-flex; align-items: center; gap: var(--space-1-5); }
 /* In the Diagnostics grid of checks the pair takes the whole row. */
 .mf-checks > .chart-pair { grid-column: 1 / -1; }
 

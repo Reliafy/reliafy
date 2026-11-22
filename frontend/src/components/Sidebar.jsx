@@ -459,7 +459,7 @@ export default function Sidebar({ collapsed, onToggle, phone = false, open = fal
             </div>
           }
         >
-          <p className="muted-line" style={{ margin: 0 }}>
+          <p className="muted-line m-0">
             You'll be signed out and returned to the login page. Your saved
             models, RBDs, and datasets stay safe in your account.
           </p>

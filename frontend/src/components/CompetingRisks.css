@@ -1,16 +1,16 @@
 /* Competing risks (#177): the failure-mode panel beside the chart, the
    calculator's table, and the tables in Diagnostics and Data. */
-.cr-name { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
-.cr-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.cr-name { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.cr-dot { width: 8px; height: 8px; border-radius: var(--radius-full); flex: 0 0 auto; }
 .detail-panel .gofr .cr-note { font-size: var(--fs-12); line-height: var(--lh-12); }
 
 /* Failure modes: each mode's row, its name and counts under it, its share. */
 .detail-panel .gofr.cr-mode-row { align-items: center; }
-.detail-panel .cr-mode-row .gk { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.cr-mode-sub { padding-left: 16px; font-size: var(--fs-12); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.detail-panel .cr-mode-row .gk { display: flex; flex-direction: column; gap: var(--space-0-5); min-width: 0; }
+.cr-mode-sub { padding-left: var(--space-4); font-size: var(--fs-12); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .detail-panel .cr-mode-row .gv { font-size: var(--fs-16); }
-.detail-panel .mf-note.cr-share-note { padding-top: 6px; padding-bottom: 8px; font-size: var(--fs-12); }
-.detail-panel .aside.mf-side.cr-side { width: 288px; display: flex; flex-direction: column; gap: 12px; }
+.detail-panel .mf-note.cr-share-note { padding-top: var(--space-1-5); padding-bottom: var(--space-2); font-size: var(--fs-12); }
+.detail-panel .aside.mf-side.cr-side { width: 288px; display: flex; flex-direction: column; gap: var(--space-3); }
 .detail-panel .aside.mf-side.cr-side > * { flex: none; }
 .detail-panel .aside.mf-side.cr-side > .mf-scroll-card { flex: 0 1 auto; }
 .detail-panel .aside.mf-side.cr-side-wide { width: 340px; }
@@ -18,7 +18,7 @@
 .mf-note.cr-warn { color: var(--danger); }
 
 /* The calculator: the table of modes above the chart scrolls inside itself. */
-.cr-calc .cr-calc-table { flex: 0 1 auto; min-height: 0; max-height: 34%; overflow: auto; margin-bottom: 8px; }
+.cr-calc .cr-calc-table { flex: 0 1 auto; min-height: 0; max-height: 34%; overflow: auto; margin-bottom: var(--space-2); }
 .cr-calc .cr-calc-table .calc-table { width: 100%; margin: 0; }
 
 .cr-table th:not(:first-child), .cr-table td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
@@ -28,11 +28,11 @@
 .cr-table-wrap { overflow-x: auto; }
 .cr-table-wrap .mini-table { width: 100%; }
 .gof-card .cr-table-wrap .mini-table th:first-child,
-.gof-card .cr-table-wrap .mini-table td:first-child { padding-left: 16px; }
+.gof-card .cr-table-wrap .mini-table td:first-child { padding-left: var(--space-4); }
 .gof-card .cr-table-wrap .mini-table th:last-child,
-.gof-card .cr-table-wrap .mini-table td:last-child { padding-right: 16px; }
+.gof-card .cr-table-wrap .mini-table td:last-child { padding-right: var(--space-4); }
 
-.dist-picker .cr-group-field { margin-top: 12px; }
+.dist-picker .cr-group-field { margin-top: var(--space-3); }
 
 @media (max-width: 720px) {
   .detail-panel .aside.mf-side.cr-side,
@@ -40,7 +40,7 @@
   .cr-calc .cr-calc-table { max-height: none; }
 }
 
-.detail-panel .gofr.cr-mode-head { padding-top: 8px; padding-bottom: 6px; }
+.detail-panel .gofr.cr-mode-head { padding-top: var(--space-2); padding-bottom: var(--space-1-5); }
 .detail-panel .gofr.cr-mode-head .gk { font-size: var(--fs-12); color: var(--text-secondary); }
 .cr-calc .calc-table th:first-child, .cr-calc .calc-table td.cr-left { text-align: left; }
 .cr-calc .calc-table tr.cr-any-row td { color: var(--text-secondary); }

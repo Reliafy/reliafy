@@ -451,8 +451,8 @@ export function LibraryRecord() {
       <div className="app">
         <PageHeader crumbs={crumbsFor(source || { id: sourceId })} title="Record not found" />
         <div className="card" role="alert">
-          <p style={{ marginTop: 0 }}>We couldn't find this record. It may have been removed, or the link may be mistyped.</p>
-          <p style={{ marginBottom: 0 }}>
+          <p className="mt-0">We couldn't find this record. It may have been removed, or the link may be mistyped.</p>
+          <p className="mb-0">
             {source && <><Link to={sourcePath(source.id)}>See {source.short_name || source.name}</Link> · </>}
             <Link to={LIBRARY_PATH}>The library</Link> · <Link to="/models">All models</Link>
           </p>

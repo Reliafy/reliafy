@@ -186,7 +186,7 @@ function OpenTab({ rows, today, locations, locationId, onLocation, navigate }) {
         </span>
         <span className="grow" />
         {locations?.length > 0 && (
-          <label className="maint-row lib-date" style={{ marginTop: 0, gap: "0.5rem" }}>
+          <label className="maint-row lib-date mt-0 gap-2">
             In
             <LocationPicker locations={locations} value={locationId} emptyLabel="Every location" onChange={onLocation} />
           </label>
@@ -360,7 +360,7 @@ function DueTab({ rows, horizon, onHorizon, locations, locationId, onLocation, o
         </span>
         <span className="grow" />
         {locations?.length > 0 && (
-          <label className="maint-row lib-date" style={{ marginTop: 0, gap: "0.5rem" }}>
+          <label className="maint-row lib-date mt-0 gap-2">
             In
             <LocationPicker locations={locations} value={locationId} emptyLabel="Every location" onChange={onLocation} />
           </label>

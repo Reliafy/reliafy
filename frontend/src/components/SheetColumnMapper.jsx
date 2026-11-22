@@ -99,7 +99,7 @@ export default function SheetColumnMapper({
       {mapped.length > 0 && rows.length > 0 && (
         <div>
           <div className="ds-section-h">Mapped preview · first {Math.min(previewRows, rows.length)} rows</div>
-          <div className="preview-wrap" style={{ marginBottom: 0 }}>
+          <div className="preview-wrap mb-0">
             <table className="preview-table">
               <thead>
                 <tr>{mapped.map((f) => <th key={f.id}>{f.label}</th>)}</tr>
