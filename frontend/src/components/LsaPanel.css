@@ -39,9 +39,10 @@
 .pk-cols { position: absolute; right: 0; top: 0; z-index: 20; }
 .pk-grid { max-height: calc(100vh - 260px); min-height: 120px; }
 .pk-table { position: relative; }
-.pk-trow { position: relative; min-height: 30px; }
+/* .rw-row.pk-trow: RcmWorksheet.css's .rw-row is absolute (the RCM table places its rows); these flow, whichever stylesheet loads last. */
+.rw-row.pk-trow { position: relative; min-height: 30px; }
+.rw-h.pk-tick, .rw-c.pk-tick { justify-content: center; padding: 0; }
 .pk-trow .rw-c { padding-top: 4px; padding-bottom: 4px; }
-.pk-tick { justify-content: center; padding: 0; }
 .rw-h.pk-tick { position: sticky; left: 0; z-index: 2; background: var(--bg-subtle); }
 .rw-c.pk-tick { position: sticky; left: 0; z-index: 1; background: inherit; }
 .pk-trow .rw-c.pk-tick { background: var(--bg-surface); }

@@ -291,11 +291,14 @@ test("a position's Condition monitoring: its risk in words and two charts, or wh
     await expect(risk).toContainText("no condition and life model is linked to this position");
   }
   await shot(page, "position-condition-by-locations-1440");
-  // The asset's top position has the tab as well (nothing fitted there: said in words); Summary is still a click away.
+  // The asset's top position has the tab as well: with positions below it, every one there and below
+  // with condition monitoring (the Explorer aggregates downwards), the scored pump among them.
   await sw.getByRole("radio", { name: "Positions" }).click();
   await row(page, `Boiler house ${tag}`).click();
   await expect(tabOn).toHaveAttribute("aria-selected", "true");
-  await expect(risk).toContainText("No item is fitted here");
+  await expect(page.locator(".cf-answer")).toContainText(/\d+ positions? with condition monitoring here and below/);
+  await expect(page.getByRole("region", { name: "Risk now" })).toContainText(`Feed pump A ${tag}`);
+  await expect(page.getByRole("region", { name: "Risk now" })).not.toContainText(/NaN|Infinity|undefined/);
   await rowC.click();
   await expect(risk).toContainText(`Fitted here: Feed pump C unit ${tag}`);
 

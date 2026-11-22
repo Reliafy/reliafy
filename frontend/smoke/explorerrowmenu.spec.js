@@ -88,6 +88,8 @@ test("Summary row menu: new inside, rename, move to…, delete, pin; the server'
   await expect(dialog).toHaveCount(0);
   await expect(row(page, `Menu heater ${tag}`)).toHaveAttribute("aria-selected", "true");
   await expect(row(page, `Menu heater ${tag}`)).toHaveAttribute("aria-level", "3");
+  const heaterId = (await row(page, `Menu heater ${tag}`).getAttribute("id")).replace(/^tp-/, "");
+  expect(heaterId).toMatch(/^[0-9a-f]{32}$/);
 
   // Rename… (Shift+F10 from the row): the dialog, the row renamed and still picked.
   await row(page, `Menu skimmer ${tag}`).click();
@@ -173,7 +175,11 @@ test("Summary row menu: new inside, rename, move to…, delete, pin; the server'
   await expect(rowMenu(page, `Menu heating ${tag}`).getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Focus", "Focus on incomplete rows", "Show whole tree", "Delete…"]);
   await page.keyboard.press("Escape");
   // The refusals above were made up here (a 422 each): the browser logs them.
-  problems.splice(0, problems.length, ...problems.filter((x) => !/status of 422/.test(x)));
+  // The menu on the heater picks it, so its Summary asks for its counts below (Here and below); the
+  // delete clicked a moment later can reach the server first, and that read then answers 404 for a
+  // position that's gone. Only a test clicks that fast; the row it was inside is picked straight after.
+  const gone = new RegExp(`status of 404 .*/rollup/${heaterId}\\?`);
+  problems.splice(0, problems.length, ...problems.filter((x) => !/status of 422/.test(x) && !gone.test(x)));
   await expectHealthy(page, problems, { label: "summary row menu", root: ".tx" });
 });
 
