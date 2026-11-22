@@ -15164,8 +15164,11 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             allowed = set(self.positions_inside(asset["id"], read)) | {asset["id"]}
             if asset["label"] == "Location":
                 allowed.update(self._location_ids_in(asset["id"]))
-            # A place picked while one asset is open: only that asset's positions there.
-            if node["label"] == "Position" and node["id"] not in allowed:
+            # A place picked while one asset is open: only that asset's positions there. A position
+            # outside it is refused, unless the tree shows it as a row above the asset's own (a place
+            # opened by Positions shows the positions its positions sit in): then what's inside the
+            # asset below it.
+            if node["label"] == "Position" and node["id"] not in allowed and not ids & allowed:
                 raise Invalid(f"{node.get('name') or node_id} isn't inside the asset opened.")
             ids &= allowed
         return ids
