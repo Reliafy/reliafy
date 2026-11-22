@@ -9,6 +9,7 @@ import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { PlotCard } from "./model/ModelLayouts.jsx";
 import { enteredUnit, fromKelvin, inputStressName, kelvinWords, toKelvin, useForModel, useRangeWarning } from "../altFrame.js";
 import ProTag from "./ProTag.jsx";
+import ExtrapolationNote from "./ui/ExtrapolationNote.jsx";
 import { formatReadable } from "../format.js";
 
 const fmt = (v) =>
@@ -210,7 +211,8 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
   const bl = bounds?.b_lives || {};
   const mb = bounds?.mission;
   const u = unit ? ` ${unitInText(unit)}` : "";
-  const lower = (b) => (b && b.lower != null ? <small className="alt-lower">≥ {fmt(b.lower)} at {levelText}</small> : null);
+  // B-life and mission bounds are one-sided lower bounds; the life's range is two-sided.
+  const lower = (b) => (b && b.lower != null ? <small className="alt-lower">≥ {fmt(b.lower)} ({levelText} one-sided)</small> : null);
   // The answer on screen is for another use stress than the one entered now.
   const stale = res && JSON.stringify(useForModel(results, use)) !== JSON.stringify(res.use_stress);
   const inKelvin = kelvinWords(results, use);
@@ -228,7 +230,7 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
             <div className="alt-metrics" role="status" aria-live="polite">
               <div className="alt-metric">
                 <span className="k">Characteristic life</span><span className="v">{fmt(m.characteristic_life)}{u}</span>
-                {lifeCi && <small className="alt-lower">{levelText} {fmt(lifeCi[0])}–{fmt(lifeCi[1])}</small>}
+                {lifeCi && <small className="alt-lower">{fmt(lifeCi[0])}–{fmt(lifeCi[1])} ({levelText} two-sided)</small>}
               </div>
               <div className="alt-metric"><span className="k">Mean life</span><span className="v">{fmt(m.mean_life)}{u}</span></div>
               <div className="alt-metric"><span className="k">B10 life</span><span className="v">{fmt(m.b10)}{u}</span>{lower(bl.b10)}</div>
@@ -238,7 +240,7 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
                 <div className="alt-metric">
                   <span className="k">R({fmt(m.mission_time)}{u})</span>
                   <span className="v">{pct(m.mission_reliability)}</span>
-                  {mb && mb.lower != null && <small className="alt-lower">≥ {pct(mb.lower)} at {levelText}</small>}
+                  {mb && mb.lower != null && <small className="alt-lower">≥ {pct(mb.lower)} ({levelText} one-sided)</small>}
                 </div>
               )}
               {af && (
@@ -249,7 +251,7 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
               )}
             </div>
             {stale && <p className="hint alt-calc-note">You changed the use stress: press Compute to update.</p>}
-            {farWarning && <div className="calc-warn" role="note">{farWarning}</div>}
+            <ExtrapolationNote words={farWarning} />
             {res.no_finite_maximum && <div className="calc-warn">{res.no_finite_maximum.message || "This fit has no finite maximum: the extrapolation means nothing."}</div>}
             {boundsBusy && (
               <p className="hint alt-calc-note" role="status" aria-live="polite">
@@ -292,8 +294,9 @@ export default function AltCalculator({ modelId, results, use, onUse, state, set
           </>
         ) : (
           <div className="alt-calc-empty">
-            <p>Enter your use stress on the right and press <b>Compute at use level</b>: the life, the B-lives and
-              the reliability there, with their bounds.</p>
+            <p>Enter your use stress on the right and press{" "}
+              <button type="button" className="link" onClick={run} disabled={busy}>Compute at use level</button>:
+              the life, the B-lives and the reliability there, with their bounds.</p>
           </div>
         )}
       </div>

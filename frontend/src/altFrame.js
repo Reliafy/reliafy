@@ -10,6 +10,7 @@ import { formatNumber } from "./format.js";
 import { unitInText } from "./components/unitText.js";
 import { stressName, withUnit as nameWithUnit } from "./components/stressName.js";
 import { ciPct } from "./levels.js";
+import { stressExtrapolation } from "./extrapolation.js";
 
 export const ALT_TAB_LABELS = {
   life: "Life-stress",
@@ -68,12 +69,30 @@ export function shapeParam(results) {
 
 const withUnit = (v, unit) => `${formatNumber(v)}${unit ? ` ${unitInText(unit)}` : ""}`;
 
-// "β 0.78 (90% 0.63–0.96)".
+// Boltzmann's constant in eV per kelvin.
+export const BOLTZMANN_EV = 8.617333262e-5;
+// The thermal models whose coefficient ``a`` is the activation energy over
+// Boltzmann's constant (life ∝ exp(a / T), T in kelvin).
+const EA_MODELS = new Set(["arrhenius", "power_exponential"]);
+
+// The activation energy Ea = a·k of a thermal fit, in eV, with its interval
+// where the fit has one: { value, ci } or null for any other life model.
+export function activationEnergy(results) {
+  if (!EA_MODELS.has(results?.life_model_id)) return null;
+  const a = (results.coefficients || []).find((c) => c.name === "a");
+  const v = Number(a?.value);
+  if (!Number.isFinite(v)) return null;
+  const ci = Array.isArray(a.ci) && a.ci.length === 2 && a.ci.every((x) => Number.isFinite(Number(x)))
+    ? a.ci.map((x) => Number(x) * BOLTZMANN_EV) : null;
+  return { value: v * BOLTZMANN_EV, ci };
+}
+
+// "β 0.78 (90% two-sided 0.63–0.96)".
 export function shapeWords(results) {
   const s = shapeParam(results);
   if (!s || !Number.isFinite(Number(s.value))) return null;
   const ci = Array.isArray(s.ci) && s.ci.every((v) => Number.isFinite(Number(v)))
-    ? ` (${ciPct(results, 0.9)} ${formatNumber(s.ci[0])}–${formatNumber(s.ci[1])})` : "";
+    ? ` (${ciPct(results, 0.9)} two-sided ${formatNumber(s.ci[0])}–${formatNumber(s.ci[1])})` : "";
   return `${s.symbol} ${formatNumber(s.value)}${ci}`;
 }
 
@@ -289,12 +308,13 @@ export function distanceWords(r) {
   return `${formatNumber(r.distance, { sig: 2 })}× the range`;
 }
 
-// A plain warning beside the Calculator's answer when the use stress is far
-// outside the tested stresses (more than one tested range's width beyond
-// them, or outside a single tested level): "20 kV is well below the tested
-// 30–36 kV …". ``useModel``: the use stress in the model's units (kelvin for
-// a temperature); ``af``: the acceleration factor against the reference.
-// null when the use stress is close.
+// A plain warning when the use stress is outside the tested stresses (any
+// distance: the life there rests on the life-stress relationship alone),
+// "well" outside when more than one tested range's width beyond them:
+// "20 kV is well below the tested 30–36 kV …" (extrapolation.js, shown with
+// the shared ExtrapolationNote). ``useModel``: the use stress in the model's
+// units (kelvin for a temperature); ``af``: the acceleration factor against
+// the reference. null when the use stress is within the tested stresses.
 export function useRangeWarning(results, useModel, af = null) {
   const ss = results?.stresses || [];
   const levels = results?.levels || [];
@@ -307,18 +327,16 @@ export function useRangeWarning(results, useModel, af = null) {
     const lo = Math.min(...vals);
     const hi = Math.max(...vals);
     const width = hi - lo;
-    const beyond = u < lo ? lo - u : u > hi ? u - hi : 0;
-    if (beyond === 0 || (width > 0 && beyond <= width)) return;
+    const tol = 1e-9 * Math.max(1, Math.abs(lo), Math.abs(hi));
+    const beyond = u < lo - tol ? lo - u : u > hi + tol ? u - hi : 0;
+    if (beyond === 0) return;
+    const far = !(width > 0 && beyond <= width);
     const unit = enteredUnit(s) || s?.unit || "";
     const show = (v) => `${formatNumber(fromKelvin(v, enteredUnit(s)), { sig: 4 })}${unit ? ` ${unit}` : ""}`;
     const tested = width > 0 ? `${formatNumber(fromKelvin(lo, enteredUnit(s)), { sig: 4 })}–${show(hi)}` : show(lo);
-    parts.push(`${show(u)} is well ${u < lo ? "below" : "above"} the tested ${tested}`);
+    parts.push(`${show(u)} is ${far ? "well " : ""}${u < lo ? "below" : "above"} the tested ${tested}`);
   });
-  if (!parts.length) return null;
-  const factor = af?.value != null && Number.isFinite(af.value)
-    ? ` (an acceleration factor of ${formatNumber(af.value, { sig: 4 })}×)` : "";
-  return `${parts.join("; ")}${factor}. The life here is an extrapolation that rests on the life-stress relationship `
-    + "holding that far: treat it as a rough guide, and test nearer the use stress if the decision depends on it.";
+  return stressExtrapolation(parts, af?.value != null ? Number(af.value) : null);
 }
 
 export { stressName };

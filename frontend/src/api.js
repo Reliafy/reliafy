@@ -1562,7 +1562,7 @@ export function getAltOptions() {
   return request("/api/alt/options");
 }
 
-function altForm(file, { datasetId, mapping, stress, distribution, lifeModel, unit, name } = {}) {
+function altForm(file, { datasetId, mapping, stress, distribution, lifeModel, unit, name, useStress } = {}) {
   const form = new FormData();
   if (name) form.append("name", name);
   if (datasetId) form.append("dataset_id", datasetId);
@@ -1573,6 +1573,8 @@ function altForm(file, { datasetId, mapping, stress, distribution, lifeModel, un
   if (distribution) form.append("distribution", distribution);
   if (lifeModel) form.append("life_model", lifeModel);
   if (unit) form.append("unit", unit);
+  // The use stress typed on the Model step (the user's units): the saved model opens at it.
+  if (Array.isArray(useStress) && useStress.length) form.append("use_stress", JSON.stringify(useStress.map(Number)));
   return form;
 }
 
@@ -1600,6 +1602,15 @@ export function renameAltModel(id, name) {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
+  });
+}
+
+// Keep the use stress entered on a saved model's page (the user's units; null forgets it).
+export function saveAltUseStress(id, useStress) {
+  return request(`/api/alt/models/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ use_stress: useStress }),
   });
 }
 

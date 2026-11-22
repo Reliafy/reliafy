@@ -225,3 +225,36 @@ def test_an_alt_model_saved_before_the_unit_loads_with_its_saved_unit(client):
     alt_service._LIVE.clear()
     assert alt_service.get_live_model(db.get_db(), saved["id"], OWNER).unit == "Hours"
     assert coll.find_one(key)["serialized"] == before["serialized"]  # nothing rewritten
+
+
+# ---- The use stress entered goes with the model ----------------------------------------
+
+
+def test_the_use_stress_typed_on_the_model_step_is_kept_and_can_be_changed(client):
+    make, form, _ = CASES["arrhenius_celsius_lognormal"]
+    # As typed (°C), one per stress: the saved page opens at it.
+    saved = _save(client, make, {**form, "use_stress": "[40]"})
+    page = client.get(f"/api/alt/models/{saved['id']}").json()
+    assert page["spec"]["use_stress"] == [40.0]
+    # Changed on the page; the name is untouched.
+    r = client.patch(f"/api/alt/models/{saved['id']}", json={"use_stress": [55]})
+    assert r.status_code == 200 and r.json()["spec"]["use_stress"] == [55.0]
+    assert client.get(f"/api/alt/models/{saved['id']}").json()["name"] == "Bench test"
+    # Renaming alone keeps it; null forgets it; the wrong count is not kept.
+    client.patch(f"/api/alt/models/{saved['id']}", json={"name": "Renamed"})
+    assert client.get(f"/api/alt/models/{saved['id']}").json()["spec"]["use_stress"] == [55.0]
+    client.patch(f"/api/alt/models/{saved['id']}", json={"use_stress": None})
+    assert "use_stress" not in client.get(f"/api/alt/models/{saved['id']}").json()["spec"]
+    client.patch(f"/api/alt/models/{saved['id']}", json={"use_stress": [1, 2]})
+    assert "use_stress" not in client.get(f"/api/alt/models/{saved['id']}").json()["spec"]
+    assert client.patch(f"/api/alt/models/{saved['id']}", json={}).status_code == 422
+    # Another user can't change it.
+    client.who["uid"] = OTHER
+    assert client.patch(f"/api/alt/models/{saved['id']}", json={"use_stress": [30]}).status_code == 404
+
+
+def test_a_use_stress_that_isnt_one_number_per_stress_is_not_kept(client):
+    make, form, _ = CASES["arrhenius_celsius_lognormal"]
+    for bad in ("[40, 50]", "forty", "[\"x\"]", "{}"):
+        saved = _save(client, make, {**form, "use_stress": bad})
+        assert "use_stress" not in client.get(f"/api/alt/models/{saved['id']}").json()["spec"]

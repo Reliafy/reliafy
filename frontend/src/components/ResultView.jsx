@@ -261,6 +261,7 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
           ciNote={result.method === "library" || intervalLevel(result).credible ? result.ci_note : null}
           credible={intervalLevel(result).credible}
           spread={rateSpread(result)}
+          dataRange={result.data_range || null}
         />
       );
       break;

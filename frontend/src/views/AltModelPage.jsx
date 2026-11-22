@@ -1,16 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import ErrorBoundary from "../components/ErrorBoundary.jsx";
 import ModelNotFound, { ModelDrawFailed } from "../components/ModelNotFound.jsx";
 import AltResultView from "../components/AltResultView.jsx";
 import { ShareButton } from "../components/ShareDialog.jsx";
-import { getAltModel, deleteAltModel, downloadModelPython, renameAltModel } from "../api.js";
+import { getAltModel, deleteAltModel, downloadModelPython, renameAltModel, saveAltUseStress } from "../api.js";
 import { relativeTime } from "../instrument.js";
 import Chip from "../components/ui/Chip.jsx";
 import ModelFrame from "../components/model/ModelFrame.jsx";
 import DownloadPythonItem from "../components/model/DownloadPythonItem.jsx";
 import useTabParam from "../components/model/useTabParam.js";
-import { altAnswerParts } from "../altFrame.js";
+import { altAnswerParts, useForModel } from "../altFrame.js";
 import { itemName } from "../components/LibRows.jsx";
 import { altPlanLink, altPrefill } from "../testPlanning.js";
 import { useAskText, useConfirm } from "../components/ConfirmProvider.jsx";
@@ -40,6 +40,18 @@ export default function AltModelPage() {
     setMissing(false);
     getAltModel(id).then(setModel).catch((e) => (e.status === 404 ? setMissing(true) : setError(e.message)));
   }, [id]);
+
+  // The use stress typed on the page is kept with the model (a moment after typing), so a reload,
+  // the Calculator and the Diagnostics open at it. Not on a model this user can't change.
+  const keepTimer = useRef(null);
+  useEffect(() => () => clearTimeout(keepTimer.current), []);
+  const keepUse = (typed) => {
+    if (!model || model.read_only) return;
+    clearTimeout(keepTimer.current);
+    const nums = typed.map((v) => (String(v).trim() === "" ? NaN : Number(v)));
+    if (!nums.every(Number.isFinite)) return;
+    keepTimer.current = setTimeout(() => { saveAltUseStress(model.id, nums).catch(() => {}); }, 800);
+  };
 
   const confirm = useConfirm();
   const askText = useAskText();
@@ -75,7 +87,8 @@ export default function AltModelPage() {
         <>
           <DownloadPythonItem download={() => downloadModelPython("alt", model.id)} onError={setError} />
           {altPrefill(r) && (
-            <Link className="ovm-item" to={altPlanLink(model.id, useStress)}
+            <Link className="ovm-item" to={altPlanLink(model.id, useStress
+              ?? (Array.isArray(model.spec?.use_stress) ? useForModel(r, model.spec.use_stress) : null))}
                   title="The stresses, the units at each and the failures to expect, from this fit">
               Plan the next test
             </Link>
@@ -98,7 +111,9 @@ export default function AltModelPage() {
         // A model this page can't draw shows a card here, not the whole-app error page.
         <ErrorBoundary key={model.id} fallback={<ModelDrawFailed />}>
           <AltResultView results={model.results} modelId={model.id} name={model.name} datasetId={model.dataset_id}
-                         tab={tab} onTab={(t) => setTab(t, "life")} onUseStress={setUseStress} />
+                         tab={tab} onTab={(t) => setTab(t, "life")} onUseStress={setUseStress}
+                         initialUse={Array.isArray(model.spec?.use_stress) ? model.spec.use_stress : null}
+                         onUseTyped={keepUse} />
         </ErrorBoundary>
       ) : missing ? <ModelNotFound id={id} kind="alt" />
         : !error && <div className="mf-body mf-single"><p className="muted-line">Loading…</p></div>}
