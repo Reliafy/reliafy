@@ -170,3 +170,9 @@ Write like an engineer briefing a manager: **the answer first, then the detail.*
 ## Iconography
 
 Use the app's own icon set in `assets/Icons/`: a 24px grid, 1.7px hairline strokes, round caps and joins, drawn in `currentColor`. The logo is in `assets/Logos/`; set the name beside it in the `heading` style.
+
+## Guards
+
+- **CSS:** `npm run lint:css` (in `frontend/`, and in CI's frontend job) runs stylelint (`frontend/.stylelintrc.json`) on every stylesheet but `tokens.css`. It fails on a hex, `rgb()` or `hsl()` colour; on px or rem for margin, padding, gap, font-size or border-radius; and on a `z-index` that isn't a `--z-*` token.
+- **The baseline:** what was there when the guard came in is counted in `frontend/stylelint-baseline.json`, per file and rule, so only new violations fail. A file's count may go down, never up. After removing some, run `npm run lint:css -- --update` and commit the smaller baseline. Never raise a count to make a change pass: use the token.
+- **Tokens:** `tokensSync.test.js` fails when `tokens.css` isn't what `tokens.json` generates; `tokenNames.test.js` fails on a token name from before v2.
