@@ -77,6 +77,7 @@ from backend.maintenance import task_costs as _task_costs
 from backend.maintenance.captures import CaptureOps
 from backend.maintenance import restoration as _restoration
 from backend.maintenance import failure_costs as _failure_costs
+from backend.maintenance import visit_costs as _visit_costs
 from backend.maintenance import shutdowns as _shutdowns
 from backend.maintenance import purge as _purge
 
@@ -3180,7 +3181,7 @@ def _walk_down(top: str, kids: dict) -> set[str]:
 
 class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDeleteOps, PositionModelOps,
                   CaptureOps, AssetSearchOps, _restoration.RestorationOps, _shutdowns.ShutdownOps,
-                  _failure_costs.FailureCostOps):
+                  _failure_costs.FailureCostOps, _visit_costs.VisitCostOps):
     """One organisation's maintenance graph, acted on by one person."""
 
     def __init__(self, store: GraphStore, org: str, actor: str | None = None, limited: bool = True,
@@ -6907,6 +6908,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             # A task with no source of its own is a decision's (maintenance failure_modes.decide).
             "source": task.get("source") or ("rcm" if mode else "manual"),
             "reference": task.get("reference", ""), "point_id": task.get("point_id"),
+            # What a visit of its own costs besides the task (in no package; visit_costs.py).
+            "visit_cost": task.get("visit_cost"),
             # The failure modes it prevents (several, since one task may serve many);
             # failure_mode is the first, as older readers expect.
             "failure_mode": {"id": mode[0]["id"], "text": mode[0]["text"]} if mode else None,
@@ -11035,6 +11038,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         what was done: done)."""
         pkg = self._get(str(package_id or ""), "WorkPackage")
         out = {**self._package_brief(pkg), "notes": pkg.get("notes", ""), "created": pkg.get("created"),
+               "visit_cost": pkg.get("visit_cost"),
                "paused_reason": pkg.get("paused_reason", "") if pkg.get("paused") else "",
                "retired_reason": pkg.get("retired_reason", "") if pkg.get("retired") else ""}
         names = {}
@@ -16747,6 +16751,7 @@ PROJECTORS.update(_task_costs.PROJECTORS)
 # restoration.py, shutdowns.py).
 PROJECTORS.update(_restoration.PROJECTORS)
 PROJECTORS.update(_failure_costs.PROJECTORS)
+PROJECTORS.update(_visit_costs.PROJECTORS)
 PROJECTORS.update(_shutdowns.PROJECTORS)
 
 # Records the walkthroughs found wrong (Nov 2026): an inspection's found-failed finding on

@@ -1221,6 +1221,9 @@ def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(m
         if "cost" in body:
             # What it costs each time, typed (null: its LSA's figure again).
             view = m.set_task_cost(task_id, body["cost"])
+        if "visit_cost" in body:
+            # A task in no package: its call-out and setup each time (null: none; visit_costs.py).
+            view = m.set_task_visit_cost(task_id, body["visit_cost"])
         if "restoration" in body:
             # What a fixed-interval task leaves the item as (null: as new); failure_mode_id inside it:
             # that mode's decision only.
@@ -2955,6 +2958,9 @@ def update_package(package_id: str, body: dict = Body(...), m: Maintenance = Dep
             m.check_shutdown(body["shutdown"])
         out = m.update_package(package_id, clear_pattern=bool(body.get("clear_pattern")),
                                season=body["season"] if "season" in body else ..., **{k: body.get(k) for k in _PACKAGE_FIELDS})
+        if "visit_cost" in body:
+            # Each visit's cost besides its tasks (call-out, setup); null: none (visit_costs.py).
+            out = m.set_package_visit_cost(package_id, body["visit_cost"])
         # shutdown: its visits are planned outages; null makes it an ordinary package again.
         return m.set_package_shutdown(package_id, body["shutdown"]) if "shutdown" in body else out
     return _run(go)

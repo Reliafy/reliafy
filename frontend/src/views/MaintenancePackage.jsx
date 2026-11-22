@@ -28,6 +28,7 @@ import { planWords } from "../workManagement.js";
 import "./Maintenance.css";
 import Loading from "../components/ui/Loading.jsx";
 import { Checkbox, Select } from "../components/ui/Controls.jsx";
+import { formatCost, workspaceCurrency } from "../money.js";
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const unitWord = (n, unit) => (Number(n) === 1 ? String(unit).replace(/s$/, "") : unit);
@@ -157,6 +158,7 @@ function Details({ pkg }) {
         )}
         {pkg.tolerance?.amount ? <><dt>On time within</dt><dd>{pkg.tolerance.amount} {unitWord(pkg.tolerance.amount, pkg.tolerance.unit)} after the visit date</dd></> : null}
         {pkg.season?.text && <><dt>Season</dt><dd>{pkg.season.text}</dd></>}
+        {pkg.visit_cost != null && <><dt>Each visit costs</dt><dd>{formatCost(pkg.visit_cost)} besides its tasks</dd></>}
         {pkg.trade && <><dt>Trade</dt><dd>{pkg.trade}</dd></>}
         {pkg.shutdown && (
           <><dt>Shutdown</dt><dd>
@@ -385,6 +387,9 @@ function EditPane({ pkg, phone, onClose, onSaved }) {
             )}
           </fieldset>
         )}
+        <Field label={`Each visit's call-out and setup, besides its tasks (${workspaceCurrency()}, optional)`}>
+          <input type="number" min="0" step="any" inputMode="decimal" value={form.visitCost} onChange={set("visitCost")} />
+        </Field>
         <Field label="Trade (optional)" text={form.trade}><input value={form.trade} maxLength={200} onChange={set("trade")} placeholder="e.g. Fitter" /></Field>
         <Field label="Notes (optional)" text={form.notes} max={2000}>
           <textarea rows={3} value={form.notes} maxLength={2000} onChange={set("notes")} />
