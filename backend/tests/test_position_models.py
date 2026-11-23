@@ -612,6 +612,19 @@ def test_one_model_in_use_per_position(m, db):
     assert m.in_use_link(pump)["id"] == life["id"]
 
 
+def test_the_latest_of_several_models_linked_on_one_day_is_the_one_in_use(m):
+    """Links made the same day keep the order they were made in (their ids are random), so the
+    default in use is always the last one linked, after a rebuild too."""
+    pump = m.create_position("Pump")["id"]
+    ids = [m.link_position_model(pump, "model", f"model-{i}")["id"] for i in range(8)]
+    assert [x["id"] for x in m.position_models(pump)] == ids
+    assert m.in_use_link(pump)["id"] == ids[-1]
+    _same_after_rebuild(m)
+    assert m.in_use_link(pump)["id"] == ids[-1]
+    m.unlink_position_model(ids[-1])
+    assert m.in_use_link(pump)["id"] == ids[-2]
+
+
 def test_a_parent_rbd_takes_a_childs_rbd_as_a_sub_system(m, db):
     top = m.create_position("Plant")["id"]
     line = m.create_position("Line 1", parent_id=top)["id"]

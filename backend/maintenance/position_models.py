@@ -83,9 +83,12 @@ _KEPT = ("position_id", "model_type", "model_id", "role", "name", "note", "sourc
 
 
 def _model_linked(s: GraphStore, org: str, p: dict) -> None:
+    # The order it was linked in among the position's live links, so "the latest" holds between
+    # links made on the same day (ids are random); replays give the same numbers.
+    seq = 1 + max((x.get("linked_seq") or 0 for x in s.out(org, p["position_id"], "HAS_MODEL")), default=0)
     s.put_node(org, p["id"], "ModelLink", {k: p.get(k) for k in _KEPT}
                | {"failure_mode_ids": list(p.get("failure_mode_ids") or []), "linked_on": p.get("on"),
-                  "removed": False})
+                  "linked_seq": seq, "removed": False})
     s.put_edge(org, "HAS_MODEL", p["position_id"], p["id"])
 
 
@@ -131,7 +134,7 @@ class PositionModelOps:
 
     def _model_links(self, position_id: str) -> list[dict]:
         live = [x for x in self.s.out(self.org, position_id, "HAS_MODEL") if not x.get("removed")]
-        return sorted(live, key=lambda x: (x.get("linked_on") or "", x["id"]))
+        return sorted(live, key=lambda x: (x.get("linked_on") or "", x.get("linked_seq") or 0, x["id"]))
 
     def _model_link_view(self, link: dict) -> dict:
         modes = []
