@@ -9,7 +9,7 @@
 // and two charts, or what's missing in words; the tab stays from a class to a
 // position and on to the next. A design's positions don't have it.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
-import { details, reveal } from "./explorer.js";
+import { details, pickTab, reveal } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -367,7 +367,8 @@ test("a position's Condition monitoring on a phone: the words and the charts fit
   await row(page, `Feed pump C ${tag}`).locator(".tp-nm").click();
   await expect(panel.getByRole("heading", { name: `Feed pump C ${tag}` })).toBeVisible();
   // Monitoring opens on Readings (a tree-table: on a phone, the tree); its Life left view is the risk.
-  await tabOn.click();
+  // At 400 px it may sit under "more tabs" (the tab bar has grown: Operations, Missions).
+  await pickTab(page, "Monitoring");
   await page.getByRole("radiogroup", { name: "Monitoring: what to show" }).getByRole("radio", { name: "Life left" }).click();
   await expect(tabOn).toHaveAttribute("aria-selected", "true");
   await expect(risk).toContainText("No risk to show yet: no condition and life model is linked to this position.");

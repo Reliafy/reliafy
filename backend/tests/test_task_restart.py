@@ -220,3 +220,25 @@ def test_the_route(api):  # noqa: F811
 
 
 from backend.tests.test_maintenance_rcm_api import api  # noqa: E402,F401,F811
+
+
+def test_the_tree_counts_a_restarted_task_as_its_next_due_does(monkeypatch):
+    """The tree's status (the overdue chips, next due) follows the restart too: a new item fitted
+    above a long-overdue monthly task restarts it, so neither the task nor the tree says overdue."""
+    from backend.services import time_zones
+
+    monkeypatch.setattr(time_zones, "_now", lambda: datetime(2026, 11, 24, 8, tzinfo=timezone.utc))
+    m = _m("org-restart-tree")
+    m.today = lambda: "2026-11-24"
+    line = m.create_position("Line")["id"]
+    motor = m.create_position("Motor", parent_id=line)["id"]
+    task = m.create_task(motor, "Grease", 1, "months", last_done="2020-01-01")["id"]
+    status = lambda: next(p for p in m.tree_rows()["positions"] if p["id"] == motor).get("status") or {}  # noqa: E731
+    assert status().get("overdue", 0) == 1 and status().get("next_due") == "2020-02-01"
+    m.fit(line, new_item={"name": "Line unit"}, on="2026-11-24")
+    assert m._task_view(m._get(task, "Task"))["next_due"] == "2026-12-24"
+    assert status().get("overdue", 0) == 0 and status().get("next_due") == "2026-12-24"
+    # Kept: the schedule runs on, overdue on both.
+    m.set_task_on_replace(task, "keep")
+    assert m._task_view(m._get(task, "Task"))["next_due"] == "2020-02-01"
+    assert status().get("overdue", 0) == 1 and status().get("next_due") == "2020-02-01"

@@ -15189,12 +15189,17 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         fitted_item: dict[str, str] = {}  # position -> item
         fitted_at: dict[str, str] = {}  # item -> position
         last_out: dict[str, str] = {}  # item -> the day it last came out of a position
+        fit_from: dict[str, str] = {}  # position -> the day what's fitted there now went in
+        fit_days: dict[str, set] = {}  # position -> every day something was fitted there
         for fid, f in fitments.items():
             item_id, pos_id = holder.get(fid), at.get(fid)
             if not item_id or not pos_id:
                 continue
+            if f.get("from"):
+                fit_days.setdefault(pos_id, set()).add(str(f["from"])[:10])
             if f.get("to") is None:
                 fitted_item[pos_id], fitted_at[item_id] = item_id, pos_id
+                fit_from[pos_id] = str(f.get("from") or "")[:10]
             elif f["to"] > last_out.get(item_id, ""):
                 last_out[item_id] = f["to"]
         open_placement: dict[str, dict] = {}
@@ -15282,6 +15287,22 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         for src, dst in s.pairs(org, "FOR"):
             if src in open_wos:
                 raised_for.setdefault(dst, []).append(open_wos[src])
+        def may_restart(t: dict) -> bool:
+            """Whether a fitting can move this task's schedule (restart.py's ``restarted``, from the
+            bulk read): an item fitted above it since it was made (restart), or its last done a
+            fitting at its own position (keep counts from its last real doing)."""
+            subject = on.get(t["id"])
+            done = t.get("last_done")
+            if done and ((t.get("done_before_fit") or {}).get("fit_on") == done or done in fit_days.get(subject, ())):
+                return True
+            node, seen = part_of.get(subject), set()
+            while node and node not in seen:
+                seen.add(node)
+                if fit_from.get(node) and fit_from[node] >= (t.get("start") or ""):
+                    return True
+                node = part_of.get(node)
+            return False
+
         for t in s.nodes(org, "Task"):
             subject = on.get(t["id"])
             if t.get("retired") or not subject:
@@ -15301,7 +15322,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 by_package = self._package_due(t, packaged)
                 due, overdue = by_package["next_due"], by_package["overdue"]
             else:
-                due = self._tree_task_due(t, "Item" if subject in items else "")
+                due = self._tree_task_due(t, "Item" if subject in items else "", may_restart)
                 overdue = bool(due) and due < today
                 if not due and not _on_event_only(t):
                     # Can't be put on a date yet: by use with no counter (or no readings) to count from.
@@ -15426,11 +15447,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             return None
         return self.subtree_ids(position_id, within=root, to="forecast")
 
-    def _tree_task_due(self, task: dict, subject_label: str) -> str | None:
+    def _tree_task_due(self, task: dict, subject_label: str, may_restart=None) -> str | None:
         """A task's next due date, as _task_view gives it, without its store reads
         for a plain calendar limit."""
         if _on_event_only(task):
             return None
+        # Restart or keep on a replacement (restart.py), as _task_view's due counts it: the tree's
+        # overdue counts and next due agree with the task's own Next due. `may_restart` (from the tree's
+        # bulk read) says which tasks a fitting can move, so the others cost no store reads.
+        if may_restart is None or may_restart(task):
+            task = self.restarted(task)
         limits = [(task["interval"], task["unit"])]
         if task.get("also_interval") and task.get("also_unit"):
             limits.append((task["also_interval"], task["also_unit"]))
