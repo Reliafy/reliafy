@@ -237,10 +237,15 @@ _ID_WORDS = re.compile(r"\b(id|ids|no|number|serial|sn|s n|tag|asset|unit|item|e
 _CENSOR_WORDS = re.compile(r"\b(censor|censored|censoring|cens)\b", re.IGNORECASE)
 _CENSOR_RE = re.compile(r"^(c|cens|censor|censored|censoring|status|fail|failed|failure|failures|event|suspended"
                         r"|suspension|running)$", re.IGNORECASE)
-_COUNT_NAMES = re.compile(r"^(n|count|counts|qty|quantity|units|number of units)$", re.IGNORECASE)
+_COUNT_NAMES = re.compile(r"^(n|count|counts|qty|quantity|units|how many(?: \w+)?|(?:number|no|count) of \w+)$",
+                          re.IGNORECASE)
+# A check that it was still working ("Last checked OK", "Inspected"): the start of an interval at
+# most, never the time itself while a time or duration column is there.
+_CHECKED = re.compile(r"\b(last (?:checked|seen|inspected|tested)|inspected|inspection|checked)\b", re.IGNORECASE)
 _LATE_ENTRY = re.compile(r"\b(entered|entry|enters|observed from|observation start|left truncat\w*|truncat\w*|tl)\b",
                          re.IGNORECASE)
-_EARLIEST = re.compile(r"\b(xl|last ok|last good|passed|earliest|shortest|lower|left)\b", re.IGNORECASE)
+_EARLIEST = re.compile(r"\b(xl|last(?: (?:checked|seen|inspected|tested|known))? (?:ok|good|working|fine)|passed"
+                       r"|earliest|shortest|lower|left)\b", re.IGNORECASE)
 _LATEST = re.compile(r"\b(xr|found failed|found|failed|latest|longest|upper|right)\b", re.IGNORECASE)
 _MODE = re.compile(r"\b(mode|modes|cause|causes)\b", re.IGNORECASE)
 _UNIT_NAMES = [
@@ -387,10 +392,15 @@ def _life_columns(cols: list[dict]) -> dict:
                        and _looks_like_status(c)), None))
     c = status["name"] if status else ""
     count = next((col for col in cols if col["name"] != c and _numeric(col.get("dtype")) and col.get("whole") is not False
-                  and _COUNT_NAMES.match(str(col["name"]).strip())), None)
+                  and _COUNT_NAMES.match(" ".join(_words(col["name"]).split()))), None)
     n = count["name"] if count else ""
     numeric = [col for col in cols if _numeric(col.get("dtype")) and col["name"] not in (c, n)
                and not _LATE_ENTRY.search(_words(col["name"]))]
+    # A "last checked" or date-named column is the time only when nothing else is.
+    timed = [col for col in numeric if not _CHECKED.search(_words(col["name"]))
+             and not _DATE_NAMES.search(_words(col["name"]))]
+    if any(_TIME_WORDS.search(_words(col["name"])) for col in timed):
+        numeric = timed
     x = (next((col for col in numeric if _TIME_WORDS.search(_words(col["name"])) and guess_unit(col["name"])), None)
          or next((col for col in numeric if _TIME_WORDS.search(_words(col["name"]))), None)
          or next((col for col in numeric if not _ID_WORDS.search(_words(col["name"]))), None)
