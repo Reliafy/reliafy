@@ -46,7 +46,7 @@ const RbdDiagramView = lazy(() => import("./RbdDiagramView.jsx"));
 //   phone, headingRef, onClose: TablePane's
 
 // A value a block uses, with its unit; a schedule in words ("follows a table of 2 steps"), never "[object Object]".
-const valueText = (v, unit) => (v == null ? "—" : isSchedule(v) ? covValueText(v, unit)
+const valueText = (v, unit) => (v == null ? "—" : isSchedule(v) ? `the schedule (${covValueText(v, unit).replace(/^follows /, "")})`
   : `${typeof v === "number" ? fmt(v) : v}${unit ? (unit === "%" ? "%" : ` ${unit}`) : ""}`);
 
 // `answersMode` (the Missions tab, Derryn 23 Nov 2026: "a mission and a phase need their own
@@ -54,7 +54,7 @@ const valueText = (v, unit) => (v == null ? "—" : isSchedule(v) ? covValueText
 //   The mission's: its name and where it lives; Set-up (runs on, start, length, calendar, starting
 //   state); Answers (the two cards and what was assumed); Phases (a compact table: order, name,
 //   duration, completes, weakest block; add, move, remove; a row opens that phase).
-//   A phase's: "Phase 2 of 3 · <mission>" and Back to the mission; Set-up (name, duration, what runs
+//   A phase's: "Phase 2 of 3 · Hot" in the heading, with "‹ Back to <mission>" beside it; Set-up (name, duration, what runs
 //   in it: each block's state); Covariates in this phase (constants and schedules); Result
 //   (completes, still going, weakest block and its share); Previous and Next phase.
 // Both edit the same records and save together (Save); the numbers are the same calls as before.
@@ -342,12 +342,6 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
   const atCovs = atRow ? byPhase[ai] || [] : [];
   const phaseView = atRow ? (
     <>
-      <div className="mission-head">
-        <p className="mission-crumb">
-          <button type="button" className="link" onClick={() => setAt(null)}>‹ Back to {name || detail.mission.name}</button>
-          <span className="mission-sub"> · Phase {ai + 1} of {rows.length} · {name || detail.mission.name}</span>
-        </p>
-      </div>
       <section className="mission-sec" aria-labelledby="phase-setup-h">
         <h3 className="mission-k" id="phase-setup-h">Set-up</h3>
         <div className="mission-phase-fields">
@@ -406,8 +400,11 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
   ) : null;
 
   return (
-    <TablePane title={atRow ? "Phase" : "Mission"}
-               subject={atRow ? `${atRow.name || "(no name)"} · ${detail?.mission?.name || "…"}` : `${detail?.mission?.name || "…"} · ${position.name}`} phone={phone} busy={saving}
+    <TablePane title={atRow ? `Phase ${rows.indexOf(atRow) + 1} of ${rows.length}` : "Mission"}
+               subject={atRow ? atRow.name || "(no name)" : `${detail?.mission?.name || "…"} · ${position.name}`} phone={phone} busy={saving}
+               actions={atRow ? (
+                 <button type="button" className="link mission-back" onClick={() => setAt(null)}>‹ Back to {name || detail?.mission?.name}</button>
+               ) : null}
                headingRef={headingRef} onClose={onClose} className="mission-pane">
       <div className="mission">
         {error && (

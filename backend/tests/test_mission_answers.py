@@ -58,6 +58,8 @@ def test_series_by_hand_one_phase(db):
     # The range of outcomes: Poisson(0.6)'s 5th and 95th percentiles are 0 and 2.
     assert (f["range"]["lower"], f["range"]["upper"]) == (0.0, 2.0)
     assert f["range"]["side"] == "two-sided" and f["range"]["level"] == 0.9
+    # The share of missions with a failure: 1 - exp(-0.6) for Poisson(0.6), within the simulation's noise.
+    assert f["range"]["p_any"] == pytest.approx(1 - math.exp(-0.6), abs=0.03)
     assert ma.PLAN_NOTE in got["assumed"]
 
 

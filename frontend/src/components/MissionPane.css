@@ -101,7 +101,7 @@
 .mission-phase-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mission-phase-table td.mission-phase-tools { display: table-cell; white-space: nowrap; text-align: right; }
 .mission-sec > button.sm { align-self: flex-start; }
-.mission-crumb { margin: 0; font-size: var(--fs-13); line-height: var(--lh-13); }
+.mission-back { font-size: var(--fs-13); line-height: var(--lh-13); white-space: nowrap; }
 .mission-phase-fields { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: flex-end; }
 .mission-phase-result-list { display: grid; gap: var(--space-2); margin: 0; }
 .mission-phase-result-list > div { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: baseline; }
