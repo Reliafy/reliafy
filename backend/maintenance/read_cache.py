@@ -14,6 +14,7 @@ the clock. Each process (each Cloud Run instance) keeps its own.
 
 from __future__ import annotations
 
+import contextvars
 import copy
 import threading
 from collections import OrderedDict
@@ -51,13 +52,47 @@ class ReadCache:
 
 _MISS = object()
 
+# The time-series reads a cached computation made (``series=True``): each as
+# (what, org, point, days) with what it found: a point's latest reading, or the
+# fingerprint of its history (series.py ``fingerprint``). A kept answer is used only
+# while every one of those is still the same.
+_SERIES_READS: contextvars.ContextVar = contextvars.ContextVar("read_cache_series", default=None)
 
-def cached(store, key: Hashable, compute: Callable, *, frozen: bool = False):
+
+def series_recording() -> bool:
+    return _SERIES_READS.get() is not None
+
+
+def note_series_read(read: tuple, found) -> None:
+    """Called by the series stores on every read (series.py)."""
+    reads = _SERIES_READS.get()
+    if reads is not None:
+        reads.append((read, found))
+
+
+def _series_still(store, reads) -> bool:
+    series = getattr(store, "series", None)
+    if series is None:
+        return False
+    token = _SERIES_READS.set(None)
+    try:
+        for (what, org, point, days), found in reads:
+            now = series.latest(org, point) if what == "latest" else series.fingerprint(org, point, days)
+            if now != found:
+                return False
+        return True
+    finally:
+        _SERIES_READS.reset(token)
+
+
+def cached(store, key: Hashable, compute: Callable, *, frozen: bool = False, series: bool = False):
     """``compute()``, or what it gave last time for ``key`` on this store while its
     graph hasn't changed. A store without a token (the Neo4j store) always
     computes. Unless ``frozen`` (an immutable value), the cache keeps its own copy
     and each caller gets one of its own, so nobody can change what others read.
-    A value is kept only if the graph didn't change while it was worked out."""
+    A value is kept only if the graph didn't change while it was worked out.
+    ``series``: the computation may read the time series too (automated readings):
+    what it read of them is kept with it and checked on every use."""
     token_of = getattr(store, "read_token", None)
     cache = getattr(store, "read_cache", None)
     token = token_of() if token_of is not None and cache is not None else None
@@ -66,10 +101,17 @@ def cached(store, key: Hashable, compute: Callable, *, frozen: bool = False):
     full = (token, key)
     hit = cache.get(full)
     if hit is not _MISS:
-        cache.hits += 1
-        return hit if frozen else copy.deepcopy(hit)
+        value, reads = hit
+        if not reads or _series_still(store, reads):
+            cache.hits += 1
+            return value if frozen else copy.deepcopy(value)
     cache.misses += 1
-    value = compute()
+    reads: list | None = [] if series else None
+    recorder = _SERIES_READS.set(reads)
+    try:
+        value = compute()
+    finally:
+        _SERIES_READS.reset(recorder)
     if token_of() == token:
-        cache.put(full, value if frozen else copy.deepcopy(value))
+        cache.put(full, (value if frozen else copy.deepcopy(value), tuple(reads or ())))
     return value

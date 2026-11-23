@@ -483,7 +483,7 @@ def _rcm_modes(owners: list, user: dict | None, evidence_ids=None, rcm_all=None)
             continue
         read = (rcm_all or {}).get(org)
         if read is None:
-            read = Maintenance(store, org, (user or {}).get("uid") or org).rcm_all(evidence_ids=evidence_ids)
+            read = Maintenance(store, org, (user or {}).get("uid") or org).rcm_all(evidence_ids=evidence_ids, shared=True)
         for p in read["positions"]:
             modes = [m for fn in p["functions"] for ff in fn["failures"] for m in ff["modes"]] + p["unassigned"]
             out.extend((p["id"], p["name"], m) for m in modes if m.get("decision"))
