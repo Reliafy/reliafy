@@ -141,14 +141,18 @@ export function buildMenu({ general = {}, adds = [], actions = [], destroy = nul
   const count = middle.filter((it) => !it.separator).length;
   if (count > room) {
     const keep = Math.max(0, room - 1);
+    // What stays at the top: the first `keep` items that can be used now (a greyed one folds first),
+    // in their own order.
+    const real = middle.filter((it) => !it.separator);
+    const stay = new Set([...real.filter((it) => !it.disabled), ...real.filter((it) => it.disabled)].slice(0, keep));
     const kept = [];
     const folded = [];
-    let n = 0;
-    for (const it of middle) {
-      if (it.separator) { (n < keep ? kept : folded).push(it); continue; }
-      (n < keep ? kept : folded).push(it);
-      n += 1;
-    }
+    middle.forEach((it, i) => {
+      if (!it.separator) { (stay.has(it) ? kept : folded).push(it); return; }
+      // A line stays only between two items that both stay.
+      const next = middle.slice(i + 1).find((x) => !x.separator);
+      (kept.length && next && stay.has(next) ? kept : folded).push(it);
+    });
     // A submenu folded into More › gives up its items in place (two levels at most).
     const more = [];
     for (const it of folded) {

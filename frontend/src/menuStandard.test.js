@@ -99,3 +99,13 @@ test("words: counts for several rows, adds, focus, tidy, links", () => {
   assert.deepEqual(labels(tidy([{ separator: true }, { id: "a", label: "A" }, { separator: true }, { separator: true }, { id: "b", label: "B" }, { separator: true }])), ["A", "———", "B"]);
   assert.equal(rowLink("https://x.test/asset-register/explorer?tab=rcm&sel=1", "p9"), "https://x.test/asset-register/explorer?tab=rcm&sel=p9");
 });
+
+test("a greyed item folds into More before one that can be used now", () => {
+  const actions = [
+    { id: "o", label: "Optimise…", disabled: true, reason: "One task at a time." },
+    { id: "p", label: "Package 2 tasks…" }, { id: "a", label: "Add 2 tasks to a package…" }, { id: "c", label: "Clear the selection" },
+  ];
+  const m = buildMenu({ general: { open: "x", rename: "x", move: "x", focus: "x", pin: "x", copy: "x" }, actions, destroy: { id: "r", kind: "retire" } });
+  assert.deepEqual(labels(m).slice(7, 10), ["Package 2 tasks…", "Add 2 tasks to a package…", "More"]);
+  assert.deepEqual(labels(m.find((it) => it.id === "more").items), ["Optimise…", "Clear the selection"]);
+});
