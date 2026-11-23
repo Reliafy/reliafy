@@ -3,7 +3,7 @@
 // grouped by day, month, etc. and a paginated list of when next"; and "work in calendar or
 // operating hours (with or without a duty)"). Open a weekly task's Forecast across the table, 12
 // months by month is 12 rows, page through When next; a task by hours with no duty opens on
-// Operating hours. At 400 px it's a sheet and nothing scrolls sideways.
+// Operating hours, and is dated at 24 h a day with a note saying so. At 400 px it's a sheet and nothing scrolls sideways.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 
 const M = "/api/maintenance";
@@ -61,16 +61,22 @@ test("a task's Forecast: 12 months by month is 12 rows, When next pages 20 at a 
   await page.keyboard.press("Escape");
   await expect(side).not.toHaveClass(/is-expanded/);
 
-  // A task by hours, no duty: opens on Operating hours, placed in hours, not on dates.
+  // A task by hours, no duty: dated at 24 h a day in the tree; its details open on Operating hours.
   await page.locator(`[id="tp-MT:${p.idlers.id}"]`).locator(".tp-chev").click();
   const hfc = page.locator(`[id="tp-MF:MT:${p.idlers.id}"]`);
-  await expect(hfc).toContainText("not dated: set a duty");
+  await expect(hfc).toContainText(/next \d+ \w+ \d{4} · \d+ times a year/);
   await hfc.locator(".tp-nm").dblclick();
   const hside = page.getByRole("complementary", { name: `Forecast · Inspect idlers ${tag}` });
   await expect(hside.getByRole("radiogroup", { name: "Basis" }).getByRole("radio", { name: "Operating hours" })).toHaveAttribute("aria-checked", "true");
   await expect(hside.locator(".fcd-table tbody tr")).toHaveCount(10);
   await expect(hside.getByRole("region", { name: "When next" })).toContainText("in 250 h");
-  await expect(hside).toContainText("No duty here");
+  const note = hside.getByRole("note");
+  await expect(note).toContainText("No duty set: assuming it runs all the time (24 h a day)");
+  await expect(note.getByRole("link", { name: "Set a duty in Operations" })).toHaveAttribute("href", /tab=operations.*plan=|plan=.*tab=operations/);
+  // The calendar view of the same task: dated through the same 24 h a day.
+  await hside.getByRole("radiogroup", { name: "Basis" }).getByRole("radio", { name: "Calendar" }).click();
+  await expect(hside.locator(".fcd-table tbody tr")).toHaveCount(12);
+  await expect(hside.getByRole("region", { name: "When next" })).not.toContainText("Nothing falls due");
   await shot(page, "forecast-details-hours-1440");
   await expectHealthy(page, problems, { label: "forecast details" });
 });

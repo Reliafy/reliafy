@@ -36,6 +36,7 @@ from backend.maintenance.service import Invalid, Maintenance
 
 PERIODS = ("day", "week", "month", "quarter", "year")
 MAX_MONTHS = 120
+CONTINUOUS_NOTE = "No duty set: assuming it runs all the time (24 h a day)"
 MAX_ROWS = 400  # periods in one read (a year by day; ten years by week is too many)
 MAX_POSITIONS = 500  # positions under the one opened, forecast in one read
 MAX_TASKS = 2000
@@ -136,8 +137,10 @@ def _hours_map(m: Maintenance, pos: dict, root, start: date, end_excl: date, str
     """The position's map from dates to operating hours over the horizon: from its operating
     plan (anchored on its hours counter's latest reading, when it has one), else the hours
     counter's recent rate; {usage, basis {kind, text}, counter, reading}. None with neither.
-    ``strict`` (the forecast details): the duty only, never the meter's rate, so hours stay
-    hours without a duty (Derryn, 23 Nov 2026)."""
+    ``strict`` (the forecast details): the duty, else running all the time, 24 h a day, never
+    the meter's rate (Derryn, 21 Nov 2026: "assume continuous use unless there is a duty against
+    that position"), anchored on the latest hours reading, else 0 h today; basis kind
+    "continuous" says it's assumed."""
     from backend.maintenance import schedule
 
     counter = svc._counter_on(m.s, m.org, pos["id"], "hours")
@@ -157,7 +160,17 @@ def _hours_map(m: Maintenance, pos: dict, root, start: date, end_excl: date, str
         return {"usage": usage, "counter": counter, "readings": readings,
                 "basis": {"kind": "plan", "text": text, "plan": duty["text"], "inherited_from": duty["inherited_from"],
                           "ended": duty["ended"], "reading": None}}
-    if counter and len(readings) >= 2 and not strict:
+    if strict:
+        last = readings[-1] if readings else None
+        value = float(last["value"]) if last else 0.0
+        read_at = last["on"][:10] if last else start.isoformat()
+        usage = schedule.DutyPlan(schedule.Continuous()).forecast(start, end_excl, readings={"hours": value},
+                                                                  read_at=read_at)
+        anchor = (f", from {value:,.6g} h on {_short(read_at)}" if last else ", counted from 0 h today (no hours reading)")
+        return {"usage": usage, "counter": counter, "readings": readings,
+                "basis": {"kind": "continuous", "reading": {"value": value, "on": read_at},
+                          "text": f"{CONTINUOUS_NOTE}{anchor}"}}
+    if counter and len(readings) >= 2:
         rate = svc._rate(readings)
         if rate and rate > 0:
             per_day = min(rate, 24.0)

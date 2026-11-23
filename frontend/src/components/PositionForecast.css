@@ -57,3 +57,4 @@
 .fcd-pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
 .fcd-pager .lib-date { margin-right: auto; }
 .mt-fc-side .rw-pbody { min-width: 0; }
+.fcd-assumed { margin: 0; }

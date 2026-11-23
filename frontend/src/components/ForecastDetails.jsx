@@ -168,13 +168,15 @@ export default function ForecastDetails({ positionId, root = null, name = "", su
       {!d && !error && !waiting && <div className="card empty">Working out the forecast…</div>}
       {d && (
         <div className={"fcd-body" + (busy ? " is-busy" : "")}>
-          <ResultSummary className="fc-summary" tone={(d.states || []).length || left.length ? "caveat" : "neutral"} sentence={boldNumbers(d.answer)}>
-            For {what}, {horizonText(d)}. {d.duty ? `Duty: ${d.duty.text}${d.duty.inherited_from ? `, from ${d.duty.inherited_from.name}` : ""}.` : (
-              d.by_use_tasks > 0 || d.basis === "hours" ? (
-                <>No duty here, so running hours stay hours{d.basis === "hours" && d.calendar_tasks ? " and calendar rules stay on the calendar" : ""}: <Link to={d.duty_link}>set a duty</Link> to convert between them.</>
-              ) : null)}{" "}
+          <ResultSummary className="fc-summary" tone={(d.states || []).length || left.length || d.assumed ? "caveat" : "neutral"} sentence={boldNumbers(d.answer)}>
+            For {what}, {horizonText(d)}. {d.duty ? `Duty: ${d.duty.text}${d.duty.inherited_from ? `, from ${d.duty.inherited_from.name}` : ""}.` : null}{" "}
             Ranges are 90% two-sided (the 5th to 95th percentile).
           </ResultSummary>
+          {d.assumed && (
+            <p className="fc-state fcd-assumed" role="note"><span className="fc-state-icon" aria-hidden="true">!</span>
+              <span>{d.assumed.text.replace(/\. Set a duty in Operations\.$/, "")}. <Link to={d.assumed.link}>Set a duty in Operations</Link>.</span>
+            </p>
+          )}
           {(d.states || []).length > 0 && (
             <ul className="fc-states" aria-label="What's missing">
               {d.states.map((s, i) => (

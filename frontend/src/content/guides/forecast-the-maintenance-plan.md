@@ -30,7 +30,8 @@ Each task and each package in the table has one **Forecast** row under it, with
 a summary across the columns: when it's next due, how many times it comes in
 the next year and what it costs in that year, for example *next 5 Dec 2026 · 12
 times a year · $1,240 a year*. A package counts its visits. No dates are listed
-in the tree.
+in the tree. A task by hours on a position with no duty is dated as if it runs
+all the time (see below).
 
 Click the **Forecast** row to see its details beside the table; double-click it
 (or press Enter on it, or choose **Open** in its menu) to see them across the
@@ -68,11 +69,11 @@ position's duty: how many hours it runs, and when.
 - **With a duty,** both bases count everything. On the calendar, a task by hours
   falls on the day the meter is expected to reach it; in operating hours, a
   calendar task falls at the running hours reached by its date.
-- **Without a duty,** hours stay hours. On the calendar a task by hours is listed
-  under **Not placed** as *every 250 h, not dated: set a duty in Operations*,
-  and its Forecast row says the same; on operating hours a calendar task is
-  listed as *calendar rule, not placed in hours*. Each has a link to where you
-  set the duty. Nothing is guessed.
+- **Without a duty,** it's taken to run all the time, 24 hours a day, counted
+  from the latest hours reading (or 0 h today with none). A note says so: *No
+  duty set: assuming it runs all the time (24 h a day). Set a duty in
+  Operations*, with the link. Tasks by hours, calendar rules and failures all
+  use the same assumption, so they always share one time basis.
 
 ## What the details show
 
@@ -112,7 +113,8 @@ A task counts when it can be put on dates:
   has passed since it was last done, so it counts once for each shutdown it is
   done at. With no shutdown planned in the year, it's under **Not placed**.
 - A task counted in operating hours falls due through the position's duty (its
-  operating plan, or the one above it), anchored on its hours counter reading.
+  operating plan, or the one above it), anchored on its hours counter reading;
+  with no duty, at 24 hours a day.
 - A task left out says why under **Not placed**, with where to fix it.
 
 Failures come from the life model in use on each position, from each item's

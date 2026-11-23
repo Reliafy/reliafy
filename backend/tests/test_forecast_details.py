@@ -52,7 +52,7 @@ def test_calendar_with_a_duty_dates_both_kinds(monkeypatch):
     m = _m()
     cv, idlers, walk = _conveyor(m, duty=True)
     out = fd.forecast_details(m, cv, basis="calendar", period="month", end="2027-11-30")
-    assert out["default_basis"] == "calendar" and out["duty"] is not None
+    assert out["default_basis"] == "calendar" and out["duty"] is not None and out["assumed"] is None
     assert len(out["rows"]) == 12 and out["rows"][0]["start"] == "2026-12-01" and out["rows"][-1]["end"] == "2027-11-30"
     by = _names(out)
     # 250 h from 1,000 h is 1,250 h: 70 h on at 3 h a day, 24 Dec (the library's plan map).
@@ -66,20 +66,24 @@ def test_calendar_with_a_duty_dates_both_kinds(monkeypatch):
         "Inspect idlers"]["count"]
 
 
-def test_calendar_without_a_duty_leaves_hours_in_hours(monkeypatch):
+def test_calendar_without_a_duty_assumes_it_runs_all_the_time(monkeypatch):
+    """No duty: hours meet the calendar at 24 h a day (Derryn, 21 Nov 2026), from the latest reading,
+    said once with where to set a duty. Not the meter's recent rate."""
     _clock(monkeypatch)
     m = _m()
     cv, idlers, walk = _conveyor(m, duty=False)
     out = fd.forecast_details(m, cv, basis="calendar", period="month", end="2027-11-30")
-    # Not the meter's recent rate: without a duty the idler check isn't dated.
-    assert "Inspect idlers" not in _names(out)
-    (left,) = out["not_placed"]
-    assert left["task"]["id"] == idlers
-    assert left["reason"] == "every 250 h, not dated: set a duty in Operations"
-    assert f"plan={cv}" in left["link"]
-    assert out["totals"]["tasks"] == _names(out)["Belt walk"]["count"] == 52
-    # The plain forecast (MCP, Forecast… before) still uses the meter's rate.
-    assert any(t["name"] == "Inspect idlers" for t in pf.position_forecast(m, cv, periods=12)["tasks"])
+    by = _names(out)
+    # 1,250 h is 70 h after 1,180 h on 1 Dec: 3 Dec at 22:00; then every 250 h, 10 days 10 h.
+    assert by["Inspect idlers"]["dates"][:2] == ["2026-12-03", "2026-12-14"]
+    assert by["Inspect idlers"]["moments"][:2] == ["2026-12-03T22:00", "2026-12-14T08:00"]
+    assert out["not_placed"] == []
+    assert out["assumed"]["text"] == "No duty set: assuming it runs all the time (24 h a day). Set a duty in Operations."
+    assert f"plan={cv}" in out["assumed"]["link"] and "tab=operations" in out["assumed"]["link"]
+    assert out["totals"]["tasks"] == by["Belt walk"]["count"] + by["Inspect idlers"]["count"]
+    # The plain forecast (MCP, the route without strict) keeps the meter's recent rate.
+    plain = {t["name"]: t for t in pf.position_forecast(m, cv, periods=12)["tasks"]}
+    assert plain["Inspect idlers"]["dates"][0] != "2026-12-03"
 
 
 def test_hours_with_a_duty_places_both_kinds(monkeypatch):
@@ -88,7 +92,7 @@ def test_hours_with_a_duty_places_both_kinds(monkeypatch):
     cv, idlers, walk = _conveyor(m, duty=True)
     out = fd.forecast_details(m, cv, basis="hours", hours=1000, every=100)
     assert len(out["rows"]) == 10 and out["rows"][0]["from_hours"] == 0 and out["rows"][-1]["to_hours"] == 1000
-    assert out["reading"] == 1180 and out["rows"][0]["reading_from"] == 1180
+    assert out["reading"] == 1180 and out["rows"][0]["reading_from"] == 1180 and out["assumed"] is None
     by = _names(out)
     # 1,250, 1,500, ... 2,000 h: 70, 320, 570 and 820 h from now.
     assert by["Inspect idlers"]["hours"] == [70, 320, 570, 820]
@@ -99,18 +103,17 @@ def test_hours_with_a_duty_places_both_kinds(monkeypatch):
     assert out["totals"]["planned_cost"] is not None
 
 
-def test_hours_without_a_duty_leaves_the_calendar_out(monkeypatch):
+def test_hours_without_a_duty_converts_the_calendar_at_24_hours_a_day(monkeypatch):
     _clock(monkeypatch)
     m = _m()
     cv, idlers, walk = _conveyor(m, duty=False)
     out = fd.forecast_details(m, cv, basis="hours", hours=1000, every=250)
     by = _names(out)
-    assert by["Inspect idlers"]["hours"] == [70, 320, 570, 820] and by["Inspect idlers"]["dates"] == []
-    (left,) = out["not_placed"]
-    assert left["task"]["id"] == walk
-    assert left["reason"] == "calendar rule, not placed in hours: set a duty in Operations"
-    assert [r["tasks"] for r in out["rows"]] == [1, 1, 1, 1]
-    # When next: in running hours, with the meter reading each comes at.
+    assert by["Inspect idlers"]["hours"] == [70, 320, 570, 820]
+    # The weekly walk (last done 30 Nov) at 168 h a week: 7 Dec is 144 h on, then every 168 h.
+    assert by["Belt walk"]["hours"] == [144, 312, 480, 648, 816, 984]
+    assert out["not_placed"] == [] and out["assumed"] is not None
+    assert [r["tasks"] for r in out["rows"]] == [2, 3, 2, 3]
     first = out["occurrences"][0]
     assert first["hours"] == 70 and first["kind"] == "task" and first["name"] == "Inspect idlers"
 

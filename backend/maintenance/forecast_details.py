@@ -9,17 +9,17 @@ etc etc. and a paginated list of when next. Should also be able to see the forec
 Two bases:
 
 * **calendar**: from today to a date, grouped by day, week, month, quarter or year
-  (``position_forecast`` with ``strict``): tasks by use are put on dates only through the
-  position's duty (its operating plan, as ``Maintenance.duty_of`` resolves it). Without one they
-  stay in hours and are listed as not dated, with where to set a duty. A life model in hours is
-  still laid on the calendar running all the time, 24 h a day (running_clock's rule, said in
-  its line), so the failures aren't lost.
-* **hours**: the next N running hours, grouped every B hours. Tasks by use fall where the meter
-  reaches them; a calendar rule needs the duty to become hours, else it's listed as not placed.
-  Failures from a life in hours fall in the windows directly; a life in calendar time needs the
-  duty too.
+  (``position_forecast`` with ``strict``).
+* **hours**: the next N running hours, grouped every B hours.
 
-With a duty both bases place everything, converted through it. RePyability does the maths
+Hours and the calendar meet through the position's duty (its operating plan, as
+``Maintenance.duty_of`` resolves it); with none, it's taken to run all the time, 24 h a day
+(Derryn, 21 Nov 2026: "assume continuous use unless there is a duty against that position"),
+anchored on the latest hours reading, and the answer says so once, with where to set a duty
+(``assumed``). So tasks by use, calendar rules and lives always share one time basis, on both.
+The meter's recent rate is not used here.
+
+RePyability does the maths
 (``Task.due``, ``UsageForecast.model_time`` and ``moment``, ``NonRepairable.cost_by_window``);
 this module picks what to ask, sums the answers into rows and labels them. Nothing is stored.
 """
@@ -85,15 +85,6 @@ def _by_use(task: dict) -> bool:
     return not svc._is_calendar(task["unit"]) or bool(task.get("also_unit") and not svc._is_calendar(task["also_unit"]))
 
 
-def _every(task: dict) -> str:
-    rule = task.get("rule") or {}
-    if rule.get("kind") and rule.get("kind") != "every":
-        return "on a calendar rule"
-    unit = svc._norm_unit(task["unit"]) or task["unit"]
-    word = "h" if unit == "hours" else unit
-    return f"every {float(task['interval']):,.6g} {word}"
-
-
 def _duty_words(m: Maintenance, position_id: str, root) -> dict | None:
     duty = m.duty_of(position_id, root)
     if duty is None:
@@ -147,11 +138,7 @@ def _not_placed(fc_not_on_dates: list[dict], m: Maintenance, root, basis: str) -
     for x in fc_not_on_dates:
         task = m.s.node(m.org, x["task"]["id"]) or {}
         reason, link = x["reason"], None
-        if "no operating plan and no hours readings" in reason or reason == "needs a duty":
-            if basis == "calendar":
-                reason = f"{_every(task)}, not dated: set a duty in Operations"
-            else:
-                reason = "calendar rule, not placed in hours: set a duty in Operations"
+        if "no operating plan" in reason or "no hours reading" in reason:
             link = _plan_link(x["position"]["id"], root)
         out.append({"task": x["task"], "position": x["position"], "reason": reason, "link": link})
     return out
@@ -186,31 +173,31 @@ def _hours_rows(horizon: float, every: float) -> list[tuple[float, float]]:
 
 def _map_for(m: Maintenance, node: dict, root, today: date, far: date, reading):
     """The position's map between dates and running hours for the hours basis: (map, duty?).
-    With a duty, the duty's (anchored on the hours reading given, else the latest recorded);
-    without, a clock that counts only running hours from now (24 an elapsed day: calendar dates
-    on it mean nothing and none are shown), from the reading given, else the latest, else 0 h."""
+    The duty's, else running all the time, 24 h a day (running_clock's rule); anchored on the
+    hours reading given, else the latest recorded (``_hours_map`` with ``strict``)."""
     from backend.maintenance import schedule
 
     duty = m.duty_of(node["id"], root)
-    counter = svc._counter_on(m.s, m.org, node["id"], "hours")
-    readings = svc._readings(m.s, m.org, counter, m.tz) if counter else []
     end_excl = far + timedelta(days=1)
-    if duty is not None and reading is None:
+    if reading is None:
         hm = pf._hours_map(m, node, root, today, end_excl, strict=True)
         if hm is not None:
-            return hm, True
-    latest = float(readings[-1]["value"]) if readings else None
-    value = float(reading) if reading is not None else latest
+            if hm["basis"].get("reading") is None:  # a duty, no reading: count from 0 h today
+                hm = {**hm, "basis": {**hm["basis"], "reading": {"value": 0.0, "on": today.isoformat()}}}
+            return hm, duty is not None
+    counter = svc._counter_on(m.s, m.org, node["id"], "hours")
+    readings = svc._readings(m.s, m.org, counter, m.tz) if counter else []
+    value = float(reading or 0.0)
     if duty is not None:
-        usage = duty["plan"].forecast(today, end_excl, readings={"hours": value or 0.0}, read_at=today)
-        text = f"Hours from the operating plan ({duty['text']})"
+        usage = duty["plan"].forecast(today, end_excl, readings={"hours": value}, read_at=today)
+        text = f"Hours from the operating plan ({duty['text']}), from {value:,.6g} h now"
         kind = "plan"
     else:
-        usage = schedule.DutyPlan(schedule.Continuous()).forecast(today, end_excl, readings={"hours": value or 0.0},
+        usage = schedule.DutyPlan(schedule.Continuous()).forecast(today, end_excl, readings={"hours": value},
                                                                   read_at=today)
-        text = "Running hours from now; no duty here, so nothing on the calendar is put in hours"
-        kind = "hours"
-    basis = {"kind": kind, "text": text, "reading": {"value": value or 0.0, "on": today.isoformat()}}
+        text = f"{pf.CONTINUOUS_NOTE}, from {value:,.6g} h now"
+        kind = "continuous"
+    basis = {"kind": kind, "text": text, "reading": {"value": value, "on": today.isoformat()}}
     return {"usage": usage, "counter": counter, "readings": readings, "basis": basis}, duty is not None
 
 
@@ -246,21 +233,17 @@ def _hours(m: Maintenance, position_id: str, root, horizon, every, reading, only
     own_basis = None
     origin = datetime(today.year, today.month, today.day)
     for node, _depth in tree:
-        hm, has_duty = _map_for(m, node, root, today, far, reading)
+        hm, _has_duty = _map_for(m, node, root, today, far, reading)
         usage = hm["usage"]
         if node["id"] == position_id:
             own_basis = hm["basis"]
         until = usage.moment(horizon)
         last_day = until.date() if until is not None else far
-        rows, skipped, _lib = pf._task_rows(m, node, hm, today, last_day, only, hours_only=not has_duty)
+        rows, skipped, _lib = pf._task_rows(m, node, hm, today, last_day, only)
         here = {"id": node["id"], "name": node.get("name", "")}
         for s in skipped:
             not_on.append({**s, "position": here})
         for lib, view, task, basis, first, by_use in rows:
-            if not by_use and not has_duty:
-                not_on.append({"task": {"id": task["id"], "name": task["name"]}, "position": here,
-                               "reason": "needs a duty"})
-                continue
             due = lib.due(today, last_day, usage=usage)
             done = list(due.done)
             moments = list(due.moments or ()) if by_use else []
@@ -292,7 +275,7 @@ def _hours(m: Maintenance, position_id: str, root, horizon, every, reading, only
             tasks_out.append({
                 "id": task["id"], "name": task["name"], "position": here,
                 "how_often": view["limits"][0]["limit"] if view.get("limits") else "",
-                "by_use": by_use, "dates": dates if has_duty else [], "moments": mos if has_duty and any(mos) else [],
+                "by_use": by_use, "dates": dates, "moments": mos if any(mos) else [],
                 "hours": hours_at[task["id"]], "overdue": overdue and bool(keep) and keep[0] == 0, "count": len(keep),
                 "cost_each": cost_each, "labour_each": lib.duration, "labour_cost_each": pf._money(lab_each),
                 "materials_cost_each": pf._money(mat_each), "rests_on": basis, "notes": list(due.notes),
@@ -303,11 +286,9 @@ def _hours(m: Maintenance, position_id: str, root, horizon, every, reading, only
             if served is not None:
                 lives = pf._lives_served(m, node, lives, served)
 
-            def windows(life_unit, use, _usage=usage, _duty=has_duty):
+            def windows(life_unit, use, _usage=usage):
                 if life_unit == "hours":
                     return edges
-                if not _duty:
-                    return "a life in calendar time, not placed in hours: no duty here (set one in Operations)"
                 per = svc._DAYS_PER.get(life_unit, 1.0)
                 out = []
                 for e in edges:
@@ -445,6 +426,10 @@ def forecast_details(m: Maintenance, position_id: str, root: str | None = None, 
         out = _calendar(m, position_id, root, period, end, only, subject, fetch)
     else:
         out = _hours(m, position_id, root, hours, every, reading, only, subject, fetch)
-    return {**out, "basis": basis, "default_basis": default, "duty": duty,
+    # Hours and the calendar meet at 24 h a day where there's no duty: said once, with where to set one.
+    assumed = None
+    if duty is None and (by_use or (basis == "hours" and len(tasks) > by_use) or out.get("models")):
+        assumed = {"text": f"{pf.CONTINUOUS_NOTE}. Set a duty in Operations.", "link": _plan_link(position_id, root)}
+    return {**out, "basis": basis, "default_basis": default, "duty": duty, "assumed": assumed,
             "duty_link": _plan_link(position_id, root), "subject": subject,
             "by_use_tasks": by_use, "calendar_tasks": len(tasks) - by_use}
