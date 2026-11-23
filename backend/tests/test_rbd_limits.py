@@ -97,7 +97,7 @@ def test_vote_node_requiring_more_than_its_branches_is_explained():
                   {"source": "v", "target": "output"}]})
     check = rbds_service.validate_graph(mongomock.MongoClient()["limits"], graph, "u1")
     assert not check["valid"]
-    assert any("requires 3 working inputs but only 2 branches" in e for e in check["errors"])
+    assert any("needs at least 3 inputs for 3-of-n; it has 2" in e for e in check["errors"])
 
 
 def test_saving_a_diagram_checks_its_limits():

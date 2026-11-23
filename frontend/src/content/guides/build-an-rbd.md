@@ -120,7 +120,10 @@ Plain series/parallel covers a lot, but real systems need more, and the canvas
 has block types for the common cases:
 
 - **Voting node (MooN)** — k-out-of-n voting: the system needs at least *k* of the *n* branches
-  feeding the gate. Three sensors where any two must agree is a 2-of-3.
+  feeding the gate. Three sensors where any two must agree is a 2-of-3. You set only *k*
+  (it starts at 1); *n* is the branches you wire into it. A node that needs more than are wired in
+  can't be calculated, and one that needs all of them (2 of 2) adds no redundancy, so it says so
+  and offers **Make it 1 of 2**.
 - **Standby group** — spares that sit dormant (cold, the default) or lightly
   loaded (warm), or run all the time (hot), until switched in. The risk here is the *switching*: the
   **Chance a spare starts** is 1 (every spare starts) until you set it, and 0.95–0.99 is

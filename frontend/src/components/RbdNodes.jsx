@@ -7,6 +7,7 @@ import { formatPercent } from "../format.js";
 import { lifeLine, repairLine } from "./rbdModelText.js";
 import { jointBlockLine } from "../joint.js";
 import { describeStandby, hasOwnUnits } from "../standbyWords.js";
+import { voteNeed, voteNote, voteState } from "../rbdVotes.js";
 
 // The React Flow node components of a reliability block diagram, shared by the
 // builder (interactive) and the public read-only view (/p/:token). Pure
@@ -39,6 +40,9 @@ export const RbdCcfContext = createContext({});
 // Inline rename (#289), provided by the builder only (the read-only view has
 // none): { renaming: node id | null, start(id), commit(id, label), cancel() }.
 export const RbdRenameContext = createContext(null);
+// Set a vote node's number needed in one click ("Make it 1 of 2"), provided by the builder only:
+// (node id, n) => void.
+export const RbdVoteFixContext = createContext(null);
 
 // "2oo3": a vote of M out of N branches, as IEC 61508 / 61511 write it (#298).
 export const moonText = (m, n) => `${m || "M"}oo${n || "N"}`;
@@ -256,18 +260,20 @@ function conversionChip(c) {
 }
 
 // n-out-of-k voting block: the system through this node works if at least n of
-// the k branches connected to its output work. n and k are edited in a modal
-// (right-click the node); the single output handle can fan out to multiple
-// downstream nodes.
+// the branches wired into it work. n is edited in a modal (right-click the node);
+// the branches are the wires coming in (never a total typed on the node), so the
+// node shows "2oo3" only when three are wired in. The single output handle can
+// fan out to multiple downstream nodes.
 export function KNode({ id, data }) {
-  const valid =
-    Number(data.n) >= 1 && Number(data.k) >= 1 && Number(data.n) <= Number(data.k);
+  const inputs = useStore((s) => s.edges.reduce((c, e) => c + (e.target === id ? 1 : 0), 0));
+  const fix = useContext(RbdVoteFixContext);
+  const need = voteNeed(data);
+  const state = voteState(need, inputs);
   // n = 1 is a junction: any one branch is enough. Same node and same maths (a
   // perfectly reliable gate), but drawn as a bare dot, because "1-out-of-k
   // voting" is a confusing way to describe merging branches back together and
   // there is no number worth showing inside it.
-  const isJunction = valid && Number(data.n) === 1;
-  if (isJunction) {
+  if (state === "ok" && need === 1) {
     return (
       <div className={"rbd-junction" + stateClass(data.state)}
            title={(data.label ? `${data.label}\n` : "") + "Junction — merges branches back into one path"}>
@@ -277,14 +283,29 @@ export function KNode({ id, data }) {
       </div>
     );
   }
+  const moon = moonText(Number.isFinite(need) ? need : "M", inputs || "N");
+  const note = voteNote(need, inputs);
+  const cls = state === "too_many" ? " invalid" : state === "all_must_work" ? " warn" : "";
   return (
-    <div className={"rbd-knode" + (valid ? "" : " invalid") + stateClass(data.state)}>
+    <div className={"rbd-knode" + cls + stateClass(data.state)}
+         title={state === "all_must_work"
+           ? `${need} of ${inputs}: all must work, so these add no redundancy. Did you mean 1 of ${inputs}?` : undefined}>
       <Handle type="target" position={Position.Left} />
       <StatusBadge state={data.state} />
       <NodeTitle nodeId={id} label={data.label} className="rbd-knode-title">
-        {data.label || moonText(data.n, data.k)}
+        {data.label || moon}
       </NodeTitle>
-      <div className="rbd-knode-sub">{data.label ? `${moonText(data.n, data.k)} voting` : "voting · double-click to edit"}</div>
+      <div className="rbd-knode-sub">
+        {note ? <>{state === "too_many" ? "✕ " : "! "}{note}</>
+          : data.label ? `${moon} voting` : "voting · double-click to edit"}
+      </div>
+      {state === "all_must_work" && fix && (
+        <button type="button" className="secondary sm nodrag rbd-knode-fix"
+                onClick={(e) => { e.stopPropagation(); fix(id, 1); }}
+                onDoubleClick={(e) => e.stopPropagation()}>
+          Make it 1 of {inputs}
+        </button>
+      )}
       <Handle type="source" position={Position.Right} />
     </div>
   );

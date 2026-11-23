@@ -866,40 +866,98 @@ def _io_errors(graph: dict) -> list[str]:
     return errors
 
 
-def _koon_checks(nodes: list, edges: list, labels: dict) -> tuple[list[str], list[str]]:
-    """``(errors, warnings)`` for the k-of-n voting nodes, checked up front
-    against the wiring (RePyability's own messages are replaced: one isn't
-    formatted, and an impossible gate otherwise surfaces as "RBD has no paths
-    through!")."""
-    errors: list[str] = []
-    warnings: list[str] = []
-    indeg: dict = {}
+def _vote_required(node: dict):
+    """A vote node's number of working inputs needed (``n``), from ``data`` or, for graphs not yet
+    normalised (imports, the structure-derived RBD), the node itself; 1 when unset."""
+    data = node.get("data") or {}
+    raw = data.get("n") if data.get("n") is not None else node.get("n")
+    return int(raw if raw is not None else 1)
+
+
+def _vote_label(node: dict, labels: dict) -> str:
+    data = node.get("data") or {}
+    nid = node.get("id")
+    return str(labels.get(nid) or data.get("label") or node.get("label") or nid)
+
+
+def all_must_work_message(label: str, need: int) -> str:
+    """The note for a vote node that needs every one of its inputs (k = n, two or more): valid,
+    but it adds no redundancy, so it behaves as series."""
+    if need == 2:
+        return (f"“{label}” is 2 of 2: both must work, so this pair adds no redundancy. "
+                "Did you mean 1 of 2?")
+    return (f"“{label}” is {need} of {need}: all {need} must work, so it adds no redundancy (it acts as "
+            f"series). Did you mean fewer, such as 1 of {need}?")
+
+
+def vote_node_notes(nodes: list, edges: list, labels: Optional[dict] = None) -> list[dict]:
+    """Each k-of-n vote node whose number needed doesn't fit its wiring, checked against the
+    inputs actually wired into it (never the total typed on the node)::
+
+        {"id", "label", "need", "inputs", "kind", "message"}
+
+    ``kind``: ``too_many`` (needs more working inputs than it has: refused), ``all_must_work``
+    (needs every input, two or more: valid, but series, no redundancy), ``pass_through`` (one
+    input, one output, needs 1: does nothing) or ``bad_number`` (not a whole number of at least 1:
+    refused)."""
+    labels = labels or {}
+    into: dict = {}
+    out_of: dict = {}
     for src, tgt in edges:
-        indeg[tgt] = indeg.get(tgt, 0) + 1
+        into[tgt] = into.get(tgt, 0) + 1
+        out_of[src] = out_of.get(src, 0) + 1
+    notes: list[dict] = []
     for node in nodes:
         if node.get("type") != "knode":
             continue
         nid = node.get("id")
-        data = node.get("data") or {}
-        label = labels.get(nid) or data.get("label") or nid
+        label = _vote_label(node, labels)
+        inputs = into.get(nid, 0)
+        base = {"id": nid, "label": label, "inputs": inputs}
         try:
-            required = int(data.get("n") if data.get("n") is not None else 1)
+            need = _vote_required(node)
         except (TypeError, ValueError):
-            errors.append(f"Vote node “{label}”: the number required (n) must be a whole number.")
+            notes.append({**base, "need": None, "kind": "bad_number", "message":
+                          f"Vote node “{label}”: the number of working inputs needed must be a whole number."})
             continue
-        feeding = indeg.get(nid, 0)
-        branches = f"{feeding} branch feeds" if feeding == 1 else f"{feeding} branches feed"
-        if required < 1:
-            errors.append(f"Vote node “{label}” must require at least 1 working input (n = {required}).")
-        elif required > feeding:
-            errors.append(
-                f"Vote node “{label}” requires {required} working inputs but only {branches} it. "
-                f"Wire {required} or more branches into it, or lower n.")
-        elif required == feeding and required > 1:
-            warnings.append(
-                f"Vote node “{label}” requires all {required} of its inputs to work, which is a series "
-                "structure. Is n correct, or should those blocks simply be in series?")
-    return errors, warnings
+        base["need"] = need
+        if need < 1:
+            notes.append({**base, "kind": "bad_number", "message":
+                          f"Vote node “{label}” must need at least 1 working input (it's set to {need})."})
+        elif need > inputs:
+            has = "nothing is wired into it" if inputs == 0 else f"it has {inputs}"
+            fix = (f"Wire in {need - inputs} more, or lower the number needed to {inputs}" if inputs
+                   else "Wire its inputs into it")
+            notes.append({**base, "kind": "too_many", "message":
+                          f"Vote node “{label}” needs at least {need} inputs for {need}-of-n; {has}, so the "
+                          f"diagram can't be calculated. {fix}."})
+        elif need == inputs and need > 1:
+            notes.append({**base, "kind": "all_must_work", "message": all_must_work_message(label, need)})
+        elif need == 1 and inputs == 1 and out_of.get(nid, 0) <= 1:
+            notes.append({**base, "kind": "pass_through", "message":
+                          f"Vote node “{label}” has one input and needs 1, so it does nothing: you can delete it "
+                          "and wire straight through."})
+    return notes
+
+
+_VOTE_ERRORS = ("too_many", "bad_number")
+
+
+def _koon_checks(nodes: list, edges: list, labels: dict) -> tuple[list[str], list[str]]:
+    """``(errors, warnings)`` for the k-of-n voting nodes (:func:`vote_node_notes`), checked up
+    front against the wiring (RePyability's own messages are replaced: one isn't formatted, and an
+    impossible gate otherwise surfaces as "RBD has no paths through!")."""
+    notes = vote_node_notes(nodes, edges, labels)
+    return ([x["message"] for x in notes if x["kind"] in _VOTE_ERRORS],
+            [x["message"] for x in notes if x["kind"] not in _VOTE_ERRORS])
+
+
+def all_must_work_notes(graph: dict) -> list[str]:
+    """The result's assumptions: each vote node that needs all of its two or more inputs."""
+    nodes = graph.get("nodes") or []
+    edges = [(e.get("source"), e.get("target")) for e in graph.get("edges") or []
+             if e.get("source") and e.get("target")]
+    return [x["message"] for x in vote_node_notes(nodes, edges) if x["kind"] == "all_must_work"]
 
 
 def _check_limits(graph: dict) -> None:
@@ -1202,6 +1260,14 @@ def validate_graph(
     with rbd_standby.simulation("check") as simulated:
         out = _validate_graph(graph, resolve_subsystem)
     out = _with_needed_models(out, graph)
+    if not out.get("empty"):
+        # The vote nodes whose number needed doesn't fit their wiring, for the builder to mark on
+        # the node and offer its fix (``all_must_work``: "Make it 1 of 2").
+        edges = [(e.get("source"), e.get("target")) for e in graph.get("edges") or []
+                 if e.get("source") and e.get("target")]
+        votes = vote_node_notes(graph.get("nodes") or [], edges)
+        if votes:
+            out["vote_nodes"] = votes
     if simulated and not graph.get("repairable"):
         labels = list(dict.fromkeys(b.label for b in simulated))
         out["simulated_blocks"] = labels
@@ -2464,7 +2530,8 @@ def analyze(
             relayed.append(_ccf_warning(str(w.message), labels))
         else:  # not ours to relay: let it through as it would have gone
             warnings.warn_explicit(w.message, w.category, w.filename, w.lineno, source=w.source)
-    out = list(dict.fromkeys(relayed + notes))
+    # A vote node that needs all of its inputs adds no redundancy: said with the result too.
+    out = list(dict.fromkeys(relayed + notes + all_must_work_notes(graph)))
     if out:
         result["warnings"] = out
     if conversions:
@@ -3944,6 +4011,8 @@ def analyze_availability(
         "current_state": state or None,
         "repyability_version": _repyability_version(),
         **({"unit_conversions": conversions} if conversions else {}),
+        # A vote node that needs all of its inputs adds no redundancy.
+        **({"warnings": series} if (series := all_must_work_notes(graph)) else {}),
     }
 
 

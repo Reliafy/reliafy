@@ -94,12 +94,35 @@ def import_file(data: bytes, filename: str, excel_mapping: Optional[dict] = None
             if not diagrams:
                 raise RbdImportError(f"No reliability block diagrams found in this {label} file.")
             apply_time_unit(diagrams, time_unit)
+            note_vote_nodes(diagrams)
             return diagrams
     raise RbdImportError(
         "Unrecognised file. Reliafy imports ReliaSoft BlockSim projects (.rsgz / .rsr — "
         "use File › Pack and E-mail in BlockSim), Open-PSA XML, Galileo .dft files, "
         "RePyability JSON and Excel workbooks (.xlsx — download the template)."
     )
+
+
+def note_vote_nodes(diagrams: list[ImportedDiagram]) -> None:
+    """Each diagram's vote nodes checked as the builder and Calculate check them (one check,
+    :func:`backend.services.rbd_analysis.vote_node_notes`): one needing more working inputs than
+    are wired into it, or all of two or more, is said in the diagram's warnings. Nothing in the
+    file is changed."""
+    from backend.services.rbd_analysis import vote_node_notes
+
+    for d in diagrams:
+        graph = d.graph or {}
+        edges = []
+        for e in graph.get("edges") or []:
+            if isinstance(e, dict):
+                edges.append((e.get("source"), e.get("target")))
+            elif isinstance(e, (list, tuple)) and len(e) >= 2:
+                edges.append((e[0], e[1]))
+        for note in vote_node_notes(graph.get("nodes") or [], edges):
+            if note["kind"] == "pass_through":
+                continue
+            if note["message"] not in d.warnings:
+                d.warnings.append(note["message"])
 
 
 def link_references(diagrams: list[ImportedDiagram], saved_model=None, saved_rbd=None) -> None:
