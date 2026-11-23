@@ -228,6 +228,12 @@
   border-bottom: 1px solid var(--border-subtle); /* a line between rows on every tab, as on the RCM tab */
 }
 
+/* A long press on a touch screen opens the row's menu: no text callout or selection from the
+   system competing with it (iOS shows its own after about the same time). Fields keep theirs. */
+@media (pointer: coarse) {
+  .tp-row { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  .tp-row input, .tp-row textarea, .tp-row [contenteditable="true"] { -webkit-touch-callout: default; -webkit-user-select: text; user-select: text; }
+}
 .tp-row:hover {
   background: var(--accent-wash);
 }

@@ -495,14 +495,22 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
         if (e.touches.length !== 1 || e.target.closest("input, button, a")) return;
         const { clientX: x, clientY: y } = e.touches[0];
         clearTimeout(press.current);
+        pressed.current = false;
         press.current = setTimeout(() => {
           pressed.current = true;
           onMenu(r.key, { x, y }, { keyboard: false });
-          setTimeout(() => { pressed.current = false; }, 600);
         }, 500);
       },
       onTouchMove: () => clearTimeout(press.current),
-      onTouchEnd: () => clearTimeout(press.current),
+      // Lifting the finger after a long press keeps the menu open: no mouse events or click are
+      // made from this touch (they closed the menu and opened the row's details sheet), and the
+      // guard on the click is dropped from the lift, not from when the menu opened.
+      onTouchEnd: (e) => {
+        clearTimeout(press.current);
+        if (!pressed.current) return;
+        if (e.cancelable) e.preventDefault();
+        setTimeout(() => { pressed.current = false; }, 400);
+      },
       onTouchCancel: () => clearTimeout(press.current),
     } : {}),
   };
