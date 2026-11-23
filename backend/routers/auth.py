@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Body, Depends, Header
 from fastapi.responses import JSONResponse
 
-from backend.auth import current_user_doc
+from backend.auth import current_user_doc, get_current_user
 from backend.db import get_session
 from backend.services import access as access_service
 from backend.services import billing as billing_service
@@ -18,6 +20,7 @@ from backend.services import time_zones
 from backend.errors import client_message
 
 router = APIRouter(prefix="/api")
+logger = logging.getLogger(__name__)
 
 
 @router.post("/samples/restore")
@@ -62,6 +65,43 @@ def me(user: dict = Depends(current_user_doc), session=Depends(get_session)) -> 
         ],
         "team_invites": teams_service.pending_invites(session, user),
     }
+
+
+@router.get("/me/bootstrap")
+def bootstrap(user: dict = Depends(current_user_doc), signed_in: dict = Depends(get_current_user),
+              session=Depends(get_session), x_workspace_id: str | None = Header(default=None)) -> dict:
+    """Everything the app's frame reads once a session, in one request:
+    ``{"parts": {...}, "errors": {...}}``. Each part is exactly what its own
+    route answers (``me``, ``roles``, ``time_zone``, ``currency``, ``teams``,
+    ``invites``, ``extensions``, ``maintenance_access``), so the app reads a part
+    from here first and from its route after (a refresh, a workspace switch).
+    A part that fails is named in ``errors`` with the rest still answered; the
+    app then reads it from its own route. Those routes stay for every other caller."""
+    from backend import extensions
+    from backend.maintenance.access import allowed, graph_query_allowed
+
+    parts: dict = {}
+    errors: dict = {}
+
+    def part(name, fn):
+        try:
+            parts[name] = fn()
+        except Exception:
+            logger.exception("Bootstrap: %s failed", name)
+            errors[name] = "Couldn't load this part."
+
+    part("me", lambda: me(user=user, session=session))
+    if "me" in parts:
+        # The profile already carries these, read the way their own routes read them.
+        profile = parts["me"]
+        parts["time_zone"] = {"time_zone": profile["time_zone"]}
+        parts["currency"] = {"currency_symbol": profile["currency_symbol"]}
+        parts["teams"] = {"teams": profile["teams"]}
+        parts["invites"] = {"invites": profile["team_invites"]}
+    part("roles", lambda: get_roles(user=user, session=session, x_workspace_id=x_workspace_id))
+    part("extensions", lambda: {"mounts": extensions.visible_mounts(signed_in)})
+    part("maintenance_access", lambda: {"allowed": allowed(signed_in), "graph": graph_query_allowed(signed_in)})
+    return {"parts": parts, "errors": errors}
 
 
 @router.get("/me/time-zone")

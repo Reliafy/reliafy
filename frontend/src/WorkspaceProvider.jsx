@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useAuth } from "./AuthProvider.jsx";
 import {
-  getMyCurrency, getMyTimeZone, getWorkspace, setWorkspace as persistWorkspace, listTeams, listTeamInvites,
+  getMyCurrency, getMyTimeZone, getWorkspace, setWorkspace as persistWorkspace, listTeams, listTeamInvites, shellRead,
   setMyCurrency, setMyTimeZone,
 } from "./api.js";
 import { setWorkspaceTimeZone } from "./workspaceDate.js";
@@ -40,7 +40,7 @@ export function WorkspaceProvider({ children }) {
   // created (switching first would be undone by the check below).
   const refreshTeams = useCallback(() => {
     if (!user) return Promise.resolve();
-    return listTeams()
+    return shellRead("teams", listTeams)
       .then((d) => setTeams(d.teams || []))
       .catch(() => setTeams([]));
   }, [user]);
@@ -52,7 +52,7 @@ export function WorkspaceProvider({ children }) {
   const [invites, setInvites] = useState([]);
   const refreshInvites = useCallback(() => {
     if (!user) return Promise.resolve();
-    return listTeamInvites()
+    return shellRead("invites", listTeamInvites)
       .then((d) => setInvites(d.invites || []))
       .catch(() => setInvites([]));
   }, [user]);
@@ -65,7 +65,7 @@ export function WorkspaceProvider({ children }) {
   const [personalTimeZone, setPersonalTimeZone] = useState(undefined);
   useEffect(() => {
     if (!user) return;
-    getMyTimeZone()
+    shellRead("time_zone", getMyTimeZone)
       .then((d) => setPersonalTimeZone(d.time_zone || null))
       .catch(() => setPersonalTimeZone(null));
   }, [user]);
@@ -79,7 +79,7 @@ export function WorkspaceProvider({ children }) {
   const [personalCurrency, setPersonalCurrency] = useState("$");
   useEffect(() => {
     if (!user) return;
-    getMyCurrency()
+    shellRead("currency", getMyCurrency)
       .then((d) => setPersonalCurrency(d.currency_symbol || "$"))
       .catch(() => {});
   }, [user]);

@@ -128,6 +128,26 @@ async function readJson(res) {
   return data;
 }
 
+// The app frame's settings in one request (GET /api/me/bootstrap: the profile,
+// roles, time zone, currency, teams, invites, extension pages and Maintenance
+// access), read once a session. `shellRead(part, read)` answers a part from it
+// the first time the frame asks, and from the part's own route (`read`) every
+// time after (a refresh after a change, a workspace switch) or when the
+// bootstrap couldn't give it. resetBootstrap: on sign-in, sign-out or a new user.
+let bootstrap = null;
+const bootstrapUsed = new Set();
+export function resetBootstrap() {
+  bootstrap = null;
+  bootstrapUsed.clear();
+  maintenanceAccess = null;
+}
+export function shellRead(part, read) {
+  if (bootstrapUsed.has(part)) return read();
+  bootstrapUsed.add(part);
+  if (!bootstrap) bootstrap = request("/api/me/bootstrap").catch(() => null);
+  return bootstrap.then((b) => (b?.parts && part in b.parts ? b.parts[part] : read()));
+}
+
 // The signed-in user's profile (also upserts it on the backend).
 export function getMe() {
   return request("/api/me");
@@ -2853,7 +2873,8 @@ export function verifyFailureReport(id, body) {
 let maintenanceAccess = null;
 export function getMaintenanceAccess() {
   if (!maintenanceAccess) {
-    maintenanceAccess = request("/api/maintenance/access").catch(() => ({ allowed: false }));
+    maintenanceAccess = shellRead("maintenance_access", () => request("/api/maintenance/access"))
+      .catch(() => ({ allowed: false }));
   }
   return maintenanceAccess;
 }
