@@ -587,12 +587,18 @@ def node_forecast(m, fetch, kind: str, node_id: str, root: str | None = None, mo
         pkg = m._get(str(node_id), "WorkPackage")
         task_ids = _package_tasks(m, pkg["id"])
         name = pkg.get("name", "")
+        # Where its tasks meet, up the tree as the Explorer shows it (a position an item carries
+        # sits in the position that item is fitted to).
+        rows = m._tree_read()["positions"]
         chains = []
         for tid in task_ids:
             on = _subject(m.s, m.org, m.s.node(m.org, tid) or {})
             if on is not None and on.get("label") == "Position":
-                chain = list(reversed(m._ancestor_ids(on["id"]))) + [on["id"]]
-                chains.append(chain)
+                chain, k = [], on["id"]
+                while k and k not in chain:
+                    chain.append(k)
+                    k = (rows.get(k) or {}).get("parent_id")
+                chains.append(list(reversed(chain)))
         if not chains:
             raise Invalid("This package has no task on a position to forecast.")
         common = []
@@ -600,9 +606,16 @@ def node_forecast(m, fetch, kind: str, node_id: str, root: str | None = None, mo
             if len(set(level)) != 1:
                 break
             common.append(level[0])
-        position_id = common[-1] if common else (root or chains[0][-1])
-        if root and root not in common and root != position_id:
-            position_id = root
+        scope = m.s.node(m.org, root) if root else None
+        if scope is not None and scope.get("label") == "Position" and root not in common:
+            position_id = root  # its tasks meet above the asset opened: the asset, and what's in it
+        elif common:
+            position_id = common[-1]
+        elif scope is not None:
+            raise Invalid("This package's tasks are on positions that sit under no one position here: "
+                          "open Hours, Spares or Cost forecast from each position instead.")
+        else:
+            position_id = chains[0][-1]
     else:
         raise Invalid("Forecast a position, a task or a package.")
     start = date.fromisoformat(m.today())

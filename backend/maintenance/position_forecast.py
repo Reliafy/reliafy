@@ -98,15 +98,18 @@ def _until(start: date, end) -> date:
     return last
 
 
-def _subtree(m: Maintenance, position_id: str) -> list[tuple[dict, int]]:
-    """The position and the live positions inside it, depth first, with their depth."""
+def _subtree(m: Maintenance, position_id: str, within: set | None = None) -> list[tuple[dict, int]]:
+    """The position and the live positions inside it, depth first, with their depth.
+    ``within`` (Maintenance.forecast_within: the asset opened): only those positions, so
+    nothing of another asset is counted (a row above a place's own keeps what's in the place)."""
     out, stack, seen = [], [(m._get(position_id, "Position"), 0)], set()
     while stack and len(out) < MAX_POSITIONS:
         node, depth = stack.pop()
         if node["id"] in seen:
             continue
         seen.add(node["id"])
-        out.append((node, depth))
+        if within is None or node["id"] in within:
+            out.append((node, depth))
         kids = [c for c in m.s.inn(m.org, node["id"], "PART_OF") if c["label"] == "Position" and not c.get("retired")]
         stack.extend((c, depth + 1) for c in sorted(kids, key=lambda c: c.get("name", "").lower(), reverse=True))
     return out
@@ -1020,12 +1023,7 @@ def position_forecast(m: Maintenance, position_id: str, root: str | None = None,
     only = set(task_ids) if task_ids is not None else None
     served = served_modes(m, only) if only is not None else None
     pos = m._get(position_id, "Position")
-    if root:
-        scope = m.s.node(m.org, root)
-        if scope is None:
-            raise svc.NotFound(f"Position {root}")
-        if root != position_id and root not in m._ancestor_ids(position_id):
-            raise Invalid("That position isn't inside the asset opened.")
+    within = m.forecast_within(pos["id"], root)
     today = m.today()
     if end not in (None, ""):
         start = date.fromisoformat(today)
@@ -1050,7 +1048,7 @@ def position_forecast(m: Maintenance, position_id: str, root: str | None = None,
     due_in: list[list[dict]] = [[] for _ in range(n)]
     no_cost_tasks, no_hours_tasks = set(), set()
     model_rows = []
-    tree = _subtree(m, position_id)
+    tree = _subtree(m, position_id, within)
     from backend.maintenance import support_whatif
 
     supporting = support_whatif.supporting_tasks(m, [n["id"] for n, _d in tree]) if fetch is not None else []
