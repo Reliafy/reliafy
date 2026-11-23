@@ -17,7 +17,7 @@ async function menuPick(page, name) {
 
 
 const M = "/api/maintenance";
-const SAMPLE = "Bearing life — Weibull (sample)";
+const SAMPLE = "Bearing life — Weibull";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
 const shot = async (page, name, fullPage = false) => {
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage });

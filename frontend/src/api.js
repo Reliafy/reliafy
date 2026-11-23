@@ -3028,6 +3028,14 @@ export function updateFailureMode(id, body) {
 export function getFailureModeCosts(id) {
   return request(`/api/maintenance/failure-modes/${id}/costs`);
 }
+// A failure mode's response (responses.py): kind "failure" (if it fails anyway, its corrective response) or
+// "found" (if an inspection finds it, its follow-on): {name?, labour?, cost?, spares?}.
+export function setModeResponse(id, kind, body) {
+  return putJson(`/api/maintenance/failure-modes/${id}/response/${kind}`, body);
+}
+export function clearModeResponse(id, kind) {
+  return request(`/api/maintenance/failure-modes/${id}/response/${kind}`, { method: "DELETE" });
+}
 export function mergeFailureMode(id, intoId) {
   return postJson(`/api/maintenance/failure-modes/${id}/merge`, { into_id: intoId });
 }

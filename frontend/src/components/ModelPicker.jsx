@@ -37,6 +37,9 @@ const GIVEN_LABEL = {
 // "params", ...), so a tool can say what's missing in the right words.
 // ``initialSavedId`` opens on that saved model and emits it (a link's preset).
 // ``wt`` is a guided walkthrough's anchor (walkthroughs.js).
+// ``typeEntry`` (the quick forecast tool, forecast plan 5.5): no Parameters / Saved model switch. The
+// saved-model list carries "Type parameters…" as its first entry, which opens the distribution and its
+// parameters, with "Pick a saved model" to go back.
 // ``joint`` (an RBD block's non-repairable model: ``{repairable}``) adds "Condition-based":
 // one unit of a condition and life model, given its readings.
 // ``repairableModels`` (a block in a repairable diagram, #367) adds a "Repairable models" group to
@@ -58,11 +61,12 @@ export function repairableRef(doc) {
 }
 
 const REP = "rep:"; // a repairable model's id in the saved-model list
+const TYPE_ENTRY = "__type__"; // "Type parameters…" in the saved-model list (typeEntry)
 
 export default function ModelPicker({ label, value, onChange, rbdBlock = false, meanEntry = null, unit = "",
                                       preferSaved = false, wanted = null, autoPick = true, initialSavedId = "", wt,
                                       joint = null, onSource = null, repairableModels = false,
-                                      degradationModels = false }) {
+                                      degradationModels = false, typeEntry = false }) {
   const hasParams = value?.source === "params" && (value.params || []).length > 0;
   const [source, setSource] = useState(
     joint && value?.kind === "joint" ? "joint" : value?.source === "saved" || initialSavedId || (preferSaved && !hasParams) ? "saved" : hasParams || !meanEntry ? "params" : "mean"
@@ -295,7 +299,7 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
   return (
     <div className="picker" data-wt={wt}>
       {label && <div className="picker-label">{label}</div>}
-      <SegmentedControl
+      {!typeEntry && <SegmentedControl
         label={label || "Model source"}
         className="picker-seg"
         value={source}
@@ -313,7 +317,7 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
           { value: "saved", label: "Saved model" },
           ...(joint ? [{ value: "joint", label: "Condition and life", title: "One unit of a condition and life model (remaining life from its readings)" }] : []),
         ]}
-      />
+      />}
 
       {source === "joint" ? (
         <JointBlockSource value={value} onChange={onChange} repairable={!!joint?.repairable} />
@@ -370,6 +374,11 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
         </>
       ) : source === "params" ? (
         <>
+          {typeEntry && saved.length > 0 && (
+            <Button variant="link" size="sm" className="picker-back" onClick={() => { setSource("saved"); onPickSaved(savedId === TYPE_ENTRY ? "" : savedId); }}>
+              Pick a saved model
+            </Button>
+          )}
           {distSelect(dists, distId, (id) => {
             setDistId(id);
             setPvals({});
@@ -426,12 +435,21 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
           <span className="dist-label">Model</span>
           <Select
             value={savedId}
-            onChange={onPickSaved}
+            onChange={(id) => {
+              if (typeEntry && id === TYPE_ENTRY) {
+                pickSeq.current();
+                setSource("params");
+                emitParams(distId, pvals);
+                return;
+              }
+              onPickSaved(id);
+            }}
             searchable={saved.length + repairables.length + degradations.length > 8}
             ariaLabel={label ? `${label}: saved model` : "Saved model"}
             placeholder="— choose —"
             options={[
               { value: "", label: "— choose —" },
+              ...(typeEntry ? [{ value: TYPE_ENTRY, label: "Type parameters…", hint: "A distribution and its parameters" }] : []),
               ...(repairables.length || degradations.length ? [{ heading: "Non-repairable models" }] : []),
               ...saved.map((m) => ({
                 value: m.id,

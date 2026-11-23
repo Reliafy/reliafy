@@ -282,6 +282,58 @@ def _plus(b: dict | None, certain: float) -> dict | None:
             "interval": [_sig(iv[0] + certain), _sig(iv[1] + certain)] if iv else None}
 
 
+def _worked_out(part: dict, ages, counts, rate: float, hz: dict, replace_at, work, body) -> dict | None:
+    """The part's answer worked out (worked_part.py), in the shape of the saved-fleet engine's (strategy,
+    views, per_item), or None with too many different ages to work out one by one."""
+    from collections import Counter
+
+    from backend.services import worked_part
+    from backend.services.strategy import StrategyError, _model_from_params
+
+    groups = Counter()
+    for a, c in zip(ages, counts):
+        groups[float(a)] += int(c)
+    if len(groups) > worked_part.MAX_GROUPS:
+        return None
+    try:
+        dist, _ = _model_from_params(part["distribution_id"], part["params"], part["extras"])
+    except StrategyError as exc:
+        return {"status": "error", "reason": str(exc)}
+    n = hz["periods"]
+    ends = rate * np.arange(1, n + 1)
+    resets = True if work is None else work.get("resets", True)
+    try:
+        got = worked_part.forecast(dist, sorted(groups.items()), ends, replace_at, resets)
+    except (ValueError, NotImplementedError) as exc:
+        return {"status": "error", "reason": f"This model can't be worked out here: {exc}"}
+    blk = worked_part.block
+    sc = part["spare_cost"] or 0.0
+    planned = replace_at is not None
+
+    def row(j, k):
+        return {"period": k + 1, "failures": blk(j, 1), "planned": blk(j, 0, 1), "parts": blk(j, 1, 1)}
+
+    st = {"kind": "age" if planned else "run_to_failure", "replace_at": replace_at,
+          "total": {"failures": blk(got["total"], 1), "planned": blk(got["total"], 0, 1),
+                    "parts": blk(got["total"], 1, 1)},
+          "per_period": [row(j, k) for k, j in enumerate(got["windows"])]}
+    views: dict = {}
+    hf, hp = part["hours_if_fails"], (work or {}).get("hours_each") if planned else None
+    if hf is not None or hp is not None:
+        a, b = hf or 0.0, hp or 0.0
+        views["hours"] = {"total": blk(got["total"], a, b),
+                          "per_period": [{"period": k + 1, "hours": blk(j, a, b)} for k, j in enumerate(got["windows"])]}
+    cf, cp = part["cost_if_fails"], (work or {}).get("cost_each") if planned else None
+    if cf is not None or sc or cp is not None:
+        a, b = (cf or 0.0) + sc, ((cp or 0.0) + sc) if planned else 0.0
+        views["costs"] = {"total": blk(got["total"], a, b),
+                          "per_period": [{"period": k + 1, "cost": blk(j, a, b)} for k, j in enumerate(got["windows"])]}
+    return {"status": "ok", "interval_method": "exact", "strategy": st, "views": views,
+            "per_item": [{"prob_any": worked_part.chance_any(got["total"]), "count": 1}],
+            "period_label": hz["period_label"], "periods": n, "model_name": part["name"], "unit": part["unit"],
+            "settings": {"period_label": hz["period_label"], "periods": n}, "items": []}
+
+
 def quick_forecast(body: dict) -> dict:
     """See the module docstring. {units?, running? {hours, per: day | week} | {all_the_time}, months
     (12, 24, 36 or 60), start? (a date; default today), work? {name, every, unit, effect (none |
@@ -367,19 +419,28 @@ def quick_forecast(body: dict) -> dict:
                    "planned_cost": work["cost_each"] if replace_at is not None else None,
                    "planned_hours": work["hours_each"] if replace_at is not None else None,
                    "spare_cost": part["spare_cost"], "spares": body.get("spares")}
-        engine = fleet_service.scratch_forecast(scratch)
+        engine = _worked_out(part, ages, counts, rate, hz, replace_at, work, body)
+        if engine is None:
+            # Too many different ages to work out one by one: the saved-fleet engine's seeded runs.
+            engine = fleet_service.scratch_forecast(scratch)
+        elif body.get("spares"):
+            # Stock to hold keeps its own statement (the service level), from the engine's runs.
+            got = fleet_service.scratch_forecast(scratch)
+            engine["spares"], engine["settings"] = got.get("spares"), got.get("settings")
         if engine.get("status") != "ok":
             return {"status": "error", "reason": engine.get("reason") or "This model can't be forecast here."}
         st = engine.get("strategy") or {}
         exact = engine.get("interval_method") == "exact"
         number = "worked out" if exact else "simulated"
         sims = engine.get("sims")
-        method = ("Worked out exactly (a constant failure rate)" if exact else
+        method = ("Worked out exactly, not simulated" if exact else
                   f"Simulated: {sims:,} seeded runs, the same every time" if sims else "Simulated")
         failures = _block((st.get("total") or {}).get("failures"))
         per_item = engine.get("per_item") or []
         none = 1.0
-        for row, c in zip(per_item, counts if len(per_item) == len(counts) else [1] * len(per_item)):
+        weights = [1] * len(per_item) if exact and len(per_item) == 1 else (
+            counts if len(per_item) == len(counts) else [1] * len(per_item))
+        for row, c in zip(per_item, weights):
             p = row.get("prob_any")
             if p is None:
                 none = None

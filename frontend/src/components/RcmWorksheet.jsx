@@ -515,6 +515,10 @@ export function Details({
     : (inTree.kids || []).map((k) => whole.rows.get(k)).filter((k) => k && (k.type === "fail" || k.type === "mode"));
   const where = display.rows.get(r.ref.position_id)?.ref.name || whole.rows.get(r.ref.position_id)?.ref.name;
   const said = (text) => onSaid?.(text);
+  // Opened from a forecast's "Not counted · Add" (?fm=<mode>&respond=failure|found): that response opens.
+  const respondQuery = new URLSearchParams(useLocation().search);
+  const respondTo = respondQuery.get("respond") ? respondQuery.get("fm") : null;
+  const respondKind = respondQuery.get("respond");
   // A task's name, kept on the task (a shared task's name changes for every mode it serves).
   const saveTaskName = (raw) => {
     const text = String(raw ?? "").trim();
@@ -854,7 +858,8 @@ export function Details({
           <section className="rw-sg" aria-label="Failure consequences">
             {consequenceRows}
             {/* What one failure costs: what the forecast and Optimise… charge it (failure_costs.py). */}
-            {ops && r.ref.id && <FailureCostRows key={`${r.key}:cost`} modeId={r.ref.id} readOnly={readOnly} onSaid={said} />}
+            {ops && r.ref.id && <FailureCostRows key={`${r.key}:cost`} modeId={r.ref.id} readOnly={readOnly} onSaid={said}
+                                                   respond={respondTo === r.ref.id ? respondKind : null} />}
           </section>
         )}
         {(r.type === "mode" || isTask) && linkingEvidence && (isTask ? modeRow?.ref.decision : d) && (

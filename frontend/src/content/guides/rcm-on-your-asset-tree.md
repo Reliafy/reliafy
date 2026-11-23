@@ -448,6 +448,25 @@ failure on its way rather than holding it off. A replace-at-age task marked
 supporting restores none of the item's age. The forecast is unchanged: while
 the task is done as planned, it changes nothing but its own cost and hours.
 
+### If it fails anyway: what's done after a failure
+
+Every failure mode can say what's done when it happens anyway, whatever its
+decision: replace the spindle, swap in the spare pump. In the failure mode's
+details, under its consequence, **If it fails anyway** has **What's done**, its
+**Labour** (hours of work to do it once), its **Cost each time** (all in; left
+empty, it's worked out from its labour and parts in the LSA) and the **Spare it
+uses**. Each field is kept as you leave it. It's a task raised by the failure,
+so it shows on the Maintenance tab as *on event: if … fails* and is never due on
+a date.
+
+- **The cost of a failure** comes from it: **What a failure costs** shows *From
+  its response* until you type a figure there, which then overrides it.
+- **The forecast** takes its hours, spares and cost for each failure it
+  expects. With nothing recorded, the failures are still counted, and the
+  forecast lists *no response if it fails* under **Not counted**, with **Add**
+  opening this row.
+- **Remove** takes it off (the task is retired, kept in the history).
+
 ## Working out the interval
 
 Each scheduled task's details have **Calculate…** beside its *every N*, under

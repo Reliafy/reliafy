@@ -51,7 +51,7 @@ export function missing(f, model, unit) {
   }
   if (f.part) {
     if (!model) return "Pick a saved model for the part, or choose a distribution and type its parameters.";
-    if (!unit) return "Enter the unit of the model's times.";
+    if (!unit) return "Type the unit of its times, after its age (hours, days, cycles…).";
     const a = parseAges(f.ages);
     if (a.error) return a.error.replace("the units' age now", "how old the part is now");
     if (!isHours(unit) && !isCalendar(unit) && !(num(f.usePerDay) > 0)) {

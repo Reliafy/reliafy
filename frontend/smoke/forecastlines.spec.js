@@ -55,7 +55,7 @@ for (const width of [1440, 400]) {
     await expect(table).toContainText("Worked out");
     await expect(page.locator(".ft-result .rs-sentence")).toContainText("known costs expected in the next 12 months");
     const gaps = page.getByRole("region", { name: "Not counted" });
-    await expect(gaps).toContainText("no response if it fails, so its failure cost is unknown");
+    await expect(gaps).toContainText("no response if it fails");
     await expect(gaps).toContainText("no P-F interval");
     await expect(page.getByRole("textbox")).toHaveCount(0); // no form: the records are the inputs
     await shot(page, `forecast-lines-costs-${width}`);
@@ -67,3 +67,30 @@ for (const width of [1440, 400]) {
     await expectHealthy(page, problems, { label: `forecast lines ${width}` });
   });
 }
+
+test("Not counted · Add opens If it fails anyway; recorded, the failure line counts its hours", async ({ page, request, problems }) => {
+  const tag = `r${Date.now()}`;
+  const top = await deck(request, tag);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, `/forecasts/hours?from=position%3A${top.id}&root=${top.id}`);
+  const gaps = page.getByRole("region", { name: "Not counted" });
+  await expect(gaps).toContainText("no response if it fails", { timeout: 30_000 });
+  await gaps.getByRole("listitem").filter({ hasText: "no response if it fails" }).first().getByRole("link", { name: "Add" }).click();
+  await expect(page).toHaveURL(/tab=rcm.*respond=failure|respond=failure.*tab=rcm/);
+  const row = page.locator(".mresp[data-kind=failure]").first();
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  await row.getByLabel("What's done").fill("Replace the spindle");
+  await row.getByLabel("What's done").press("Enter");
+  await expect(row).toContainText("Not known yet", { timeout: 15_000 });
+  await row.getByLabel("Labour").fill("4");
+  await row.getByLabel("Labour").press("Enter");
+  await row.getByLabel("Cost each time").fill("900");
+  await row.getByLabel("Cost each time").press("Enter");
+  await expect(row).toContainText("Each time: 4 h, $900.", { timeout: 15_000 });
+  await shot(page, "rcm-if-it-fails-anyway-1440");
+  await open(page, `/forecasts/hours?from=position%3A${top.id}&root=${top.id}`);
+  const table = page.locator(".ft-lines");
+  await expect(table).toContainText("Corrective: after a failure", { timeout: 30_000 });
+  await expect(table.locator("tr", { hasText: "Corrective" }).first()).toContainText(" h");
+  await expectHealthy(page, problems, { label: "if it fails anyway" });
+});

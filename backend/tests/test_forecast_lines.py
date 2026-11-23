@@ -98,13 +98,38 @@ def test_3_2_the_oil_change_and_the_engine(setting):
     assert engine["times"]["probability"] == pytest.approx(0.64, abs=0.005)
     assert engine["times"]["interval"] == [0, 1]
     assert engine["cost"]["expected"] == pytest.approx(123840, rel=0.003)
-    # The hours to put a failure right aren't recorded (plan step 3): said, never guessed.
-    assert any("no corrective response" in g["text"] for g in engine["gaps"])
+    # With no response if it fails, the hours to put a failure right are said unknown, never guessed.
+    assert any("no response if it fails" in g["text"] for g in engine["gaps"])
+    assert any(x["kind"] == "no_response" and "respond=failure" in x["link"] for x in lines["not_counted"])
     cost = lines["totals"]["cost"]
     assert cost["expected"] == pytest.approx(140150, rel=0.003)
     assert cost["interval"] == [pytest.approx(16312.5), pytest.approx(196312.5)] and cost["known"]
     assert cost["by_kind"]["planned"] == pytest.approx(16312.5)
     assert not lines["totals"]["hours"]["known"]
+
+    # If it fails anyway: replace the engine, 60 h and $180,000 (plan step 3). The failure cost now comes
+    # from it (the typed figure cleared), and the hours are counted: 41 h expected (0 to 60).
+    m.set_mode_costs(worn, failure_cost=None)
+    m.set_mode_response(worn, "failure", name="Replace the engine",
+                        labour=[{"trade": "Mechanic", "people": 1, "hours": 60}], cost=180000,
+                        spares=[{"name": "Engine", "qty": 1}])
+    out = fl.node_forecast(m, fetch, "position", truck, truck, 12)
+    engine = _by(out, "corrective", "Engine worn out")
+    assert engine["response"]["name"] == "Replace the engine" and not engine["gaps"]
+    assert engine["cost"]["expected"] == pytest.approx(123840, rel=0.003)
+    assert engine["hours"]["expected"] == pytest.approx(41.3, abs=0.2)
+    assert engine["spares"][0]["name"] == "Engine"
+    hours = out["lines"]["totals"]["hours"]
+    assert hours["known"] and hours["expected"] == pytest.approx(85, abs=0.5)
+    assert hours["interval"] == [pytest.approx(43.5), pytest.approx(103.5)]
+    assert "its corrective response's (Replace the engine)" in engine["cost"]["basis"]
+    # A typed cost of a failure overrides the response's.
+    m.set_mode_costs(worn, failure_cost=200000)
+    typed = _by(fl.node_forecast(m, fetch, "position", truck, truck, 12), "corrective", "Engine worn out")
+    assert typed["cost"]["expected"] == pytest.approx(0.688 * 200000, rel=0.003)
+    assert "typed over its corrective response" in typed["cost"]["basis"]
+    # The response is a task raised by the failure: never put on dates, never in the scheduled lines.
+    assert [x["owner"] for x in out["lines"]["lines"] if x["kind"] == "planned"] == ["Change engine oil"]
     _rebuilds_the_same(m)
 
 
@@ -196,7 +221,8 @@ def test_gaps_are_listed_with_their_fix(setting):
     out = fl.node_forecast(m, fetch, "position", deck, deck, 12)
     texts = [x["text"] for x in out["lines"]["not_counted"]]
     assert "Deck belt: no life model, so its failures are not forecast" in texts
-    assert any("no response if it fails, so its failure cost is unknown" in t for t in texts)
+    assert any("no response if it fails, so the hours, spares and cost to put a failure right are unknown" in t
+               for t in texts)
     no_cost = [x for x in out["lines"]["lines"] if x["kind"] == "corrective" and x["cost"] is None]
     assert no_cost and no_cost[0]["times"]["expected"] > 0
     assert any("no cost of a failure" in t for t in out["lines"]["totals"]["cost"]["leaves_out"])

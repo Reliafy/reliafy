@@ -42,7 +42,7 @@ for (const width of [1440, 400]) {
     await expect(answer).toContainText("12 times in the next 12 months", { timeout: 30_000 });
     await page.getByRole("button", { name: "A part that fails" }).click();
     await page.getByRole("combobox", { name: /: saved model$/ }).click();
-    await page.getByRole("option", { name: /^Bearing life — Weibull \(sample\)/ }).click();
+    await page.getByRole("option", { name: /^Bearing life — Weibull/ }).click();
     await page.getByLabel("How old it is now", { exact: true }).fill("500");
     await page.getByLabel("Cost if it fails", { exact: true }).fill("900");
     await expect(answer).toContainText("expected in the next 12 months", { timeout: 30_000 });

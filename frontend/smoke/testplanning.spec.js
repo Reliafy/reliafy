@@ -69,7 +69,7 @@ test("Failure finding: 0.99 asks 'Did you mean 99%?' and computes only once answ
   await open(page, "/strategy/failure-finding");
   // The page opens on "Saved model" with none chosen: pick the sample, which has a mean life.
   await page.getByRole("combobox", { name: /: saved model$/ }).click();
-  await page.getByRole("option", { name: /^Bearing life — Weibull \(sample\)/ }).click();
+  await page.getByRole("option", { name: /^Bearing life — Weibull/ }).click();
   const field = page.getByLabel("Target availability");
   await field.fill("0.99");
   await expect(page.getByText("Did you mean 99%?")).toBeVisible();

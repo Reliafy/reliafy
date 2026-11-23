@@ -273,6 +273,8 @@ def _task_rows(m: Maintenance, pos: dict, hours_map, start: date, end: date,
     for task in sorted(m._tasks_on(pos["id"]), key=lambda t: (t.get("name") or "", t["id"])):
         if only is not None and task["id"] not in only:
             continue
+        if (task.get("trigger") or {}).get("kind") in ("failure", "found"):
+            continue  # a failure mode's response: counted on its failure lines (forecast_lines.py)
         if svc._on_event_only(task):
             skipped.append({"task": {"id": task["id"], "name": task["name"]}, "reason": "waits for its trigger"})
             continue
@@ -678,7 +680,8 @@ def _model_forecast(m: Maintenance, fetch, pos: dict, hours_map, start: date, en
         "distribution": label, "unit": unit, "age": _num(age), "placeholder": placeholder,
         "cost_per_failure": cost, "cost_basis": cost_basis,
         "failure_cost_each": consequence["failure_cost"], "downtime_hours_each": consequence["downtime_hours"],
-        "downtime_rate": consequence["downtime_rate"],
+        "downtime_rate": consequence["downtime_rate"], "response": consequence.get("response"),
+        "response_mode": (consequence.get("mode") or {}).get("id"),
         "expected_downtime_hours": _num(total["expected_failures"] * consequence["downtime_hours"])
         if consequence["downtime_hours"] else None,
         "expected_failures": _num(total["expected_failures"]),
@@ -914,7 +917,8 @@ def _prompts(m: Maintenance, fetch, tree, tasks_out: list[dict], models: list[di
             if c["per_failure"] is None:
                 no_cost.append({"mode": {"id": fm["id"], "text": fm.get("text") or ""}, "position": here,
                                 "counted": fm["id"] in lives_for,
-                                "link": _explorer_link(node["id"], root, "rcm", sel=fm["id"], fm=fm["id"])})
+                                "link": _explorer_link(node["id"], root, "rcm", sel=fm["id"], fm=fm["id"],
+                                                       respond="failure")})
         if fetch is None:
             continue
         for x in _mode_tasks(m, node, None):

@@ -481,7 +481,7 @@ def test_covariate_models_are_attached_as_they_are(m, db):
     ph = pm.link_saved(m, db, OWNERS, set(), pump, "model", "sample-model-seal-weibull-ph")
     rows = {r["id"]: r for r in pm.describe(m, db, OWNERS, set(), m.position_models(pump))}
     a = rows[alt["id"]]
-    assert a["source_text"] == ("Assigned: Valve seal — Weibull ALT on temp & load (sample) (accelerated life, "
+    assert a["source_text"] == ("Assigned: Valve seal — Weibull ALT on temp & load (accelerated life, "
                                 "stress: temperature, load)")
     ref = next(n for n in a["model"]["numbers"] if n["id"] == "reference")
     assert ref["text"] == "its lowest tested stress (Temperature (°C) 60, Load 0.5)"
