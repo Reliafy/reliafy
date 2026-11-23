@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { getForecastLines, quickForecast } from "../api.js";
 import { SectionHeader } from "../components/SectionPage.jsx";
 import Card, { CardHeader } from "../components/ui/Card.jsx";
 import Chip from "../components/ui/Chip.jsx";
 import SegmentedControl from "../components/ui/SegmentedControl.jsx";
-import Section, { AddRow } from "../components/ui/Section.jsx";
+import Section from "../components/ui/Section.jsx";
+import Button from "../components/ui/Button.jsx";
 import Field from "../components/ui/Field.jsx";
 import InputGroup, { Addon } from "../components/ui/InputGroup.jsx";
 import { TextInput, TextArea } from "../components/ui/Controls.jsx";
@@ -19,21 +20,23 @@ import { ACCENT, INK } from "../plotTheme.js";
 import { formatCost, workspaceCurrency } from "../money.js";
 import { downloadCsv } from "../csv.js";
 import { unitInText } from "../components/unitText.js";
-import { strategyUnit } from "../strategyTools.js";
 import { VIEWS, fromParam, parseAges, viewOf, whenNext, whenText } from "../sparesForecast.js";
 import {
-  BLANK, BLANK_WORK, EFFECTS, HORIZON_OPTIONS, ON_REPLACE, RUNNING, WHATIFS, WORK_UNITS, answerOf, boundText, changeText, horizonWords,
-  isCalendar, isHours, kindWords, lineCells, missing, requestOf, seriesOf, viewKey,
+  BLANK, BLANK_WORK, EFFECTS, HORIZON_OPTIONS, ON_REPLACE, PART_UNITS, RUNNING, WHATIFS, WORK_UNITS, answerOf, boundText, changeText,
+  horizonWords, isCalendar, isHours, kindWords, lineCells, problems, requestOf, seriesOf, viewKey,
 } from "../quickForecast.js";
 import { cells, headline, metaLine, tableRows } from "../forecastLines.js";
 import "./ForecastTool.css";
 
-// Decisions › Forecasts › Spares, Hours and Cost forecast: one quick forecast tool as a sentence
-// (forecast plan step 1, Nov 2026; quickForecast.js says what each part does). "[1] unit, running
-// [12 h a week], over the next [12 months]", then work on a schedule and/or a part that fails. Each
-// view asks only its own "each time" and "if it fails"; the answer updates as you type, with no
-// Forecast button. A scratch pad: nothing is saved. Opened from an Explorer node (Open in ›, ?from=)
-// it starts filled in from there and names it, with a link back.
+// Decisions › Forecasts › Spares, Hours and Cost forecast: one quick forecast tool (forecast plan step 1,
+// Nov 2026; quickForecast.js says what each part does). One inputs card on a grid: units, running and the
+// horizon; then two equal sections, work on a schedule and a part that fails (either can be added or
+// removed); More options; and Calculate, bottom right (Derryn, Nov 2026: "there is no calculate button!").
+// Results appear only after Calculate, and say "Inputs changed: Calculate again" when the inputs move on.
+// Nothing blocks silently: pressed with something missing, Calculate says it beside the field and goes
+// there. Each view asks only its own "each time" and "if it fails"; switching views keeps the inputs and
+// shows that view of the same result. A scratch pad: nothing is saved. Opened from an Explorer node
+// (Open in ›, ?from=) it shows that node's forecast by owner instead.
 
 const HELP = { guide: "forecast-tools" };
 const sig3 = (v) => Number(v).toLocaleString("en-GB", { maximumSignificantDigits: 3 });
@@ -41,53 +44,6 @@ const today = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
-
-// The view's own extra for a clause: hours on Hours, a cost on Costs, spares on Spares.
-function EachTime({ view, work, onWork, currency }) {
-  if (view === "hours") {
-    return (
-      <InputGroup label="Each time">
-        <TextInput inputMode="decimal" aria-label="Hours each time" value={work.hoursEach} onChange={(e) => onWork({ hoursEach: e.target.value })} />
-        <Addon>h</Addon>
-      </InputGroup>
-    );
-  }
-  if (view === "costs") {
-    return (
-      <InputGroup label="Each time">
-        <Addon>{currency}</Addon>
-        <TextInput inputMode="decimal" aria-label="Cost each time" value={work.costEach} onChange={(e) => onWork({ costEach: e.target.value })} />
-      </InputGroup>
-    );
-  }
-  return (
-    <InputGroup label="Each time">
-      <TextInput inputMode="decimal" className="ft-n" aria-label="Spares each time" value={work.sparesEach} onChange={(e) => onWork({ sparesEach: e.target.value })} />
-      <Addon>×</Addon>
-      <TextInput aria-label="Which spare" placeholder="e.g. lithium grease" value={work.spareName} onChange={(e) => onWork({ spareName: e.target.value })} />
-    </InputGroup>
-  );
-}
-
-function IfItFails({ view, form, set, currency }) {
-  if (view === "hours") {
-    return (
-      <InputGroup label="If it fails">
-        <TextInput inputMode="decimal" aria-label="Hours if it fails" value={form.hoursIfFails} onChange={(e) => set({ hoursIfFails: e.target.value })} />
-        <Addon>h</Addon>
-      </InputGroup>
-    );
-  }
-  if (view === "costs") {
-    return (
-      <InputGroup label="If it fails">
-        <Addon>{currency}</Addon>
-        <TextInput inputMode="decimal" aria-label="Cost if it fails" value={form.costIfFails} onChange={(e) => set({ costIfFails: e.target.value })} />
-      </InputGroup>
-    );
-  }
-  return <span className="ft-words">a like part each time</span>;
-}
 
 function Lines({ out, view, money }) {
   const key = viewKey(view);
@@ -179,6 +135,8 @@ function Answer({ out, view, money }) {
   const fail = out.lines.find((l) => l.owner_kind === "failure");
   const work = out.lines.find((l) => l.owner_kind === "task");
   const notes = [];
+  // The part's name on the line below, only when the user gave it (a saved model's name; typed: "The part").
+  if (fail && fail.owner && fail.owner !== "The part") notes.push(`${fail.owner}.`);
   if (work?.number === "certain" && !fail) notes.push("Certain: a schedule, no chance involved.");
   if (work?.number === "certain") notes.push("Assumes it was just done.");
   const bound = boundText(out);
@@ -232,15 +190,23 @@ function NotCounted({ out, view }) {
   );
 }
 
+// When the spares are likely used, folded like "By month". More than about 10 in all: said per period
+// ("about 8 a month") rather than numbering every spare.
 function WhenNext({ fc }) {
   const w = whenNext(fc);
   if (!w.items.length) return null;
+  const period = String(fc.period_label || "periods").replace(/s$/, "");
+  const rate = fc.periods ? w.total / fc.periods : 0;
+  const perPeriod = w.total > 10 ? Math.max(rate, 10.0001) : 0; // the per-period wording past 10 in all
   return (
-    <section className="ft-next" aria-label="When next">
-      <h3 className="ft-h">When next</h3>
-      <ol className="ft-next-list">{w.items.map((x) => <li key={x.n}>{whenText(fc, x)}</li>)}</ol>
-      <p className="rs-note">From the expected counts: the {String(fc.period_label).replace(/s$/, "")} by which each spare is likely used.{w.more ? ` ${w.more.toLocaleString("en-GB")} more after these.` : ""}</p>
-    </section>
+    <ResultDetails summary="When next">
+      {perPeriod > 10 ? (
+        <p className="ft-next-rate">About {rate >= 2 ? Math.round(rate).toLocaleString("en-GB") : Number(rate.toPrecision(2)).toLocaleString("en-GB")} a {period}, the first in {period} {w.items[0].period}.</p>
+      ) : (
+        <ol className="ft-next-list">{w.items.map((x) => <li key={x.n}>{whenText(fc, x)}</li>)}</ol>
+      )}
+      <p className="rs-note">From the expected counts{perPeriod > 10 ? "" : `: the ${period} by which each spare is likely used`}.{w.more && perPeriod <= 10 ? ` ${w.more.toLocaleString("en-GB")} more after these.` : ""}</p>
+    </ResultDetails>
   );
 }
 
@@ -435,170 +401,242 @@ export default function ForecastTool() {
 function SentenceTool({ view }) {
   const [form, setForm] = useState(() => (view.value === "spares" ? { ...BLANK, part: true } : { ...BLANK, work: { ...BLANK_WORK } }));
   const [model, setModel] = useState(null);
-  const [typedUnit, setTypedUnit] = useState("");
+  const [source, setSource] = useState("saved"); // the life picker's source: saved | params
   const [run, setRun] = useState({ busy: false, out: null, error: null, sent: null });
-  const seq = useRef(0);
+  // The problems shown after Calculate was pressed: each stays beside its field until it's fixed.
+  const [asked, setAsked] = useState(new Set());
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
   const setWork = (patch) => setForm((f) => ({ ...f, work: { ...(f.work || BLANK_WORK), ...patch } }));
   const currency = workspaceCurrency();
   const money = useMoney();
 
-  const unit = strategyUnit(model, typedUnit);
-  const why = missing(form, form.part ? model : null, unit);
-  const body = useMemo(() => (why ? null : requestOf(form, model, unit, today())), [why, form, model, unit]);
-  const sent = body ? JSON.stringify(body) : null;
+  // A saved model brings its unit; typed parameters take the unit picked (hours by default).
+  const unit = form.part ? (model?.unit || (source === "params" ? form.partUnit : "")) : "";
+  const probs = problems(form, form.part ? model : null, unit);
+  const body = useMemo(() => (probs.length ? null : requestOf(form, model, unit, today())), [probs.length, form, model, unit]); // eslint-disable-line react-hooks/exhaustive-deps
+  const errorOf = (field) => (asked.has(field) ? probs.find((p) => p.field === field)?.text || null : null);
+  const stale = !!run.out && !!run.sent && JSON.stringify(body) !== run.sent;
 
-  // The answer as you type: a short pause, then one call; a later call wins.
-  useEffect(() => {
-    if (!sent || sent === run.sent) return undefined;
-    const mine = ++seq.current;
-    const t = setTimeout(() => {
-      setRun((r) => ({ ...r, busy: true, error: null }));
-      quickForecast(JSON.parse(sent))
-        .then((out) => mine === seq.current && setRun({ busy: false, out, error: null, sent }))
-        .catch((e) => mine === seq.current && setRun((r) => ({ ...r, busy: false, error: e.message, sent })));
-    }, 350);
-    return () => clearTimeout(t);
-  }, [sent]); // eslint-disable-line react-hooks/exhaustive-deps
+  const calculate = (e) => {
+    e?.preventDefault();
+    if (probs.length) {
+      // Never silent: say what blocks it beside each field, and go to the first.
+      setAsked(new Set(probs.map((p) => p.field)));
+      const first = document.getElementById(`ft-${probs[0].field}`);
+      const target = first?.matches("input, textarea, button") ? first : first?.querySelector("input, textarea, button");
+      target?.focus();
+      return;
+    }
+    setAsked(new Set());
+    const sent = JSON.stringify(body);
+    setRun((r) => ({ ...r, busy: true, error: null }));
+    quickForecast(body)
+      .then((out) => setRun({ busy: false, out, error: null, sent }))
+      .catch((err) => setRun((r) => ({ ...r, busy: false, error: err.message, sent })));
+  };
 
-  const out = run.out?.status === "ok" && body ? run.out : null;
+  const out = run.out?.status === "ok" ? run.out : null;
   const ages = parseAges(form.ages);
   const otherUnit = form.part && unit && !isHours(unit) && !isCalendar(unit);
   const partNow = unit ? unitInText(unit) : "";
+  const viewWord = view.value === "hours" ? "Hours" : view.value === "costs" ? `Cost (${currency})` : "Spares";
 
   return (
     <div className="app ft">
       <ToolHeader view={view} />
-      <Card className="ft-inputs">
-        <div className="ft-sentence" role="group" aria-label="What to forecast">
-          <TextInput inputMode="numeric" className="ft-n" aria-label="How many units" value={form.units}
-                     disabled={ages.ages?.length > 1} onChange={(e) => set({ units: e.target.value })} />
-          <span className="ft-words">{Number(form.units) === 1 ? "unit" : "units"}, running</span>
-          {form.runPer !== "all" && (
-            <TextInput inputMode="decimal" className="ft-n" aria-label="Hours it runs" value={form.runHours}
-                       placeholder="12" onChange={(e) => set({ runHours: e.target.value })} />
-          )}
-          <Select ariaLabel="How it runs" value={form.runPer} options={RUNNING} onChange={(v) => set({ runPer: v })} />
-          <span className="ft-words">, over</span>
-          <Select ariaLabel="Horizon" value={form.horizon} options={HORIZON_OPTIONS.map((h) => ({ ...h, label: `the next ${h.label}` }))}
-                  onChange={(v) => set({ horizon: v })} />
-        </div>
-
-        {form.work ? (
-          <Section title="Work on a schedule" action={{ label: "Remove", onClick: () => set({ work: null }), ariaLabel: "Remove the work on a schedule" }}>
-            <div className="ft-clause">
-              <TextInput aria-label="What the work is" className="ft-name" placeholder="e.g. Grease deck spindles" value={form.work.name}
-                         onChange={(e) => setWork({ name: e.target.value })} />
-              <span className="ft-words">every</span>
-              <InputGroup label="How often">
-                <TextInput inputMode="decimal" className="ft-n" aria-label="Every" value={form.work.every} onChange={(e) => setWork({ every: e.target.value })} />
-                <Select ariaLabel="Unit of the interval" value={form.work.unit} options={WORK_UNITS} onChange={(v) => setWork({ unit: v })} />
-              </InputGroup>
-              <span className="ft-words">each time:</span>
-              {form.work.effect === "replaces" && view.value === "spares"
-                ? <span className="ft-words">a like part each time</span>
-                : <EachTime view={view.value} work={form.work} onWork={setWork} currency={currency} />}
-            </div>
-            {form.part && (
-              <div className="ft-clause">
-                <span className="ft-words">This work</span>
-                <Select ariaLabel="What the work does to the part" value={form.work.effect} options={EFFECTS} onChange={(v) => setWork({ effect: v })} />
-              </div>
-            )}
-            {form.part && form.work.effect === "supports" && (
-              <div className="ft-clause">
-                <span className="ft-words">If it isn't done: failure rate</span>
-                <InputGroup label="Impact">
-                  <Addon>×</Addon>
-                  <TextInput inputMode="decimal" className="ft-n" aria-label="Failure rate times if it isn't done" placeholder="2"
-                             value={form.work.impactK} onChange={(e) => setWork({ impactK: e.target.value })} />
+      <form className="ft-form" onSubmit={calculate} noValidate aria-label="What to forecast">
+        <Card className="ft-inputs">
+          <div className="ft-fields">
+            <Field label="Units" id="ft-units" error={errorOf("units")} help={ages.ages?.length > 1 ? "Counted from the ages under More options." : null}>
+              <TextInput inputMode="numeric" value={ages.ages?.length > 1 ? String(ages.ages.length) : form.units}
+                         disabled={ages.ages?.length > 1} onChange={(e) => set({ units: e.target.value })} />
+            </Field>
+            <Field label="Running">
+              <Select value={form.runPer} options={RUNNING.map((r) => ({ ...r, label: r.value === "all" ? "All the time" : r.value === "day" ? "Hours a day" : "Hours a week" }))}
+                      onChange={(v) => set({ runPer: v })} />
+            </Field>
+            {form.runPer !== "all" && (
+              <Field label={form.runPer === "day" ? "Hours a day" : "Hours a week"} id="ft-runHours" error={errorOf("runHours")}>
+                <InputGroup label="Hours it runs">
+                  <TextInput inputMode="decimal" value={form.runHours} placeholder="12" onChange={(e) => set({ runHours: e.target.value })} />
+                  <Addon>h</Addon>
                 </InputGroup>
-                <span className="ft-words">· What if it's</span>
-                <Select ariaLabel="What if" value={form.work.whatif} options={WHATIFS} onChange={(v) => setWork({ whatif: v })} />
-                {form.work.whatif === "stretch" && (
-                  <InputGroup label="Stretched interval">
-                    <TextInput inputMode="decimal" className="ft-n" aria-label="Stretched to every" value={form.work.whatifEvery}
-                               onChange={(e) => setWork({ whatifEvery: e.target.value })} />
-                    <Addon>{form.work.unit}</Addon>
+              </Field>
+            )}
+            <Field label="Horizon">
+              <Select value={form.horizon} options={HORIZON_OPTIONS.map((h) => ({ ...h, label: `Next ${h.label}` }))} onChange={(v) => set({ horizon: v })} />
+            </Field>
+          </div>
+
+          <Section title="Work on a schedule" className="ft-sec"
+                   action={form.work ? { label: "Remove", onClick: () => set({ work: null }), ariaLabel: "Remove the work on a schedule" }
+                     : { label: "Add", plus: true, onClick: () => set({ work: { ...BLANK_WORK } }), ariaLabel: "Add work on a schedule" }}>
+            {!form.work ? <p className="ft-quiet">Not included. Add work done on a schedule (greasing, a test, a planned replacement): no model needed.</p> : (
+              <div className="ft-fields">
+                <Field label="What's done" optional>
+                  <TextInput placeholder="e.g. Grease deck spindles" value={form.work.name} onChange={(e) => setWork({ name: e.target.value })} />
+                </Field>
+                <Field label="Every" id="ft-every" error={errorOf("every")}>
+                  <InputGroup label="How often">
+                    <TextInput inputMode="decimal" value={form.work.every} onChange={(e) => setWork({ every: e.target.value })} />
+                    <Select ariaLabel="Unit of the interval" value={form.work.unit} options={WORK_UNITS} onChange={(v) => setWork({ unit: v })} />
                   </InputGroup>
+                </Field>
+                {view.value === "hours" && (
+                  <Field label="Hours each time" optional>
+                    <InputGroup label="Hours each time, in hours"><TextInput inputMode="decimal" value={form.work.hoursEach} onChange={(e) => setWork({ hoursEach: e.target.value })} /><Addon>h</Addon></InputGroup>
+                  </Field>
+                )}
+                {view.value === "costs" && (
+                  <Field label={`Cost each time (${currency})`} optional>
+                    <TextInput inputMode="decimal" value={form.work.costEach} onChange={(e) => setWork({ costEach: e.target.value })} />
+                  </Field>
+                )}
+                {view.value === "spares" && !(form.part && form.work.effect === "replaces") && (
+                  <Field label="Spares each time" optional>
+                    <InputGroup label="How many of which spare">
+                      <TextInput inputMode="decimal" className="ft-n" aria-label="How many" value={form.work.sparesEach} onChange={(e) => setWork({ sparesEach: e.target.value })} />
+                      <Addon>×</Addon>
+                      <TextInput aria-label="Which spare" placeholder="e.g. grease" value={form.work.spareName} onChange={(e) => setWork({ spareName: e.target.value })} />
+                    </InputGroup>
+                  </Field>
+                )}
+                {form.part && (
+                  <Field label="What it does to the part" id="ft-effect" error={errorOf("effect")}>
+                    <Select value={form.work.effect} options={EFFECTS.map((x) => ({ ...x, label: x.label[0].toUpperCase() + x.label.slice(1) }))}
+                            onChange={(v) => setWork({ effect: v })} />
+                  </Field>
+                )}
+                {form.part && form.work.effect === "supports" && (
+                  <Field label="If it isn't done: failure rate ×" id="ft-impact" optional error={errorOf("impact")}>
+                    <TextInput inputMode="decimal" placeholder="e.g. 2" value={form.work.impactK} onChange={(e) => setWork({ impactK: e.target.value })} />
+                  </Field>
+                )}
+                {form.part && form.work.effect === "supports" && (
+                  <Field label="What if it's">
+                    <Select value={form.work.whatif} options={WHATIFS.map((x) => ({ ...x, label: x.label[0].toUpperCase() + x.label.slice(1) }))}
+                            onChange={(v) => setWork({ whatif: v })} />
+                  </Field>
+                )}
+                {form.part && form.work.effect === "supports" && form.work.whatif === "stretch" && (
+                  <Field label="Stretched to every" id="ft-whatifEvery" error={errorOf("whatifEvery")}>
+                    <InputGroup label="Stretched interval, with its unit">
+                      <TextInput inputMode="decimal" value={form.work.whatifEvery} onChange={(e) => setWork({ whatifEvery: e.target.value })} />
+                      <Addon>{form.work.unit}</Addon>
+                    </InputGroup>
+                  </Field>
                 )}
               </div>
             )}
           </Section>
-        ) : <AddRow onClick={() => set({ work: { ...BLANK_WORK } })}>Work on a schedule</AddRow>}
 
-        {form.part ? (
-          <Section title="A part that fails" action={{ label: "Remove", onClick: () => set({ part: false }), ariaLabel: "Remove the part that fails" }}>
-            <div className="ft-clause ft-model">
-              <ModelPicker label="Its life" value={model} onChange={setModel} preferSaved typeEntry />
-            </div>
-            <div className="ft-clause">
-              <span className="ft-words">now</span>
-              <InputGroup label="Age now">
-                <TextInput inputMode="decimal" className="ft-age" aria-label="How old it is now" value={ages.ages?.length > 1 ? "" : form.ages}
-                           placeholder={ages.ages?.length > 1 ? `${ages.ages.length} ages` : "e.g. 9,000"} disabled={ages.ages?.length > 1}
-                           onChange={(e) => set({ ages: e.target.value })} />
-                {model && !model.unit ? (
-                  <TextInput className="ft-unit" aria-label="Unit of its times" placeholder="unit, e.g. hours" value={typedUnit}
-                             onChange={(e) => setTypedUnit(e.target.value)} />
-                ) : partNow && <Addon>{partNow}</Addon>}
-              </InputGroup>
-              <span className="ft-words">old · if it fails:</span>
-              <IfItFails view={view.value} form={form} set={set} currency={currency} />
-            </div>
+          <Section title="A part that fails" className="ft-sec"
+                   action={form.part ? { label: "Remove", onClick: () => set({ part: false }), ariaLabel: "Remove the part that fails" }
+                     : { label: "Add", plus: true, onClick: () => set({ part: true }), ariaLabel: "Add a part that fails" }}>
+            {!form.part ? <p className="ft-quiet">Not included. Add a part with a life model to forecast its failures.</p> : (
+              <>
+                <div id="ft-life" className="ft-life">
+                  <ModelPicker layout="grid" savedFirst typeLabel="Type parameters" value={model} onChange={setModel} preferSaved unit={unit}
+                               onSource={setSource}>
+                    {source !== "params" ? (model?.unit && (
+                      <Field label="Unit">
+                        <span className="ft-fixed" title="A saved model brings its own unit">{unitInText(model.unit)} (the model&apos;s)</span>
+                      </Field>
+                    )) : (
+                      <Field label="Unit" id="ft-unit" error={errorOf("unit")} help="Of its age and its life.">
+                        <Select value={form.partUnit} options={PART_UNITS} onChange={(v) => set({ partUnit: v })} />
+                      </Field>
+                    )}
+                  </ModelPicker>
+                  {errorOf("life") && <p className="field-error" role="alert">{errorOf("life")}</p>}
+                </div>
+                <div className="ft-fields">
+                  <Field label="Age now" id="ft-age" error={errorOf("age")}
+                         help={ages.ages?.length > 1 ? `${ages.ages.length} ages under More options.` : "How old it is today."}>
+                    <InputGroup label="Age now, with its unit">
+                      <TextInput inputMode="decimal" value={ages.ages?.length > 1 ? "" : form.ages} disabled={ages.ages?.length > 1}
+                                 placeholder="e.g. 9,000" onChange={(e) => set({ ages: e.target.value })} />
+                      {partNow && <Addon>{partNow}</Addon>}
+                    </InputGroup>
+                  </Field>
+                  {view.value === "hours" && (
+                    <Field label="Hours if it fails" optional>
+                      <InputGroup label="Hours if it fails, in hours"><TextInput inputMode="decimal" value={form.hoursIfFails} onChange={(e) => set({ hoursIfFails: e.target.value })} /><Addon>h</Addon></InputGroup>
+                    </Field>
+                  )}
+                  {view.value === "costs" && (
+                    <Field label={`Cost if it fails (${currency})`} optional>
+                      <TextInput inputMode="decimal" value={form.costIfFails} onChange={(e) => set({ costIfFails: e.target.value })} />
+                    </Field>
+                  )}
+                  {otherUnit && (
+                    <Field label={`${partNow[0].toUpperCase()}${partNow.slice(1)} a unit adds a day`} id="ft-usePerDay" error={errorOf("usePerDay")}>
+                      <TextInput inputMode="decimal" value={form.usePerDay} onChange={(e) => set({ usePerDay: e.target.value })} />
+                    </Field>
+                  )}
+                </div>
+                {view.value === "spares" && <p className="ft-quiet">If it fails: a like part each time.</p>}
+              </>
+            )}
           </Section>
-        ) : <AddRow onClick={() => set({ part: true })}>A part that fails</AddRow>}
+          {errorOf("add") && <p className="field-error" role="alert">{errorOf("add")}</p>}
 
-        <ResultDetails summary="More options">
-          <div className="ft-grid">
-            {form.part && (
-              <Field label={`A different age for each unit${partNow ? ` (${partNow})` : ""}`} optional help="Spaces or new lines between; it counts the units for you.">
-                <TextArea value={ages.ages?.length > 1 ? form.ages : ""} placeholder="e.g. 120 900 1,450" onChange={(e) => set({ ages: e.target.value })} />
-              </Field>
-            )}
-            {form.part && (
-              <Field label={`Cost of a spare (${currency})`} optional help="Added to each failure and each replacement. The cost if it fails is all in by default.">
-                <TextInput inputMode="decimal" value={form.spareCost} onChange={(e) => set({ spareCost: e.target.value })} />
-              </Field>
-            )}
-            {otherUnit && (
-              <Field label={`${partNow} a unit adds a day`}>
-                <TextInput inputMode="decimal" value={form.usePerDay} onChange={(e) => set({ usePerDay: e.target.value })} />
-              </Field>
-            )}
-            {form.work && form.part && form.work.effect === "supports" && (
-              <Field label="Grace (% of its interval)" optional help="How far overdue it can run before the impact starts. 0% by default.">
-                <TextInput inputMode="decimal" value={form.work.grace} onChange={(e) => setWork({ grace: e.target.value })} />
-              </Field>
-            )}
-            {form.work && form.part && form.work.effect === "replaces" && (
-              <Field label="When the part is replaced" help="Restart: a failure restarts its clock, so how many it takes is a chance. Keep: on its schedule, failures or not.">
-                <Select ariaLabel="When the part is replaced" value={form.work.onReplace || "restart"} options={ON_REPLACE}
-                        onChange={(v) => setWork({ onReplace: v })} />
-              </Field>
-            )}
-            {form.work && view.value !== "hours" && (
-              <Field label="Hours each time" optional><TextInput inputMode="decimal" value={form.work.hoursEach} onChange={(e) => setWork({ hoursEach: e.target.value })} /></Field>
-            )}
-            {form.work && view.value !== "costs" && (
-              <Field label={`Cost each time (${currency})`} optional><TextInput inputMode="decimal" value={form.work.costEach} onChange={(e) => setWork({ costEach: e.target.value })} /></Field>
-            )}
-            {form.part && view.value !== "hours" && (
-              <Field label="Hours if it fails" optional><TextInput inputMode="decimal" value={form.hoursIfFails} onChange={(e) => set({ hoursIfFails: e.target.value })} /></Field>
-            )}
-            {form.part && view.value !== "costs" && (
-              <Field label={`Cost if it fails (${currency})`} optional><TextInput inputMode="decimal" value={form.costIfFails} onChange={(e) => set({ costIfFails: e.target.value })} /></Field>
-            )}
+          <ResultDetails summary="More options">
+            <div className="ft-fields">
+              {form.part && (
+                <Field label={`A different age for each unit${partNow ? ` (${partNow})` : ""}`} optional help="Spaces or new lines between; it counts the units for you.">
+                  <TextArea value={ages.ages?.length > 1 ? form.ages : ""} placeholder="e.g. 120 900 1,450" onChange={(e) => set({ ages: e.target.value })} />
+                </Field>
+              )}
+              {form.part && (
+                <Field label={`Cost of a spare (${currency})`} optional help="Added to each failure and each replacement.">
+                  <TextInput inputMode="decimal" value={form.spareCost} onChange={(e) => set({ spareCost: e.target.value })} />
+                </Field>
+              )}
+              {form.work && form.part && form.work.effect === "supports" && (
+                <Field label="Grace (% of its interval)" optional help="How far overdue before the impact starts.">
+                  <TextInput inputMode="decimal" value={form.work.grace} onChange={(e) => setWork({ grace: e.target.value })} />
+                </Field>
+              )}
+              {form.work && form.part && form.work.effect === "replaces" && (
+                <Field label="When the part is replaced">
+                  <Select value={form.work.onReplace || "restart"} options={ON_REPLACE} onChange={(v) => setWork({ onReplace: v })} />
+                </Field>
+              )}
+              {form.work && view.value !== "hours" && (
+                <Field label="Hours each time" optional><TextInput inputMode="decimal" value={form.work.hoursEach} onChange={(e) => setWork({ hoursEach: e.target.value })} /></Field>
+              )}
+              {form.work && view.value !== "costs" && (
+                <Field label={`Cost each time (${currency})`} optional><TextInput inputMode="decimal" value={form.work.costEach} onChange={(e) => setWork({ costEach: e.target.value })} /></Field>
+              )}
+              {form.part && view.value !== "hours" && (
+                <Field label="Hours if it fails" optional><TextInput inputMode="decimal" value={form.hoursIfFails} onChange={(e) => set({ hoursIfFails: e.target.value })} /></Field>
+              )}
+              {form.part && view.value !== "costs" && (
+                <Field label={`Cost if it fails (${currency})`} optional><TextInput inputMode="decimal" value={form.costIfFails} onChange={(e) => set({ costIfFails: e.target.value })} /></Field>
+              )}
+            </div>
+          </ResultDetails>
+
+          <div className="ft-actions">
+            {stale && <span className="ft-stale" role="status">Inputs changed: Calculate again.</span>}
+            <Button type="submit" disabled={run.busy}>{run.busy ? "Calculating…" : "Calculate"}</Button>
           </div>
-        </ResultDetails>
-        {why && <p className="hint compute-why" role="status">{why}</p>}
-      </Card>
+        </Card>
+      </form>
       {run.error && <LoadFailed what="Couldn't work out the forecast." error={run.error} />}
       {run.out && run.out.status !== "ok" && <div className="card error" role="alert">{run.out.reason}</div>}
+      {!run.out && !run.error && (
+        <Card className="ft-result ft-empty">
+          <p className="ft-empty-text">{run.busy ? "Working it out…" : <>Set the inputs and press <b>Calculate</b>.</>}</p>
+          <p className="ft-quiet">{viewWord} for {Number(form.units) === 1 ? "1 unit" : `${form.units} units`} over the next {form.horizon} months, by month, with the likely range (90% two-sided). Nothing is saved.</p>
+        </Card>
+      )}
       {out && (
-        <Card className={"ft-result" + (run.busy ? " is-busy" : "")} aria-busy={run.busy || undefined}>
+        <Card className={"ft-result" + (run.busy || stale ? " is-busy" : "")} aria-busy={run.busy || undefined}>
           <CardHeader title={view.title}
-                      subtitle={`${out.units.toLocaleString("en-GB")} ${out.units === 1 ? "unit" : "units"} · ${horizonWords(out.months)}${run.busy ? " · working it out…" : ""}`}
+                      subtitle={stale ? "Inputs changed: Calculate again to update this answer."
+                        : `${out.units.toLocaleString("en-GB")} ${out.units === 1 ? "unit" : "units"} · ${horizonWords(out.months)}`}
                       actions={<button type="button" className="secondary sm" onClick={() => downloadCsv(csvOf(out, view.value), `${view.title.toLowerCase().replace(/ /g, "-")}.csv`)}>Export CSV</button>} />
           <Answer out={out} view={view.value} money={money} />
           <WhatIf out={out} view={view.value} money={money} />
@@ -613,7 +651,7 @@ function SentenceTool({ view }) {
       )}
       {out?.part && view.value === "spares" && (
         <FleetSparesCard fleet={{ name: "Spares forecast" }} settings={{ ...out.part.settings, spares: form.spares }} forecast={out.part}
-                         dirty={false} runWord={null} onChange={(v) => set({ spares: v || {} })} />
+                         dirty={stale} runWord="Calculate" onChange={(v) => set({ spares: v || {} })} />
       )}
     </div>
   );

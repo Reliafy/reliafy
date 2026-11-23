@@ -2,6 +2,8 @@ import Select from "./Select.jsx";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getDistributions, listModels, getModel, getDegradationModel, listDegradationModels, getRecurrentModel, listRecurrentModels, modelAtRate, rbdBlockModel, rbdMeanForms } from "../api.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
+import Field from "./ui/Field.jsx";
+import { TextInput } from "./ui/Controls.jsx";
 import JointBlockSource from "./JointBlockSource.jsx";
 import { paramLabel } from "../paramLabels.js";
 import { unitInText } from "./unitText.js";
@@ -40,6 +42,10 @@ const GIVEN_LABEL = {
 // ``typeEntry`` (the quick forecast tool, forecast plan 5.5): no Parameters / Saved model switch. The
 // saved-model list carries "Type parameters…" as its first entry, which opens the distribution and its
 // parameters, with "Pick a saved model" to go back.
+// ``layout="grid"`` (the quick forecast tool): one grid of the shared fields (Field, Select, TextInput) at
+// one width: the source switch, then the distribution and its parameters (or the saved model), then
+// ``children`` (the unit). ``typeLabel`` names the parameters source ("Type parameters"); ``savedFirst``
+// puts "Saved model" first.
 // ``joint`` (an RBD block's non-repairable model: ``{repairable}``) adds "Condition-based":
 // one unit of a condition and life model, given its readings.
 // ``repairableModels`` (a block in a repairable diagram, #367) adds a "Repairable models" group to
@@ -60,13 +66,25 @@ export function repairableRef(doc) {
   };
 }
 
+// The saved-model select's frame: the shared Field in the grid layout, the older label elsewhere.
+function FieldOr({ grid, label, children }) {
+  if (grid) return <Field label={label}>{children}</Field>;
+  return (
+    <label className="dist-field" style={{ maxWidth: 320 }}>
+      <span className="dist-label">{label}</span>
+      {children}
+    </label>
+  );
+}
+
 const REP = "rep:"; // a repairable model's id in the saved-model list
 const TYPE_ENTRY = "__type__"; // "Type parameters…" in the saved-model list (typeEntry)
 
 export default function ModelPicker({ label, value, onChange, rbdBlock = false, meanEntry = null, unit = "",
                                       preferSaved = false, wanted = null, autoPick = true, initialSavedId = "", wt,
                                       joint = null, onSource = null, repairableModels = false,
-                                      degradationModels = false, typeEntry = false }) {
+                                      degradationModels = false, typeEntry = false, layout = "stack",
+                                      typeLabel = "Parameters", savedFirst = false, children = null }) {
   const hasParams = value?.source === "params" && (value.params || []).length > 0;
   const [source, setSource] = useState(
     joint && value?.kind === "joint" ? "joint" : value?.source === "saved" || initialSavedId || (preferSaved && !hasParams) ? "saved" : hasParams || !meanEntry ? "params" : "mean"
@@ -285,7 +303,12 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
   }, []);
 
   const u = unit ? unitInText(unit) : "";
-  const distSelect = (options, valueId, onPick) => (
+  const grid = layout === "grid";
+  const distSelect = (options, valueId, onPick) => (grid ? (
+    <Field label="Distribution">
+      <Select value={valueId} onChange={onPick} options={options.map((d) => ({ value: d.id, label: d.name }))} />
+    </Field>
+  ) : (
     <label className="dist-field" style={{ maxWidth: 280 }}>
       <span className="dist-label">Distribution</span>
       <Select
@@ -294,11 +317,11 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
         options={options.map((d) => ({ value: d.id, label: d.name }))}
       />
     </label>
-  );
+  ));
 
   return (
-    <div className="picker" data-wt={wt}>
-      {label && <div className="picker-label">{label}</div>}
+    <div className={"picker" + (grid ? " picker-grid" : "")} data-wt={wt}>
+      {label && !grid && <div className="picker-label">{label}</div>}
       {!typeEntry && <SegmentedControl
         label={label || "Model source"}
         className="picker-seg"
@@ -313,8 +336,9 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
         }}
         options={[
           ...(meanEntry ? [{ value: "mean", label: "Mean" }] : []),
-          { value: "params", label: "Parameters" },
-          { value: "saved", label: "Saved model" },
+          ...(savedFirst ? [{ value: "saved", label: "Saved model" }] : []),
+          { value: "params", label: typeLabel },
+          ...(savedFirst ? [] : [{ value: "saved", label: "Saved model" }]),
           ...(joint ? [{ value: "joint", label: "Condition and life", title: "One unit of a condition and life model (remaining life from its readings)" }] : []),
         ]}
       />}
@@ -384,7 +408,15 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
             setPvals({});
             onChange(null);
           })}
-          <div className="param-fields">
+          {grid ? (dist?.params || []).map((p) => (
+            <Field key={p} label={paramLabel(distId, p, unit)}>
+              <TextInput inputMode="decimal" value={pvals[p] ?? ""} onChange={(e) => {
+                const next = { ...pvals, [p]: e.target.value };
+                setPvals(next);
+                emitParams(distId, next);
+              }} />
+            </Field>
+          )) : <div className="param-fields">
             {(dist?.params || []).map((p) => (
               <label className="param-field" key={p}>
                 <span>{paramLabel(distId, p, unit)}</span>
@@ -400,7 +432,7 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
                 />
               </label>
             ))}
-          </div>
+          </div>}
           {(dist?.params || []).map((p) => {
             // An MTBF typed into the rate box (4,000 for 0.00025 per hour): asked, never changed for the user.
             const looks = rateLooksLikeMean(distId, p, pvals[p], unit);
@@ -431,8 +463,7 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
       ) : saved.length === 0 && !repairables.length && !degradations.length ? (
         <p className="muted-line">No saved distribution models yet.</p>
       ) : (
-        <label className="dist-field" style={{ maxWidth: 320 }}>
-          <span className="dist-label">Model</span>
+        <FieldOr grid={grid} label="Model">
           <Select
             value={savedId}
             onChange={(id) => {
@@ -472,8 +503,9 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
               })),
             ]}
           />
-        </label>
+        </FieldOr>
       )}
+      {children}
       {rbdBlock && source === "saved" && blockConversion(value, unit) && (
         // A model fitted in another unit of the diagram's kind: converted by the analysis.
         <p className="muted-line">{`${blockConversion(value, unit).text}: the analysis converts its life to the diagram's unit.`}</p>

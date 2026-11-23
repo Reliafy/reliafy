@@ -2,20 +2,8 @@
 .ft .ft-scratch { margin-top: var(--space-2); }
 .ft-from { margin: 0 0 var(--space-3); font-size: var(--fs-13); line-height: var(--lh-13); color: var(--text-secondary); }
 .ft-views { margin-bottom: var(--space-4); }
-.ft-notes { margin: 0 0 var(--space-4); padding-left: var(--space-5); color: var(--text-secondary); font-size: var(--fs-13); line-height: var(--lh-13); }
-.ft-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: var(--space-3) var(--space-4);
-  align-items: start;
-}
-.ft-grid .ft-model, .ft-grid .ft-wide { grid-column: 1 / -1; }
-.ft-model { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: flex-end; }
-.ft-run { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; margin-top: var(--space-4); }
-.ft-run .compute-why { margin: 0; }
 .ft-result { margin-top: var(--space-4); }
 .ft-result.is-busy { opacity: 0.6; }
-.ft-need { margin: 0; }
 .ft-h { margin: var(--space-4) 0 var(--space-2); font-size: var(--fs-14); line-height: var(--lh-14); font-weight: 600; }
 .ft-next-list {
   margin: 0;
@@ -29,15 +17,10 @@
 /* Wide tables scroll inside the card (as .maint-scroll in Maintenance.css, which this page doesn't load). */
 .ft-result .maint-scroll { overflow-x: auto; position: relative; max-width: 100%; }
 .ft-result, .ft-result .rs-details, .ft-result .rs-details-body { min-width: 0; max-width: 100%; }
-/* The sentence: "[1] unit, running [12] [h a week], over [the next 12 months]" (forecast plan 5.2). */
-.ft-sentence, .ft-clause { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
-.ft-sentence { margin-bottom: var(--space-4); font-size: var(--fs-16); line-height: var(--lh-16); }
+.ft-clause { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
 .ft-clause + .ft-clause { margin-top: var(--space-3); }
 .ft-words { color: var(--text-secondary); font-size: var(--fs-14); line-height: var(--lh-14); }
 .ft .ft-n { width: 5em; }
-.ft .ft-age { width: 7em; }
-.ft .ft-unit { width: 8em; }
-.ft .ft-name { width: 16em; max-width: 100%; }
 .ft-clause .ctl-group { width: auto; }
 .ft-inputs .psec { margin-top: var(--space-4); }
 .ft-inputs .add-row { margin-top: var(--space-3); }
@@ -63,3 +46,22 @@
 .ft-whatif-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
 .ft-worth, .ft-whatif-line { margin: 0 0 var(--space-2); font-size: var(--fs-14); line-height: var(--lh-14); }
 .ft-lines .ft-alt { color: var(--accent-text); }
+/* The inputs card (Nov 2026 redesign): one grid of the shared fields at one width, the two sections equal,
+   More options, then Calculate bottom right. The grid stacks to one column on a phone. */
+.ft-fields, .ft-life .picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr));
+  gap: var(--space-3) var(--space-4);
+  align-items: start;
+}
+.ft-life .picker-grid > .picker-seg { grid-column: 1 / -1; justify-self: start; }
+.ft-life .picker-grid > p { grid-column: 1 / -1; margin: 0; }
+.ft-life + .ft-fields { margin-top: var(--space-3); }
+.ft-fields .ctl-group { width: 100%; }
+.ft-inputs .ft-sec { margin-top: var(--space-6); }
+.ft-quiet { margin: var(--space-2) 0 0; color: var(--text-secondary); font-size: var(--fs-13); line-height: var(--lh-13); }
+.ft-fixed { display: flex; align-items: center; min-height: var(--control-md); color: var(--text); font-size: var(--fs-14); line-height: var(--lh-14); }
+.ft-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: var(--space-3); margin-top: var(--space-6); }
+.ft-stale { color: var(--warning-text); font-size: var(--fs-13); line-height: var(--lh-13); }
+.ft-empty-text { margin: 0; font-size: var(--fs-16); line-height: var(--lh-16); }
+.ft-next-rate { margin: 0; font-size: var(--fs-14); line-height: var(--lh-14); }
