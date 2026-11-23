@@ -204,6 +204,8 @@ SERVICING = ("grease", "regrease", "re-grease", "lubricate", "lube", "oil", "cle
              "adjust", "tighten", "retighten", "re-tighten", "torque", "retorque", "re-torque", "top", "align",
              "tension", "retension", "re-tension", "drain", "purge", "wipe", "dust")
 ASSUMED_NONE = {"kind": "kijima1", "q": 1.0}
+#: What a supporting task (supporting.py) leaves the item as, in words.
+SUPPORT_WORDS = "Keeps it on its life (supporting): it doesn't renew it"
 
 
 def default_for(task: dict) -> dict | None:
@@ -245,6 +247,11 @@ def effective(task: dict, modes: list[dict]) -> dict:
                     + f"). The RBD takes the least restoring: {words(chosen)}.")
     if chosen and chosen.get("kind") == "as_new":
         chosen = None
+    if task.get("support"):
+        # A supporting task (supporting.py) keeps the item on its life: it restores none of the age,
+        # and says so in those words rather than "restores 0%".
+        return {"restoration": chosen, "words": SUPPORT_WORDS, "source": "support", "by_mode": [
+            {**x, "words": SUPPORT_WORDS} for x in rows], "conflict": None}
     # Assumed from its name (no figure set on the task or a decision for this choice).
     is_assumed = bool(assumed) and chosen == assumed and source is None
     return {"restoration": chosen, "words": words(chosen) + (" (assumed: servicing work; say if it does more)"
@@ -294,6 +301,10 @@ class RestorationOps:
                              f"{kind or 'routine work'}): what it leaves the item as applies to a fixed-interval "
                              "task. Set its kind first.")
         mode = str(failure_mode_id or "").strip() or None
+        if task.get("support") and value is not None and value != ASSUMED_NONE:
+            # Another choice of what it does to the part: it no longer just keeps it on its life.
+            self._emit("task.support_set", {"id": task["id"], "support": None})
+            task = self._get(task["id"], "Task")
         if mode:
             if self.s.edge(self.org, "MITIGATES", task["id"], mode) is None:
                 raise sv.Invalid(f"“{task['name']}” doesn't serve that failure mode.")

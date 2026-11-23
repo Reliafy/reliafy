@@ -29,6 +29,8 @@ import { PlusIcon } from "./icons.jsx";
 import TaskTwins from "./TaskTwins.jsx";
 import { tabPlace } from "../explorerTabs.js";
 import { modeRestorationBody, modeRestorationForm, modeRestorationProblem, restorationWords } from "../taskRestoration.js";
+import { canSupport, COMBINE_HELP, SOURCE_WORD, impactWords, modeSupportBody, supportsMode } from "../taskSupport.js";
+import Switch from "./ui/Switch.jsx";
 
 // Step 3 of a failure mode's details, "Proactive task or default action" (the
 // Explorer's RCM tab), edited in place like step 2 (Derryn, 9 Nov 2026: the
@@ -1133,7 +1135,16 @@ export function RcmTaskSections({ r, mode, ops, readOnly = false, onSaid }) {
           </div>
         </section>
       )}
-      {outcome === "fixed_interval" && t.id && mode?.ref.id && (
+      {canSupport(outcome) && t.id && mode?.ref.id && (
+        <section className="rw-sg" aria-label="Keeps it on its life">
+          <StepLabel saved={saved.support}>Keeps it on its life</StepLabel>
+          <div className="rw-sc rim-tcell">
+            <ModeSupport task={t} modeId={mode.ref.id} can={can} busy={busy}
+                         onSave={(body, said) => save(body, said, "support")} />
+          </div>
+        </section>
+      )}
+      {outcome === "fixed_interval" && t.id && mode?.ref.id && !supportsMode(t.support, mode.ref.id) && (
         <section className="rw-sg" aria-label="Leaves it as">
           <StepLabel saved={saved.restore}>Leaves it as</StepLabel>
           <div className="rw-sc rim-tcell">
@@ -1145,6 +1156,39 @@ export function RcmTaskSections({ r, mode, ops, readOnly = false, onSaid }) {
       )}
       {calcDialog}
     </>
+  );
+}
+
+// Servicing and lubrication (a supporting task, taskSupport.js): the task keeps the item on its life
+// for this failure mode rather than renewing it. The switch saves at once; its impact if not done,
+// reference interval and source are set on the task (Maintenance tab), shown here in words.
+function ModeSupport({ task, modeId, can, busy, onSave }) {
+  const location = useLocation();
+  const s = task.support || null;
+  const on = supportsMode(s, modeId);
+  const where = explorerHere(location.pathname, location.search, { sel: task.position_id, tab: "maintenance", mtask: task.id });
+  const toggle = (next) => {
+    const body = modeSupportBody(task, modeId, next);
+    if (!Object.keys(body).length) return;
+    onSave(body, next ? "Marked as keeping it on its life for this failure mode." : "No longer marked as supporting this failure mode.");
+  };
+  return (
+    <div className="rim-support">
+      {can ? (
+        <Switch checked={on} disabled={busy} onChange={toggle} label={on ? "Supports this failure mode" : "No: it isn't servicing work for it"}
+                ariaLabel="Keeps the item on its life for this failure mode (servicing or lubrication)" />
+      ) : <span className="rim-tevery">{on ? "Supports this failure mode" : "No"}</span>}
+      {on && (
+        <p className="rw-fhelp">
+          {impactWords(s?.impact)}
+          {s?.impact ? <> <Chip tone={(s.source || "assumed") === "assumed" ? "warning" : "neutral"}>{SOURCE_WORD[s.source] || "Assumed"}</Chip></> : null}
+          {s?.reference ? ` · its life assumes every ${s.reference.value} ${s.reference.unit}` : ""}.
+          {" "}It reads “supports”, not “restores 0%”; the forecast is unchanged. {COMBINE_HELP}
+          {" "}<Link to={where}>Set its impact on the task</Link>
+        </p>
+      )}
+      {!on && <p className="rw-fhelp">For servicing or lubrication: it keeps the part on its life rather than renewing it.</p>}
+    </div>
   );
 }
 

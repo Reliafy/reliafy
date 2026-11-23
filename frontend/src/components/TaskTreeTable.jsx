@@ -70,7 +70,10 @@ export function TaskCell({ r, col, onPackage = null }) {
   }
   if (col.id === "due") return <DueCell c={c} />;
   if (col.id === "kind") {
-    return c.text ? <Chip tone={t.on_event ? "neutral" : "accent"} className="pk-kind" title={c.text}>{c.text}</Chip> : null;
+    // A supporting task (keeps it on its life): a small marker beside its kind, "Supports × 2".
+    const sup = t.support ? <Chip tone="neutral" className="pk-kind mt-supports" title={t.support.title}>{t.support.text}</Chip> : null;
+    const kind = c.text ? <Chip tone={t.on_event ? "neutral" : "accent"} className="pk-kind" title={c.text}>{c.text}</Chip> : null;
+    return kind && sup ? <span className="mt-kind-cell">{kind}{sup}</span> : kind || sup;
   }
   if (!c.text) return c.blank ? <span className="rw-blank" title={c.title || undefined}>{c.blank}</span> : null;
   return <span className={col.num ? "ml-num" : "ml-src"} title={c.title || c.text}>{c.text}</span>;
@@ -108,7 +111,7 @@ export function taskPhoneRow(r, rollup) {
   const due = taskCell(t, "due");
   const cost = taskCell(t, "cost");
   return {
-    line: [taskCell(t, "interval").text, cost.text ? `${cost.text} each time` : null, t.package?.name].filter(Boolean).join(" · "),
+    line: [taskCell(t, "interval").text, cost.text ? `${cost.text} each time` : null, t.package?.name, t.support?.text].filter(Boolean).join(" · "),
     status: due.words ? <Chip tone={due.overdue ? "danger" : "neutral"} title={due.title || undefined}>{due.overdue ? "Overdue " : "Due "}{due.words}</Chip> : null,
   };
 }

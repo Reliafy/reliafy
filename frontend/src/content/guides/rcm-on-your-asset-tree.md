@@ -418,6 +418,36 @@ Make it, then come back. A saved analysis comes from the Strategy tools: run
 [failure-finding interval](/guides/failure-finding-interval), then press **Save
 analysis**.
 
+### Servicing and lubrication: tasks that keep it on its life
+
+Greasing a bearing, changing the oil or cleaning a screen doesn't renew the
+part. It keeps the part on the life its model describes, the life it had when
+the data was collected with the servicing done. Mark such a task as
+**supporting** so it reads *supports*, not *restores 0%*:
+
+- In the RCM, a task's details have a **Keeps it on its life** row for each
+  failure mode it serves: switch on **Supports this failure mode**. It saves at
+  once.
+- On the Maintenance tab, the task's details have a **Keeps it on its life**
+  section: tick **Supporting**, then say what it supports (the failure modes
+  it prevents, or none ticked for the part's whole life), the **reference
+  interval** (the interval the life model assumes; the task's own when you
+  mark it), and, if you know it, **If it isn't done: failure rate ×** (for
+  example × 2: twice as likely to fail in any hour while it isn't done). Blank
+  means *supports, no modelled impact*. **Grace** is how far overdue it may run,
+  as a % of its interval, before the impact applies (0% by default). **Where
+  the impact comes from** is *Assumed* (the default, shown as a chip wherever
+  the number appears), *From the maker* or *Fitted*, with a note.
+- Several supporting tasks on one part multiply: × 2 and × 1.5, both not
+  done, give × 3. The task's details say so when there's more than one.
+- In the Maintenance tasks table, a supporting task has a small marker beside
+  its kind: *Supports × 2*, or *Supports* with no modelled impact.
+
+Only routine work and replace-at-age tasks can be supporting; a check finds a
+failure on its way rather than holding it off. A replace-at-age task marked
+supporting restores none of the item's age. The forecast is unchanged: while
+the task is done as planned, it changes nothing but its own cost and hours.
+
 ## Working out the interval
 
 Each scheduled task's details have **Calculate…** beside its *every N*, under
