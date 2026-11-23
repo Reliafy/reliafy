@@ -653,7 +653,7 @@ export default function FleetForecastPage() {
         <CardHeader
           title="Items"
           subtitle={items.length > 0
-            ? `${formatNumber(items.length)} item${items.length === 1 ? "" : "s"}${hasCounts ? ` · ${formatNumber(units)} units` : ""}`
+            ? `${items.length.toLocaleString("en-GB")} item${items.length === 1 ? "" : "s"}${hasCounts ? ` · ${units.toLocaleString("en-GB")} units` : ""}`
             : undefined}
           actions={!readOnly && items.length > 0 && (
             <div className="fleet-items-tools">

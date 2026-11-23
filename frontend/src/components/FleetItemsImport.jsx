@@ -245,7 +245,7 @@ export default function FleetItemsImport({
                   {result.items.slice(0, PREVIEW_ROWS).map((it, k) => (
                     <tr key={k}>
                       <td>{it.name}</td>
-                      {counted && <td className="num">{formatNumber(it.count ?? 1)}</td>}
+                      {counted && <td className="num">{Number(it.count ?? 1).toLocaleString("en-GB")}</td>}
                       <td className="num">{formatNumber(it.current_use, { sig: 4 })}</td>
                       {fields.map((f) => <td key={f.name}>{it.covariates?.[f.name] ?? "—"}</td>)}
                     </tr>
