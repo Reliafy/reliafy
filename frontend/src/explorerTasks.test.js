@@ -51,8 +51,8 @@ test("cells, the way down, and Forecast… on a position only (never a design's)
   assert.deepEqual(openForTasks(display, "m1"), ["m1", "p1", "st"]);
   assert.equal(forecastItem({ type: "pos" })[0].label, "Forecast…");
   // A place, and a design's rows: the spares for the year alone (work and failures go by position).
-  assert.equal(forecastItem({ type: "loc" })[0].label, "Spares for the year…");
-  assert.equal(forecastItem({ type: "pos" }, { design: true })[0].label, "Spares for the year…");
+  assert.equal(forecastItem({ type: "loc" })[0].label, "Forecast…");
+  assert.equal(forecastItem({ type: "pos" }, { design: true })[0].label, "Forecast…");
   assert.equal(forecastItem({ type: "mtask" }).length, 0);
 });
 

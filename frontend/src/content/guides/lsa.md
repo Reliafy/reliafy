@@ -102,7 +102,7 @@ everything inside it (the work, the expected failures and the costs to come,
 by month, quarter or year) in the table area, with the tree still beside it,
 and the **spares for the year** under it: what failures and tasks there will
 use, against stock and lead time. On a location, and on a product's design,
-it's **Spares for the year…** alone.
+it's the spares for the year alone, under **Forecast…**.
 
 ## Say what a task needs
 
