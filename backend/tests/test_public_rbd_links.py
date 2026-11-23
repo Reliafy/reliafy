@@ -179,7 +179,7 @@ def test_rbd_unanalysable_diagram_still_renders(client):
     assert r.status_code == 200
     a = r.json()["artifact"]
     assert a["analysis"] is None
-    assert "non-repairable model" in a["analysis_error"]
+    assert "needs a life model" in a["analysis_error"]
     assert len(a["graph"]["nodes"]) == 5
 
 

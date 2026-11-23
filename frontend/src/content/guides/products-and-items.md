@@ -48,8 +48,9 @@ under **⋯** at the end of the row):
   - **Analyses of this design**: the product's RBDs, **Make an RBD from this
     structure**, and a reliability prediction from its parts list. The RBD's
     blocks take each position's model in use (or its class's, or its
-    parts-count rate; a part made of others becomes a sub-system), with a
-    placeholder only where there's nothing to go on. Parts that look alike
+    parts-count rate; a part made of others becomes a sub-system). Where
+    there's nothing to go on, the block has no model, and the diagram isn't
+    calculated until you give it one (no life is invented for it). Parts that look alike
     (Pump set 1 and Pump set 2) and aren't marked as backing each other up are
     asked about first: **Every one needed**, **Fewer will do** or **Duty and
     standby**. The last two are saved on the tree as a redundancy set.

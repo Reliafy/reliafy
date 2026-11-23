@@ -165,6 +165,13 @@ setting leaves no path through the system at all. It also tells you whether the
 diagram can be solved in closed form or needs simulation. **Check again** in the
 list runs it on demand.
 
+Blocks with no life model are listed together, **These blocks need a life
+model**, each name a link that opens its model. Nothing is calculated until
+each has one: Reliafy never invents a life for a block. A block that never
+fails (a frame, a pipe) can be marked **Working** under **Status** instead.
+A block that uses a saved model always takes the model as it is now, so
+refitting the model updates every diagram that uses it.
+
 Fix anything it reports, then switch to the **Calculator** tab and press
 **Calculate**. For the sample pump station (a controller in series with two
 redundant pumps) the MTTF is 849 hours and the B10 life 318 hours.

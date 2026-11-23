@@ -121,11 +121,12 @@ def list_parents(rows: list[Rbd]) -> dict[str, str]:
 
 
 def get_rbd(db, rbd_id: str, owner_id: str | list[str]) -> Rbd | None:
-    """Fetch an RBD by id. Shared sample RBDs are visible to every owner."""
-    return from_doc(
-        Rbd,
-        db.rbds.find_one({"_id": rbd_id, "owner_id": {"$in": access.owner_in(owner_id)}}),
-    )
+    """Fetch an RBD by id. Shared sample RBDs are visible to every owner. Blocks linked to a saved
+    model come back on the model's current fit (:mod:`backend.services.rbd_live_models`)."""
+    from backend.services import rbd_live_models
+
+    doc = db.rbds.find_one({"_id": rbd_id, "owner_id": {"$in": access.owner_in(owner_id)}})
+    return from_doc(Rbd, rbd_live_models.refresh_doc(db, doc, access.owner_in(owner_id)))
 
 
 def rename_rbd(db, rbd_id: str, name: str, owner_id: str) -> Rbd:
@@ -206,9 +207,12 @@ def resolvers(db, owner_id):
 def bind_covariates(db, owner_id, graph: dict, covariates: dict | None = None) -> tuple[dict, dict | None]:
     """Blocks whose covariates were left open at their position, made concrete from the blocks'
     and the diagram's values (backend/services/covariate_binding.py). Raises AnalysisError naming
-    every block that still needs a value."""
-    from backend.services import covariate_binding
+    every block that still needs a value. Blocks linked to a saved model are put on its current
+    fit first (rbd_live_models)."""
+    from backend.services import covariate_binding, rbd_live_models
 
+    # Every graph sent for analysis passes here: blocks linked to a saved model take its current fit.
+    graph = rbd_live_models.refresh(db, graph, owner_id)
     graph, covariates, needs = covariate_binding.bind_graph(
         graph, lambda b: covariate_binding.inputs_of(b, db, owner_id), covariates)
     if needs:

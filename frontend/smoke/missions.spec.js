@@ -92,6 +92,13 @@ test("missions: a product's mission by phase, its covariates with the blocks the
   await expect(covs).toContainText(`Feeds Front motor bearing ${tag} and Rear motor bearing ${tag} (2 blocks)`);
   await expect(covs.getByRole("textbox", { name: "Bearing operating temperature", exact: true })).toHaveValue("90");
 
+  // The gimbal had no model when the drone's RBD was built, so its block has none: no answer until
+  // it has one (nothing is invented), or it's left out.
+  const needs = pane.getByRole("note", { name: "Blocks with no model" });
+  await expect(needs).toContainText(`Gimbal ${tag} needs a life model`, { timeout: 30_000 });
+  await needs.getByRole("button", { name: "Leave it out" }).click();
+  await pane.getByRole("button", { name: "Calculate" }).click();
+
   // The survey waits: its speed is missing, and the result says how far it got.
   await expect(pane.getByRole("status").or(pane.locator(".mission-answer")).first()).toContainText(/Survey needs values first/, { timeout: 30_000 });
   const survey = phases.locator(":scope > li").nth(1);
@@ -113,13 +120,11 @@ test("missions: a product's mission by phase, its covariates with the blocks the
   await surveyCovs.getByLabel(`Rear motor bearing ${tag}'s own in this phase`).fill("1200");
   await expect(surveyCovs).toContainText("The other uses 1800 rpm (this phase)");
   await pane.getByRole("button", { name: "Calculate" }).click();
-  // The gimbal had no model when the drone's RBD was built, so its block is a placeholder: said first.
   const answer = pane.locator(".mission-answer");
-  await expect(answer).toContainText("Not a real figure yet: 1 of 3 blocks have no model");
-  await expect(answer).toContainText("the mission completes with probability", { timeout: 30_000 });
+  await expect(answer).toContainText(/the mission completes with probability/i, { timeout: 30_000 });
   await expect(takeoff).toContainText("Completes");
   await expect(survey).toContainText("still going");
-  await expect(survey).toContainText("Weakest with a model:");
+  await expect(survey).toContainText("Weakest:");
   // Saving works the saved mission out for the table. That answer is held back here, so the table
   // has read the missions again before it exists: the row still gets it (below, the pane closed).
   const calculation = "**/api/rbds/*/missions/*/calculate";
@@ -152,11 +157,13 @@ test("missions: a product's mission by phase, its covariates with the blocks the
   await open(page, `/asset-register/explorer?arrange=positions&sel=${drone.id}&tab=models&mission=${built.model_id}:${made.mission.id}&on=${drone.id}`);
   await expect(pane).toBeVisible();
   await expect(pane.getByRole("button", { name: "Back to the table" })).toBeVisible();
-  await expect(pane.locator(".mission-answer")).toContainText("the mission completes with probability", { timeout: 30_000 });
+  await expect(pane.locator(".mission-answer")).toContainText(/the mission completes with probability/i, { timeout: 30_000 });
   await expect.poll(() => sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "mission-open-400");
   await page.setViewportSize({ width: 1440, height: 900 });
   await shot(page, "mission-open-1440");
+  // The refusal while the gimbal had no model was the answer (a 422): the browser logs it.
+  problems.splice(0, problems.length, ...problems.filter((x) => !/status of 422 .*\/missions\/[^/]+\/calculate/.test(x)));
   await expectHealthy(page, problems, { label: "missions on the Explorer" });
 });
 
@@ -297,10 +304,10 @@ test("missions: a leaf with a model gets a one-block mission; the RBD list label
 });
 
 // Blocks with no model: a generator set whose engine and alternator have models and whose control
-// panel, fuel system and battery have none. The mission says which blocks are placeholders with
-// its answer, shows the chance without them, never names one the weakest, and marks them in the
-// grid and the tab; "Leave all 3 out" works the mission out from the blocks with models.
-test("missions: a mission resting on placeholders says so, and can leave them out", async ({ page, request, problems }) => {
+// panel, fuel system and battery have none. The mission gives no answer (nothing is invented),
+// names the blocks and marks them in the grid; "Leave all 3 out" works the mission out from the
+// blocks with models.
+test("missions: a mission with blocks on no model names them, and can leave them out", async ({ page, request, problems }) => {
   const tag = `mp${Date.now()}`;
   const set = await postOk(request, `${M}/positions`, { name: `Generator set ${tag}` });
   for (const name of ["Engine", "Alternator", "Control panel", "Fuel system", "Battery"]) {
@@ -318,35 +325,22 @@ test("missions: a mission resting on placeholders says so, and can leave them ou
   await open(page, `/asset-register/explorer?arrange=positions&sel=${set.id}&tab=models&mission=${made.rbd.id}:mission&on=${set.id}`);
   const pane = page.getByRole("region", { name: "Mission" });
   const answer = pane.locator(".mission-answer");
-  // Most of the blocks are placeholders (3 of 5): the answer says most of it rests on invented lives.
-  await expect(answer).toContainText("Not a real figure: 3 of 5 blocks have no model, so most of this answer rests on invented lives", { timeout: 30_000 });
-  await expect(answer).toContainText("With placeholders");
-  await expect(answer).toContainText("Without them");
+  // Three blocks have no life model: no answer (nothing is invented), the blocks named, and what to do.
   const note = pane.getByRole("note", { name: "Blocks with no model" });
-  await expect(note).toContainText(`Battery ${tag}, Control panel ${tag} and Fuel system ${tag}`);
-  await expect(note).toContainText("from the blocks with models alone");
+  await expect(note).toContainText("Not worked out yet:", { timeout: 30_000 });
+  await expect(note).toContainText(`Battery ${tag}, Control panel ${tag}, Fuel system ${tag} need a life model`);
+  await expect(answer).toHaveCount(0);
   const grid = pane.getByRole("region", { name: "Blocks in each phase" });
-  await expect(grid.locator("tbody th", { hasText: "Placeholder" })).toHaveCount(3);
-  // The weakest block is one with a model, and says it was picked from those.
+  await expect(grid.locator("tbody th", { hasText: "No model" })).toHaveCount(3);
   const phases = pane.getByRole("list", { name: /phases/ }).locator(":scope > li");
-  await expect(phases.nth(1)).toContainText("Weakest with a model:");
-  await expect(phases.nth(1).locator(".mission-phase-line")).not.toContainText(/Weakest[^:]*: (Battery|Control panel|Fuel system)/);
   await shot(page, "mission-placeholders-1440", true);
   await page.setViewportSize({ width: 400, height: 860 });
   await expect.poll(() => sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "mission-placeholders-400", true);
   await page.setViewportSize({ width: 1440, height: 900 });
 
-  // The tab's row carries the flag with the figure.
   await page.keyboard.press("Escape");
   await expect(pane).toHaveCount(0);
-  await expect(nameRow(page, `Deployment ${tag}`)).toContainText("placeholders");
-  await shot(page, "missions-tab-placeholders-1440");
-  await page.setViewportSize({ width: 400, height: 860 });
-  await expect(nameRow(page, `Deployment ${tag}`)).toContainText("placeholders");
-  await expect.poll(() => sideways(page)).toBeLessThanOrEqual(0);
-  await shot(page, "missions-tab-placeholders-400");
-  await page.setViewportSize({ width: 1440, height: 900 });
 
   // Leave them out: Not needed in every phase, and the answer is from the blocks with models.
   await nameRow(page, `Deployment ${tag}`).locator(".tp-nm").dblclick();
@@ -363,8 +357,9 @@ test("missions: a mission resting on placeholders says so, and can leave them ou
   await shot(page, "mission-placeholders-left-out-1440", true);
   await page.keyboard.press("Escape");
   await expect(nameRow(page, `Deployment ${tag}`)).toContainText("%");
-  await expect(nameRow(page, `Deployment ${tag}`)).not.toContainText("placeholders");
-  await expectHealthy(page, problems, { label: "a mission on placeholders" });
+  // The refusals while blocks had no model were the answer (a 422 each): the browser logs them.
+  problems.splice(0, problems.length, ...problems.filter((x) => !/status of 422 .*\/missions\/[^/]+\/calculate/.test(x)));
+  await expectHealthy(page, problems, { label: "a mission with blocks on no model" });
 });
 
 // A18: the RBD's own phased mission on the Calculator: duty and standby pumps (exponential, so the

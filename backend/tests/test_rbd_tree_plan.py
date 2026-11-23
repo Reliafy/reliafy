@@ -308,11 +308,12 @@ def test_a_sub_assembly_with_no_model_of_its_own_is_its_own_rbd_built_from_its_p
     assert pm.built_rbd_link(m.position_models(prop))["model_id"] == sub_id
     again = pm.build_rbd(m, db, OWNERS, set(), top, replace_link_id=link["id"])
     assert again["model_id"] == link["model_id"]
-    # The whole drone calculates, its sub-assembly as a sub-system.
+    # The whole drone isn't calculated while ESC has no model: nothing is invented for it.
     from backend.services import rbds as rbds_service
+    from backend.services.rbd_analysis import AnalysisError
 
-    res = rbds_service.analyze_graph(db, _graph(db, link["model_id"]), OWNERS + [ORG])
-    assert res["mttf"] > 0
+    with pytest.raises(AnalysisError, match="ESC"):
+        rbds_service.analyze_graph(db, _graph(db, link["model_id"]), OWNERS + [ORG])
     _same_after_rebuild(m)
 
 

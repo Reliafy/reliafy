@@ -474,6 +474,9 @@ def availability_payload(
     this process (see :func:`rbd_jobs.cancel_token`).
     Raises :class:`AnalysisError` for an invalid current state.
     """
+    from backend.services import rbd_live_models
+
+    graph = rbd_live_models.refresh(session, graph, resolve_owners)  # linked blocks on the model's fit
     from backend.maintenance import rbd_tree_plan
     from backend.services import rbd_analysis
 
@@ -733,7 +736,8 @@ def analyze_graph(
     except rbd_standby.SimulationNeedsPro as exc:
         return JSONResponse(status_code=402, content=standby_pro_payload(exc))
     except AnalysisError as exc:
-        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+        needs = {"needs_model": exc.blocks} if getattr(exc, "blocks", None) else {}
+        return JSONResponse(status_code=422, content={"detail": client_message(exc), **needs})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to analyse RBD graph")
         return JSONResponse(

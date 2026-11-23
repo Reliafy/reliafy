@@ -357,7 +357,7 @@ def test_missing_life_model_is_a_clear_error():
     }
     with pytest.raises(AnalysisError) as exc:
         analyze(graph)
-    assert "non-repairable model" in str(exc.value)
+    assert "needs a life model" in str(exc.value) and "Empty" in str(exc.value)
 
 
 def test_no_edges_is_a_clear_error():
@@ -455,7 +455,8 @@ def test_validate_flags_missing_life_model():
     }
     v = validate_graph(graph)
     assert not v["valid"] and not v["can_calculate"]
-    assert any("non-repairable model" in e for e in v["errors"])
+    assert any("needs a life model" in e for e in v["errors"])
+    assert v["needs_model"] == [{"id": "c1", "label": "Empty"}]
 
 
 def test_validate_flags_dangling_node():
@@ -1014,3 +1015,36 @@ def test_common_cause_comparison_is_at_the_importance_time():
     assert ccf["reliability_with"] == pytest.approx(float(rbd.sf(t)), abs=1e-12)
     assert ccf["reliability_without"] == pytest.approx(float(baseline.sf(t)), abs=1e-12)
     assert ccf["reliability_without"] > ccf["reliability_with"]
+
+
+def test_a_life_invented_when_built_from_the_tree_counts_as_no_model():
+    """Diagrams made from a structure before used a 1,000-hour placeholder for a position with no
+    model, and the results included it. It counts as no model now: no figure, the block named, and
+    a block marked Working (never fails) needs none."""
+    invented = {"distribution_id": "exponential", "params": [{"name": "failure_rate", "value": 0.001}],
+                "placeholder": True}
+    real = {"source": "params", "distribution_id": "weibull",
+            "params": [{"name": "alpha", "value": 900}, {"name": "beta", "value": 1.4}]}
+    graph = {"nodes": _io_nodes() + [
+        {"id": "a", "type": "component", "data": {"label": "Airframe", "model": invented,
+                                                  "model_source": "A placeholder: no model in use"}},
+        {"id": "b", "type": "component", "data": {"label": "Rotor", "model": real}}],
+        "edges": [_edge("input", "a"), _edge("a", "b"), _edge("b", "output")]}
+    with pytest.raises(AnalysisError, match="This block needs a life model.*Airframe"):
+        analyze(graph)
+    v = validate_graph(graph)
+    assert not v["can_calculate"] and v["needs_model"] == [{"id": "a", "label": "Airframe"}]
+    # Marked as never failing: the system is the rotor alone.
+    graph["nodes"][2]["data"]["state"] = "working"
+    import math
+
+    assert analyze(graph)["mttf"] == pytest.approx(900 * math.gamma(1 + 1 / 1.4), rel=1e-3)
+
+
+def test_a_sub_system_block_never_needs_a_model_of_its_own():
+    from backend.services.rbd_analysis import blocks_needing_models
+
+    graph = {"nodes": _io_nodes() + [
+        {"id": "s", "type": "component", "data": {"label": "Gimbal", "rbd": {"id": "r1"}}},
+        {"id": "c", "type": "component", "data": {"label": "Comms"}}]}
+    assert blocks_needing_models(graph) == [{"id": "c", "label": "Comms"}]

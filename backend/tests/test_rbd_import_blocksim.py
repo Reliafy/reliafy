@@ -411,7 +411,7 @@ def test_undecoded_models_import_without_a_model_and_warn():
     # The graph still normalises; analysis then asks for the missing models.
     ng = normalize_graph(imp.graph)
     v = ra.validate_graph(ng)
-    assert not v["valid"] and any("no non-repairable model" in e for e in v["errors"])
+    assert not v["valid"] and any("need a life model" in e for e in v["errors"])
 
 
 def test_standby_container_variants():

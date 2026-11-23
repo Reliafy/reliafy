@@ -13,6 +13,7 @@ from backend.services import rbd_fault_tree
 from backend.services.access import AccessCtx, get_access
 from backend.services.rbd_analysis import AnalysisError
 from backend.errors import client_message
+from backend.services import rbd_live_models
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -34,6 +35,7 @@ def fault_tree(
     set). Repairable graphs are evaluated at
     steady state. Exact and quick, so not plan-gated.
     """
+    graph = rbd_live_models.refresh(session, graph, ctx.read_owners)  # linked blocks on their model's fit
     try:
         return JSONResponse(
             content=rbd_fault_tree.fault_tree_for_owner(

@@ -33,6 +33,7 @@ from backend.services import usage as usage_service
 from backend.services.access import AccessCtx, get_access
 from backend.services.rbd_analysis import AnalysisError, require_blocks
 from backend.errors import client_message
+from backend.services import rbd_live_models
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -130,6 +131,7 @@ def rbd_sensitivity_endpoint(
     ({lever id: {"min", "max"}}, in the values shown: a mean repair time in
     the diagram's unit) stops each lever's step at the user's limit, as the
     lever's own range stops it (#324)."""
+    graph = rbd_live_models.refresh(session, graph, ctx.read_owners)  # linked blocks on their model's fit
     owners = ctx.read_owners
     rbd = None
     if rbd_id:

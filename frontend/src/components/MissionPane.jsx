@@ -129,7 +129,7 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
       setCalc({ busy: false, error: null, stale: false });
       if (!dirty) onSaved?.(null);
     } catch (e) {
-      setCalc({ busy: false, error: e.message, pro: e.code === "pro_required", stale: false });
+      setCalc({ busy: false, error: e.message, pro: e.code === "pro_required", needs: e.data?.needs_model || null, stale: false });
     }
   };
   // Opening a mission with phases works it out straight away.
@@ -264,8 +264,13 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
                 </p>
               </section>
             )}
-            <MissionAnswer result={calc.stale ? null : result} busy={calc.busy} error={calc.error} pro={calc.pro}
-                           stale={calc.stale} total={total} unit={unit} name={title} simple={simple} />
+            {calc.needs?.length && !calc.stale ? (
+              <MissionNeedsModels blocks={calc.needs} readOnly={readOnly} onOpenRbd={onOpenRbd}
+                                  onLeaveOut={(ids) => change((rs) => leaveOut(rs, ids))} />
+            ) : (
+              <MissionAnswer result={calc.stale ? null : result} busy={calc.busy} error={calc.error} pro={calc.pro}
+                             stale={calc.stale} total={total} unit={unit} name={title} simple={simple} />
+            )}
             {!calc.stale && !calc.error && (
               <MissionPlaceholders result={result} readOnly={readOnly} onOpenRbd={onOpenRbd}
                                    onLeaveOut={(ids) => change((rs) => leaveOut(rs, ids))} />
@@ -493,6 +498,36 @@ function MissionAnswer({ result, busy, error, pro, stale, total, unit, name, sim
     </ResultSummary>
     {!waiting && <MissionCurve result={result} unit={unit} name={name} />}
     </>
+  );
+}
+
+// Blocks a phase needs with no life model: no answer, since no life is invented for them. Which
+// they are, and what can be done: give them models in the RBD, or leave them out of the mission.
+function MissionNeedsModels({ blocks, readOnly, onOpenRbd, onLeaveOut }) {
+  const n = blocks.length;
+  const them = n === 1 ? "it" : "them";
+  return (
+    <section className="mission-ph mission-ph-most" role="note" aria-label="Blocks with no model">
+      <p className="mission-ph-what">
+        <b>Not worked out yet:</b> {blocks.map((b) => b.label).join(", ")} {n === 1 ? "needs" : "need"} a life
+        model. Reliafy doesn&rsquo;t invent one, so the mission has no answer until {n === 1 ? "it has" : "each has"} one.
+      </p>
+      <ul className="mission-ph-do">
+        <li>
+          <b>Give {them} a model:</b> set each block&rsquo;s model in the mission&rsquo;s RBD, or mark a block that never
+          fails as Working there.{" "}
+          {onOpenRbd && <button type="button" className="secondary sm" onClick={onOpenRbd}>Open the RBD</button>}
+        </li>
+        <li>
+          <b>Leave {them} out:</b> mark {them} Not needed in every phase.{" "}
+          {!readOnly && (
+            <button type="button" className="secondary sm" onClick={() => onLeaveOut(blocks.map((b) => b.id))}>
+              Leave {n === 1 ? "it" : `all ${n}`} out
+            </button>
+          )}
+        </li>
+      </ul>
+    </section>
   );
 }
 

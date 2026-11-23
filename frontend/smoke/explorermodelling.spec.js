@@ -202,7 +202,7 @@ test("an ALT model attached as fitted, and a prediction row from the parts list"
   await expectHealthy(page, problems, { label: "ALT and prediction rows" });
 });
 
-// An RBD row: built from the two positions inside (one with a model, one a flagged placeholder).
+// An RBD row: built from the two positions inside (one with a model, one with none).
 // Build from what's inside… opens the RBD builder itself in the table area, beside the tree (no
 // dialog): what it made said over it, the canvas with a block per position. Esc goes back to the
 // table, the row still picked; the row's panel lists its blocks; Use this one makes it the model
@@ -288,16 +288,16 @@ test("build an RBD from what's inside: the builder in the table area, its row, a
   expect(again.existing).toBe(true);
   expect(again.model_id).toBe(first);
   await expect(rbd.locator(".mt-c-kind")).toContainText("RBD");
-  await expect(rbd.locator(".mt-c-source")).toHaveText("Built from 2 positions inside · 1 placeholder");
-  // A non-repairable RBD's headline is its mean life, never an MTBF (#815).
-  await expect(rbd.locator(".mt-c-numbers")).toContainText(/Mean life [\d,]+ hours/);
-  await expect(rbd.locator(".mt-c-quality")).toContainText("1 placeholder");
+  await expect(rbd.locator(".mt-c-source")).toHaveText("Built from 2 positions inside · 1 needs a model");
+  // One block has no model: no system figure is shown (nothing is invented for it).
+  await expect(rbd.locator(".mt-c-numbers")).not.toContainText(/Mean life [\d,]+ hours/);
+  await expect(rbd.locator(".mt-c-quality")).toContainText("1 needs a model");
   // Its own life model is in use by default.
   const life = page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: "Bearing life — Lognormal" }) });
   await expect(life.locator(".ml-inuse")).toHaveText("In use");
   await rbd.locator(".tp-nm").click();
   await expect(side(page).locator(".ml-blocks tbody tr")).toHaveCount(2);
-  await expect(side(page).locator(".ml-blocks")).toContainText("Placeholder");
+  await expect(side(page).locator(".ml-blocks")).toContainText("No model");
   await expect(side(page).locator(".ml-blocks")).toContainText(`Pump A ${tag}`);
   await expect(side(page).getByRole("link", { name: "Open full page" })).toBeVisible();
   // Use this one: the RBD becomes the model in use.

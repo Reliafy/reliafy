@@ -31,6 +31,7 @@ from backend.services import usage as usage_service
 from backend.services.access import AccessCtx, get_access
 from backend.services.rbd_analysis import AnalysisError, require_blocks
 from backend.errors import client_message
+from backend.services import rbd_live_models
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -106,6 +107,7 @@ def rbd_measures_endpoint(
     share of its variance, ``method`` "delta" or "sobol"; with ``times``
     the availability at those times and the mean over ``[0, t]``, with
     intervals). Sobol and ``times`` are Pro, as a compute job."""
+    graph = rbd_live_models.refresh(session, graph, ctx.read_owners)  # linked blocks on their model's fit
     owners = ctx.read_owners
     rbd = None
     if rbd_id:

@@ -10,17 +10,18 @@ const graph = {
   ],
 };
 
-test("placeholders inside sub-systems are counted, and most of them is said plainly", () => {
+test("blocks with no real life model inside sub-systems are counted, and never called illustrative", () => {
   const note = placeholderNote(graph, { basic: 27, placeholders: 27, mostly: true });
   assert.equal(note.mostly, true);
-  assert.match(note.text, /^27 of 27 basic blocks are placeholders: most of this answer rests on invented lives/);
+  assert.match(note.text, /^27 of 27 basic blocks have no real life model yet: the results aren't real until each has one/);
   const few = placeholderNote(graph, { basic: 13, placeholders: 1, mostly: false });
   assert.equal(few.mostly, false);
-  assert.equal(few.text, "1 of 13 basic blocks is a placeholder: results are illustrative until you set real values.");
+  assert.match(few.text, /^1 of 13 basic blocks has no real life model yet: /);
+  assert.doesNotMatch(few.text, /illustrative/);
 });
 
 test("before the server's count, the diagram's own blocks are counted and sub-systems are flagged", () => {
   const note = placeholderNote(graph);
-  assert.equal(note.text, "1 block uses placeholder parameters (and maybe more inside its sub-systems): results are illustrative until you set real values.");
+  assert.equal(note.text, "1 block has only placeholder parameters (and maybe more inside its sub-systems): the results aren't real until each has a real model.");
   assert.equal(placeholderNote({ nodes: [{ id: "a", type: "component", data: { model: {} } }] }), null);
 });

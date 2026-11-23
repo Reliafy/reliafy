@@ -343,9 +343,9 @@ function RbdDetails({ d, model, age, onAge }) {
     <section aria-label="The diagram" className="ml-rbd">
       {model?.placeholders?.length > 0 && (
         <p className={`ml-stale${model.placeholder_blocks?.mostly ? " is-most" : ""}`} role="note">
-          {model.placeholder_blocks?.words ? `${model.placeholder_blocks.words.charAt(0).toUpperCase()}${model.placeholder_blocks.words.slice(1)}: ` : ""}
-          placeholders stand in for {model.placeholders.slice(0, 8).join(", ")}{model.placeholders.length > 8 ? ` and ${model.placeholders.length - 8} more` : ""}
-          {model.placeholder_blocks?.mostly ? ". Most of the answer rests on invented lives, so" : ":"} the figures aren't real until they have models.
+          {model.placeholder_blocks?.words ? `${model.placeholder_blocks.words.charAt(0).toUpperCase()}${model.placeholder_blocks.words.slice(1)}: ` : "No real life model yet: "}
+          {model.placeholders.slice(0, 8).join(", ")}{model.placeholders.length > 8 ? ` and ${model.placeholders.length - 8} more` : ""}.
+          The figures aren&rsquo;t real until each has one.
         </p>
       )}
       {model?.repairable && <p className="rim-tquiet">A repairable diagram: its availability is simulated on its own page.</p>}
@@ -369,7 +369,7 @@ function RbdDetails({ d, model, age, onAge }) {
                 <tr key={b.id} title={hover || undefined}>
                   <td>{b.label}</td>
                   <td>
-                    {b.placeholder ? <Chip tone="warning" title={b.inside ? "Every block inside this sub-system is a placeholder" : "A placeholder: no model in use for this position yet"}>{b.inside ? `Placeholders (${b.inside.placeholders} of ${b.inside.basic})` : "Placeholder"}</Chip>
+                    {b.placeholder ? <Chip tone="warning" title={b.inside ? "No block inside this sub-system has a real life model yet" : "No real life model for this position yet"}>{b.inside ? `No model (${b.inside.placeholders} of ${b.inside.basic})` : "No model"}</Chip>
                       : b.inside?.placeholders ? <>{b.model} <Chip tone="warning">{b.inside.placeholders} of {b.inside.basic} placeholders</Chip></> : b.model}
                     {hover && <span className="sr-only">. {hover}</span>}
                   </td>
