@@ -1,25 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addPackageTask, getForecastDetails, getTaskTable, listPackages } from "../api.js";
+import { addPackageTask, getTaskTable, listPackages } from "../api.js";
 import Chip from "./ui/Chip.jsx";
 import Select from "./Select.jsx";
 import TablePane from "./TablePane.jsx";
-import ForecastDetails from "./ForecastDetails.jsx";
-import SparesYear from "./SparesYear.jsx";
 import MaintenanceTask, { TradeRates } from "./MaintenanceTask.jsx";
 import RbdTaskUses from "./RbdTaskUses.jsx";
 import { CloseIcon, ExpandIcon, ShrinkIcon } from "./icons.jsx";
-import { fmtDate, useSendOnce } from "./MaintenanceParts.jsx";
+import { useSendOnce } from "./MaintenanceParts.jsx";
 import { AddPackageDialog, PackageTasks, PackageView, overdueNote } from "./LsaPanel.jsx";
 import { latestOnly } from "../explorerMissions.js";
-import { FC_TYPE, PKG_REF_TYPE, PKG_TYPE, packageCell, packageWhere, rankPackages, taskCell, visitFor } from "../explorerTasks.js";
+import { PKG_REF_TYPE, PKG_TYPE, levelDueCell, packageCell, packageWhere, rankPackages, taskCell, visitFor } from "../explorerTasks.js";
 import { cadenceWords, ordinal, packageScope, taskOnText } from "../lsaTab.js";
 import "./LsaPanel.css";
 import "./TaskTreeTable.css";
 
 // The Explorer's Maintenance tab is the tree with each position's tasks in it (explorerTasks.js),
 // like the Modelling and Missions tabs: the read of every task in the asset opened, each task
-// row's cells and its phone line, a task's details beside the table, and a level's forecast in the
-// table area.
+// row's cells and its phone line, and a task's details beside the table. No forecasts here (Derryn,
+// 23 Nov 2026): the quick one is Decisions › Forecasts › Spares forecast.
 
 export { TASK_COLUMNS, TASK_TREE_HEAD } from "../explorerTasks.js";
 
@@ -49,42 +47,15 @@ export function useTreeTasks({ on, within = null, kind = "pos", packages = false
   return { ...state, load };
 }
 
-// The forecast the Forecast rows read (each task's and package's summary comes from it): the
-// level's forecast details for the next year by the calendar at `anchors` (the asset's top
-// position: one read for the lot; a place opened, each position the open rows need), read once one
-// is wanted and again on `version`. {fc, error}: the reads merged (their tasks, what wasn't placed
-// and each time done).
-export function useTreeForecast({ on, anchors = [], root = null, version = 0 }) {
-  const [got, setGot] = useState({});
-  // Each read is asked once (the busy mark it sets mustn't cancel it); answers after unmounting are dropped.
-  const asked = useRef(new Set());
-  const mounted = useRef(true);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  const ids = anchors.filter(Boolean);
-  const want = on ? ids.filter((id) => !asked.current.has(`${id}:${root || ""}:${version}`)) : [];
-  const key = want.join(",");
-  useEffect(() => {
-    if (!key) return;
-    for (const id of key.split(",")) {
-      const k = `${id}:${root || ""}:${version}`;
-      if (asked.current.has(k)) continue;
-      asked.current.add(k);
-      setGot((g) => ({ ...g, [k]: { busy: true } }));
-      getForecastDetails(id, { root, basis: "calendar", period: "month" })
-        .then((fc) => mounted.current && setGot((g) => ({ ...g, [k]: { fc } })))
-        .catch((e) => mounted.current && setGot((g) => ({ ...g, [k]: { error: e.message } })));
-    }
-  }, [key, root, version]);
-  return useMemo(() => {
-    const parts = ids.map((id) => got[`${id}:${root || ""}:${version}`]).filter(Boolean);
-    if (!parts.length || parts.some((x) => x.busy)) return null;
-    const err = parts.find((x) => x.error);
-    const ok = parts.filter((x) => x.fc).map((x) => x.fc);
-    if (!ok.length) return err ? { error: err.error } : null;
-    return { fc: { ...ok[0], tasks: ok.flatMap((f) => f.tasks || []), not_placed: ok.flatMap((f) => f.not_placed || []),
-      occurrences: ok.flatMap((f) => f.occurrences || []) } };
-  }, [got, ids.join(","), root, version]); // eslint-disable-line react-hooks/exhaustive-deps
+// A Next due cell: a date ("5 Dec 2026", overdue in red), the reading it falls due at ("at
+// 1,250 h"), or a dash with why in its tooltip (never a date worked out from today).
+function DueCell({ c }) {
+  if (c.blank || !c.words) return <span className="rw-blank" title={c.title || undefined}>—</span>;
+  return <span className={"ml-num" + (c.overdue ? " pk-overdue" : "")} title={c.title || undefined}>{c.words}{c.overdue ? " · overdue" : ""}</span>;
 }
+
+// A level's Next due: the soonest at and below it (rollupLead: its cell, before the roll-up).
+export const levelDue = (r) => <DueCell c={levelDueCell(r)} />;
 
 // One cell of a task row (r.ref.task: a task-table row). The Packaged cell is a link to the
 // package (`onPackage`), opened in Maintenance › Packages.
@@ -97,10 +68,7 @@ export function TaskCell({ r, col, onPackage = null }) {
               onClick={(e) => { e.stopPropagation(); onPackage(t.package); }}>{c.text}</button>
     );
   }
-  if (col.id === "due") {
-    if (!c.text) return <span className="rw-blank">—</span>;
-    return <span className={"ml-num" + (c.overdue ? " pk-overdue" : "")} title={c.title || undefined}>{fmtDate(c.text)}{c.overdue ? " · overdue" : ""}</span>;
-  }
+  if (col.id === "due") return <DueCell c={c} />;
   if (col.id === "kind") {
     return c.text ? <Chip tone={t.on_event ? "neutral" : "accent"} className="pk-kind" title={c.text}>{c.text}</Chip> : null;
   }
@@ -118,36 +86,30 @@ export function PackageCell({ r, col }) {
     return <TaskCell r={r} col={col} />;
   }
   const c = packageCell(r, col.id);
-  if (col.id === "due") return c.text ? <span className="ml-num" title={c.title || undefined}>{fmtDate(c.text)}</span> : <span className="rw-blank">—</span>;
+  if (col.id === "due") return <DueCell c={c} />;
   if (col.id === "kind") return c.text ? <Chip tone="warning" className="pk-kind">{c.text}</Chip> : <Chip tone="neutral" className="pk-kind" title="Tasks done together on one visit">Package</Chip>;
   if (!c.text) return c.blank ? <span className="rw-blank" title={c.title || undefined}>{c.blank}</span> : null;
   return <span className={col.num ? "ml-num" : "ml-src"} title={c.title || c.text}>{c.text}</span>;
 }
 
-// What a Forecast row says across the columns: its summary (open it for the details).
-export function forecastSpan(r) {
-  if (r.type !== FC_TYPE) return null;
-  const text = r.ref.summary || "";
-  return r.ref.tone === "danger" ? <span className="pk-overdue" title={text}>{text}</span>
-    : <span title={`${text}. Open it for the counts and costs by period, and when next.`}>{text}</span>;
-}
-
 // A row's second line on a phone: a task's interval, next due and cost; a level's roll-up.
 export function taskPhoneRow(r, rollup) {
   if (r.type === PKG_TYPE) {
-    const due = packageCell(r, "due").text;
+    const due = packageCell(r, "due");
     return { line: [packageCell(r, "interval").text, packageCell(r, "package").text, packageCell(r, "cost").text].filter(Boolean).join(" · "),
-      status: <Chip tone="neutral">{due ? `Next ${fmtDate(due)}` : "Package"}</Chip> };
+      status: <Chip tone="neutral" title={due.title || undefined}>{due.words ? `Next ${due.words}` : "Package"}</Chip> };
   }
   if (r.type === PKG_REF_TYPE) return { line: `On ${r.ref.on}`, status: null };
-  if (r.type === FC_TYPE) return { line: r.ref.summary || "", status: null };
-  if (r.type !== "mtask") return { line: rollup || "", status: null };
+  if (r.type !== "mtask") {
+    const due = levelDueCell(r);
+    return { line: [rollup, due.words ? `next ${due.words}` : null].filter(Boolean).join(" · "), status: null };
+  }
   const t = r.ref.task;
   const due = taskCell(t, "due");
   const cost = taskCell(t, "cost");
   return {
     line: [taskCell(t, "interval").text, cost.text ? `${cost.text} each time` : null, t.package?.name].filter(Boolean).join(" · "),
-    status: due.text ? <Chip tone={due.overdue ? "danger" : "neutral"} title={due.title || undefined}>{due.overdue ? "Overdue " : "Due "}{fmtDate(due.text)}</Chip> : null,
+    status: due.words ? <Chip tone={due.overdue ? "danger" : "neutral"} title={due.title || undefined}>{due.overdue ? "Overdue " : "Due "}{due.words}</Chip> : null,
   };
 }
 
@@ -194,66 +156,6 @@ export function TaskSide({ holder, taskId = null, taskName = "", rates = false, 
                          head={head} headingRef={headingRef} onBack={onClose} onDone={onDone} onOptimise={taskId ? onOptimise : null} needsOpen={needs}
                          uses={taskId ? <RbdTaskUses taskIds={[taskId]} /> : null} />
       )}
-    </aside>
-  );
-}
-
-// A level's forecast in the table area (Forecast… on a position on this tab, or the Open the full
-// forecast… of a task's or a package's Forecast row): the work, failures and costs to come for that
-// position and everything inside it, inside the asset opened, then its spares for the year (what
-// was the Maintenance tab's Spares view: the parts the failures and tasks there will use, against
-// stock). A place, or a design's row: the spares alone (work and failures are forecast by
-// position; a design has no due dates, its spares are the items built from it or a planned fleet).
-export function ForecastPane({ position, root, design = false, phone, headingRef, onClose }) {
-  const work = position.type !== "loc" && !design;
-  return (
-    <TablePane title={work ? "Forecast" : "Spares for the year"} subject={position.name} phone={phone} headingRef={headingRef} onClose={onClose}
-               closeLabel={work ? "Close the forecast" : "Close the spares"}>
-      <div className="td-tab-page pk-panel rw mt-forecast-pane">
-        {work && <ForecastDetails positionId={position.id} name={position.name} root={root || null} subject={{ kind: "level", name: position.name }} />}
-        <section className="mt-fc-spares" aria-label="Spares for the year">
-          {work && <h3 className="mt-fc-h">Spares for the year</h3>}
-          <SparesYear id={position.id} root={design ? null : root || null} name={position.name} design={design} />
-        </section>
-      </div>
-    </TablePane>
-  );
-}
-
-// A task's or a package's Forecast row opened: its forecast details beside the table (a single
-// click), or across it with the tree kept (a double-click or Enter; Expand), as a task's details
-// open (the shared `expanded` behaviour). `r`: the Forecast row; `holder`: the position it's under.
-export function ForecastSide({ r, holder, root, phone, expanded = false, onExpand, onCollapse, headingRef, onClose }) {
-  const kind = r.ref.kind === "package" ? "package" : "task";
-  const subject = kind === "package" ? { kind, packageId: r.ref.package_id, name: r.ref.subject }
-    : { kind, taskId: r.ref.task_id, name: r.ref.subject };
-  return (
-    <aside className={"rw-panel mt-panel mt-task-panel mt-fc-side" + (phone ? " sheet" : "") + (expanded ? " is-expanded" : "")}
-           aria-label={`Forecast · ${r.ref.subject}`}
-           onKeyDown={(e) => {
-             if (e.key !== "Escape" || e.defaultPrevented || e.target.closest("input, textarea, select")) return;
-             e.stopPropagation();
-             if (expanded && onCollapse) onCollapse(); else onClose();
-           }}>
-      <div className="rw-panel-top">
-        <div className="rw-panel-head">
-          <div className="rw-panel-kind">{kind === "package" ? "Work package" : "Maintenance task"} · {holder?.ref?.name || ""}</div>
-          <div className="rw-panel-btns">
-            {!phone && onExpand && (expanded ? (
-              <button type="button" className="ghost sm rw-x" onClick={onCollapse} title="Show the table again, with these details beside it (Esc)" aria-label="Back to table"><ShrinkIcon /></button>
-            ) : (
-              <button type="button" className="ghost sm rw-x" onClick={onExpand} title="Show these details across the table, the tree kept beside them" aria-label="Expand the details"><ExpandIcon /></button>
-            ))}
-            <button type="button" className="ghost sm rw-x" onClick={onClose} aria-label="Close the forecast" title="Close (Esc)"><CloseIcon /></button>
-          </div>
-        </div>
-        <h2 className="rw-panel-title" tabIndex={-1} ref={headingRef}>Forecast · {r.ref.subject}</h2>
-      </div>
-      <div className="rw-pbody pk-panel">
-        {holder?.type === "loc"
-          ? <p className="lib-date">Forecasts are worked out by position: open this task on the position it&apos;s on.</p>
-          : <ForecastDetails key={r.key} positionId={r.ref.position_id} root={root || null} name={holder?.ref?.name || ""} subject={subject} />}
-      </div>
     </aside>
   );
 }

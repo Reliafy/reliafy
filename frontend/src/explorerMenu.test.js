@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { areaMenu, explorerRowMenu } from "./explorerMenu.js";
 import { menuProblems } from "./menuStandard.js";
 import { isolateItems, summaryActions, withAssetMoves } from "./treeRowMenu.js";
-import { forecastRowActions, packageRowActions, refRowActions, taskRowActions } from "./explorerTasks.js";
+import { packageRowActions, refRowActions, taskRowActions } from "./explorerTasks.js";
 import { rowActions as rcmRowActions } from "./explorerRcm.js";
 import { rowActions as fmeaRowActions } from "./explorerFmea.js";
 import { missionRowActions } from "./explorerMissions.js";
@@ -64,7 +64,7 @@ test("RCM rows: one name per action, the red item last", () => {
   assert.equal(explorerRowMenu(shared, rcmRowActions(shared)).at(-1).label, "Remove from this failure mode…");
 });
 
-test("Maintenance rows: a task Retire…, a package Retire…, a package's task Remove from package…; a forecast none", () => {
+test("Maintenance rows: a task Retire…, a package Retire…, a package's task Remove from package…; no Forecast…", () => {
   const t = { key: "mt", type: "mtask", ref: { task: { id: "a", name: "Grease" } }, kids: [] };
   const tm = check("task", explorerRowMenu(t, taskRowActions(t)));
   assert.equal(tm.at(-1).label, "Retire…");
@@ -72,9 +72,8 @@ test("Maintenance rows: a task Retire…, a package Retire…, a package's task 
   assert.equal(check("package", explorerRowMenu(p, packageRowActions(p))).at(-1).label, "Retire…");
   const ref = { key: "mr", type: "mpref", ref: { name: "Grease", task: { id: "a" } }, kids: [] };
   assert.equal(check("ref", explorerRowMenu(ref, refRowActions(ref))).at(-1).label, "Remove from package…");
-  const fc = explorerRowMenu({ key: "f", type: "mfc", ref: {}, kids: [] }, forecastRowActions());
-  assert.ok(!fc.some((it) => it.danger));
-  assert.deepEqual(menuProblems(fc), []);
+  // A forecast is the left menu's Spares forecast now (Derryn, 23 Nov 2026): no row offers Forecast….
+  for (const menu of [tm, explorerRowMenu(p, packageRowActions(p))]) assert.ok(!labels(menu).some((l) => /forecast/i.test(l)));
 });
 
 test("model, mission and phase rows: Unlink… and Delete… are red and last", () => {

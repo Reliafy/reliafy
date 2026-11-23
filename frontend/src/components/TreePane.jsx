@@ -557,7 +557,12 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
     // A tab with its own cells (the Measurements tab): each column's, and a
     // parent row's roll-up across them all.
     const span = table.rollupOf ? table.rollupOf(r, open) : "";
-    const allW = table.cols.reduce((t, c) => t + table.widths[c.id], 0);
+    // `rollupLead`: columns a parent row keeps as cells before its roll-up (the Maintenance tab's
+    // soonest Next due), drawn by `renderLead`; the roll-up runs across the rest.
+    const lead = span != null && span !== false && table.rollupLead?.length
+      ? table.cols.filter((c) => table.rollupLead.includes(c.id)) : [];
+    const spanCols = lead.length ? table.cols.filter((c) => !lead.includes(c)) : table.cols;
+    const allW = spanCols.reduce((t, c) => t + table.widths[c.id], 0);
     return (
       <div {...common}>
         <div className="tt-tree" role="rowheader" style={{ width: table.treeW }}>
@@ -567,9 +572,16 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
             isn't applied, so the text kept its last (wide) one, the table kept its sideways
             scroll and the tree column slid out of sight. */}
         {!table.cols.length ? null : span != null && span !== false && r.type !== "meas" && r.type !== "pmodel" ? (
-          <div role="gridcell" aria-colspan={table.cols.length} className="rw-c tt-rollup-c" style={{ width: allW }}>
-            {span && <span className="rw-sum tt-rollup-t" style={{ width: Math.max(0, allW - 16) }} title={typeof span === "string" ? span : undefined}>{span}</span>}
-          </div>
+          <>
+            {lead.map((c) => (
+              <div key={c.id} role="gridcell" className={"rw-c" + (c.num ? " num" : "") + ` mt-c-${c.id}`} style={{ width: table.widths[c.id] }}>
+                {table.renderLead ? table.renderLead(r, c) : null}
+              </div>
+            ))}
+            <div role="gridcell" aria-colspan={spanCols.length} className="rw-c tt-rollup-c" style={{ width: allW }}>
+              {span && <span className="rw-sum tt-rollup-t" style={{ width: Math.max(0, allW - 16) }} title={typeof span === "string" ? span : undefined}>{span}</span>}
+            </div>
+          </>
         ) : table.cols.map((c) => (
           <div key={c.id} role="gridcell" className={"rw-c" + (c.num ? " num" : "") + ` mt-c-${c.id}`} style={{ width: table.widths[c.id] }}>
             {table.renderCell(r, c)}
@@ -1093,7 +1105,10 @@ export default function TreePane({
                title={c.title ? `${c.label}: ${c.title}` : c.label}>
             {sortable ? (
               <button type="button" className="tt-sortbtn" onClick={() => table.onSort(c.id)}
-                      aria-label={`${c.label}: sort${sorted === -1 ? " lowest first" : sorted === 1 ? ": back to the worksheet's order" : " highest first"}`}>
+                      aria-label={c.sortWords
+                        // A column sorted lowest first, then highest (Next due: soonest, then latest), then none.
+                        ? `${c.label}: sort${sorted === 1 ? ` ${c.sortWords[1]}` : sorted === -1 ? ": back to the tree's order" : ` ${c.sortWords[0]}`}`
+                        : `${c.label}: sort${sorted === -1 ? " lowest first" : sorted === 1 ? ": back to the worksheet's order" : " highest first"}`}>
                 {c.label}{sorted ? <span className="tt-sortarrow" aria-hidden="true">{sorted === -1 ? "▼" : "▲"}</span> : null}
               </button>
             ) : tfilter && tfilter.facetsFor(c.id).length ? <span className="tt-h-lbl">{c.label}</span> : c.label}

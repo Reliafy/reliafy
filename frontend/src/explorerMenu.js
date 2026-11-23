@@ -6,10 +6,9 @@
 import { COPY_LINK, OPEN, standardMenu } from "./menuStandard.js";
 
 const HEADING = "A heading for the rows under it.";
-const NUMBERS = "Numbers about the level above it: open that level's forecast instead.";
 // A row with no record of its own: a group ("No class", "… (not at this place)"), the RCM's
-// placeholders, a forecast's lines.
-export const HEADING_TYPES = new Set(["group", "nostd", "unassigned", "nofail", "mfc", "mfcl"]);
+// placeholders.
+export const HEADING_TYPES = new Set(["group", "nostd", "unassigned", "nofail"]);
 
 // Why a slot is greyed, by row type (the slot's general reason where a type has none).
 export const REASONS = {
@@ -42,8 +41,7 @@ const reasonsFor = (type) => {
   const out = {};
   for (const slot of Object.keys(REASONS)) if (REASONS[slot][type]) out[slot] = REASONS[slot][type];
   if (HEADING_TYPES.has(type)) {
-    const why = type === "mfc" || type === "mfcl" ? NUMBERS : HEADING;
-    for (const slot of ["open", "rename", "move", "copy"]) out[slot] = why;
+    for (const slot of ["open", "rename", "move", "copy"]) out[slot] = HEADING;
   }
   return out;
 };
