@@ -402,11 +402,18 @@ test("at 400 px there's no dragging: the row menu's Move to… moves it, with Un
 // Move to…: one picker for every kind, from the row's ⋯ with the mouse too.
 // Only the places that kind can go can be picked; the rest are greyed with a
 // reason. Each move lands where it was put, and the moved row is picked there.
-async function moveVia(page, rowName, { item = "Move to…", width = 1280 } = {}) {
+// `more`: the item is folded under More › (the menu standard's ten at a level).
+async function moveVia(page, rowName, { item = "Move to…", width = 1280, more = false } = {}) {
   const row = typeof rowName === "string" ? trow(page, rowName) : rowName;
   if (width > 600) await row.hover();
   await row.getByRole("button", { name: /^Actions for / }).click();
-  await page.getByRole("menu").getByRole("menuitem", { name: item }).click();
+  const menu = page.getByRole("menu");
+  if (more) {
+    await menu.getByRole("menuitem", { name: "More", exact: true }).click();
+    // A submenu beside it with the mouse; a group in place on a phone.
+    await page.getByRole("menu", { name: "More" }).or(menu.getByRole("group", { name: "More" }))
+      .getByRole("menuitem", { name: item }).click();
+  } else await menu.getByRole("menuitem", { name: item }).click();
   const dlg = page.getByRole("dialog", { name: /^Move / });
   await expect(dlg).toBeVisible();
   return dlg;
@@ -454,8 +461,8 @@ test("Move to… moves every kind from its ⋯ menu, and the moved row is picked
   await expect.poll(async () => (await rcmOf(request, p.a.id)).unassigned.map((m) => m.text)).toEqual([`Seal leaks ${tag}`]);
   await expect(sealRow).toHaveAttribute("aria-selected", "true");
 
-  // A task → another failure mode (Move a task…).
-  dlg = await moveVia(page, `^Failure mode: Bearing seizes ${tag}`, { item: "Move a task…" });
+  // A task → another failure mode (Move a task…, under More › beside Add a task… and Decide…).
+  dlg = await moveVia(page, `^Failure mode: Bearing seizes ${tag}`, { item: "Move a task…", more: true });
   await moveAndCheck(page, dlg, p.seal.id, `Seal leaks ${tag}`);
   await expect.poll(async () => (await rcmOf(request, p.a.id)).unassigned[0].tasks.map((t) => t.name)).toEqual([`Grease bearings ${tag}`]);
 

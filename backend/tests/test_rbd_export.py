@@ -586,7 +586,7 @@ def test_sample_download(client):
     client.act_as(A)
     samples_service.seed_samples(client.db)
     _assert_script(client.get("/api/rbds/sample-rbd-instrument-air-availability/export.py"),
-                   "instrument_air_availability_with_repair_times_sample.py")
+                   "instrument_air_availability_with_repair_times.py")
 
 
 def test_subsystem_resolves_in_the_viewers_scope(client):
