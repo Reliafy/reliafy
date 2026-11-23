@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { convertPeriod, itemsOnFleetRate, itemsWithoutUsage, periodDays, usageInputValue } from "./fleetUsage.js";
+import { convertPeriod, itemsOnFleetRate, itemsWithoutUsage, periodDays, periodsText, usageInputValue } from "./fleetUsage.js";
 
 const items = [
   { name: "Pump 1", current_use: 300, rate: null },
@@ -70,4 +70,36 @@ test("no calendar length, or the same period: nothing to convert", () => {
   assert.equal(convertPeriod(s, [], "shifts", "quarters"), null);
   assert.equal(convertPeriod(s, [], "months", "month"), null);
   assert.equal(periodDays("Quarters"), 91.3125);
+});
+
+// Regression check: usage and horizon typed in months, then the period set to
+// years, read "1 years" (5 months rounded up to a year). A horizon converts only
+// when it is a whole number of the new period; otherwise nothing changes and
+// the page says why.
+test("a horizon that isn't a whole number of the new period isn't changed", () => {
+  const typed = { default_rate: 1, periods: 5, period_label: "months" };
+  const out = convertPeriod(typed, [{ name: "A", rate: 2 }], "months", "years");
+  assert.equal(out.settings, undefined);
+  assert.equal(out.blocked,
+    "5 months isn't a whole number of years, so the period stays months. Make the horizon a multiple of 12 first (12 months is 1 year).");
+  // 12 or 24 months are exact: 1 and 2 years, with the usage per year exact too.
+  const year = convertPeriod({ ...typed, periods: 12 }, [], "months", "years");
+  assert.equal(year.settings.periods, 1);
+  assert.equal(year.settings.default_rate, 12);
+  assert.equal(convertPeriod({ ...typed, periods: 24 }, [], "months", "year").settings.periods, 2);
+  // Near a whole number is the same span: 3 months is 91 days, 5 months 22 weeks.
+  assert.equal(convertPeriod({ ...typed, periods: 3 }, [], "months", "days").settings.periods, 91);
+  assert.match(convertPeriod({ ...typed, periods: 12 }, [], "months", "days").blocked, /365 days, more than a forecast's 120/);
+  assert.equal(convertPeriod(typed, [], "months", "weeks").settings.periods, 22);
+  assert.ok(convertPeriod(typed, [], "months", "quarters").blocked);
+  // Quarters to months is always whole.
+  assert.ok(convertPeriod({ ...typed, periods: 2 }, [], "quarters", "months").settings.periods === 6);
+});
+
+test("a count of periods reads in the right number", () => {
+  assert.equal(periodsText(1, "years"), "1 year");
+  assert.equal(periodsText(5, "months"), "5 months");
+  assert.equal(periodsText(2, "Year"), "2 Years");
+  assert.equal(periodsText(1, "cycles"), "1 cycle");
+  assert.equal(periodsText(3, "shifts"), "3 shifts");
 });

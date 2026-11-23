@@ -22,7 +22,7 @@ from backend.services import datasets as datasets_service
 from backend.services import models as models_service
 from backend.services import recurrent as recurrent_service
 
-MAX_ITEMS = 500  # a fleet's limit (fleet._clean_items)
+from backend.services.fleet import MAX_ITEMS, MAX_UNITS, item_count, unit_count
 
 # A column that names each unit: "Unit", "Serial no", "Pump ID", "Asset tag".
 _NAME_COLUMN = re.compile(
@@ -106,13 +106,68 @@ def _life_units(db, model, owners) -> dict:
             if pd.isna(value):
                 continue
             covariates[col] = float(value) if isinstance(value, (int, float, np.number)) else str(value)
-        for k in range(count):
-            item = {"name": base if count == 1 else f"{base} ({k + 1} of {count})", "current_use": float(age)}
-            if covariates:
-                item["covariates"] = covariates
-            items.append(item)
-    return {"items": items, "running": len(items), "skipped": skipped,
+        # A row's count (a column of how many units) stays one item standing
+        # for that many identical units: thousands of units cost nothing.
+        item = {"name": base, "current_use": float(age)}
+        if count > 1:
+            item["count"] = count
+        if covariates:
+            item["covariates"] = covariates
+        items.append(item)
+    return {"items": items, "running": unit_count(items), "skipped": skipped,
             "name_column": name_col, "time_column": time_col}
+
+
+def _group(items: list[dict], unit: str) -> tuple[list[dict], str | None]:
+    """At most ``MAX_ITEMS`` rows for the same units: first units at the same
+    age (and conditions) share a row; if there are still too many ages, units
+    of close ages share a row at their average age. Every unit is kept, and
+    the note says what was grouped (None when nothing was)."""
+    if len(items) <= MAX_ITEMS:
+        return items, None
+    total = unit_count(items)
+    same: dict = {}
+    for it in items:
+        key = (it["current_use"], tuple(sorted((it.get("covariates") or {}).items())))
+        same[key] = same.get(key, 0) + item_count(it)
+    u = f" {unit}" if unit else ""
+
+    def row(age, covariates, count):
+        out = {"name": f"{count:,} unit{'s' if count != 1 else ''} at {age:.4g}{u}", "current_use": float(age)}
+        if count > 1:
+            out["count"] = count
+        if covariates:
+            out["covariates"] = dict(covariates)
+        return out
+
+    if len(same) <= MAX_ITEMS:
+        rows = [row(age, cov, n) for (age, cov), n in sorted(same.items(), key=lambda kv: (str(kv[0][1]), kv[0][0]))]
+        return rows, (f"The {total:,} units are at {len(same):,} different ages, so units at the same age share "
+                      f"a row ({len(rows):,} rows).")
+    by_cov: dict = {}
+    for (age, cov), n in same.items():
+        by_cov.setdefault(cov, []).append((age, n))
+    if len(by_cov) > MAX_ITEMS:
+        raise NoModelData(f"This model's data has {total:,} running units at more than {MAX_ITEMS} different "
+                          "conditions, more than a forecast holds: paste or upload them in groups instead.")
+    # Rows for each set of conditions in proportion to its distinct ages, at least one each.
+    budget = {cov: max(1, int(MAX_ITEMS * len(ages) / len(same))) for cov, ages in by_cov.items()}
+    while sum(budget.values()) > MAX_ITEMS:
+        biggest = max(budget, key=budget.get)
+        budget[biggest] -= 1
+    rows = []
+    for cov, ages in sorted(by_cov.items(), key=lambda kv: str(kv[0])):
+        ages.sort()
+        chunks = np.array_split(np.arange(len(ages)), budget[cov])
+        for chunk in chunks:
+            if not len(chunk):
+                continue
+            n = sum(ages[i][1] for i in chunk)
+            mean = sum(ages[i][0] * ages[i][1] for i in chunk) / n
+            rows.append(row(mean, cov, n))
+    return rows, (f"The {total:,} units are at {len(same):,} different ages, more than a forecast's "
+                  f"{MAX_ITEMS} rows, so units of close ages share a row at their average age "
+                  f"({len(rows):,} rows; every unit is counted).")
 
 
 def _recurrent_units(db, doc) -> dict:
@@ -163,7 +218,16 @@ def running_units(db, fleet: Fleet, owners) -> dict:
         out = _life_units(db, model, owners)
         unit = (model.results or {}).get("unit", "")
         what = "running units"
-    if len(out["items"]) > MAX_ITEMS:
-        out["truncated"] = len(out["items"])
-        out["items"] = out["items"][:MAX_ITEMS]
+    if unit_count(out["items"]) > MAX_UNITS:
+        raise NoModelData(f"This model's data has {unit_count(out['items']):,} {what}, more than a forecast's "
+                          f"{MAX_UNITS:,}.")
+    if what == "systems":
+        if len(out["items"]) > MAX_ITEMS:
+            # Each system keeps its own history, so systems can't share a row.
+            raise NoModelData(f"This model's data has {len(out['items']):,} systems, more than a forecast's "
+                              f"{MAX_ITEMS} items: paste or upload the ones to forecast instead.")
+    else:
+        out["items"], note = _group(out["items"], unit)
+        if note:
+            out["grouped"] = note
     return {**out, "unit": unit, "kind": "systems" if what == "systems" else "running"}
