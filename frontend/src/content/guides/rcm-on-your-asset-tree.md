@@ -179,15 +179,21 @@ fields, then the quieter things at the foot:
   several failure modes changes for all of them). Its rows read like a failure
   mode's, one line each: **Kind** (a chip, offering only the kinds the
   decision diagram allows); **Interval** (*every N unit*, typed where it's
-  shown and kept on Enter, with **Calculate…** to work it out and **Raise it on
-  an event instead…** for a reading past a limit or an event someone logs; a
-  task by use also says what it counts here); **Then, if found** (**Then, if
-  failed** for failure finding), what's done when the check finds something;
-  **Based on**, its evidence; **Serves**, the failure modes it serves here, each
-  a link with **Remove** at its right, and **Link to another failure mode…**;
-  and **Logistics**, its labour hours, tools and method from its LSA record,
-  with **What it needs**, which opens the task's details on the Maintenance tab with that section open. How it's done (its instructions) belongs to the LSA,
-  not here. At its foot, **Retire the task** (when it serves only this failure
+  shown and kept on Enter; a task by use also says what it counts, in one line
+  with **Change…**); **Interval based on**, what the interval rests on in one
+  line (*Check every 60 hours · from a P-F interval of 120 hours*) with its
+  evidence's status and **Work it out…** or **Change…**, which opens the
+  calculation in place (see Working out the interval); **Then, if found**
+  (**Then, if failed** for failure finding), what's done when the check finds
+  something; for a check, **Outcome**: pass or fail unless you **Add a
+  measurement…** (the measuring point it reads, one line: *Reads: Belt
+  deflection, mm*); **Serves**, the failure modes it serves here, each a link
+  with **Remove** at its right, and **Link to another failure mode…**; and
+  **Cost and needs**: its **Cost**, **Labour** and **Parts**, the same fold-outs
+  as its details on the Maintenance tab, each with the way to change them there,
+  and **What it needs** for the rest of its LSA. How it's done (its
+  instructions) belongs to the LSA, not here. Raising a task on an event is set
+  on the Maintenance tab. At its foot, **Retire the task** (when it serves only this failure
   mode) or **Remove from this failure mode** (when it serves others too).
 
 Every row, whatever its level, opens its details with **Notes and rationale**,
@@ -328,7 +334,7 @@ Each task of a combination needs its own evidence. The evidence you link in
 step 4 counts for every task it fits: a degradation model backs the
 inspection, a replacement analysis backs the fixed-interval task, and a report
 or a function's notes back any task. Where one piece can't cover them all,
-open the other task's row and link its own under **Based on**. Until
+open the other task's row and link its own under **Interval based on**. Until
 every task has some, the check reads *Partly evidenced*, and the Evidence card
 names the task that has none.
 
@@ -365,10 +371,9 @@ many other failure modes share it.
 - Each task shows how many other failure modes share it. A shared task keeps
   one interval for all of them: change it on the task (its **Interval** row),
   not in the decision dialog, which shows it read-only.
-- A task by use (hours, cycles, km) shows its **Measurement** under its
-  **Interval** row:
-  what it counts, the latest reading and the reading when it was last done.
-  **Change the measurement…** picks another in the same unit, on the position,
+- A task by use (hours, cycles, km) says what it counts under its **Interval**
+  row, in one line (*Counts: Engine hours on Truck 12*). **Change…** shows the
+  latest reading and the reading when it was last done, and picks another in the same unit, on the position,
   above or below it, or on the item fitted there, and asks for the last-done
   reading on the new one (or works it out from the date, marked as an
   estimate); **Save what it counts** keeps it.
@@ -389,10 +394,10 @@ when it's first due…**; later, in the task's details, choose **Change…** bes
 then every interval after.
 
 Some work isn't done on a calendar: after 120 mm of rain in 24 hours, test and
-re-dose the pool; after a lightning strike, inspect the chlorinator. In the
-task's details, choose **Raise it on an event instead…** under **Interval**,
-then
-choose what happens: **A reading passes a limit** (pick a measuring point and
+re-dose the pool; after a lightning strike, inspect the chlorinator. On the
+**Maintenance** tab, open the task and under **How often** › **More scheduling
+options** set **When it falls due** to **When an event happens**, then choose
+what happens: **A reading passes a limit** (pick a measuring point and
 the limit, at or above 120 mm on the rain gauge) or **Someone logs an event**
 (type its name, *Lightning strike*). The decision stays as it is; the
 **Interval** column shows *on event: 120 mm on POOL-RAIN* for the task, and the
@@ -487,12 +492,15 @@ goes to the corrective line) and the forecast says **Add the P-F interval**.
 
 ## Working out the interval
 
-Each scheduled task's details have **Calculate…** beside its *every N*, under
-**Interval**. It opens the calculator the kind of task
-calls for, says in a sentence or two what it works out, and starts from what
+Each scheduled task's details have **Interval based on**: **Work it out…** (or
+**Change…** once there's a calculation) opens the calculator the kind of task
+calls for in place, under the line, not in a dialog. It says in a sentence or
+two what it works out, and starts from what
 the failure mode already has: its linked model or analysis, and the failures
-recorded at the position. Anything it assumed says so; change any input and
-press **Work it out** again.
+recorded at the position, or the calculation saved with the task, which it
+works out again at once. Anything it assumed says so; change any input and
+press **Work it out** again. **Use** saves the interval with the calculation,
+which becomes (or replaces) the task's evidence.
 
 - **On condition: the P-F calculator.** A failure often gives a warning first
   (a noise, a leak, a rise in temperature). The time from that first sign to
@@ -506,7 +514,7 @@ press **Work it out** again.
   environmental failure the costs are tucked behind **Show costs**: the task
   must make the risk tolerable whatever it costs. A task done by use (cycles,
   flight hours) can give the P-F interval in its own unit: the answer is then
-  in that unit, without costs. The dialog says which unit the answer is in.
+  in that unit, without costs. It says which unit the answer is in.
 - **Failure finding: the test interval.** Give the protective device's failure
   rate (or pick its model) and the target: the most it may be failed when it's
   needed. 1% is filled in as a common starting point for safety, marked

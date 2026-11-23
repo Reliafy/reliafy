@@ -5,6 +5,7 @@ import { RuleLine, usePreview } from "./HowOften.jsx";
 import Field from "./ui/Field.jsx";
 import Fold from "./ui/Fold.jsx";
 import QuantityInput from "./ui/QuantityInput.jsx";
+import TriggerFields from "./TriggerFields.jsx";
 import Select from "./Select.jsx";
 import "./HowOften.css";
 
@@ -21,22 +22,32 @@ import "./HowOften.css";
 //   shutdowns          offer "At planned shutdowns" (a position's task)
 //   replace            { node, value }: the When the item is replaced field and its value ("" = default)
 //   preview            howOften.js previewFor: the next dates, from the server
+//   trigger            { task, state, set }: what raises it besides (or instead of) its interval
+//                      (taskTrigger.js: a reading past a limit, an event someone logs); a saved
+//                      task's only. Raised only by its event, the Every line gives way to a word.
 const WHEN = [
   { value: "count", label: "From when it was last done (default)" },
   { value: "rule", label: "On set calendar dates" },
   { value: "shutdowns", label: "At planned shutdowns" },
+  { value: "event", label: "When an event happens" },
 ];
 
 export default function TaskSchedule({ value, onChange, units, shutdowns = false, replace = null, preview = null, problem = null,
-  disabled = false, startOpen = false }) {
-  const summary = moreScheduleSummary(value, { replace: replace?.value || "" });
+  disabled = false, startOpen = false, trigger = null }) {
+  const trig = trigger?.state || null;
+  const onEvent = trig?.mode === "event";
+  const eventOnly = onEvent && !trig.withInterval;
+  const summary = [onEvent ? (eventOnly ? "Raised by an event only" : "Or when an event happens, whichever first") : "",
+    moreScheduleSummary(value, { replace: replace?.value || "" })].filter(Boolean).join(" · ");
   const [open, setOpen] = useState(startOpen);
   const shown = usePreview(problem ? null : preview);
   const n = Number(value.every);
   const set = (key) => (e) => onChange({ ...value, [key]: e.target.value });
   const calUnits = units.filter(isCalendar);
-  const when = value.type === "rule" || value.type === "shutdowns" ? value.type : "count";
+  const when = onEvent ? "event" : value.type === "rule" || value.type === "shutdowns" ? value.type : "count";
   const setWhen = (w) => {
+    if (w === "event") { trigger.set({ ...trig, mode: "event" }); return; }
+    if (onEvent) trigger.set({ ...trig, mode: "interval" });
     const t = w === "count" ? (isCalendar(value.unit) ? "interval" : "hours") : w;
     onChange(changeType(value, t, units));
   };
@@ -44,7 +55,9 @@ export default function TaskSchedule({ value, onChange, units, shutdowns = false
   const list = preview ? shown.dates : null;
   return (
     <div className="how-often task-schedule" role="group" aria-label="How often">
-      {value.type === "rule" ? (
+      {eventOnly ? (
+        <p className="ho-line mt-fixed">Raised by an event: see More scheduling options.</p>
+      ) : value.type === "rule" ? (
         <RuleLine value={value} onChange={onChange} set={set} disabled={disabled} stepUnit={String(value.step || "").split(":")[0]} />
       ) : value.type === "shutdowns" ? (
         <div className="ho-line">
@@ -61,7 +74,7 @@ export default function TaskSchedule({ value, onChange, units, shutdowns = false
                          unit={value.unit} onUnitChange={(u) => onChange(withUnit(value, u))} unitLabel="Unit" chars={6} disabled={disabled} />
         </div>
       )}
-      {problem ? <p className="field-error" role="alert">{problem}</p> : (
+      {eventOnly ? null : problem ? <p className="field-error" role="alert">{problem}</p> : (
         <p className="ho-dates field-help" aria-live="polite">
           {preview && shown.words && when !== "count" && <>{shown.words[0].toUpperCase() + shown.words.slice(1)}. </>}
           {list && list.length > 0
@@ -72,9 +85,13 @@ export default function TaskSchedule({ value, onChange, units, shutdowns = false
       <Fold title="More scheduling options" summary={summary} open={open} onToggle={setOpen} className="mt-more-sched">
         <Field label="When it falls due">
           <Select value={when} onChange={setWhen} disabled={disabled} ariaLabel="When it falls due" className="mt-when"
-                  options={WHEN.filter((w) => w.value !== "shutdowns" || shutdowns || value.type === "shutdowns")} />
+                  options={WHEN.filter((w) => (w.value !== "shutdowns" || shutdowns || value.type === "shutdowns") && (w.value !== "event" || trigger))} />
         </Field>
-        {takesAlso(value) && (
+        {onEvent && (
+          <TriggerFields task={trigger.task} trig={trig} setTrig={(fn) => trigger.set(typeof fn === "function" ? fn(trig) : fn)} busy={disabled}
+                         backLabel="Back to every interval" onBack={() => trigger.set({ ...trig, mode: "interval" })} />
+        )}
+        {takesAlso(value) && !eventOnly && (
           <Field label="Or every" optional help="Whichever comes first.">
             <QuantityInput label="Second limit" value={value.also} placeholder="—" onChange={(v) => onChange({ ...value, also: v })}
                            units={units.map((u) => ({ value: u, label: unitWord(u, Number(value.also) || 2) }))} unit={value.alsoUnit}

@@ -30,3 +30,6 @@
   .tm-sub { margin-left: 0; }
   .tm-field select, .tm-task select, .tm-field .sel-trigger, .tm-task .sel-trigger { width: 100%; }
 }
+/* Compact (the RCM task panel): one quiet line, no box; the picker under it once Change… is pressed. */
+.tm-field.tm-compact { border: 0; padding: 0; font-size: var(--fs-13); color: var(--text-secondary); }
+.tm-compact .tm-counts { margin: 0; }

@@ -8,10 +8,12 @@ import {
   FOUND_EMPTY, OUTCOME_LABEL, ROLE, addableOutcomes, decisionCardLines, decisionRows, decisionWithKind, decisionWithMember, decisionWithNewFirst, isMemberTask, decisionWithoutMember,
   decisionBody, decisionWithOnFound, decisionWithOutcome, everyText, findsSomething, isCombination, onEventOnly, onlyOnEvent, roleLine, tasksDropped, tasksOf, taskServesTip, taskSharedText, triggerText,
 } from "../rcmWorksheet.js";
-import { getTaskTriggerPoints, saveStrategyAnalysis } from "../api.js";
+import { getFailureModeIntervalInputs, getStrategyAnalysis, getTaskLsa, saveStrategyAnalysis, updateMaintenanceTask } from "../api.js";
+import { basisAction, basisLine } from "../intervalBasis.js";
 import { appendNotes, calculatorFor, linksEvidence } from "../rcmIntervals.js";
 import IntervalCalculator from "./IntervalCalculator.jsx";
-import { asksInterval, pointLabel, triggerBody, triggerState, triggerWhy } from "../taskTrigger.js";
+import { asksInterval, triggerBody, triggerState, triggerWhy } from "../taskTrigger.js";
+import TriggerFields from "./TriggerFields.jsx";
 import { dueText, madeTask, startBody, startWhy, takesStart } from "../taskStart.js";
 import { modeTaskRows, secondTaskHint, taskKey } from "../explorerRcm.js";
 import { explorerPath } from "../assetTree.js";
@@ -24,7 +26,7 @@ import Chip from "./ui/Chip.jsx";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
 import Field, { SavedMark } from "./ui/Field.jsx";
 import InputGroup from "./ui/InputGroup.jsx";
-import { Checkbox, Select, TextArea, TextInput } from "./ui/Controls.jsx";
+import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 import { PlusIcon } from "./icons.jsx";
 import TaskTwins from "./TaskTwins.jsx";
 import { tabPlace } from "../explorerTabs.js";
@@ -134,27 +136,32 @@ export async function removeTaskFromMode({ confirm, ops, mode, task, onSaid }) {
 // the form being changed: `fill`), adds one paragraph on how it was worked out to the
 // failure mode's notes and rationale, and, when the decision has no evidence yet, saves
 // the calculation as a strategy analysis linked as its evidence.
-function useIntervalCalc({ r, ops, can, busy = false, onSaid }) {
+// Using a worked-out interval (the calculator's "Use N unit", in a dialog or in place): the interval
+// on the task (or into a form: `fill`), how it was worked out added to the failure mode's notes, and
+// the calculation saved as the decision's evidence when it has none, or when its evidence is an
+// earlier calculation (the new one replaces it: the calculation is kept with the task).
+export async function applyInterval({ r, ops, task, fill = null, onSaid }, { value, unit, line, analysis }) {
   const d = r.ref.decision || null;
+  let linked = false;
+  if (d && (linksEvidence(d) || d.evidence?.type === "strategy_analysis")) {
+    const kept = await saveStrategyAnalysis(analysis.name, analysis.kind, analysis.inputs);
+    await ops.decide(r, { consequence: r.ref.consequence || null, decision: decisionBody(d, { evidence: { type: "strategy_analysis", id: kept.id } }) });
+    linked = true;
+  }
+  if (fill) fill(value, unit);
+  else await ops.editTask(task.id, { interval: value, unit });
+  await ops.set(r, "notes", appendNotes(r.ref.notes, line));
+  onSaid?.(`${fill ? "Put the interval in the form" : "Saved the interval"} and added how it was worked out to the notes${linked ? ", with the calculation" : ""}.`);
+}
+
+function useIntervalCalc({ r, ops, can, busy = false, onSaid }) {
   const [calc, setCalc] = useState(null); // {task, kind, fill?}
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
   useEffect(() => setCalc(null), [r.key]);
-  const decide = (decision) => ops.decide(r, { consequence: r.ref.consequence || null, decision });
-  const useInterval = async ({ value, unit, line, analysis }) => {
-    const { task, fill } = calc;
-    let linked = false;
-    if (d && linksEvidence(d)) {
-      const kept = await saveStrategyAnalysis(analysis.name, analysis.kind, analysis.inputs);
-      await decide(decisionBody(d, { evidence: { type: "strategy_analysis", id: kept.id } }));
-      linked = true;
-    }
-    if (fill) fill(value, unit);
-    else await ops.editTask(task.id, { interval: value, unit });
-    await ops.set(r, "notes", appendNotes(r.ref.notes, line));
-    if (!alive.current) return;
-    setCalc(null);
-    onSaid?.(`${fill ? "Put the interval in the form" : "Saved the interval"} and added how it was worked out to the notes${linked ? ", with the calculation as evidence" : ""}.`);
+  const useInterval = async (payload) => {
+    await applyInterval({ r, ops, task: calc.task, fill: calc.fill, onSaid }, payload);
+    if (alive.current) setCalc(null);
   };
   const link = (t, kind, fill = null) => (t?.id && can && ops?.editTask && ops?.set && calculatorFor(kind) ? (
     <button type="button" className="link rim-calc" disabled={busy} aria-label={`Calculate how often to do “${t.name}”`}
@@ -800,16 +807,11 @@ function TaskEditCard({ r, task, lead, busy, failed, found = null, calculate = n
         ) : null}
         {/* What raises the task is the interval unless asked otherwise: a quiet link swaps
             to an event (a reading past a limit, or a logged event) and back (Derryn, 9 Nov 2026). */}
-        {trig.mode === "event" ? (
+        {/* Raising a task on an event is set on the Maintenance tab (Derryn, 23 Nov 2026): here only
+            a task that has one keeps its fields (and Back to every interval). */}
+        {trig.mode === "event" && (
           <TriggerFields task={task} trig={trig} setTrig={setTrig} busy={busy}
                          onBack={() => setTrig((x) => ({ ...x, mode: "interval" }))} />
-        ) : (
-          <p className="rw-fhelp rim-trigger-swap">
-            <button type="button" className="link" disabled={busy} onClick={() => setTrig((x) => ({ ...x, mode: "event" }))}>
-              Raise it on an event instead…
-            </button>
-            {" "}(a reading past a limit, or an event someone logs)
-          </p>
         )}
         {task?.id && timed && (
           <TaskMeasurementField taskId={task.id} unit={unit} disabled={busy} onChange={(body, error) => setMeas({ body, error })} />
@@ -822,58 +824,6 @@ function TaskEditCard({ r, task, lead, busy, failed, found = null, calculate = n
         {why && <p className="rim-why">{why}</p>}
       </div>
     </form>
-  );
-}
-
-// What raises a task besides (or instead of) its interval: a reading past a limit on a
-// measuring point, or an event someone logs by name (taskTrigger.js). `onBack` leaves it.
-function TriggerFields({ task, trig, setTrig, busy, onBack, backLabel = "Back to every interval" }) {
-  const setT = (k) => (e) => setTrig((x) => ({ ...x, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
-  const [points, setPoints] = useState(null);
-  useEffect(() => {
-    if (trig.mode !== "event" || trig.by !== "reading" || points || !task?.id) return undefined;
-    let on = true;
-    getTaskTriggerPoints(task.id).then((out) => { if (on) setPoints(out.points || []); }, () => { if (on) setPoints([]); });
-    return () => { on = false; };
-  }, [trig.mode, trig.by, points, task?.id]);
-  return (
-    <fieldset className="rim-trigger">
-      <legend>Raised by an event · <button type="button" className="link" disabled={busy}
-              onClick={onBack}>{backLabel}</button></legend>
-      <Field label="What happens">
-        <Select value={trig.by} disabled={busy} onChange={setT("by")}>
-          <option value="reading">A reading passes a limit</option>
-          <option value="name">Someone logs an event</option>
-        </Select>
-      </Field>
-      {trig.by === "reading" ? (
-        <div className="rim-trow">
-          <Field label="Measuring point">
-            <Select value={trig.pointId} disabled={busy || points === null} onChange={setT("pointId")}>
-              <option value="">{points === null ? "Reading the points…" : points.length ? "Choose a point…" : "No condition points nearby"}</option>
-              {(points || []).map((p) => <option key={p.id} value={p.id}>{pointLabel(p)}</option>)}
-            </Select>
-          </Field>
-          <Field label="Limit" as="fieldset">
-            <InputGroup label="Limit">
-              <Select value={trig.side} disabled={busy} aria-label="Above or below" onChange={setT("side")}>
-                <option value="above">At or above</option>
-                <option value="below">At or below</option>
-              </Select>
-              <TextInput type="number" inputMode="decimal" step="any" value={trig.limit} readOnly={busy}
-                         aria-label="Limit" placeholder="e.g. 120" onChange={setT("limit")} />
-            </InputGroup>
-          </Field>
-        </div>
-      ) : (
-        <Field label="Event name" help="Logged on this position, or one above it, from its ⋯ menu: Log an event…">
-          <TextInput value={trig.eventType} readOnly={busy} placeholder="e.g. Lightning strike" onChange={setT("eventType")} />
-        </Field>
-      )}
-      <Checkbox className="rim-check" checked={trig.withInterval} disabled={busy} onChange={setT("withInterval")}
-                label="Keep the interval too (whichever comes first)" />
-      {!trig.withInterval && <p className="rw-fhelp">It waits for the event: never overdue, and each event raises one work order.</p>}
-    </fieldset>
   );
 }
 
@@ -1044,20 +994,19 @@ function TaskList({ r, lines, label, onPick, ops = null, can = false, onSaid = n
 // Based on, Serves and Logistics are the rows Details adds after them.
 //   r     the task's row; mode: its failure mode's row (the decision and the saves go through it)
 //   ops   the Explorer's ops (editTask, decide, set)
-export function RcmTaskSections({ r, mode, ops, readOnly = false, onSaid }) {
+export function RcmTaskSections({ r, mode, ops, readOnly = false, onSaid, basis = null }) {
   const t = r.ref.task || {};
   const outcome = r.ref.outcome || null;
   const d = mode?.ref.decision || null;
   const can = !readOnly && !!ops?.editTask;
-  const [eventOpen, setEventOpen] = useState(false);
+  const location = useLocation();
   const [twinCheck, setTwinCheck] = useState(null); // an interval just changed: the same task elsewhere
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null);
   const [saved, setSaved] = useState({});
   const markSaved = (k) => setSaved((x) => ({ ...x, [k]: (x[k] || 0) + 1 }));
-  useEffect(() => { setEventOpen(false); setFailed(null); setSaved({}); }, [r.key]);
+  useEffect(() => { setFailed(null); setSaved({}); }, [r.key]);
   const errorText = (e) => saveErrorText(e, { offline: navigator.onLine === false });
-  const { link: calcLink, dialog: calcDialog } = useIntervalCalc({ r: mode, ops, can, busy, onSaid });
   const save = async (body, said, mark) => {
     if (busy) return false;
     setBusy(true);
@@ -1095,27 +1044,20 @@ export function RcmTaskSections({ r, mode, ops, readOnly = false, onSaid }) {
                               onSave={(interval, unit) => save({ interval, unit }, "Saved the interval.", "interval")
                                 .then((ok) => { if (ok) setTwinCheck({ taskId: t.id, name: t.name, interval, unit }); })} />
             ) : <span className="rim-tevery">{every(t) || "No interval yet"}</span>}
-            {!eventOnly && calcLink(t, outcome)}
           </div>
           {!eventOnly && takesStart(t) && (
             <DueLine key={`${t.id}:${t.first_due || ""}:${t.next_due || ""}`} task={t} can={can} busy={busy}
                      onSave={(value) => save(startBody(value), value ? "Saved when it's first due." : "Back to one interval from when it was last done.", "interval")} />
           )}
-          {t.trigger && !eventOpen && (
+          {/* What raises it besides its interval (a reading past a limit, an event someone logs) is
+              the Maintenance tab's (Derryn, 23 Nov 2026): said here, changed there. */}
+          {t.trigger && (
             <p className="rim-tquiet">
-              {eventOnly ? "Only " : "Or "}{triggerText(t.trigger)}{eventOnly ? "" : ", whichever comes first"}.
-              {can && <> <button type="button" className="link" onClick={() => setEventOpen(true)}>Change the event…</button></>}
+              {eventOnly ? "Only " : "Or "}{triggerText(t.trigger)}{eventOnly ? "" : ", whichever comes first"}.{" "}
+              <Link className="rim-quietgo" to={explorerHere(location.pathname, location.search, { sel: t.position_id || mode?.ref.position_id, tab: "maintenance", mtask: t.id })}>
+                Change in Maintenance ›
+              </Link>
             </p>
-          )}
-          {can && !t.trigger && !eventOpen && (
-            <button type="button" className="link rim-tquietlink" onClick={() => { setFailed(null); setEventOpen(true); }}>
-              Raise it on an event instead…
-            </button>
-          )}
-          {can && eventOpen && (
-            <EventForm task={t} busy={busy} onCancel={() => { setEventOpen(false); setFailed(null); }}
-                       onSave={(trigger) => save({ trigger }, trigger ? "Saved what raises it." : "Back to every interval.", "interval")
-                         .then((ok) => { if (ok) setEventOpen(false); })} />
           )}
           {can && !eventOnly && <CountsField task={t} busy={busy} onSave={(body) => save(body, "Saved what it counts.", "interval")} />}
           {failed && <p className="field-error" role="alert">{failed}</p>}
@@ -1125,6 +1067,13 @@ export function RcmTaskSections({ r, mode, ops, readOnly = false, onSaid }) {
           )}
         </div>
       </section>
+      {/* What the interval rests on, the calculation in place (Derryn, 23 Nov 2026). */}
+      {basis && !eventOnly && (
+        <section className="rw-sg" aria-label="Interval based on">
+          <StepLabel>Interval based on</StepLabel>
+          <div className="rw-sc rim-tcell">{basis}</div>
+        </section>
+      )}
       {found && (
         <section className="rw-sg" aria-label={then.replace(/:$/, "")}>
           <StepLabel>{then.replace(/:$/, "")}</StepLabel>
@@ -1133,6 +1082,12 @@ export function RcmTaskSections({ r, mode, ops, readOnly = false, onSaid }) {
                        onSave={(text) => ops.decide(mode, { consequence: mode.ref.consequence || null, decision: decisionWithOnFound(d, found.at, text) })
                          .then(() => onSaid?.("Saved what's done when it's found."))} />
           </div>
+        </section>
+      )}
+      {(outcome === "on_condition" || outcome === "failure_finding") && t.id && (
+        <section className="rw-sg" aria-label="Outcome">
+          <StepLabel>Outcome</StepLabel>
+          <div className="rw-sc rim-tcell"><TaskReading task={t} can={can} onSaid={onSaid} /></div>
         </section>
       )}
       {canSupport(outcome) && t.id && mode?.ref.id && (
@@ -1154,8 +1109,128 @@ export function RcmTaskSections({ r, mode, ops, readOnly = false, onSaid }) {
           </div>
         </section>
       )}
-      {calcDialog}
     </>
+  );
+}
+
+// A check's outcome (Derryn, 23 Nov 2026): qualitative by default (pass or fail, found or not), or a
+// reading of a measuring point, an optional extra: "Add a measurement…" picks the point, then one
+// line, "Reads: Belt deflection, mm · Change…". Which instrument reads it is the LSA's (a tool line
+// naming the point, TaskNeeds), so this is the same record, set from here.
+function TaskReading({ task, can, onSaid }) {
+  const [data, setData] = useState(null);
+  const [open, setOpen] = useState(false);
+  const [pick, setPick] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(null);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    let on = true;
+    getTaskLsa(task.id).then((d) => on && setData(d), () => on && setData({ failed: true }));
+    return () => { on = false; };
+  }, [task.id, tick]);
+  if (!data) return <span className="rim-tquiet">Reading…</span>;
+  if (data.failed) return null;
+  const tools = data.task?.resources?.tools || [];
+  const reading = tools.find((x) => x.point_id);
+  const point = reading ? (data.points || []).find((p) => p.id === reading.point_id) : null;
+  const save = async (pointId) => {
+    setBusy(true);
+    setFailed(null);
+    try {
+      const chosen = (data.points || []).find((p) => p.id === pointId);
+      const kept = tools.filter((x) => !x.point_id);
+      const next = chosen ? [...kept, { name: chosen.name, qty: 1, note: "", point_id: chosen.id }] : kept;
+      await updateMaintenanceTask(task.id, { resources: { tools: next } });
+      setOpen(false);
+      setTick((n) => n + 1);
+      onSaid?.(chosen ? `It reads ${chosen.name}.` : "It's pass or fail again.");
+    } catch (e) {
+      setFailed(saveErrorText(e, { offline: navigator.onLine === false }));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="rw-reading">
+      <p className="rw-basis-line">
+        <span className="rw-basis-text">
+          {reading ? `Reads: ${point?.name || reading.name}${point?.unit ? `, ${point.unit}` : ""}` : "Pass or fail, found or not"}
+        </span>
+        {can && !open && (
+          <button type="button" className="link rw-basis-go" onClick={() => { setPick(reading?.point_id || ""); setOpen(true); }}>
+            {reading ? "Change…" : "Add a measurement…"}
+          </button>
+        )}
+      </p>
+      {open && (
+        <div className="rw-reading-edit">
+          <Field label="Measuring point it reads">
+            <Select value={pick} disabled={busy} onChange={(e) => setPick(e.target.value)}>
+              <option value="">{(data.points || []).length ? "None: pass or fail" : "No measuring points here yet"}</option>
+              {(data.points || []).map((p) => <option key={p.id} value={p.id}>{p.name}{p.unit ? ` (${p.unit})` : ""}{p.on ? ` · ${p.on}` : ""}</option>)}
+            </Select>
+          </Field>
+          <div className="rim-ivacts">
+            <button type="button" className="secondary sm" disabled={busy} onClick={() => setOpen(false)}>Cancel</button>
+            <button type="button" className="sm" disabled={busy || pick === (reading?.point_id || "")} onClick={() => save(pick)}>{busy ? "Saving…" : "Save"}</button>
+          </div>
+        </div>
+      )}
+      {failed && <p className="field-error" role="alert">{failed}</p>}
+    </div>
+  );
+}
+
+// "Interval based on" (Derryn, 23 Nov 2026): what a task's interval rests on, one line, with its
+// evidence's status and one action. The calculation is the evidence: it opens in place
+// (IntervalCalculator, inline), started from the one saved with the task, and "Use" saves the
+// interval with it (applyInterval). A kind with no calculator links other evidence (`onLink`).
+//   mode     the failure mode's row        task, kind   the task and its kind
+//   status   the evidence's status chip    saved        the saved evidence's link, kept under it
+export function IntervalBasis({ mode, task, kind, ops, can, status = null, saved = null, evidence = null, onLink = null, onSaid }) {
+  const [open, setOpen] = useState(false);
+  const [got, setGot] = useState(null);
+  const [tick, setTick] = useState(0);
+  useEffect(() => { setOpen(false); }, [task?.id]);
+  useEffect(() => {
+    let on = true;
+    if (!mode?.ref?.id || !task?.id) return undefined;
+    getFailureModeIntervalInputs(mode.ref.id, task.id).then((x) => on && setGot(x), () => on && setGot({}));
+    return () => { on = false; };
+  }, [mode?.ref?.id, task?.id, tick, mode?.ref?.decision?.evidence?.id]);
+  // A saved calculation's own answer ("Check every 60 hours"), read with it.
+  const analysisId = mode?.ref?.decision?.evidence?.type === "strategy_analysis" ? mode.ref.decision.evidence.id : null;
+  const [headline, setHeadline] = useState(null);
+  useEffect(() => {
+    let on = true;
+    setHeadline(null);
+    if (analysisId) getStrategyAnalysis(analysisId).then((a) => on && setHeadline(a?.headline || null), () => {});
+    return () => { on = false; };
+  }, [analysisId]);
+  const line = basisLine(task, got, evidence ? { ...evidence, headline } : null);
+  const calc = calculatorFor(kind);
+  const action = !can ? null : calc && ops?.editTask && ops?.set ? (
+    <button type="button" className="link rw-basis-go" aria-expanded={open} onClick={() => setOpen((o) => !o)}
+            aria-label={`${basisAction(line).replace("…", "")}: how often to do “${task.name}”`}>{open ? "Close" : basisAction(line)}</button>
+  ) : onLink ? <button type="button" className="link rw-basis-go" onClick={onLink}>{evidence?.artifact_name ? "Change…" : "Link…"}</button> : null;
+  return (
+    <div className="rw-basis" role="group" aria-label="Interval based on">
+      <p className="rw-basis-line">
+        <span className="rw-basis-text">{got ? line.text : "Reading…"}</span>
+        {action}
+        {status && <span className="rw-basis-status">{status}</span>}
+      </p>
+      {open && (
+        <IntervalCalculator inline r={mode} task={task} kind={kind} onClose={() => setOpen(false)}
+                            onUse={async (payload) => {
+                              await applyInterval({ r: mode, ops, task, onSaid }, payload);
+                              setOpen(false);
+                              setTick((n) => n + 1);
+                            }} />
+      )}
+      {saved && <p className="rim-tquiet rw-basis-saved">Saved as {saved}</p>}
+    </div>
   );
 }
 
@@ -1307,35 +1382,13 @@ function IntervalInline({ task, d, busy, onSave }) {
   );
 }
 
-// "Raise it on an event instead…": the event's fields (a reading past a limit, or an event
-// someone logs), Save or Cancel; for a task that has one, "Back to every interval" clears it.
-function EventForm({ task, busy, onCancel, onSave }) {
-  const [trig, setTrig] = useState(() => ({ ...triggerState(task), mode: "event" }));
-  const why = triggerWhy(trig);
-  const [tried, setTried] = useState(false);
-  return (
-    <div className="rim-eventform" role="group" aria-label="Raised by an event"
-         onKeyDown={(e) => { if (e.key === "Escape" && !busy) { e.preventDefault(); e.stopPropagation(); onCancel(); } }}>
-      <TriggerFields task={task} trig={trig} setTrig={setTrig} busy={busy}
-                     backLabel={task.trigger ? "Back to every interval" : "Cancel"}
-                     onBack={task.trigger ? () => onSave(null) : onCancel} />
-      <div className="rim-ivacts">
-        <button type="button" className="secondary sm" onClick={onCancel} disabled={busy}>Cancel</button>
-        <button type="button" className="sm" disabled={busy} aria-busy={busy || undefined}
-                onClick={() => { setTried(true); if (!why) onSave(triggerBody(trig)); }}>{busy ? "Saving…" : "Save"}</button>
-      </div>
-      {tried && why && <p className="rim-why">{why}</p>}
-    </div>
-  );
-}
-
 // A task by use (hours, cycles, km): what it counts, and changing it (TaskMeasurement.jsx);
 // nothing for a calendar task. "Save what it counts" keeps a change.
 function CountsField({ task, busy, onSave }) {
   const [meas, setMeas] = useState({ body: null, error: null });
   return (
     <div className="rim-counts">
-      <TaskMeasurementField taskId={task.id} unit={task.unit} disabled={busy} onChange={(body, error) => setMeas({ body, error })} />
+      <TaskMeasurementField compact taskId={task.id} unit={task.unit} disabled={busy} onChange={(body, error) => setMeas({ body, error })} />
       {meas.error && <p className="field-error" role="alert">{meas.error}</p>}
       {meas.body && !meas.error && (
         <div className="rim-ivacts">

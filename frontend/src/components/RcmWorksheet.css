@@ -1062,8 +1062,6 @@ button.link.rim-tquietlink { align-self: flex-start; font-size: var(--fs-13); }
 .rim-tdueform > .ctl { flex: 0 1 11rem; min-width: 0; }
 .rim-ivinline { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); min-width: 0; }
 .rim-ivinline .rim-every { display: inline-flex; align-items: center; gap: var(--space-1-5); }
-.rim-eventform { display: flex; flex-direction: column; gap: var(--space-1-5); min-width: 0; }
-.rim-eventform .rim-trigger { margin: 0; }
 .rim-counts:empty { display: none; }
 .rw-servelist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; min-width: 0; }
 .rw-servelist li { display: flex; align-items: center; gap: var(--space-1-5); min-height: 26px; border-bottom: 1px solid var(--border-subtle); min-width: 0; }
@@ -1094,3 +1092,17 @@ button.link.rim-tquietlink { align-self: flex-start; font-size: var(--fs-13); }
 .mresp-go:hover { text-decoration: underline; }
 .mresp-gap { color: var(--warning-text); }
 .rw-panel-where { font-weight: 400; }
+
+/* A task's details (Derryn, 23 Nov 2026: "it doesn't look very good"): each row one line with one
+   quiet action; links and actions in a row aren't underlined until hovered. */
+.rw-basis, .rw-reading { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.rw-basis-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-1) var(--space-2); margin: 0; min-width: 0; font-size: var(--fs-13); line-height: var(--lh-13); }
+.rw-basis-text { flex: 1 1 12rem; min-width: 0; overflow-wrap: anywhere; color: var(--text); }
+.rw-basis-status { flex: none; margin-left: auto; }
+.rw-basis-saved { font-size: var(--fs-12); line-height: var(--lh-12); }
+.rw-reading-edit { display: flex; flex-direction: column; gap: var(--space-2); }
+.rim-tcell :is(a, button.link), .rim-quietgo, .rw-basis-go, .rw-basis-link { text-decoration: none; }
+.rim-tcell :is(a, button.link):hover, .rim-quietgo:hover, .rw-basis-go:hover, .rw-basis-link:hover { text-decoration: underline; }
+.rw-basis-go { flex: none; font-size: var(--fs-13); }
+.rw-logistics .mt-extras { gap: 0; }
+.rw-logistics .fold-body { padding-top: var(--space-1); gap: var(--space-1); }

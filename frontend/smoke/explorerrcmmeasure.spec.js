@@ -70,11 +70,12 @@ test("a task by use says what it counts in its Interval row, and can change it",
   await steps.getByRole("button", { name: `Service ${tag}`, exact: true }).click();
   await expect(dlg.locator(".rw-panel-kind")).toHaveText("Task");
   const tasks = dlg.getByRole("region", { name: "Interval" });
+  // One quiet line, no box (Derryn, 23 Nov 2026): what it counts, and Change… for the rest.
   const field = tasks.getByRole("group", { name: "Measurement" });
-  await expect(field).toContainText(`Engine hours on Truck 12 ${tag}`);
+  await expect(field).toContainText(`Counts: Engine hours on Truck 12 ${tag}`);
+  await field.getByRole("button", { name: "Change…" }).click();
   await expect(field).toContainText("Reads 1,900 hours");
   await expect(field).toContainText("at 1,600 hours");
-  await field.getByRole("button", { name: "Change the measurement…" }).click();
   const pick = field.getByRole("combobox", { name: "Measurement to count" });
   await expect(pick).toBeVisible();
   await choose(pick, p.h12.id);

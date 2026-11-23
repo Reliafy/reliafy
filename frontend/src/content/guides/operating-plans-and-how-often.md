@@ -165,6 +165,10 @@ anything set, it says what in one line (*Also every 6 months, whichever first*):
     passed. The shutdowns are the shutdown packages there (a package made a
     shutdown, with its set dates). With none planned, the task says so and has
     no date.
+  - **When an event happens** (a saved task): a reading on a measuring point
+    passes a limit, or someone logs an event by name (*Lightning strike*). With
+    **Keep the interval too**, whichever comes first; without it, the *Every*
+    line gives way and the task waits for the event.
 - **When the item is replaced**: *Restart* or *Keep* its schedule, the default
   named.
 

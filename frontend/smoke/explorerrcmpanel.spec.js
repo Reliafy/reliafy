@@ -463,7 +463,7 @@ test("one order at every level: its notes under the title and chips, what's insi
     await todo.getByRole("button", { name: `Check the seal ${tag}`, exact: true }).click();
     await expect(panel(page).getByRole("heading", { level: 2, name: `Check the seal ${tag}` })).toBeVisible();
     await expect(panel(page).locator(".rw-panel-kind")).toHaveText("Task");
-    expect(await blocks(page)).toEqual(["Kind", "Interval", "Then, if found", "Based on", "Serves", "Logistics"]); // no instructions: the LSA's
+    expect(await blocks(page)).toEqual(["Kind", "Interval", "Interval based on", "Then, if found", "Outcome", "Serves", "Cost and needs"]); // no instructions: the LSA's
     await expect(panel(page).getByRole("region", { name: "Notes and rationale" })).toHaveCount(0);
     await expect(panel(page).getByRole("region", { name: "Then, if found" }).getByRole("textbox", { name: "Then, if found:" })).toBeVisible();
     await expect(panel(page).getByRole("button", { name: "Retire the task", exact: true })).toBeVisible();
