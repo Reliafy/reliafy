@@ -225,7 +225,14 @@ calendar time), its age, cost per failure (the position class's failure cost, el
 rests_on; placeholder true when its parameters were typed in, not fitted from data. not_forecast and \
 not_on_dates say what was left out and why; states say what to do (no plan and no readings; an ended plan; a \
 life in a unit no counter here measures; a placeholder). Report those to the user; never fill a gap in.
-- Systems (a position whose model in use is an RBD) aren't forecast as a whole yet: their blocks' positions are."""),
+- Systems (a position whose model in use is an RBD) aren't forecast as a whole yet: their blocks' positions are.
+- lines (by owner, each counted once): lines.lines: kind planned (a task: certain count, hours, cost, spares; does: \
+supports for a supporting task, or the effect counted), failures (a failure mode, on one or several positions: \
+expected failures with range, found_share when a check finds some), corrective (after a failure) and follow_on \
+(found at an inspection) under it; each with number (certain | worked out | simulated) and gaps (what it leaves \
+out). lines.totals: hours, cost (by_kind planned / follow_on / corrective, 90% two-sided range; known false with \
+leaves_out when a figure is missing), spares. lines.not_counted: every gap with its fix and link. id a task or a \
+work package, or months (12, 24, 36, 60: whole months from today), forecasts that node as Open in › does."""),
     "plan": ("RCM or tasks directly; tasks on a position, an item or a location; work packages.", """\
 Planning the maintenance.
 - RCM, step by step, on the position itself (the asset tree is its spine: position > function > performance \

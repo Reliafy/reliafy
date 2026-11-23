@@ -154,6 +154,7 @@ const SIGNED_IN = [
   ["POST", "/api/fleet/scratch-forecast"], // the quick forecast tool (Decisions › Forecasts)
   ["POST", "/api/fleet/quick-forecast"], // the quick forecast as a sentence
   ["GET", "/api/maintenance/positions/smoke/forecast-start"], // Open in ›: what a node fills in
+  ["GET", "/api/maintenance/positions/smoke/forecast-lines"], // Open in ›: the forecast by owner
   ["GET", "/api/strategy/analyses"],
   ["GET", "/api/models"],
   ["GET", "/api/joint/models"],

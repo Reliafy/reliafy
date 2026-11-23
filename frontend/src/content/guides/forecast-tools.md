@@ -80,20 +80,40 @@ your service level.
 
 On the Explorer's **Maintenance** tab, a position, a task or a work package has
 **Open in ›** in its menu: **Optimise**, **Spares forecast**, **Hours forecast**
-and **Cost forecast**. Each opens the tool filled in from that row and
-everything below it, with a line naming where it came from and a link back:
+and **Cost forecast**. Each opens the tool on that row and everything below it,
+with a line naming where it came from and a link back. There is no form: the
+records are the inputs, and the answer is set out **by owner**:
 
-- the life model in use on the positions there (the one most of them use);
-- the units, each with its fitted item's age (from its counter, or the days
-  since it was fitted);
-- the hours a day from the duty set in **Operations**;
-- a task as the work on a schedule: its interval, its labour hours and its
-  cost each time (a replacing task replaces the part), and the cost of a
-  failure there.
+- **Each task** has its own line: how many times it falls due in the horizon
+  (from its schedule, so *certain*), its labour hours and its cost each time.
+  A task in a package is counted once, through the package; a package's visit
+  cost (call-out, set-up) is its own line.
+- **Each failure mode** with a life model has its line: the failures expected
+  with the plan in place and their likely range (*worked out*). Under it, the
+  **corrective** line (after a failure: the cost of a failure from the failure
+  mode, else its position class) and, when a check with a P-F interval finds
+  some in time, the **follow-on** line (found at an inspection). The same
+  failure mode on several positions at the same cost is one owner.
+- **A supporting task** (greasing, an oil change) reads *Keeps it on its life*:
+  the life model already assumes it, so it changes no failure while it's done
+  as planned. An assumed impact carries an **Assumed** chip.
+- **The total** is the sum of the lines, each counted once, with its 90%
+  two-sided range; on **Costs** it splits into planned, follow-on and
+  corrective.
 
-Only what's recorded is filled in. With no duty, the running is left for
-you to set, and an age that can't be read is left out and listed. Nothing is
-written back to the Explorer.
+**Not counted** lists every gap with a link to where it's fixed: a failure mode
+with no cost of a failure (its failures are still counted, their cost isn't), a
+check with no P-F interval (its finds aren't counted, so every failure goes to
+the corrective line), a fitted position with no life model, a task that can't
+be put on dates, a task with no cost or no labour. What's done after a failure
+or a find isn't recorded in hours yet, so those hours are listed too. A total
+with a gap says it's the **known** total; nothing is guessed.
+
+The horizon is from today, 12 months unless you choose 2, 3 or 5 years. The
+running hours come from the position's duty, else the rate of its hours
+readings, else 24 hours a day, and the line under the title says which. **By
+month** gives the tasks, labour hours, planned cost, failures and unplanned cost
+for each month. Nothing is written back to the Explorer.
 
 **Open in › Optimise** opens [Optimal replacement](/strategy/replacement) with
 the task's model and costs filled in, to try other intervals. To change a

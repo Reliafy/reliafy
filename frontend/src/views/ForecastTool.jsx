@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { getForecastStart, quickForecast } from "../api.js";
+import { getForecastLines, quickForecast } from "../api.js";
 import { SectionHeader } from "../components/SectionPage.jsx";
 import Card, { CardHeader } from "../components/ui/Card.jsx";
 import Chip from "../components/ui/Chip.jsx";
@@ -23,9 +23,10 @@ import { unitInText } from "../components/unitText.js";
 import { strategyUnit } from "../strategyTools.js";
 import { VIEWS, fromParam, parseAges, viewOf, whenNext, whenText } from "../sparesForecast.js";
 import {
-  BLANK, BLANK_WORK, EFFECTS, HORIZON_OPTIONS, RUNNING, WORK_UNITS, answerOf, boundText, formFromStart, horizonWords,
+  BLANK, BLANK_WORK, EFFECTS, HORIZON_OPTIONS, RUNNING, WORK_UNITS, answerOf, boundText, horizonWords,
   isCalendar, isHours, kindWords, lineCells, missing, requestOf, seriesOf, viewKey,
 } from "../quickForecast.js";
+import { cells, headline, metaLine, tableRows } from "../forecastLines.js";
 import "./ForecastTool.css";
 
 // Decisions › Forecasts › Spares, Hours and Cost forecast: one quick forecast tool as a sentence
@@ -217,41 +218,139 @@ function WhenNext({ fc }) {
   );
 }
 
-export default function ForecastTool() {
+function ToolHeader({ view }) {
   const location = useLocation();
   const navigate = useNavigate();
+  return (
+    <>
+      <SectionHeader section="forecasts" title={view.title} purpose={view.purpose} help={HELP}>
+        <Chip tone="neutral" className="ft-scratch" title="Nothing here is saved: change anything and the answer follows">Scratch pad: not saved</Chip>
+      </SectionHeader>
+      <SegmentedControl label="Show" className="ft-views" value={view.value}
+                        onChange={(v) => navigate(`${VIEWS.find((x) => x.value === v).path}${location.search}`, { replace: true })}
+                        options={VIEWS.map((v) => ({ value: v.value, label: v.label }))} />
+    </>
+  );
+}
+
+// Whole money from 100 up ($16,313, not $16,300); 3 significant figures below.
+function useMoney() {
+  const currency = workspaceCurrency();
+  return (v) => (Math.abs(v) >= 100 ? formatCost(Math.round(v), currency, { sig: Math.max(3, String(Math.round(Math.abs(v))).length) })
+    : formatCost(v, currency, { sig: 3 }));
+}
+
+// Opened from the Explorer (Open in ›): no form; the records are the inputs, shown as lines by owner.
+function FromRecords({ view, from, root }) {
+  const money = useMoney();
+  const [months, setMonths] = useState("12");
+  const [got, setGot] = useState({ key: "", out: null, error: null });
+  const key = `${from.kind}:${from.id}:${root || ""}:${months}`;
+  useEffect(() => {
+    let live = true;
+    getForecastLines({ kind: from.kind, id: from.id, root, months })
+      .then((out) => live && setGot({ key, out, error: null }))
+      .catch((e) => live && setGot({ key, out: null, error: e.message }));
+    return () => { live = false; };
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  const out = got.out;
+  const busy = got.key !== key;
+  const h = out ? headline(out, view.value, money) : null;
+  const rows = out ? tableRows(out.lines) : [];
+  const total = out?.lines?.totals;
+  return (
+    <div className="app ft">
+      <ToolHeader view={view} />
+      <p className="ft-from" role="note">
+        {got.error ? <>Couldn&apos;t forecast it from the Explorer: {got.error}</>
+          : !out ? "Reading the records…"
+            : <>From: <Link to={out.from.link} title="Back to the Explorer">{out.from.path || out.from.name}</Link>
+              {out.from.kind === "task" ? ` · ${out.from.name}` : out.from.kind === "package" ? ` · ${out.from.name} (package)` : " and everything below it"}</>}
+      </p>
+      {got.error && <LoadFailed what="Couldn't work out the forecast." error={got.error} />}
+      {out && (
+        <Card className={"ft-result" + (busy ? " is-busy" : "")} aria-busy={busy || undefined}>
+          <CardHeader title={view.title} subtitle={metaLine(out)}
+                      actions={<Select ariaLabel="Horizon" value={months} onChange={setMonths}
+                                       options={HORIZON_OPTIONS.map((o) => ({ ...o, label: `Next ${o.label}` }))} />} />
+          <ResultSummary sentence={<b className="ft-lead">{h.lead}</b>} stats={h.tiles}>
+            Ranges are 90% two-sided. Each task is counted from its schedule (certain); failures are worked out
+            from each life model, as the plan leaves them. Nothing here is written back.
+          </ResultSummary>
+          <div className="maint-scroll">
+            <table className="lib-table ft-table ft-lines">
+              <caption className="sr-only">The forecast by owner</caption>
+              <thead><tr><th scope="col">Owner</th><th scope="col" className="num">Times</th><th scope="col" className="num">Hours</th>
+                <th scope="col" className="num">Cost</th><th scope="col">Spares</th><th scope="col">Kind of number</th></tr></thead>
+              <tbody>{rows.map((r) => {
+                const c = cells(r.line, money);
+                const amount = (a) => (a.text != null ? a.text : <span className="ft-gap" title={a.gap || ""}>{a.gap ? "not known" : "—"}</span>);
+                return (
+                  <tr key={r.id} className={r.depth ? "ft-sub" : r.group ? "ft-group" : undefined}>
+                    <th scope="row">
+                      <span className="ft-owner">{r.link && !r.depth ? <Link to={r.link}>{r.owner}</Link> : r.owner}</span>
+                      {r.meta && <span className="ft-owner-meta">{r.meta}</span>}
+                      {r.marker?.assumed && <Chip tone="warning" className="ft-assumed" title={r.marker.title}>Assumed</Chip>}
+                    </th>
+                    <td className="num">{c.times}</td><td className="num">{amount(c.hours)}</td><td className="num">{amount(c.cost)}</td>
+                    <td className="ft-spares">{c.spares}</td><td><span className="ft-kind">{c.number}</span></td>
+                  </tr>
+                );
+              })}</tbody>
+              <tfoot><tr><th scope="row">{total.cost.known && total.hours.known ? "Total" : "Total (known)"}</th><td />
+                <td className="num">{`${sig3(total.hours.expected || 0)} h`}</td><td className="num">{money(total.cost.expected || 0)}</td><td /><td /></tr></tfoot>
+            </table>
+          </div>
+          {(out.lines.not_counted || []).length > 0 && (
+            <section className="ft-gaps" aria-label="Not counted">
+              <h3 className="ft-h">Not counted</h3>
+              <ul>{out.lines.not_counted.map((x, i) => (
+                <li key={i}>{x.text}{x.link && x.fix ? <> · <Link to={x.link}>{x.fix}</Link></> : null}</li>
+              ))}</ul>
+              <p className="rs-note">A total with a gap is the known total: it leaves these out rather than guess them.</p>
+            </section>
+          )}
+          <ResultDetails summary="By month">
+            <div className="maint-scroll">
+              <table className="lib-table ft-table">
+                <caption className="sr-only">By month</caption>
+                <thead><tr><th scope="col">From</th><th scope="col" className="num">Tasks</th><th scope="col" className="num">Labour hours</th>
+                  <th scope="col" className="num">Planned</th><th scope="col" className="num">Failures</th><th scope="col" className="num">Unplanned</th></tr></thead>
+                <tbody>{(out.rows || []).map((r) => (
+                  <tr key={r.start}><td>{r.start}</td><td className="num">{r.tasks}</td><td className="num">{sig3(r.labour_hours || 0)} h</td>
+                    <td className="num">{money(r.planned_cost || 0)}</td><td className="num">{r.failures == null ? "—" : sig3(r.failures)}</td>
+                    <td className="num">{r.unplanned_cost == null ? "—" : money(r.unplanned_cost)}</td></tr>
+                ))}</tbody>
+              </table>
+            </div>
+          </ResultDetails>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+export default function ForecastTool() {
+  const location = useLocation();
   const [params] = useSearchParams();
   const view = viewOf(location.pathname);
   const from = fromParam(params);
-  const fromKey = from ? `${from.kind}:${from.id}:${params.get("root") || ""}` : "";
+  if (from) return <FromRecords key={`${from.kind}:${from.id}`} view={view} from={from} root={params.get("root")} />;
+  return <SentenceTool view={view} />;
+}
+
+function SentenceTool({ view }) {
   const [form, setForm] = useState(() => (view.value === "spares" ? { ...BLANK, part: true } : { ...BLANK, work: { ...BLANK_WORK } }));
   const [model, setModel] = useState(null);
   const [typedUnit, setTypedUnit] = useState("");
-  const [start, setStart] = useState({ key: "", data: null, error: null });
   const [run, setRun] = useState({ busy: false, out: null, error: null, sent: null });
   const seq = useRef(0);
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
   const setWork = (patch) => setForm((f) => ({ ...f, work: { ...(f.work || BLANK_WORK), ...patch } }));
   const currency = workspaceCurrency();
-  // Whole money from 100 up ($16,313, not $16,300); 3 significant figures below.
-  const money = (v) => (Math.abs(v) >= 100 ? formatCost(Math.round(v), currency, { sig: Math.max(3, String(Math.round(Math.abs(v))).length) })
-    : formatCost(v, currency, { sig: 3 }));
+  const money = useMoney();
 
-  // Filled in from an Explorer node, once per node.
-  useEffect(() => {
-    if (!fromKey || start.key === fromKey) return undefined;
-    let live = true;
-    getForecastStart({ kind: from.kind, id: from.id, root: params.get("root") })
-      .then((data) => {
-        if (!live) return;
-        setStart({ key: fromKey, data, error: null });
-        setForm((f) => formFromStart(data, f));
-      })
-      .catch((e) => live && setStart({ key: fromKey, data: null, error: e.message }));
-    return () => { live = false; };
-  }, [fromKey]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const unit = strategyUnit(model, typedUnit || start.data?.model?.unit || "");
+  const unit = strategyUnit(model, typedUnit);
   const why = missing(form, form.part ? model : null, unit);
   const body = useMemo(() => (why ? null : requestOf(form, model, unit, today())), [why, form, model, unit]);
   const sent = body ? JSON.stringify(body) : null;
@@ -270,31 +369,14 @@ export default function ForecastTool() {
   }, [sent]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const out = run.out?.status === "ok" && body ? run.out : null;
-  const wanted = start.data?.model?.id || null;
   const ages = parseAges(form.ages);
   const otherUnit = form.part && unit && !isHours(unit) && !isCalendar(unit);
   const partNow = unit ? unitInText(unit) : "";
 
   return (
     <div className="app ft">
-      <SectionHeader section="forecasts" title={view.title} purpose={view.purpose} help={HELP}>
-        <Chip tone="neutral" className="ft-scratch" title="Nothing here is saved: change anything and the answer follows">Scratch pad: not saved</Chip>
-      </SectionHeader>
-      {from && (
-        <p className="ft-from" role="note">
-          {start.error ? <>Couldn&apos;t fill it in from the Explorer: {start.error}</>
-            : !start.data ? "Filling it in from the Explorer…"
-              : <>From: <Link to={start.data.from.link}>{start.data.from.path || start.data.from.name}</Link>
-                {start.data.from.kind === "task" ? ` · ${start.data.from.name}` : start.data.from.kind === "package" ? ` · ${start.data.from.name} (package)` : " and everything below it"}</>}
-        </p>
-      )}
-      <SegmentedControl label="Show" className="ft-views" value={view.value}
-                        onChange={(v) => navigate(`${VIEWS.find((x) => x.value === v).path}${location.search}`, { replace: true })}
-                        options={VIEWS.map((v) => ({ value: v.value, label: v.label }))} />
+      <ToolHeader view={view} />
       <Card className="ft-inputs">
-        {(start.data?.notes || []).length > 0 && (
-          <ul className="ft-notes" aria-label="What the Explorer couldn't fill in">{start.data.notes.map((n) => <li key={n}>{n}</li>)}</ul>
-        )}
         <div className="ft-sentence" role="group" aria-label="What to forecast">
           <TextInput inputMode="numeric" className="ft-n" aria-label="How many units" value={form.units}
                      disabled={ages.ages?.length > 1} onChange={(e) => set({ units: e.target.value })} />
@@ -336,7 +418,7 @@ export default function ForecastTool() {
         {form.part ? (
           <Section title="A part that fails" action={{ label: "Remove", onClick: () => set({ part: false }), ariaLabel: "Remove the part that fails" }}>
             <div className="ft-clause ft-model">
-              <ModelPicker key={wanted || "none"} label="Its life" value={model} onChange={setModel} preferSaved wanted={wanted} />
+              <ModelPicker label="Its life" value={model} onChange={setModel} preferSaved />
               <StrategyUnit model={model} unit={typedUnit} onUnit={setTypedUnit} />
             </div>
             <div className="ft-clause">
