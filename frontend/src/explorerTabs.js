@@ -446,6 +446,27 @@ export function viewTarget(row, tabId, viewId = null, { preview = false } = {}) 
   return { tab: v.tab, mview: v.mview || null };
 }
 
+// The tree-table tabs: each one's rows hang under positions, so on it the tree is arranged by
+// positions and the Positions / Locations / Classes switch is locked, saying why. One list for
+// both (the arrangement the tree takes and the switch's lock), so a tab can never force the
+// positions tree while the switch still looks live: clicking Locations then changed nothing (the
+// Maintenance tab did, until 23 Nov 2026).
+const POSITIONS_TREE_TABS = {
+  operations: () => `A duty is set on a position, so ${tabPlace("operations")} shows the positions tree`,
+  maintenance: () => `Tasks hang under their positions, so ${tabPlace("maintenance")} shows the positions tree`,
+  measurements: () => `Measurements hang under their positions, so ${tabPlace("measurements")} shows the positions tree`,
+  models: () => `Models and their missions hang under their positions, so ${tabPlace("models")} shows the positions tree`,
+  missions: () => `Missions belong to positions, so ${tabPlace("missions")} shows the positions tree`,
+  rcm: () => "RCM is by position, so the RCM tab shows the positions tree",
+  fmea: () => "FME(C)A is by position, so the FME(C)A tab shows the positions tree",
+};
+export const TREE_TABLE_TABS = new Set(Object.keys(POSITIONS_TREE_TABS));
+
+// Why the tree is by positions on `tab` (the switch's lock, its tooltip), or null: any arrangement.
+export function positionsTreeLock(tab) {
+  return POSITIONS_TREE_TABS[tab]?.() ?? null;
+}
+
 // The words that name where an address tab is, for text that sends you there ("Models › Life
 // models"; with the panel tabs off, the old tab's name: "Modelling").
 export function tabPlace(tab) {
