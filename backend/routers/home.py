@@ -103,7 +103,7 @@ def build_summary(session, ctx: AccessCtx, took: dict | None = None) -> dict:
     with ThreadPoolExecutor(max_workers=WORKERS, thread_name_prefix="home") as pool:
         # The RCM first, so the parts waiting on it never wait on a free thread.
         rcm = pool.submit(contextvars.copy_context().run, _timed(
-            lambda: maintenance_router.maintenance(ctx).rcm_all(), took, "rcm")) if maintenance_on else None
+            lambda: maintenance_router.maintenance(ctx).rcm_all(shared=True), took, "rcm")) if maintenance_on else None
         parts = _parts(session, ctx, maintenance_on, rcm)
         # Each part runs in a copy of this request's context, as it would in its own request.
         futures = {name: pool.submit(contextvars.copy_context().run, _timed(fn, took, name))

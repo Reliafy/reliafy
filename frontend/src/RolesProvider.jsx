@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { dismissRolesOffer, getMaintenanceAccess, getMyRoles, setMyRoles } from "./api.js";
+import { dismissRolesOffer, getMaintenanceAccess, getMyRoles, setMyRoles, shellRead } from "./api.js";
 import { useAppConfig, useWorkManagementOn } from "./ConfigProvider.jsx";
 import { useWorkspace } from "./WorkspaceProvider.jsx";
 import { buildMenu, crumbsFor, liveEntries, rolesInUse } from "./navigation.js";
@@ -39,7 +39,7 @@ export function RolesProvider({ children }) {
   const [uses, setUses] = useState({});
   useEffect(() => {
     let alive = true;
-    getMyRoles()
+    shellRead("roles", getMyRoles)
       .then((d) => {
         if (!alive) return;
         setState({ roles: d.roles || [], offer: !!d.offer, loaded: true });

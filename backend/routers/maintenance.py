@@ -327,9 +327,18 @@ def overview(tree: bool = True, m: Maintenance = Depends(maintenance)) -> JSONRe
 
 
 def overview_payload(m: Maintenance, tree: bool = True) -> dict:
-    """The overview's answer (also Home's summary, ``backend/routers/home.py``)."""
-    # Work management off: no to-do list (what's due, late, open work orders).
+    """The overview's answer (also Home's summary, ``backend/routers/home.py``). It
+    reads the graph, the workspace's today and the latest automated readings, so it's
+    kept per process until one of those changes (read_cache.py)."""
+    from backend.maintenance.read_cache import cached
+
     on = work_management_on()
+    key = ("overview", m.org, m.actor, tree, on, m.today(), m.time_zone)
+    return cached(m.s, key, lambda: _overview(m, tree, on), series=True)
+
+
+def _overview(m: Maintenance, tree: bool, on: bool) -> dict:
+    # Work management off: no to-do list (what's due, late, open work orders).
     due, wos = (m.due_tasks(30), m.work_orders("open")) if on else ([], [])
     out = {"summary": summary(m), "time_zone": m.time_zone, "today": m.today()}
     if tree:
@@ -606,7 +615,7 @@ def rcm_rollup(session, ctx: AccessCtx, m: Maintenance, within: str | None = Non
     the caller has already read it."""
     from backend.maintenance import rcm_graph
 
-    rcm = rcm if rcm is not None else m.rcm_all(within)
+    rcm = rcm if rcm is not None else m.rcm_all(within, shared=True)  # resolve only reads it
     return rcm_graph.resolve(session, rcm, ctx.read_owners, ctx.hidden, m=m, rates=False)["rollup"]
 
 

@@ -21,6 +21,7 @@ import sqlite3
 import threading
 from datetime import datetime, timedelta, timezone, tzinfo
 
+from backend.maintenance.read_cache import note_series_read, series_recording
 from backend.services.time_zones import day_of
 
 MAX_BATCH = 10_000
@@ -77,11 +78,24 @@ class SqliteSeries:
         with self._lock:
             row = self._conn.execute("SELECT t, v FROM series WHERE org = ? AND point = ? ORDER BY t DESC LIMIT 1",
                                      (org, point)).fetchone()
-        return row and {"t": row[0], "value": row[1]}
+        out = row and {"t": row[0], "value": row[1]}
+        note_series_read(("latest", org, point, None), out)
+        return out
+
+    def fingerprint(self, org: str, point: str, days: int | None = None) -> tuple:
+        """(how many readings, the newest's time), over the last ``days`` or all: what a
+        read of a point's history depends on (read_cache.py; readings are only ever added)."""
+        since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat() if days is not None else ""
+        with self._lock:
+            row = self._conn.execute("SELECT count(*), max(t) FROM series WHERE org = ? AND point = ? AND t >= ?",
+                                     (org, point, since)).fetchone()
+        return tuple(row)
 
     def daily(self, org: str, point: str, days: int = 400, tz: tzinfo | None = None) -> list[dict]:
         """The last reading of each day, the days as they fall in ``tz`` (the
         workspace's zone; the server's when None)."""
+        if series_recording():
+            note_series_read(("fingerprint", org, point, days), self.fingerprint(org, point, days))
         since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         with self._lock:
             rows = self._conn.execute(
@@ -93,6 +107,8 @@ class SqliteSeries:
         return [{"on": d, "value": v} for d, v in last.items()]
 
     def recent(self, org: str, point: str, n: int = 50) -> list[dict]:
+        if series_recording():
+            note_series_read(("fingerprint", org, point, None), self.fingerprint(org, point))
         with self._lock:
             rows = self._conn.execute("SELECT t, v FROM series WHERE org = ? AND point = ? ORDER BY t DESC LIMIT ?",
                                       (org, point, n)).fetchall()
@@ -120,9 +136,21 @@ class MongoSeries:
 
     def latest(self, org: str, point: str) -> dict | None:
         doc = next(iter(self._c.find({"m.org": org, "m.point": point}).sort("t", -1).limit(1)), None)
-        return doc and {"t": _iso(doc["t"]), "value": doc["v"]}
+        out = doc and {"t": _iso(doc["t"]), "value": doc["v"]}
+        note_series_read(("latest", org, point, None), out)
+        return out
+
+    def fingerprint(self, org: str, point: str, days: int | None = None) -> tuple:
+        """(how many readings, the newest's time), over the last ``days`` or all (as SqliteSeries)."""
+        query: dict = {"m.org": org, "m.point": point}
+        if days is not None:
+            query["t"] = {"$gte": datetime.now(timezone.utc) - timedelta(days=days)}
+        newest = next(iter(self._c.find(query, {"t": 1}).sort("t", -1).limit(1)), None)
+        return self._c.count_documents(query), newest and _iso(newest["t"])
 
     def daily(self, org: str, point: str, days: int = 400, tz: tzinfo | None = None) -> list[dict]:
+        if series_recording():
+            note_series_read(("fingerprint", org, point, days), self.fingerprint(org, point, days))
         since = datetime.now(timezone.utc) - timedelta(days=days)
         last: dict[str, float] = {}
         for doc in self._c.find({"m.org": org, "m.point": point, "t": {"$gte": since}}).sort("t", 1):
@@ -130,6 +158,8 @@ class MongoSeries:
         return [{"on": d, "value": v} for d, v in last.items()]
 
     def recent(self, org: str, point: str, n: int = 50) -> list[dict]:
+        if series_recording():
+            note_series_read(("fingerprint", org, point, None), self.fingerprint(org, point))
         return [{"t": _iso(d["t"]), "value": d["v"]}
                 for d in self._c.find({"m.org": org, "m.point": point}).sort("t", -1).limit(n)]
 

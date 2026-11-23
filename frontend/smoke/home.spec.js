@@ -21,6 +21,10 @@ test("Home reads what it shows in one request", async ({ page, problems }) => {
   await expectHealthy(page, problems, { label: "/" });
   expect(reads.filter((p) => p === "/api/home/summary")).toHaveLength(1);
   expect(reads.filter((p) => OLD_READS.includes(p)), "Home reading a list on its own").toEqual([]);
+  // The whole page: the deployment's settings, the frame's (one bootstrap), Home's
+  // summary. Usage beacons (POST /api/metrics/event) aren't reads.
+  const pageReads = reads.filter((p) => p !== "/api/metrics/event");
+  expect(pageReads.sort(), "the page's reads").toEqual(["/api/config", "/api/home/summary", "/api/me/bootstrap"]);
   // The sections drawn from it.
   await expect(page.locator("[data-card='home-attention']")).toBeVisible();
 });
