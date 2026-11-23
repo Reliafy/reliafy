@@ -2888,6 +2888,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     // and 'package'"): not on a product's design (its tasks are packaged on the built items).
     multi: designScope || viewOnly ? null : {
       picked: tpicked, can: isTaskRow, mode: phone && tmode,
+      hint: phone ? "Long-press a task, then Select, to pick several" : "Shift- or Ctrl-click to select several",
       onClear: () => { setTpicked(new Set()); setTmode(false); },
       onDone: () => setTmode(false),
       onToggle: (key) => {
