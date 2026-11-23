@@ -89,6 +89,7 @@ const SIGNED_IN = [
   ["GET", "/api/maintenance/parts/levels"], // #435
   ["POST", "/api/maintenance/parts/import-bom"], // #435
   ["GET", "/api/maintenance/classes/forecast"], // #407
+  ["GET", "/api/maintenance/classes/forecasts"],
   ["GET", "/api/maintenance/item-classes/smoke/fleet"], // the Explorer by Classes: a class's positions with risk now
   ["GET", "/api/maintenance/positions/smoke/condition"], // a position's Condition monitoring tab: its risk now
   ["GET", "/api/maintenance/condition-below/smoke"], // Condition monitoring on a node: every monitored position below it
