@@ -20,7 +20,9 @@ const SIGNED_IN = [
   ["POST", "/api/datasets/smoke/lifetimes"], // the same, with a reading being changed
   // The asset tree in a spreadsheet, both ways (the Explorer's Import from Excel and Export).
   ["GET", "/api/maintenance/hierarchy/export"],
+  ["GET", "/api/maintenance/operations"], // the Explorer's Operations tab
   ["POST", "/api/maintenance/hierarchy/import"],
+  ["POST", "/api/maintenance/schedule/dates"], // How often's next dates, from the server
   // RCM studies (the standalone worksheets under Maintenance).
   ["GET", "/api/rcm/studies"],
   // The interval calculators on an RCM task card.

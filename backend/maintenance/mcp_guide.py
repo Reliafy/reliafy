@@ -179,6 +179,7 @@ ordinary week), days: the next 14 days' runs and hours (real hours in the plan's
 over to a rate, the rate fills only the time they leave), and against_actual: over the last 90 days, the hours \
 the position's hours counter ran as a share of the plan, with a proposal {utilisation} when they differ. Offer \
 it to the user; never save it unasked. An item has no plan of its own: it runs as the position it's fitted to.
+- maintenance get.operations (root: the asset opened; id: one position) reads every position's operations at once: duty.source own / inherited (duty.from: the position above it whose plan it runs to) / none (it runs all the time), parent_duty (what end_operating_plan would leave it on), other_use, windows (shutdowns and outages that take it off-line over the next year, own and inherited, each with source) and time_zone.
 - Tasks by use in operating hours fall due through the plan: the moment the hours counter (from its latest \
 reading) crosses the task's next reading, and the stop after it (limits[].due_moment, stop_after, basis). With \
 no plan here or above, from the counter's recent rate (basis kind rate), as before.
@@ -186,8 +187,12 @@ no plan here or above, from the counter's recent rate (basis kind rate), as befo
 due_at: hours by date and when the meter reaches a value). Saves nothing.
 - How often, as a pattern: maintenance tasks.create / update take rule: {kind: 'weekly', weekdays: \
 ['Saturday']}, {kind: 'monthly', weekday: 'Saturday', nth: 1} (nth 1 to 5, -1 last; a 5th skips months with \
-none) or {kind: 'monthly', day: 15}, {kind: 'yearly', month: 11, weekday: 'Tuesday', nth: 1} or {kind: \
-'yearly', month: 7, day: 1}; every: N (default 1) for every N weeks, months or years. The task's interval and \
+none) or {kind: 'monthly', day: 15} (day 31: the last day), {kind: 'yearly', month: 11, weekday: 'Tuesday', \
+nth: 1} or {kind: 'yearly', month: 7, day: 1}; every: N (default 1) for every N weeks, months or years. Monthly \
+every 2, 3, 4 or 6 with anchor: the same months each year (every 6, day 1, anchor 2027-03-01: 1 March and 1 \
+September; every 3, day 31: the last day of each quarter). {kind: 'shutdowns', every: 12, unit: 'months'} (a \
+position's task): at the first planned shutdown (its or above it) 12 months after it was last done; it joins a \
+shutdown package only. analyse schedule doesn't take shutdowns: read the task's next_due. The task's interval and \
 unit follow it, and it falls due on the rule's dates (the first after it was last done). update rule {} clears \
 it; a new interval also clears it. A work package takes the same with month (packages.create / update: unit \
 years, month, weekday + nth or day). Show the user the next dates before saving."""),

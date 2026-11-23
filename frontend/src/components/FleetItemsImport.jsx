@@ -129,6 +129,7 @@ export default function FleetItemsImport({
   const options = targets(opts);
   const room = MAX_ITEMS - existing.length;
   const n = result?.items?.length || 0;
+  const counted = (result?.items || []).some((it) => Number(it.count) > 1);
   const u = unit ? ` (${unit})` : "";
 
   return (
@@ -185,6 +186,7 @@ export default function FleetItemsImport({
             ? "Each system in the model's data, at its age at the end of its record. An item named as a system uses that system's own history."
             : `The units the model's data records as still running (not failed), each at the age it had reached${runningUnits.name_column ? `, named from the “${runningUnits.name_column}” column` : ""}.`}
           {runningUnits.reason ? ` ${runningUnits.reason}` : ""}
+          {runningUnits.grouped ? ` ${runningUnits.grouped}` : ""}
         </p>
       )}
       {error && <div className="card error">{error}</div>}
@@ -234,6 +236,7 @@ export default function FleetItemsImport({
                 <thead>
                   <tr>
                     <th>Item</th>
+                    {counted && <th className="num">Units</th>}
                     <th className="num">Current use{u}</th>
                     {fields.map((f) => <th key={f.name}>{f.label || f.name}</th>)}
                   </tr>
@@ -242,6 +245,7 @@ export default function FleetItemsImport({
                   {result.items.slice(0, PREVIEW_ROWS).map((it, k) => (
                     <tr key={k}>
                       <td>{it.name}</td>
+                      {counted && <td className="num">{Number(it.count ?? 1).toLocaleString("en-GB")}</td>}
                       <td className="num">{formatNumber(it.current_use, { sig: 4 })}</td>
                       {fields.map((f) => <td key={f.name}>{it.covariates?.[f.name] ?? "—"}</td>)}
                     </tr>

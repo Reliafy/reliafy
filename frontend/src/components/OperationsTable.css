@@ -1,0 +1,7 @@
+/* The Explorer's Operations tab (OperationsTable.jsx): a position's cells, one line each, and the
+   shutdowns section under the operating plan in its details. */
+.ops-cell { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ops-quiet { color: var(--text-secondary); }
+.ops-shut .td-rows { margin: 0; }
+.ops-win { display: flex; flex-direction: column; gap: var(--space-0-5); }
+.ops-outage { border-top: 1px solid var(--border-subtle); padding-top: var(--space-3); }

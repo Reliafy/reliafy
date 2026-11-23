@@ -6,12 +6,14 @@ import { csvNumber, toCsv } from "./csv.js";
 export function fleetForecastCsv({ items = [], perItem = {}, fields = [], defaultRate, covariateDefault = () => "",
                                    forecast = {}, repairable = false }) {
   const n = csvNumber;
-  const header = ["item", "current_use", "rate_per_period", ...fields.map((f) => f.name),
+  // A Units column only when an item stands for many identical units.
+  const counted = items.some((it) => Number(it.count) > 1);
+  const header = ["item", ...(counted ? ["units"] : []), "current_use", "rate_per_period", ...fields.map((f) => f.name),
                   "prob_any_failure", "expected_failures"];
   if (repairable) header.push("next_service_at", "prob_failure_before_service");
   const rows = [header, ...items.map((it) => {
     const r = perItem[it.id] || {};
-    const row = [it.name, it.current_use, it.rate ?? defaultRate,
+    const row = [it.name, ...(counted ? [it.count ?? 1] : []), it.current_use, it.rate ?? defaultRate,
                  ...fields.map((f) => r.covariates?.[f.name] ?? it.covariates?.[f.name] ?? covariateDefault(f) ?? ""),
                  n(r.prob_any) ?? "", n(r.expected) ?? ""];
     if (repairable) row.push(it.next_service_at ?? "", n(r.prob_before_service) ?? "");

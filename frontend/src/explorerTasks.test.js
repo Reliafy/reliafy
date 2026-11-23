@@ -172,6 +172,10 @@ test("Add to package…: the packages that fit first, the same interval before t
   const two = { ...out, rows: new Map([...out.rows, ["other", { key: "other", type: "pos", parent: null, kids: [], depth: 0, ref: { name: "Other" } }]]) };
   assert.match(packageMisfit(pk("h", 50, "hours", "other"), blade, two), /another asset/);
   assert.equal(packageMisfit(pk("h", 50, "hours"), blade, out), null);
+  // A task done at planned shutdowns joins a shutdown package only.
+  const atShut = { ...mower[0], unit: "months", rule_kind: "shutdowns" };
+  assert.match(packageMisfit(pk("cal", 1, "years"), atShut, out), /joins a shutdown package only/);
+  assert.equal(packageMisfit(pk("shut", 1, "years", "st", { shutdown: { duration_hours: 72 } }), atShut, out), null);
   assert.deepEqual(visitFor(pk("h", 50, "hours"), mower[0]), { visit_rule: "nth", every_nth: 2 });
   assert.deepEqual(visitFor(pk("h", 50, "hours"), blade), { visit_rule: "every" });
   const ranked = rankPackages([pk("cal", 1, "months"), pk("h100", 100, "hours"), pk("h50", 50, "hours"), pk("old", 50, "hours", "st", { status: "retired" })], [blade], out);

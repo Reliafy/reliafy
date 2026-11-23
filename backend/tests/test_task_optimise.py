@@ -143,3 +143,21 @@ def test_the_failure_modes_own_failure_cost_is_what_optimise_reads(api):
     row = api.post(f"{M}/tasks/{task_id}/optimise", json={}).json()["modes"][0]
     assert row["inputs"]["unplanned_cost"]["value"] == 900 and row["inputs"]["unplanned_cost"]["source"] == "mode"
     assert row["use"] == {"value": 96, "unit": "hours"}
+
+
+def test_a_task_on_a_calendar_rule_can_keep_it_at_the_nearest_step(api):
+    mode_id, decision = _mode(api, outcome="on_condition", task="Check the belt", interval=1, unit="months")
+    task_id = decision["task_id"]
+    r = api.patch(f"{M}/tasks/{task_id}", json={"rule": {"kind": "weekly", "weekdays": ["Monday"]}})
+    assert r.status_code == 200, r.text
+    body = {"pf_interval": 120, "pf_unit": "days"}
+    out = api.post(f"{M}/tasks/{task_id}/optimise", json=body).json()
+    row = out["modes"][0]
+    assert out["task"]["rule_text"] == "every Monday"
+    # Half of 120 days, in the task's own unit, rounded down: 8 weeks; as a rule, every 8 weeks on Monday.
+    assert row["use"] == {"value": 8, "unit": "weeks"}
+    assert row["use_rule"]["words"] == "every 8 weeks on Monday"
+    u = api.post(f"{M}/tasks/{task_id}/optimise/use", json={**body, "as_rule": True}).json()
+    assert u["rule_text"] == "every 8 weeks on Monday"
+    task = api.get(f"{M}/tasks/{task_id}/lsa").json()["task"]
+    assert task["rule"]["every"] == 8 and (task["interval"], task["unit"]) == (8, "weeks")

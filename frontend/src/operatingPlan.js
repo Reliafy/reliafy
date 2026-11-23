@@ -102,6 +102,8 @@ export function formFromPlan(brief, today) {
     runs: bg.kind === "runs" ? runsText(bg.runs) : "",
     specific: runsText(specific.flatMap((s) => s.runs)),
     name: brief?.name || "", from: today, notes: brief?.notes || "",
+    // The plan's time zone (its times are that place's clock times); blank: the workspace's.
+    timeZone: brief?.time_zone || "",
     // The share of the planned running that happens (kept as it was; offered from plan against actual).
     utilisation: p?.utilisation ?? null,
     // Use that isn't time, at a rate (400 km a day): a model in km meets the calendar at it.

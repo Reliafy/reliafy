@@ -104,6 +104,30 @@ def words(sd: dict | None) -> str:
     return " · ".join(parts)
 
 
+def shutdown_dates(m, position_id: str, start: str, end: str) -> list[dict]:
+    """The planned shutdowns that take ``position_id`` off-line from ``start`` to ``end`` (ISO
+    dates, both included), oldest first: [{on, hours, package: {id, name}}]. A task "at shutdowns"
+    (how_often.py) is done at these.
+
+    The one seam for where shutdown windows come from: the Operations read's effective windows
+    (``Maintenance.operation_windows``, operations.py): the shutdown packages on the position or
+    above it whose scope covers it. An item reads the position it's fitted to's."""
+    sv = _sv()
+    node = m.s.node(m.org, position_id) or {}
+    if node.get("label") == "Item":
+        position_id = m._plan_holder(position_id, None)
+        if position_id is None:
+            return []
+    elif node.get("label") != "Position" or node.get("retired"):
+        return []
+    try:
+        windows = m.operation_windows(position_id, start, end)
+    except (sv.NotFound, sv.Invalid):
+        return []
+    return [{"on": w["start"][:10], "hours": w["hours"], "package": {"id": w["package_id"], "name": w["name"]}}
+            for w in windows if w["kind"] == "shutdown"]
+
+
 def _sv():
     from backend.maintenance import service
 
@@ -199,6 +223,64 @@ class ShutdownOps:
                         "shutdown": sd, "next": nxt, "tasks": tasks, "today": today})
         out.sort(key=lambda x: (x["package"]["name"].lower(), x["package"]["id"]))
         return out
+
+    def schedule_dates(self, rule, start=None, count: int = 5, after: bool = False, position_id=None,
+                       also=None) -> dict:
+        """The next ``count`` dates a task's "how often" gives, worked out by RePyability's Task
+        (nothing saved): from ``start`` (default today; ``after``: it was done that day, so only
+        later dates count). ``rule`` is a how_often rule (``{kind: every, every, unit}`` for a
+        plain interval); ``also`` a second calendar limit {every, unit}, whichever comes first.
+        At shutdowns needs ``position_id``: its dates are that position's shutdowns. {rule, words,
+        dates, shutdowns?}."""
+        from datetime import timedelta
+
+        from backend.maintenance import how_often, schedule
+
+        sv = _sv()
+        try:
+            checked = how_often.check_rule(rule)
+        except ValueError as err:
+            raise sv.Invalid(str(err)) from None
+        count = max(1, min(int(count or 5), 24))
+        first = sv._day(start, "start") if start not in (None, "") else self.today()
+        years = 2 if checked.get("unit") in ("days", "weeks") or checked["kind"] == "weekly" else 10
+        end = (date.fromisoformat(first) + timedelta(days=366 * years)).isoformat()
+        kind = checked["kind"]
+        if kind == "every" and checked.get("anchor"):
+            # A package on set dates: every so many units from its anchor, the first on or after start.
+            every = schedule.Recurrence.every(checked["every"], checked["unit"], checked["anchor"])
+            last_done = first if after else None
+        elif kind in ("every", "shutdowns"):
+            every = schedule.Recurrence.every(checked["every"], checked["unit"], first)
+            last_done = first  # an interval counts from the day it starts (or was done)
+        else:
+            every = how_often.recurrence(checked, checked.get("anchor") or first)
+            last_done = first if after else None
+        second = None
+        if also:
+            try:
+                n, unit = int(also["every"]), also["unit"]
+                second = schedule.Recurrence.every(n, unit, first)
+            except (KeyError, TypeError, ValueError):
+                raise sv.Invalid("also is {every, unit}: a whole number of days, weeks, months or years.") from None
+        out: dict = {"rule": checked, "words": how_often.describe(checked), "start": first}
+        visits = None
+        if kind == "shutdowns":
+            if not position_id:
+                raise sv.Invalid("A task at shutdowns falls on its position's shutdowns: give position_id.")
+            shuts = shutdown_dates(self, position_id, first, end)
+            out["shutdowns"] = shuts
+            if not shuts:
+                return out | {"dates": [], "note": "No planned shutdown here or above it: add one (a shutdown "
+                                                   "package) and the dates follow."}
+            visits = schedule.Recurrence.on(sorted({x["on"] for x in shuts}))
+        try:
+            due = schedule.LibraryTask("preview", every=every, also=second, last_done=last_done,
+                                       visits=visits).due(first, end)
+        except (ValueError, TypeError) as err:
+            raise sv.Invalid(str(err)) from None
+        days = due.done if visits is not None else due.dates
+        return out | {"dates": [d.isoformat() for d in days[:count]]}
 
     def _package_tree_members(self, pkg: dict) -> list[dict]:
         return [m for p in self._package_tree(pkg) for m in p.get("members") or []]
