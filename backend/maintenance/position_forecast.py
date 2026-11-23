@@ -525,7 +525,7 @@ class _Credited:
 
 
 def _model_forecast(m: Maintenance, fetch, pos: dict, hours_map, start: date, end_excl: date, period: str,
-                    link: dict | None = ..., mode_ids=None, strict: bool = False, windows=None):
+                    link: dict | None = ..., mode_ids=None, windows=None):
     """A life on the position (``link``; by default the model in use), forecast by period with
     the tasks of the failure modes it's for (``mode_ids``; None: all the position's) counted:
     (found, None) or (None, reason). ``windows(life_unit, usage)``: forecast in these windows
@@ -585,9 +585,6 @@ def _model_forecast(m: Maintenance, fetch, pos: dict, hours_map, start: date, en
         hours_text = "on the calendar (a life in calendar time)"
         age_text = f"{_num(age, 3):g} {unit} since it was fitted on {_short(fitment['from'])}"
     elif unit == "hours":
-        if hours_map is None and strict:
-            return None, {**brief, "reason": "a life in operating hours, not dated: no duty here (set one in "
-                                             "Operations to lay its failures on the calendar)"}
         if hours_map is None:
             # No plan and no counter rate: it runs all the time, 24 h a day (running_clock; Derryn, 21 Nov 2026).
             hours_map = {"usage": schedule.DutyPlan(schedule.Continuous()).forecast(start, end_excl), "counter": None,
@@ -1042,8 +1039,8 @@ def position_forecast(m: Maintenance, position_id: str, root: str | None = None,
             if served is not None:
                 lives = _lives_served(m, node, lives, served)
             for link, mode_ids in lives:
-                found, why = _model_forecast(m, fetch, node, hours_map, start, end_excl, period, link, mode_ids,
-                                             strict=strict)
+                # A life in hours with no duty runs all the time (running_clock), strict or not.
+                found, why = _model_forecast(m, fetch, node, hours_map, start, end_excl, period, link, mode_ids)
                 if why:
                     not_forecast.append({**why, "position": here})
                 if found:

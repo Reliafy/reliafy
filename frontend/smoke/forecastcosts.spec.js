@@ -37,8 +37,10 @@ test("Forecast… lists what to enter; the link opens the failure mode, whose fa
   await expect(enter).toContainText("Failure modes with no failure cost (1)", { timeout: 30_000 });
   await expect(enter).toContainText("Checks with no P-F interval (1)");
   await expect(enter).toContainText(`Check the seal ${tag}`);
-  await expect(pane.getByRole("columnheader", { name: "Unplanned cost" })).toBeVisible();
-  await expect(pane.getByRole("columnheader", { name: "Total cost" })).toBeVisible();
+  // No life model here, so no failure columns (the life models fold says so); the total is the planned.
+  await expect(pane.getByRole("columnheader", { name: "Times done" })).toBeVisible();
+  await expect(pane.getByRole("columnheader", { name: "Total", exact: true })).toBeVisible();
+  await expect(pane.getByRole("columnheader", { name: "Failure cost" })).toHaveCount(0);
   await shot(page, "forecast-what-to-enter-desktop");
 
   // The link: the failure mode on the RCM tab, its "What a failure costs" under its consequence.

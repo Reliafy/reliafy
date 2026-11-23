@@ -131,7 +131,7 @@ export default function ForecastDetails({ positionId, root = null, name = "", su
   return (
     <section className="fc-view fcd" aria-label="Forecast" aria-busy={busy || undefined}>
       <div className="fcd-controls">
-        <SegmentedControl size="sm" label="Basis" value={shownBasis} onChange={(v) => setBasis(v)} options={BASES} />
+        <SegmentedControl size="sm" showLabel label="Basis" value={shownBasis} onChange={(v) => setBasis(v)} options={BASES} />
         {shownBasis === "calendar" ? (
           <>
             <Field label="Horizon" as="fieldset" className="fcd-field">
@@ -143,14 +143,14 @@ export default function ForecastDetails({ positionId, root = null, name = "", su
                 <DateInput value={ctl.end} min={d?.today || undefined} onChange={(e) => set("end")(e.target.value)} aria-label="Last day of the forecast" />
               </div>
             )}
-            <SegmentedControl size="sm" label="Group by" value={ctl.group} onChange={set("group")} options={groupsFor(ctl.months === "custom" ? 120 : ctl.months)} />
+            <SegmentedControl size="sm" showLabel label="Group by" value={ctl.group} onChange={set("group")} options={groupsFor(ctl.months === "custom" ? 120 : ctl.months)} />
           </>
         ) : (
           <>
             <Field label="Horizon" as="fieldset" className="fcd-field">
               <ChoiceChips label="Horizon" value={ctl.hours} onChange={(v) => v && set("hours")(v)} options={HOURS_HORIZONS} />
             </Field>
-            <SegmentedControl size="sm" label="Group every" value={ctl.every} onChange={set("every")} options={everyFor(ctl.hours)} />
+            <SegmentedControl size="sm" showLabel label="Group every" value={ctl.every} onChange={set("every")} options={everyFor(ctl.hours)} />
             <Field label="Meter now" optional help="The hours reading to count from; blank: the latest recorded" className="fcd-field fcd-reading">
               <TextInput inputMode="decimal" value={ctl.reading} placeholder={d?.reading != null ? sig(d.reading) : ""}
                          onChange={(e) => set("reading")(e.target.value.replace(/[^0-9.]/g, ""))} />
@@ -226,7 +226,7 @@ export default function ForecastDetails({ positionId, root = null, name = "", su
             </ResultDetails>
           )}
           {groups.length > 0 && (
-            <ResultDetails summary={`What to enter (${groups.reduce((t, g) => t + g.items.length, 0)})`}>
+            <ResultDetails summary={`What to enter (${groups.reduce((t, g) => t + g.items.length, 0)})`} open>
               {groups.map((g) => (
                 <section key={g.id} className="fc-enter-group" aria-label={g.title}>
                   <h3 className="fc-enter-title">{g.title}</h3>

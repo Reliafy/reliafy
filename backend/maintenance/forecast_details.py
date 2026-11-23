@@ -11,7 +11,9 @@ Two bases:
 * **calendar**: from today to a date, grouped by day, week, month, quarter or year
   (``position_forecast`` with ``strict``): tasks by use are put on dates only through the
   position's duty (its operating plan, as ``Maintenance.duty_of`` resolves it). Without one they
-  stay in hours and are listed as not dated, with where to set a duty.
+  stay in hours and are listed as not dated, with where to set a duty. A life model in hours is
+  still laid on the calendar running all the time, 24 h a day (running_clock's rule, said in
+  its line), so the failures aren't lost.
 * **hours**: the next N running hours, grouped every B hours. Tasks by use fall where the meter
   reaches them; a calendar rule needs the duty to become hours, else it's listed as not placed.
   Failures from a life in hours fall in the windows directly; a life in calendar time needs the
@@ -315,7 +317,7 @@ def _hours(m: Maintenance, position_id: str, root, horizon, every, reading, only
 
             for link, mode_ids in lives:
                 found, why = pf._model_forecast(m, fetch, node, hm, today, far + timedelta(days=1), "month", link,
-                                                mode_ids, strict=True, windows=windows)
+                                                mode_ids, windows=windows)
                 if why:
                     not_forecast.append({**why, "position": here})
                 if found:
