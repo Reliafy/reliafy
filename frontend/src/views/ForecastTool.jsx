@@ -200,7 +200,7 @@ function NotCounted({ out, view }) {
     <section className="ft-gaps" aria-label="Not counted">
       <h3 className="ft-h">Not counted</h3>
       <ul>{gaps.map((g) => <li key={g}>{g}</li>)}</ul>
-      <p className="lib-date">The total is what&apos;s known: it leaves these out rather than guess them.</p>
+      <p className="rs-note">The total is what&apos;s known: it leaves these out rather than guess them.</p>
     </section>
   );
 }
@@ -212,7 +212,7 @@ function WhenNext({ fc }) {
     <section className="ft-next" aria-label="When next">
       <h3 className="ft-h">When next</h3>
       <ol className="ft-next-list">{w.items.map((x) => <li key={x.n}>{whenText(fc, x)}</li>)}</ol>
-      <p className="lib-date">From the expected counts: the {String(fc.period_label).replace(/s$/, "")} by which each spare is likely used.{w.more ? ` ${w.more.toLocaleString("en-GB")} more after these.` : ""}</p>
+      <p className="rs-note">From the expected counts: the {String(fc.period_label).replace(/s$/, "")} by which each spare is likely used.{w.more ? ` ${w.more.toLocaleString("en-GB")} more after these.` : ""}</p>
     </section>
   );
 }
@@ -233,7 +233,9 @@ export default function ForecastTool() {
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
   const setWork = (patch) => setForm((f) => ({ ...f, work: { ...(f.work || BLANK_WORK), ...patch } }));
   const currency = workspaceCurrency();
-  const money = (v) => formatCost(v, currency, { sig: 4 });
+  // Whole money from 100 up ($16,313, not $16,300); 3 significant figures below.
+  const money = (v) => (Math.abs(v) >= 100 ? formatCost(Math.round(v), currency, { sig: Math.max(3, String(Math.round(Math.abs(v))).length) })
+    : formatCost(v, currency, { sig: 3 }));
 
   // Filled in from an Explorer node, once per node.
   useEffect(() => {
