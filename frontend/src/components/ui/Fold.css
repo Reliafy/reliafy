@@ -1,0 +1,15 @@
+/* Fold.jsx: a quiet "› Title" line that opens what's under it, with a one-line summary while folded. */
+.fold { display: flex; flex-direction: column; min-width: 0; }
+.fold-head {
+  display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; min-width: 0; width: 100%;
+  min-height: var(--control-sm); padding: var(--space-1) 0; margin: 0;
+  background: none; border: 0; border-radius: var(--radius-sm); box-shadow: none;
+  color: var(--text-secondary); font: inherit; font-size: var(--fs-13); line-height: var(--lh-13); font-weight: 500; text-align: left; cursor: pointer;
+}
+.fold-head:hover { color: var(--text); background: none; }
+/* The "›" is a span, not ::before: generated content would join the button's accessible name. */
+.fold-mark { display: inline-block; flex: none; transition: transform 0.15s; }
+.fold.is-open > .fold-head > .fold-mark { transform: rotate(90deg); }
+.fold-title { flex: none; }
+.fold-sum { flex: 1 1 12rem; min-width: 0; color: var(--text); font-weight: 400; overflow-wrap: anywhere; }
+.fold-body { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-2) 0 var(--space-1) var(--space-4); min-width: 0; }

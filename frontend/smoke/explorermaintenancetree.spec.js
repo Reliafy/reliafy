@@ -76,10 +76,9 @@ test("packages sit where their tasks meet; Next due by row and by level, sorted;
   await expect.poll(() => new URL(page.url()).searchParams.get("mpkg")).toBe(p.engineOnly.id);
   await expect(page.getByRole("complementary", { name: `Engine checks ${tag}` })).toContainText(`Shown at Engine ${tag}, where its task is.`);
 
-  // No Forecast rows: a task has nothing under it. A package's Next due is its next visit (a date);
-  // the mower's is the soonest beneath it.
+  // No Forecast rows: under a task are only its extras (its labour, parts and a typed cost). A
+  // package's Next due is its next visit (a date); the mower's is the soonest beneath it.
   await expect(page.locator(`[id^="tp-MF:"]`)).toHaveCount(0);
-  await expect(page.locator(`[id="tp-MT:${p.oil.id}"] .tp-chev`)).toHaveCount(0);
   const date = /^\d{1,2} \w{3} \d{4}/;
   await expect(svc.locator(".mt-c-due")).toHaveText(date);
   await expect(page.locator(`[id="tp-${p.top.id}"] .mt-c-due`)).toHaveText(date);

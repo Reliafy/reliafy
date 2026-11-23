@@ -134,36 +134,45 @@ duty): check it*). That is the longest the age can be, so check it.
 
 ## How often
 
-Every task and every work package has the same **How often** control. First
-pick its type, then fill a short sentence:
+A task's **How often** is one line: *Every [2,000] [operating hours]*. Pick the
+unit from the list: operating hours and the calendar (days, weeks, months,
+years) always, and cycles, starts or km where the position has a counter that
+counts them. In operating hours (or km, or cycles) it falls due through the
+operating plan, as above; in the calendar, so long after it was last done.
 
-- **Running hours**: *Every 2,000 operating hours* (or km, or cycles). It falls
-  due through the operating plan, as above.
-- **Days, weeks or months**: *Every 3 months after it was last done*.
-- **Calendar rule**: set dates that don't move when the work is late:
-  - *On the first Saturday of every month*;
-  - *On Tuesday, every 2 weeks* (every second Tuesday);
-  - *On a date, day 1, of every 6 months from March*: 1 March and 1 September
-    each year (every 2, 3, 4 or 6 months falls in the same months each year,
-    from the month you pick);
-  - *On the last day of every 3 months from March*: the last day of each
-    quarter;
-  - *On the first Tuesday of November, every year*.
+**More scheduling options**, folded under it, holds the rest. Folded with
+anything set, it says what in one line (*Also every 6 months, whichever first*):
 
-  A fifth Saturday exists in only some months, and the rest are skipped. A day
-  past a short month's end (the 31st) falls on its last day.
-- **At shutdowns** (a position's task): *At the first planned shutdown 12
-  months after it was last done*. The task waits for the next planned shutdown
-  of its position, or of a position above it, once the time has passed. The
-  shutdowns are the shutdown packages there (a package made a shutdown, with
-  its set dates). With none planned, the task says so and has no date.
+- **Or every**: a second limit. "Every 2,000 hours or every 6 months" falls due
+  at the sooner of the two.
+- **When it falls due**: *From when it was last done (default)*, or:
+  - **On set calendar dates**: dates that don't move when the work is late,
+    said as a sentence in place of the *Every* line:
+    - *On the first Saturday of every month*;
+    - *On Tuesday, every 2 weeks* (every second Tuesday);
+    - *On a date, day 1, of every 6 months from March*: 1 March and 1 September
+      each year (every 2, 3, 4 or 6 months falls in the same months each year,
+      from the month you pick);
+    - *On the last day of every 3 months from March*: the last day of each
+      quarter;
+    - *On the first Tuesday of November, every year*.
 
-A task's first two types can take a second limit: *or every 6 months,
-whichever comes first*. "Every 2,000 hours or every 6 months" falls due at the
-sooner of the two.
+    A fifth Saturday exists in only some months, and the rest are skipped. A day
+    past a short month's end (the 31st) falls on its last day.
+  - **At planned shutdowns** (a position's task): *At the first planned shutdown
+    12 months after it was last done*. The task waits for the next planned
+    shutdown of its position, or of a position above it, once the time has
+    passed. The shutdowns are the shutdown packages there (a package made a
+    shutdown, with its set dates). With none planned, the task says so and has
+    no date.
+- **When the item is replaced**: *Restart* or *Keep* its schedule, the default
+  named.
 
-Under the sentence it always shows the rule in words and its next five dates,
-worked out as you choose, so a wrong rule shows before you save it. Where work
+A work package's **How often** picks its type first (days, weeks or months, a
+calendar rule, or running hours), then the same sentences.
+
+Under the line it always shows the rule in words and its next dates, worked
+out as you choose, so a wrong rule shows before you save it. Where work
 management is off, a task has an optional **Last done**, so the next date
 counts from then.
 

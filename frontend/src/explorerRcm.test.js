@@ -73,7 +73,7 @@ test("no Add rows in the tree: adding is from each row's menu", () => {
   assert.deepEqual(ids("f1"), ["add-std", "add-fail", "open", "rename", "delete"]);
   assert.deepEqual(ids("x1"), ["add-mode", "open", "link-cause", "link-effect", "rename", "delete"]); // pump has a position above it, no standards
   // The adds come first (what goes under the row), then Open… and the rest.
-  assert.deepEqual(ids("m1"), ["add-task", "open", "decide", "rename", "delete"]);
+  assert.deepEqual(ids("m1"), ["add-task", "open", "decide", "add-response", "add-follow-on", "rename", "delete"]);
   assert.deepEqual(ids("U:pump"), ["add-mode"]); // the "Not under a functional failure" heading: add a mode there
   // On a phone the details panel edits the description: Edit description stays, greyed, saying so.
   // Open… stays on a phone: it's the way to the dialog there (no double-click).

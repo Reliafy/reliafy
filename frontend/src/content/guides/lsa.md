@@ -39,10 +39,48 @@ with **Interval**, **Next due**, **Cost each time**, **Trade**, **Packaged**,
 its whole programme; open or close a level with its arrow. Only the asset you
 opened is shown, and retired tasks aren't.
 
-Click a task to open it beside the table: change how often, its cost or what
-it prevents, and see the repairable RBDs that use it. **Add task…** on a row's
-**More actions (…)** adds one to that position. **Trade rates…** in the
-heading's **…** prices every task's labour.
+Click a task to open it beside the table. Its details read top to bottom:
+
+- **Kind of task**, then **What's done** (the action alone: *Replace the seal*).
+- **How often**: one line, *Every [50] [operating hours]*, with its next dates
+  and **Next due** under it. **More scheduling options** (folded) holds a second
+  limit (*or every 6 months, whichever comes first*), set calendar dates, at
+  planned shutdowns, and **When the item is replaced** (*Restart* or *Keep*,
+  the default named). Folded with something set, it says what in one line.
+- **Cost**, **Labour** and **Parts**, each folded with a line saying what's set
+  (*$40 each time*, *1.5 h mechanic*, *Spindle kit × 1*).
+
+A task from an RCM decision shows what the RCM owns in one line under its name,
+*From RCM: Drive belt cracked and breaks · Check condition · Open in RCM ›*: its
+failure modes, why it's done and its kind are changed on the RCM tab only. A
+task added directly has its kind, **Why it's done** and the failure modes it
+prevents here.
+
+A task's labour, parts and a typed cost also show as rows under it in the tree
+(*Labour · 1.5 h mechanic*, *Part · Spindle kit × 1*, *Cost · $40 each time*),
+only when they're set; open the task's arrow to see them. Click one to open the
+task at that part. They aren't tasks: no count includes them.
+
+**Add task…** on a row's **More actions (…)** adds one to that position.
+**Trade rates…** in the heading's **…** prices every task's labour.
+
+### What's done if it fails, or when it's found
+
+What's done when a failure mode happens anyway (*replace the drive belt*), and
+when an inspection finds it early, are tasks too, raised by that event rather
+than a schedule. They sit under their position like any other task, with the
+kind **Corrective: on failure** or **Follow-on: when found**, their failure mode
+named, and no **Next due**. Their details have the same parts, with the trigger
+(*Raised when Drive belt cracked and breaks fails*) in place of How often. A
+corrective one also has **Cost of the failure itself (besides the repair)**:
+how long a failure keeps it out of use, what an hour out of use costs, or a
+failure's whole cost typed (which overrides the repair's).
+
+Add one from the heading's **…** (**Add response if it fails…** or **Add
+follow-on…**, then pick the failure mode), or from a failure mode's menu on the
+RCM tab. The forecast uses their hours, parts and cost for each failure (or
+find) it expects; with none, it lists the gap under **Not counted**, with **Add**
+opening the form here.
 
 **Filter a column** with the funnel in its heading: tick the values to keep
 (an interval, a trade, a package, "In no package", a kind). The values listed
@@ -110,20 +148,18 @@ package's menu opens the quick **Spares**, **Hours** or **Cost forecast** in
 ## Say what a task needs
 
 Open a task (double-click its row, or choose **Open…** from its **⋯**). Its
-details have a **What it needs** section, folded to one line of totals (the
-labour hours, people and materials cost) until you choose **Show**. Opened, it
-lists the failure modes the task serves, then a group for each thing it needs.
-There is no Save of its own: change what you like and use the details' **Save**
-at the foot, which saves the task and what it needs together:
+**Labour** (a line per trade: how many people and the hours each, plus the
+elapsed hours of the job) and **Parts** (pick a part from the parts register,
+or type a name) are fold-outs of their own. The rest is in **What it needs**,
+folded to one line until you choose **Show**. Opened, it lists the failure
+modes the task serves, then a group for each other thing it needs. There is no
+Save of its own: change what you like and use the details' **Save** at the
+foot, which saves the task and what it needs together:
 
-- **Labour** — a line per trade: how many people and the hours each, plus the
-  elapsed hours of the job.
 - **Tools and instruments** — tools and test equipment. An instrument can name
   the measuring point or channel it reads (the free-chlorine point for a
   photometer), so which sensor does the monitoring is part of the how, not the
   RCM decision.
-- **Spares** — pick a part from the parts register (its part number shows), or
-  type a name for one that isn't in it.
 - **Consumables** — what the job uses up, with a quantity, a unit and, if you
   know it, the cost for that quantity.
 - **Access and downtime** — downtime hours, permits, isolation and access

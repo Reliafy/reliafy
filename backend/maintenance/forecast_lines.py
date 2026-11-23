@@ -324,7 +324,9 @@ def build(m, fc: dict, model_rows: list[dict], tree, root) -> dict:
                  "link": _explorer_link(where["id"], root, "rcm")}
         response = rows0.get("response")
         missed_n = n_all * (1.0 - found)
-        respond_link = _explorer_link(where["id"], root, "rcm", sel=rows0.get("response_mode") or where["id"],
+        # What's done if it fails is a task on the Maintenance tab (raised by the failure): the link
+        # opens it there, or the form to add it.
+        respond_link = _explorer_link(where["id"], root, "maintenance", addtask=where["id"],
                                       fm=rows0.get("response_mode") or "", respond="failure")
         corrective = {"id": f"{gid}:corrective", "owner": owner, "owner_kind": "failure_mode", "kind": "corrective",
                       "group": gid, "number": number, "position": where, "on": on,
@@ -367,7 +369,7 @@ def build(m, fc: dict, model_rows: list[dict], tree, root) -> dict:
         if found:
             fr = g["follow"]
             found_n = n_all * found
-            found_link = _explorer_link(where["id"], root, "rcm", sel=rows0.get("response_mode") or where["id"],
+            found_link = _explorer_link(where["id"], root, "maintenance", addtask=where["id"],
                                         fm=rows0.get("response_mode") or "", respond="found")
             follow = {"id": f"{gid}:follow_on", "owner": owner, "owner_kind": "failure_mode", "kind": "follow_on",
                       "group": gid, "number": number, "position": where, "on": on,

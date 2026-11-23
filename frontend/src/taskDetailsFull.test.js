@@ -12,7 +12,7 @@ test("opening a task row (double-click, Enter, Open…) expands the details acro
   const open = src.slice(src.indexOf("const openTaskRow"), src.indexOf("const openOptimise"));
   assert.match(open, /if \(!phone\) setExpanded\(true\)/);
   assert.match(src, /onOpen: \(key\) => \{\n\s*const r = display\.rows\.get\(key\);\n\s*return openTaskRow\(r\);/); // the table's double-click
-  assert.match(src, /if \(isTaskRow\(r\)\) return openTaskRow\(r\)/); // Enter
+  assert.match(src, /if \(isTaskRow\(r\)( \|\| isExtraRow\(r\))?\) return openTaskRow\(r\)/); // Enter
 });
 
 // No Forecast rows in the tree any more (Derryn, 23 Nov 2026): a quick forecast is the left menu's.

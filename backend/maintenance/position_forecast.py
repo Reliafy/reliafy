@@ -973,7 +973,7 @@ def _prompts(m: Maintenance, fetch, tree, tasks_out: list[dict], models: list[di
             if c["per_failure"] is None:
                 no_cost.append({"mode": {"id": fm["id"], "text": fm.get("text") or ""}, "position": here,
                                 "counted": fm["id"] in lives_for,
-                                "link": _explorer_link(node["id"], root, "rcm", sel=fm["id"], fm=fm["id"],
+                                "link": _explorer_link(node["id"], root, "maintenance", addtask=node["id"], fm=fm["id"],
                                                        respond="failure")})
         if fetch is None:
             continue

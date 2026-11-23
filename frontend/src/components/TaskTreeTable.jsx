@@ -5,11 +5,12 @@ import Select from "./Select.jsx";
 import TablePane from "./TablePane.jsx";
 import MaintenanceTask, { TradeRates } from "./MaintenanceTask.jsx";
 import RbdTaskUses from "./RbdTaskUses.jsx";
+import PanelKind from "./PanelKind.jsx";
 import { CloseIcon, ExpandIcon, ShrinkIcon } from "./icons.jsx";
 import { useSendOnce } from "./MaintenanceParts.jsx";
 import { AddPackageDialog, PackageTasks, PackageView, overdueNote } from "./LsaPanel.jsx";
 import { latestOnly } from "../explorerMissions.js";
-import { PKG_REF_TYPE, PKG_TYPE, levelDueCell, packageCell, packageWhere, rankPackages, taskCell, visitFor } from "../explorerTasks.js";
+import { EXTRA_TYPE, PKG_REF_TYPE, PKG_TYPE, levelDueCell, packageCell, packageWhere, rankPackages, taskCell, visitFor } from "../explorerTasks.js";
 import { cadenceWords, ordinal, packageScope, taskOnText } from "../lsaTab.js";
 import "./LsaPanel.css";
 import "./TaskTreeTable.css";
@@ -103,6 +104,7 @@ export function taskPhoneRow(r, rollup) {
       status: <Chip tone="neutral" title={due.title || undefined}>{due.words ? `Next ${due.words}` : "Package"}</Chip> };
   }
   if (r.type === PKG_REF_TYPE) return { line: `On ${r.ref.on}`, status: null };
+  if (r.type === EXTRA_TYPE) return { line: "", status: null };
   if (r.type !== "mtask") {
     const due = levelDueCell(r);
     return { line: [rollup, due.words ? `next ${due.words}` : null].filter(Boolean).join(" · "), status: null };
@@ -122,11 +124,13 @@ export function taskPhoneRow(r, rollup) {
 // The head (where it is, Expand or Back to table, Close) is the same as the Models and RCM panels';
 // the task's form draws its own title, body and footer under it, so its Save sits in the footer.
 // `needs`: open the form's What it needs section (?needs=1: an old address, or a link to it).
-export function TaskSide({ holder, taskId = null, taskName = "", rates = false, needs = false, phone, expanded = false, onExpand, onCollapse, headingRef, onClose, onDone, onChanged, onOptimise = null }) {
-  const title = rates ? "Trade rates" : taskId ? (taskName || "Maintenance task") : "Add a task";
+export function TaskSide({ holder, taskId = null, taskName = "", rates = false, needs = false, section = null, respond = null, phone, expanded = false, onExpand, onCollapse, headingRef, onClose, onDone, onChanged, onOptimise = null }) {
+  const title = rates ? "Trade rates" : taskId ? (taskName || "Maintenance task") : respond ? "Add a response" : "Add a task";
+  // The compact title line the RCM's task panel has too (PanelKind): the spanner, "Task · <where>".
   const head = (
     <div className="rw-panel-head">
-      <div className="rw-panel-kind">{rates || taskId ? (holder?.ref?.name || "Maintenance task") : "New maintenance task"}</div>
+      {rates ? <div className="rw-panel-kind">{holder?.ref?.name || "Maintenance"}</div>
+        : <PanelKind type="task" where={holder?.ref?.name || ""}>{taskId ? "Task" : "New task"}</PanelKind>}
       <div className="rw-panel-btns">
         {!phone && taskId && onExpand && (expanded ? (
           <button type="button" className="ghost sm rw-x" onClick={onCollapse} title="Show the table again, with these details beside it (Esc)" aria-label="Back to table"><ShrinkIcon /></button>
@@ -155,7 +159,8 @@ export function TaskSide({ holder, taskId = null, taskName = "", rates = false, 
           </div>
         </>
       ) : holder && (
-        <MaintenanceTask key={`${holder.key}:${taskId || "new"}`} row={holder} taskId={taskId} taskName={taskName}
+        <MaintenanceTask key={`${holder.key}:${taskId || (respond ? `resp:${respond.kind}:${respond.mode || ""}` : "new")}`} row={holder} taskId={taskId} taskName={taskName}
+                         section={section} respond={respond}
                          head={head} headingRef={headingRef} onBack={onClose} onDone={onDone} onOptimise={taskId ? onOptimise : null} needsOpen={needs}
                          uses={taskId ? <RbdTaskUses taskIds={[taskId]} /> : null} />
       )}

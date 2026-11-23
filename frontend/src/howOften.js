@@ -185,6 +185,61 @@ export function cadenceOf(form) {
   return stepOf(form);
 }
 
+// Another type for a form, keeping what carries over: each type keeps a unit it can take (use for
+// running hours, the calendar for the rest), and a rule's step and an interval stay in step.
+export function changeType(value, t, units) {
+  if (!t || t === value.type) return value;
+  const next = { ...value, type: t };
+  if (t === "hours" && isCalendar(value.unit)) next.unit = units.find((u) => !isCalendar(u)) || value.unit;
+  if (t !== "hours" && !isCalendar(value.unit)) next.unit = "months";
+  if (t === "rule" && value.type !== "rule" && isCalendar(next.unit) && Number.isInteger(Number(value.every)) && Number(value.every) > 0
+      && next.unit !== "days") {
+    next.step = `${next.unit}:${Number(value.every)}`;
+    if (next.unit === "weeks") next.pattern = "weekday";
+    else if (next.pattern === "weekday") next.pattern = "nth";
+  }
+  if (value.type === "rule" && t !== "rule" && t !== "hours") {
+    const [unit, every] = String(value.step).split(":");
+    Object.assign(next, { unit, every });
+  }
+  return next;
+}
+
+// A task's "Every [N] [unit]" with a new unit: a unit of use makes it running hours (or km, cycles),
+// a calendar unit an interval after it was last done. A rule or shutdowns keep their own unit line.
+export function withUnit(value, unit) {
+  if (value.type === "rule" || value.type === "shutdowns") return { ...value, unit };
+  return { ...value, unit, type: isCalendar(unit) ? "interval" : "hours" };
+}
+
+// The units a task's "Every [N] [unit]" offers (Derryn, 23 Nov 2026): operating hours and the
+// calendar always (a place's tasks: the calendar only); cycles, starts or km only where one of the
+// position's counters counts them, or the task already does.
+const USE_OF = { h: "hours", hr: "hours", hrs: "hours", hours: "hours", hour: "hours", km: "km", cycle: "cycles", cycles: "cycles",
+  start: "starts", starts: "starts" };
+export function taskUnitChoices({ place = false, counters = [], form = null } = {}) {
+  if (place) return [...CALENDAR];
+  const have = new Set(["hours"]);
+  for (const u of counters) if (USE_OF[String(u || "").toLowerCase()]) have.add(USE_OF[String(u).toLowerCase()]);
+  for (const u of [form?.unit, form?.alsoUnit]) if (u && !isCalendar(u)) have.add(u);
+  return ["hours", "cycles", "starts", "km"].filter((u) => have.has(u)).concat(CALENDAR);
+}
+
+// "More scheduling options", folded: one line saying what's set in it, so nothing is hidden
+// silently ("" when nothing is). `replace`: the task's own When the item is replaced ("" = default).
+export function moreScheduleSummary(form, { replace = "" } = {}) {
+  const bits = [];
+  if (form.type === "rule") bits.push("on set calendar dates");
+  if (form.type === "shutdowns") bits.push("at planned shutdowns");
+  if (takesAlso(form) && Number(form.also) > 0) {
+    bits.push(`also every ${Number(form.also).toLocaleString("en-GB")} ${unitWord(form.alsoUnit, Number(form.also))}, whichever first`);
+  }
+  if (replace === "restart") bits.push("restarts when the item is replaced");
+  if (replace === "keep") bits.push("keeps its schedule when the item is replaced");
+  const text = bits.join(" · ");
+  return text ? text[0].toUpperCase() + text.slice(1) : "";
+}
+
 // A package's cadence fields, for create or update (its pattern replaced, or cleared).
 export function packageBody(form) {
   if (form.type !== "rule") return { every: Number(form.every), unit: form.unit, clear_pattern: true };

@@ -182,6 +182,14 @@ export function RowIcon({ r }) {
     );
   }
   if (r.type === "mpref") return <RowIcon r={{ ...r, type: "mtask" }} />;
+  // A task's extra (its labour, a part, its cost: taskExtras.js): a quiet dot, as it's not a task.
+  if (r.type === "mxtra") {
+    return (
+      <svg className="tp-ic tp-ic-meas tp-ic-extra" viewBox="0 0 16 16" width="14" height="14" fill="currentColor" stroke="none" aria-hidden="true">
+        <circle cx="8" cy="8" r="1.6" />
+      </svg>
+    );
+  }
   if (r.type === "mfc") {
     return (
       <svg className="tp-ic tp-ic-meas" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true">

@@ -26,7 +26,7 @@ import { modeAnswers } from "../decisionCheck.js";
 import RcmFunctionStandards from "./RcmFunctionStandards.jsx";
 import { COMPARATORS, COMPARATOR_LABEL, limitReads, limitWords } from "../rcmStandards.js";
 import RcmModeTasks, { RcmTaskSections, StepLabel, removeTaskFromMode } from "./RcmModeTasks.jsx";
-import FailureCostRows from "./FailureCostRows.jsx";
+import ModeResponseLinks from "./ModeResponseLinks.jsx";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { getTaskLsa } from "../api.js";
 import { explorerHere } from "../products.js";
@@ -46,6 +46,7 @@ import { apWords } from "../fmeaWorksheet.js";
 import { CriticalityGroup, FmeaGroup } from "./FmeaPanels.jsx";
 import { PanelField } from "./PanelField.jsx";
 import "./RcmWorksheet.css";
+import PanelKind, { LevelIcon } from "./PanelKind.jsx";
 import { DateInput } from "./ui/DateTimeInput.jsx";
 
 // The RCM worksheet's pieces, drawn by the Explorer's RCM tab (the asset tree
@@ -60,23 +61,7 @@ import { DateInput } from "./ui/DateTimeInput.jsx";
 //
 // On a phone the details panel opens as a sheet.
 
-const ICONS = {
-  fn: <path d="M3 3.5h10v9H3z M6.5 6v4l3.5-2z" strokeWidth="1.4" strokeLinejoin="round" />,
-  // A performance standard: a limit on a scale.
-  std: <><path d="M2 10.5h12M4 10.5v-3M7 10.5v-4.5M10 10.5v-3M13 10.5v-4.5" strokeWidth="1.4" strokeLinecap="round" /><path d="M2 13h12" strokeWidth="1.4" strokeLinecap="round" /></>,
-  fail: <><path d="M8 2.2 14.2 13H1.8z" strokeWidth="1.4" strokeLinejoin="round" /><path d="M8 6.5v3" strokeWidth="1.6" strokeLinecap="round" /><circle cx="8" cy="11.2" r=".9" fill="currentColor" stroke="none" /></>,
-  mode: <path d="M9.2 1.8 3.8 9h4l-1 5.2L12.2 7h-4z" strokeWidth="1.4" strokeLinejoin="round" />,
-  cause: <path d="M4 2.5v6a2 2 0 0 0 2 2h6M9.5 7.5l3 3-3 3" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />,
-  task: <path d="M10.6 2.3a3.2 3.2 0 0 0-3.9 4.1L2.4 10.7a1.4 1.4 0 0 0 2 2l4.3-4.3a3.2 3.2 0 0 0 4.1-3.9l-1.9 1.9-1.8-.4-.4-1.8z" strokeWidth="1.3" strokeLinejoin="round" />,
-};
-
-export function LevelIcon({ type, className = "rw-ic" }) {
-  return (
-    <svg className={type === "std" ? `${className} rw-ic-std` : className} viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true">
-      {ICONS[type]}
-    </svg>
-  );
-}
+export { LevelIcon };
 
 export { phoneLine };
 const CHECK_MARK = { contradicted: "✗", unsure: "?", differs: "!", stale: "–", supported: "✓" };
@@ -516,9 +501,6 @@ export function Details({
   const where = display.rows.get(r.ref.position_id)?.ref.name || whole.rows.get(r.ref.position_id)?.ref.name;
   const said = (text) => onSaid?.(text);
   // Opened from a forecast's "Not counted · Add" (?fm=<mode>&respond=failure|found): that response opens.
-  const respondQuery = new URLSearchParams(useLocation().search);
-  const respondTo = respondQuery.get("respond") ? respondQuery.get("fm") : null;
-  const respondKind = respondQuery.get("respond");
   // A task's name, kept on the task (a shared task's name changes for every mode it serves).
   const saveTaskName = (raw) => {
     const text = String(raw ?? "").trim();
@@ -766,7 +748,7 @@ export function Details({
            }}>
       <div className="rw-panel-top">
         <div className="rw-panel-head">
-          <div className="rw-panel-kind"><LevelIcon type={r.type} /> {level.label}</div>
+          <PanelKind type={r.type}>{level.label}</PanelKind>
           <div className="rw-panel-btns">
             {canExpand && (expanded ? (
               <button type="button" className="ghost sm rw-x" onClick={onCollapse} title="Show the table again, with these details beside it (Esc)"
@@ -857,9 +839,8 @@ export function Details({
         {r.type === "mode" && !fmea?.on && (
           <section className="rw-sg" aria-label="Failure consequences">
             {consequenceRows}
-            {/* What one failure costs: what the forecast and Optimise… charge it (failure_costs.py). */}
-            {ops && r.ref.id && <FailureCostRows key={`${r.key}:cost`} modeId={r.ref.id} readOnly={readOnly} onSaid={said}
-                                                   respond={respondTo === r.ref.id ? respondKind : null} />}
+            {/* What's done if it fails (and when it's found), read-only: edited on the Maintenance tab. */}
+            {ops && r.ref.id && <ModeResponseLinks key={`${r.key}:resp`} modeId={r.ref.id} positionId={r.ref.position_id} />}
           </section>
         )}
         {(r.type === "mode" || isTask) && linkingEvidence && (isTask ? modeRow?.ref.decision : d) && (

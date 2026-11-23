@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { listMaintenanceParts } from "../api.js";
 import { cleanSection, modeLine, num, sectionDraft } from "../lsaTab.js";
-import { formatCost, workspaceCurrency } from "../money.js";
+import { workspaceCurrency } from "../money.js";
 import { Link, useLocation } from "react-router-dom";
 import { explorerHere } from "../products.js";
 import { taskKey } from "../explorerRcm.js";
@@ -11,9 +11,9 @@ import Section from "./ui/Section.jsx";
 import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 
 // "What it needs" (the task's LSA) as a section of the task's details panel (MaintenanceTask):
-// Labour (trade, people, hours), Tools and instruments (with the measuring point or channel an
-// instrument reads), Spares (from the parts register, or free text), Consumables, Access and
-// downtime, Method and the task's Instructions. It has no Save of its own: useNeeds holds the
+// Tools and instruments (with the measuring point or channel an instrument reads), Consumables,
+// Access and downtime, Method and the task's Instructions. Its Labour (LabourRows) and Parts
+// (SparesRows) are fold-outs of their own in the panel (Derryn, 23 Nov 2026). It has no Save of its own: useNeeds holds the
 // draft and gives the changed parts (needsBody) to the panel's Save, which sends them with the
 // rest of the task.
 
@@ -52,34 +52,29 @@ export function useNeeds(data) {
   return { draft, instructions, setInstructions, set, body, ready: !!draft };
 }
 
-// The line under the heading: what is saved for the task now.
-function totals(r) {
-  return [
-    r.labour_hours ? `${num(r.labour_hours)} h labour` : "No labour set yet",
-    r.people ? `${r.people} ${r.people === 1 ? "person" : "people"}` : null,
-    r.duration_hours != null ? `${num(r.duration_hours)} h elapsed` : null,
-    r.materials_cost != null ? `materials ${formatCost(r.materials_cost)}` : null,
-  ].filter(Boolean).join(" · ");
+// The line under the heading: what is saved for the task now (its labour and parts are said in
+// their own fold-outs).
+export function needsTotals(r) {
+  const count = (list, one, many) => (list?.length ? `${list.length} ${list.length === 1 ? one : many}` : null);
+  const bits = [
+    count(r.tools, "tool", "tools"),
+    count(r.consumables, "consumable", "consumables"),
+    r.access?.downtime_hours != null ? `${num(r.access.downtime_hours)} h downtime` : null,
+    r.method ? "method set" : null,
+  ].filter(Boolean);
+  return bits.length ? bits.join(" · ") : "No tools, consumables or method set yet";
 }
 
 export default function NeedsSection({ data, needs, open, onToggle, disabled = false, id = "task-needs" }) {
   const location = useLocation();
-  const [parts, setParts] = useState(null);
   const { draft, instructions, setInstructions, set } = needs;
-  const needParts = () => {
-    if (parts) return;
-    setParts([]);
-    listMaintenanceParts().then((d) => setParts(d.parts || [])).catch(() => setParts([]));
-  };
   const t = data.task;
   const r = t.resources || {};
-  const register = [...(data.parts || []), ...((parts || []).filter((p) => !(data.parts || []).some((q) => q.id === p.id)))];
-  const partLabel = (p) => `${p.part_number} ${p.name}`;
   return (
     <Section title="What it needs" id={id} className="ruled mt-sec mt-needs"
              action={{ label: open ? "Hide" : "Show", ariaLabel: `${open ? "Hide" : "Show"} what ${t.name} needs`, onClick: onToggle }}
-             tip="Its labour, tools, spares, consumables, access and method (its LSA). Saved with the task; the cost each time comes from the labour at trade rates and the parts.">
-      <p className="field-help lsa-total" role="note" aria-live="polite">{totals(r)}</p>
+             tip="Its tools, consumables, access and method (its LSA; labour and parts are above). Saved with the task.">
+      <p className="field-help lsa-total" role="note" aria-live="polite">{needsTotals(r)}</p>
       {open && (
         <div className="lsa-task">
           {data.modes.length > 0 ? (
@@ -94,21 +89,6 @@ export default function NeedsSection({ data, needs, open, onToggle, disabled = f
               ))}</ul>
             </div>
           ) : <p className="field-help">Serves no failure mode (a task added directly).</p>}
-
-          <Section title="Labour" headingLevel={4} className="mt-needs-sub">
-            <p className="field-help">Who does it: each trade, how many people and the hours each.</p>
-            <Rows label="Labour lines" rows={draft.labour} onRows={(v) => set("labour", v)} blank={{ trade: t.trade || "", people: "1", hours: "" }} addLabel="+ Add labour"
-                  render={(x, patch, i) => (
-                    <>
-                      <Cell label="Trade" className="lsa-wide"><input aria-label={`Trade, line ${i + 1}`} placeholder="e.g. Fitter" value={x.trade} maxLength={200} disabled={disabled} onChange={(e) => patch({ trade: e.target.value })} /></Cell>
-                      <Cell label="People" className="lsa-num"><input type="number" min="1" step="1" inputMode="numeric" aria-label={`People, line ${i + 1}`} value={x.people} disabled={disabled} onChange={(e) => patch({ people: e.target.value })} /></Cell>
-                      <Cell label="Hours each" className="lsa-num"><input type="number" min="0" step="0.25" inputMode="decimal" aria-label={`Hours each, line ${i + 1}`} value={x.hours} disabled={disabled} onChange={(e) => patch({ hours: e.target.value })} /></Cell>
-                    </>
-                  )} />
-            <Field label="Elapsed, start to finish (h)" optional className="lsa-duration">
-              <TextInput type="number" min="0" step="0.25" inputMode="decimal" aria-label="Elapsed hours" value={draft.duration_hours} disabled={disabled} onChange={(e) => set("duration_hours", e.target.value)} />
-            </Field>
-          </Section>
 
           <Section title="Tools and instruments" headingLevel={4} className="mt-needs-sub">
             <p className="field-help">Tools and test equipment. An instrument can name the measuring point or channel it reads.</p>
@@ -126,24 +106,6 @@ export default function NeedsSection({ data, needs, open, onToggle, disabled = f
                       <Cell label="Note" className="lsa-wide"><input aria-label={`Note, line ${i + 1}`} value={x.note} maxLength={200} disabled={disabled} onChange={(e) => patch({ note: e.target.value })} /></Cell>
                     </>
                   )} />
-          </Section>
-
-          <Section title="Spares" headingLevel={4} className="mt-needs-sub">
-            <p className="field-help">Parts to bring: pick from the parts register, or type a name.</p>
-            <Rows label="Spare lines" rows={draft.spares} onRows={(v) => set("spares", v)} blank={{ part_id: "", name: "", qty: "1", part_number: "" }} addLabel="+ Add a spare"
-                  render={(x, patch, i) => (
-                    <>
-                      <Cell label="Spare" className="lsa-wide"><input list="lsa-parts" aria-label={`Spare, line ${i + 1}`} placeholder="Part number or name"
-                             value={x.part_id ? `${x.part_number ? `${x.part_number} ` : ""}${x.name}` : x.name} maxLength={200} disabled={disabled} onFocus={needParts}
-                             onChange={(e) => {
-                               const hit = register.find((p) => partLabel(p) === e.target.value);
-                               patch(hit ? { part_id: hit.id, name: hit.name, part_number: hit.part_number } : { part_id: "", name: e.target.value, part_number: "" });
-                             }} /></Cell>
-                      <Cell label="Quantity" className="lsa-num"><input type="number" min="0" step="1" inputMode="decimal" aria-label={`Quantity, line ${i + 1}`} value={x.qty} disabled={disabled} onChange={(e) => patch({ qty: e.target.value })} /></Cell>
-                      {x.part_id ? <span className="lib-date">from the register</span> : null}
-                    </>
-                  )} />
-            <datalist id="lsa-parts">{register.map((p) => <option key={p.id} value={partLabel(p)} />)}</datalist>
           </Section>
 
           <Section title="Consumables" headingLevel={4} className="mt-needs-sub">
@@ -187,5 +149,59 @@ export default function NeedsSection({ data, needs, open, onToggle, disabled = f
         </div>
       )}
     </Section>
+  );
+}
+
+// Labour (who does it: each trade, how many people, the hours each; and the elapsed time), as the
+// task panel's Labour fold-out. Saved with the task through useNeeds, as the rest of its needs.
+export function LabourRows({ data, needs, disabled = false }) {
+  const { draft, set } = needs;
+  const t = data.task;
+  return (
+    <>
+      <Rows label="Labour lines" rows={draft.labour} onRows={(v) => set("labour", v)} blank={{ trade: t.trade || "", people: "1", hours: "" }} addLabel="+ Add labour"
+            render={(x, patch, i) => (
+              <>
+                <Cell label="Trade" className="lsa-wide"><input aria-label={`Trade, line ${i + 1}`} placeholder="e.g. Fitter" value={x.trade} maxLength={200} disabled={disabled} onChange={(e) => patch({ trade: e.target.value })} /></Cell>
+                <Cell label="People" className="lsa-num"><input type="number" min="1" step="1" inputMode="numeric" aria-label={`People, line ${i + 1}`} value={x.people} disabled={disabled} onChange={(e) => patch({ people: e.target.value })} /></Cell>
+                <Cell label="Hours each" className="lsa-num"><input type="number" min="0" step="0.25" inputMode="decimal" aria-label={`Hours each, line ${i + 1}`} value={x.hours} disabled={disabled} onChange={(e) => patch({ hours: e.target.value })} /></Cell>
+              </>
+            )} />
+      <Field label="Elapsed, start to finish (h)" optional className="lsa-duration">
+        <TextInput type="number" min="0" step="0.25" inputMode="decimal" aria-label="Elapsed hours" value={draft.duration_hours} disabled={disabled} onChange={(e) => set("duration_hours", e.target.value)} />
+      </Field>
+    </>
+  );
+}
+
+// Parts (the spares it fits each time: from the parts register, or a name typed), as the task
+// panel's Parts fold-out. Saved with the task through useNeeds.
+export function SparesRows({ data, needs, disabled = false }) {
+  const [parts, setParts] = useState(null);
+  const { draft, set } = needs;
+  const needParts = () => {
+    if (parts) return;
+    setParts([]);
+    listMaintenanceParts().then((d) => setParts(d.parts || [])).catch(() => setParts([]));
+  };
+  const register = [...(data.parts || []), ...((parts || []).filter((p) => !(data.parts || []).some((q) => q.id === p.id)))];
+  const partLabel = (p) => `${p.part_number} ${p.name}`;
+  return (
+    <>
+      <Rows label="Spare lines" rows={draft.spares} onRows={(v) => set("spares", v)} blank={{ part_id: "", name: "", qty: "1", part_number: "" }} addLabel="+ Add a spare"
+            render={(x, patch, i) => (
+              <>
+                <Cell label="Spare" className="lsa-wide"><input list="lsa-parts" aria-label={`Spare, line ${i + 1}`} placeholder="Part number or name"
+                       value={x.part_id ? `${x.part_number ? `${x.part_number} ` : ""}${x.name}` : x.name} maxLength={200} disabled={disabled} onFocus={needParts}
+                       onChange={(e) => {
+                         const hit = register.find((p) => partLabel(p) === e.target.value);
+                         patch(hit ? { part_id: hit.id, name: hit.name, part_number: hit.part_number } : { part_id: "", name: e.target.value, part_number: "" });
+                       }} /></Cell>
+                <Cell label="Quantity" className="lsa-num"><input type="number" min="0" step="1" inputMode="decimal" aria-label={`Quantity, line ${i + 1}`} value={x.qty} disabled={disabled} onChange={(e) => patch({ qty: e.target.value })} /></Cell>
+                {x.part_id ? <span className="lib-date">from the register</span> : null}
+              </>
+            )} />
+      <datalist id="lsa-parts">{register.map((p) => <option key={p.id} value={partLabel(p)} />)}</datalist>
+    </>
   );
 }

@@ -80,7 +80,7 @@ for (const width of [1440, 400]) {
   });
 }
 
-test("Not counted · Add opens If it fails anyway; recorded, the failure line counts its hours", async ({ page, request, problems }) => {
+test("Not counted · Add opens what's done if it fails on the Maintenance tab; recorded, the failure line counts its hours", async ({ page, request, problems }) => {
   const tag = `r${Date.now()}`;
   const top = await deck(request, tag);
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -88,20 +88,21 @@ test("Not counted · Add opens If it fails anyway; recorded, the failure line co
   const gaps = page.getByRole("region", { name: "Not counted" });
   await expect(gaps).toContainText("no response if it fails", { timeout: 30_000 });
   await gaps.getByRole("listitem").filter({ hasText: "no response if it fails" }).first().getByRole("link", { name: "Add" }).click();
-  await expect(page).toHaveURL(/tab=rcm.*respond=failure|respond=failure.*tab=rcm/);
-  const row = page.locator(".mresp[data-kind=failure]").first();
-  await expect(row).toBeVisible({ timeout: 30_000 });
-  await row.getByLabel("What's done").fill("Replace the spindle");
-  await row.getByLabel("What's done").press("Enter");
-  await expect(row).toContainText("Not known yet", { timeout: 15_000 });
-  await row.getByLabel("Labour").fill("4");
-  await row.getByLabel("Labour").press("Enter");
-  await row.getByLabel("Cost each time").fill("900");
-  await row.getByLabel("Cost each time").press("Enter");
-  await expect(row).toContainText("Each time: 4 h, $900.", { timeout: 15_000 });
-  // The spindle has an on-condition check: "If an inspection finds it" is there too, a visible gap until filled.
-  await expect(page.locator(".mresp[data-kind=found]").first()).toContainText("Nothing recorded");
-  await shot(page, "rcm-if-it-fails-anyway-1440");
+  // What's done if it fails is a task on the Maintenance tab: the link opens the form to add it there.
+  await expect(page).toHaveURL(/tab=maintenance.*respond=failure|respond=failure.*tab=maintenance/);
+  const form = page.getByRole("form", { name: "Add what's done if it fails" });
+  await expect(form).toBeVisible({ timeout: 30_000 });
+  await expect(form).toContainText("Corrective: on failure");
+  await form.getByLabel("What's done").fill("Replace the spindle");
+  await form.getByRole("button", { name: "Labour" }).click();
+  await form.getByRole("spinbutton", { name: "Hours" }).fill("4");
+  await form.getByRole("button", { name: "Cost", exact: true }).click();
+  await form.getByRole("spinbutton", { name: /Each time/ }).fill("900");
+  await form.getByRole("button", { name: "Add", exact: true }).click();
+  // Saved: a task raised by the failure, under its position, with its extras under it.
+  const task = page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: "Replace the spindle" }) }).first();
+  await expect(task).toContainText("Corrective: on failure", { timeout: 15_000 });
+  await shot(page, "maintenance-if-it-fails-1440");
   await open(page, `/forecasts/hours?from=position%3A${top.id}&root=${top.id}`);
   const table = page.locator(".ft-lines");
   await expect(table).toContainText("Corrective: after a failure", { timeout: 30_000 });

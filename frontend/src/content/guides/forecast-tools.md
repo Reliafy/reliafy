@@ -132,7 +132,8 @@ records are the inputs, and the answer is set out **by owner**:
   overrides the response's cost, and the position class's figure is used when
   neither is there) and, when a check with a P-F interval finds
   some in time, the **follow-on** line (found at an inspection: its hours,
-  spares and cost from the failure mode's **If an inspection finds it**). The same
+  spares and cost from the failure mode's follow-on task, **Follow-on: when
+found**, on the Maintenance tab). The same
   failure mode on several positions at the same cost is one owner.
 - **Supporting tasks: what if** lists each supporting task with an impact, its
   **Worth** (the failures it avoids in the horizon, for its cost), and a
@@ -152,9 +153,9 @@ with no cost of a failure (its failures are still counted, their cost isn't), a
 check with no P-F interval (its finds aren't counted, so every failure goes to
 the corrective line), a fitted position with no life model, a task that can't
 be put on dates, a task with no cost or no labour, and a failure mode with no
-response if it fails (**Add** opens **If it fails anyway** in its RCM), and one
-whose finds have nothing recorded for them (**Add** opens **If an inspection
-finds it**). A total
+response if it fails (**Add** opens the form for it on the Maintenance tab),
+and one whose finds have nothing recorded for them (**Add** opens the form for
+a follow-on there). A total
 with a gap says it's the **known** total; nothing is guessed.
 
 The horizon is from today, 12 months unless you choose 2, 3 or 5 years. The
