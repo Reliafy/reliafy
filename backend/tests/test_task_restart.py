@@ -134,6 +134,36 @@ def test_keep_reads_its_last_real_doing_back_without_changing_the_projection(mon
     assert m.restarted(node)["last_done"] is None
 
 
+def test_keep_after_an_older_fitting_counts_from_its_last_closed_work_order(monkeypatch):
+    """A fitting logged before task.done_before_fit existed (so no note of the last real doing): a keep
+    task counts from its latest closed work order on or before the fitting. Done on 5 Nov by a work order,
+    a new pump fitted on 20 Nov: next due 5 Dec (30 days from the work order), not 20 Dec."""
+    from backend.services import time_zones
+
+    monkeypatch.setattr(time_zones, "_now", lambda: datetime(2026, 11, 24, 8, tzinfo=timezone.utc))
+    m = _m("org-restart-keep-older")
+    m.today = lambda: "2026-11-24"
+    pump = m.create_position("Pump")["id"]
+    m.fit(pump, new_item={"name": "Pump SN1"}, on="2026-01-01")
+    task = m.create_task(pump, "Clean the strainer", 30, "days", last_done="2026-10-01")["id"]
+    wo = m.open_work_order(pump, "Clean the strainer", type="preventive", task_id=task, opened="2026-11-05")
+    m.close_work_order(wo["id"], [{"kind": "other"}], on="2026-11-05")
+    assert m._get(task, "Task")["last_done"] == "2026-11-05"
+    m.set_task_on_replace(task, "keep")
+    m.remove(pump, on="2026-11-20", reason="planned")
+    m.fit(pump, new_item={"name": "Pump SN2"}, on="2026-11-20")
+    # As a log from before the note would leave the task: renewed by the fitting, with no note.
+    m.s.patch_node(m.org, task, {"done_before_fit": None})
+    node = m._get(task, "Task")
+    assert node["last_done"] == "2026-11-20"
+    assert m.restarted(node)["last_done"] == "2026-11-05"
+    view = m._task_view(node)
+    assert view["next_due"] == "2026-12-05"
+    # Restart (the default) counts from the fitting instead.
+    m.set_task_on_replace(task, None)
+    assert m._task_view(m._get(task, "Task"))["next_due"] == "2026-12-20"
+
+
 def test_3_3_restart_is_age_replacement_and_keep_is_block_replacement(setting):
     m, db, fetch = setting
     top, task = _mower(m, db)
