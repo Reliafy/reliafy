@@ -323,17 +323,20 @@ def overview(tree: bool = True, m: Maintenance = Depends(maintenance)) -> JSONRe
     """late: the late work in the counts Home, Orders and Assets share (Maintenance.late_counts).
     tree=false leaves the asset tree out (Home shows none of it: on a large workspace it is
     most of the answer)."""
-    def read():
-        # Work management off: no to-do list (what's due, late, open work orders).
-        on = work_management_on()
-        due, wos = (m.due_tasks(30), m.work_orders("open")) if on else ([], [])
-        out = {"summary": summary(m), "time_zone": m.time_zone, "today": m.today()}
-        if tree:
-            out["tree"] = m.tree()
-        return {**out, "due": due, "open_work_orders": wos, "late": m.late_counts(wos, due),
-                "proposals": m.proposals("pending"), "critical_spares": m.critical_spares_short(),
-                "work_management": on}
-    return _run(read)
+    return _run(overview_payload, m, tree)
+
+
+def overview_payload(m: Maintenance, tree: bool = True) -> dict:
+    """The overview's answer (also Home's summary, ``backend/routers/home.py``)."""
+    # Work management off: no to-do list (what's due, late, open work orders).
+    on = work_management_on()
+    due, wos = (m.due_tasks(30), m.work_orders("open")) if on else ([], [])
+    out = {"summary": summary(m), "time_zone": m.time_zone, "today": m.today()}
+    if tree:
+        out["tree"] = m.tree()
+    return {**out, "due": due, "open_work_orders": wos, "late": m.late_counts(wos, due),
+            "proposals": m.proposals("pending"), "critical_spares": m.critical_spares_short(),
+            "work_management": on}
 
 
 @router.get("/tree")
@@ -593,11 +596,16 @@ def workspace_rcm(within: str | None = None, rollup_only: bool = False, session=
     the whole rollup alone, {rollup} (Home's counts), the same numbers without every
     position's worksheet."""
     if rollup_only:
-        from backend.maintenance import rcm_graph
-
-        return _run(lambda: {"rollup": rcm_graph.resolve(session, m.rcm_all(within or None), ctx.read_owners,
-                                                         ctx.hidden, m=m, rates=False)["rollup"]})
+        return _run(lambda: {"rollup": rcm_rollup(session, ctx, m, within or None)})
     return _rcm_read(session, ctx, m.rcm_all, within or None, m=m)
+
+
+def rcm_rollup(session, ctx: AccessCtx, m: Maintenance, within: str | None = None) -> dict:
+    """The whole RCM rollup alone (Home's counts, also its summary): every decision's
+    evidence check, without every position's worksheet."""
+    from backend.maintenance import rcm_graph
+
+    return rcm_graph.resolve(session, m.rcm_all(within), ctx.read_owners, ctx.hidden, m=m, rates=False)["rollup"]
 
 
 @router.get("/positions/{position_id}/rcm")
