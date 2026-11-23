@@ -28,13 +28,8 @@ Missions also still show under the model each runs on, on the **Models** tab.
 ## Make one
 
 On a position, choose **New mission…** (in the heading, or the row's menu).
-The form asks for:
+The form asks for its name, then, under **Clock and length** and **What it runs on**:
 
-- **Runs on:** a saved RBD on this position or one below it, or this
-  position's own positions in series. The tree doesn't say which positions back
-  each other up, so the series version says so until you rewire its RBD. Either
-  way the mission gets an RBD of its own (a copy), so changing it never changes
-  the original.
 - **Clock:** **Operating time** or **Calendar time**.
   - **Operating time** is for a mission measured in use: a 10-flight-hour
     sortie, 500 cycles. Its length and every phase are in operating units:
@@ -54,6 +49,11 @@ The form asks for:
   one.
 - **Starting state:** **New**, or **As today**, each block at its item's age
   now. A block with no age to read starts new, and the answers say which.
+- **Runs on:** a saved RBD on this position or one below it, or this
+  position's own positions in series. The tree doesn't say which positions back
+  each other up, so the series version says so until you rewire its RBD. Either
+  way the mission gets an RBD of its own (a copy), so changing it never changes
+  the original.
 
 The mission starts with one phase covering its whole length. Add phases, give
 each its covariates (a constant value, or a schedule over the phase) and say

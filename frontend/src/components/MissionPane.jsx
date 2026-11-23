@@ -23,6 +23,7 @@ import { levelPct } from "../levels.js";
 import "./RbdMission.css";
 import "./MissionPane.css";
 import { Select, TextInput } from "./ui/Controls.jsx";
+import QuantityInput from "./ui/QuantityInput.jsx";
 
 // The diagram loads only when "Show the RBD" asks for it (React Flow is large).
 const RbdDiagramView = lazy(() => import("./RbdDiagramView.jsx"));
@@ -51,12 +52,8 @@ function PhaseDuration({ duration, conv, disabled, onChange }) {
   const first = phaseShown(duration, conv);
   const [text, setText] = useState(() => (first.value == null ? String(duration ?? "") : String(Number(first.value.toPrecision(6)))));
   return (
-    <>
-      <input type="number" inputMode="decimal" min="0" step="any" value={text} placeholder="Duration" disabled={disabled}
-             aria-label={`Duration (${first.unit})`}
-             onChange={(e) => { setText(e.target.value); onChange(phaseStored(e.target.value, conv)); }} />
-      {first.unit && <span className="cov-unit">{first.unit}</span>}
-    </>
+    <QuantityInput label={`Duration (${first.unit})`} suffix={first.unit} min="0" placeholder="e.g. 8" disabled={disabled} value={text}
+                   onChange={(x) => { setText(x); onChange(phaseStored(x, conv)); }} />
   );
 }
 
@@ -274,11 +271,10 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
   const missionView = answersMode && detail && !atRow ? (
     <>
       <div className="mission-head">
-        <label className="mission-name">
-          <span>Mission name</span>
-          <input value={name} maxLength={80} disabled={readOnly}
-                 onChange={(e) => { setName(e.target.value); setDirty(true); onDirty?.(true); }} />
-        </label>
+        <Field label="Mission name" className="mission-name-field">
+          <TextInput value={name} maxLength={80} disabled={readOnly}
+                     onChange={(e) => { setName(e.target.value); setDirty(true); onDirty?.(true); }} />
+        </Field>
         <p className="rim-tquiet mission-on">
           Lives on <b>{position.name}</b>. Runs on <b>{detail.rbd.name}</b>
           {onOpenRbd ? <> (<button type="button" className="link" onClick={onOpenRbd}>open it</button>)</> : null}
@@ -300,12 +296,8 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
                            { value: "age", label: "An age", title: "An age you give, in the model's unit" },
                          ]} />
             {start.mode === "age" && (
-              <label className="mission-simple-age">
-                <span className="sr-only">Age it starts at{u ? ` (${u})` : ""}</span>
-                <input type="number" inputMode="decimal" min="0" step="any" value={start.age} placeholder="Age" disabled={readOnly}
-                       aria-invalid={startBad && tried ? "true" : undefined} onChange={(e) => pickStart({ age: e.target.value })} />
-                {u && <span className="cov-unit">{u}</span>}
-              </label>
+              <QuantityInput label={`Age it starts at${u ? ` (${u})` : ""}`} suffix={u} min="0" placeholder="Age" disabled={readOnly}
+                             invalid={!!(startBad && tried)} value={start.age} onChange={(x) => pickStart({ age: x })} />
             )}
           </div>
         )}
@@ -377,29 +369,23 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
       <section className="mission-sec" aria-labelledby="phase-setup-h">
         <h3 className="mission-k" id="phase-setup-h">Set-up</h3>
         <div className="mission-phase-fields">
-          <label className="mission-name">
-            <span>Phase name</span>
-            <input id={`mission-phase-name-${atRow.key}`} value={atRow.name} placeholder="Name" maxLength={80} disabled={readOnly}
-                   onChange={(e) => patch(atRow.key, { name: e.target.value })} />
-          </label>
-          <label className="mission-simple-length">
-            <span>Duration</span>
-            <span className="mission-simple-input">
-              <PhaseDuration key={`${atRow.key}:${conv.clock}:${conv.perDay}`} duration={atRow.duration} conv={conv} disabled={readOnly}
-                             onChange={(d) => patch(atRow.key, { duration: d })} />
-            </span>
-          </label>
+          <Field label="Phase name" id={`mission-phase-name-${atRow.key}`}>
+            <TextInput value={atRow.name} placeholder="e.g. Cruise" maxLength={80} disabled={readOnly}
+                       onChange={(e) => patch(atRow.key, { name: e.target.value })} />
+          </Field>
+          <Field label="Duration">
+            <PhaseDuration key={`${atRow.key}:${conv.clock}:${conv.perDay}`} duration={atRow.duration} conv={conv} disabled={readOnly}
+                           onChange={(d) => patch(atRow.key, { duration: d })} />
+          </Field>
         </div>
         <p className="mission-phase-line">{phaseLine(atRow, { blocks, votes })}</p>
         <MissionBlockGrid blocks={blocks} phases={[atRow]} readOnly={readOnly} onChange={patch} title="What runs in this phase" />
         {votes.map((v) => (
-          <label key={v.id} className="rbd-phase-vote">
-            <span>{v.label}: working inputs needed</span>
-            <input type="number" inputMode="numeric" min="1" max={v.inputs || undefined} step="1" disabled={readOnly}
-                   value={atRow.votes[v.id] ?? ""} placeholder={String(v.n)}
-                   onChange={(e) => patch(atRow.key, { votes: { ...atRow.votes, [v.id]: e.target.value } })} />
-            <small>of {v.inputs}</small>
-          </label>
+          <Field key={v.id} label={`${v.label}: working inputs needed`}>
+            <QuantityInput label={`${v.label}: working inputs needed`} suffix={`of ${v.inputs}`} chars={3} min="1" max={v.inputs || undefined}
+                           step="1" inputMode="numeric" disabled={readOnly} placeholder={String(v.n)}
+                           value={atRow.votes[v.id]} onChange={(x) => patch(atRow.key, { votes: { ...atRow.votes, [v.id]: x } })} />
+          </Field>
         ))}
       </section>
       <section className="mission-sec" aria-labelledby="phase-covs-h">
@@ -434,7 +420,10 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
     <TablePane title={atRow ? `Phase ${rows.indexOf(atRow) + 1} of ${rows.length}` : "Mission"}
                subject={atRow ? atRow.name || "(no name)" : `${detail?.mission?.name || "…"} · ${position.name}`} phone={phone} busy={saving}
                actions={atRow ? (
-                 <button type="button" className="link mission-back" onClick={() => setAt(null)}>‹ Back to {name || detail?.mission?.name}</button>
+                 <button type="button" className="link mission-back" onClick={() => setAt(null)} aria-label={`Back to ${name || detail?.mission?.name}`}
+                         title={`Back to ${name || detail?.mission?.name}`}>
+                   {phone ? "‹ Mission" : `‹ Back to ${name || detail?.mission?.name}`}
+                 </button>
                ) : null}
                headingRef={headingRef} onClose={onClose} className="mission-pane">
       <div className="mission">
@@ -701,8 +690,9 @@ export function NewMissionPane({ position, taken = [], on = null, phone = false,
   const clean = name.trim().replace(/\s+/g, " ");
   const clash = clean && taken.some((t) => String(t || "").trim().toLowerCase() === clean.toLowerCase());
   const setupBad = full && Object.keys(setupErrors(setup, { withLength: true })).length > 0;
-  const why = !clean ? "Give the mission a name." : clash ? `${position.name} already has a mission named “${clean}”.`
-    : full && !runsOn.length ? `${position.name} has nothing a mission can run on: give it a model, an RBD or positions inside.` : null;
+  const nameWhy = !clean ? "Give the mission a name." : clash ? `${position.name} already has a mission named “${clean}”.` : null;
+  const runsWhy = full && !runsOn.length ? `${position.name} has nothing a mission can run on: give it a model, an RBD or positions inside.` : null;
+  const why = nameWhy || runsWhy;
   const save = async (e) => {
     e?.preventDefault();
     setTried(true);
@@ -720,42 +710,44 @@ export function NewMissionPane({ position, taken = [], on = null, phone = false,
   return (
     <TablePane title="New mission" subject={position.name} phone={phone} busy={busy} headingRef={headingRef} onClose={onClose}
                className="mission-pane">
-      <form className="mission mission-new" onSubmit={save}>
-        <label className="mission-name">
-          <span>Mission name</span>
-          <input value={name} maxLength={80} autoFocus disabled={busy} placeholder="e.g. Summer peak, Survey run"
-                 aria-invalid={tried && why ? "true" : undefined} onChange={(e) => setName(e.target.value)} />
-        </label>
-        {full ? (
-          <>
-            <Field label="Runs on" help={picked?.value === "tree" ? "Placed in series: the tree doesn't say which positions back each other up. Rewire its RBD where some do."
-              : picked ? `${picked.hint}. The mission gets an RBD of its own, a copy, so changing it never changes the original.` : ""}>
-              <Select value={pick} disabled={busy || !runsOn.length} onChange={(e) => setPick(e.target.value)}>
-                {runsOn.map((o) => <option key={o.value} value={o.value}>{o.label}{o.value.startsWith("rbd:") ? ` (${o.hint.toLowerCase()})` : ""}</option>)}
-              </Select>
-            </Field>
-            <MissionSetup value={setup} onChange={setSetup} withLength tried={tried} disabled={busy} />
-            <p className="rim-tquiet">
-              A mission is a saved what-if: this system run through phases over a stretch of time. It starts with one phase of
-              this length; add phases, their covariates and the blocks each needs once it&apos;s made. The maintenance plan is
-              the current one, read only.{" "}
-              <ShowMe help={{ guide: "missions" }}>Read the guide</ShowMe>
-            </p>
-          </>
-        ) : (
-        <p className="rim-tquiet">
-          A mission is the system run through phases, each with its own length and the blocks it needs.{" "}
-          {on ? <>Adding it makes an RBD of its own from {on}, named after the mission; you then give it its phases.</>
-            : <>Adding it builds an RBD of its own from what&apos;s inside {position.name}, named after the mission; you then give it its phases.</>}{" "}
-          <ShowMe help={{ guide: "missions-and-phases" }}>Read the guide</ShowMe>
-        </p>
-        )}
-        {tried && why && <p className="field-error" role="alert">{why}</p>}
-        {failed && <p className="field-error" role="alert">{failed}</p>}
-        <div className="mission-foot">
-          <span className="mission-foot-gap" />
-          <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
-          <button type="submit" disabled={busy} aria-busy={busy || undefined}>{busy ? "Adding…" : "Add the mission"}</button>
+      <form className="mission mission-new" onSubmit={save} noValidate>
+        <div className="mission-form">
+          <Field label="Mission name" error={tried && nameWhy ? nameWhy : null}>
+            <TextInput value={name} maxLength={80} autoFocus disabled={busy} placeholder="e.g. Summer peak, Survey run"
+                       onChange={(e) => setName(e.target.value)} />
+          </Field>
+          {full ? (
+            <>
+              <MissionSetup value={setup} onChange={setSetup} withLength tried={tried} disabled={busy} sections
+                            runsOn={(
+                              <Field label="Runs on" error={tried && runsWhy ? runsWhy : null}
+                                     help={picked?.value === "tree" ? "In series: the tree doesn't say which positions back each other up. Rewire its RBD where some do."
+                                       : picked ? `${picked.hint}. It gets its own copy, so the original never changes.` : null}>
+                                <Select value={pick} disabled={busy || !runsOn.length} onChange={(e) => setPick(e.target.value)}>
+                                  {runsOn.map((o) => <option key={o.value} value={o.value}>{o.label}{o.value.startsWith("rbd:") ? ` (${o.hint.toLowerCase()})` : ""}</option>)}
+                                </Select>
+                              </Field>
+                            )} />
+              <p className="rim-tquiet mission-form-note">
+                A mission is a saved what-if: this system run through phases. It starts as one phase of this length; add phases,
+                their covariates and the blocks each needs once it&apos;s made. It uses the current maintenance plan.{" "}
+                <ShowMe help={{ guide: "missions" }}>Read the guide</ShowMe>
+              </p>
+            </>
+          ) : (
+          <p className="rim-tquiet">
+            A mission is the system run through phases, each with its own length and the blocks it needs.{" "}
+            {on ? <>Adding it makes an RBD of its own from {on}, named after the mission; you then give it its phases.</>
+              : <>Adding it builds an RBD of its own from what&apos;s inside {position.name}, named after the mission; you then give it its phases.</>}{" "}
+            <ShowMe help={{ guide: "missions-and-phases" }}>Read the guide</ShowMe>
+          </p>
+          )}
+          {failed && <p className="field-error" role="alert">{failed}</p>}
+          <div className="mission-foot mission-form-foot">
+            <span className="mission-foot-gap" />
+            <button type="button" className="ghost" onClick={onClose} disabled={busy}>Cancel</button>
+            <button type="submit" disabled={busy} aria-busy={busy || undefined}>{busy ? "Adding…" : "Add the mission"}</button>
+          </div>
         </div>
       </form>
     </TablePane>

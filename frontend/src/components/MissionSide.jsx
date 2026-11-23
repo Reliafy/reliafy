@@ -3,6 +3,7 @@ import { calculateMission, getMission, updateMission } from "../api.js";
 import Chip from "./ui/Chip.jsx";
 import Field from "./ui/Field.jsx";
 import { Select, TextInput } from "./ui/Controls.jsx";
+import QuantityInput from "./ui/QuantityInput.jsx";
 import { CloseIcon, ExpandIcon, ShrinkIcon } from "./icons.jsx";
 import { saveErrorText } from "../confirm.js";
 import {
@@ -244,8 +245,8 @@ function PhaseDetails({ r, m, rbd, busy, viewOnly, savePhases, atPhase, onAction
         <Field label="Name">
           <TextInput value={name} maxLength={80} disabled={!!viewOnly || busy} onChange={(e) => setName(e.target.value)} />
         </Field>
-        <Field label={`Duration${unit ? ` (${unit})` : ""}`} error={lenOk ? null : "A duration of 0 or more."}>
-          <TextInput type="number" inputMode="decimal" min="0" step="any" value={len} disabled={!!viewOnly || busy} onChange={(e) => setLen(e.target.value)} />
+        <Field label="Duration" error={lenOk ? null : "A duration of 0 or more."}>
+          <QuantityInput label={`Duration${unit ? ` (${unit})` : ""}`} suffix={unit} min="0" value={len} disabled={!!viewOnly || busy} onChange={setLen} />
         </Field>
         <button type="submit" className="secondary sm" disabled={!!viewOnly || busy || !changed || !name.trim() || !lenOk}>Save</button>
       </form>
@@ -344,13 +345,13 @@ export function RuleForm({ blocks = null, initial = null, busy = false, onSave, 
       {state === "standby" && (
         <Field label="Ages while idle (%)" help="0% is cold standby (no wear while idle); 100% wears as if running."
                error={dormOk ? null : "A percentage from 0 to 100."}>
-          <TextInput type="number" inputMode="decimal" min="0" max="100" step="any" value={dorm} disabled={busy} onChange={(e) => setDorm(e.target.value)} />
+          <QuantityInput label="Ages while idle (%)" suffix="%" chars={4} min="0" max="100" value={dorm} disabled={busy} onChange={setDorm} />
         </Field>
       )}
       {state === "standby" && (
         <Field label="Chance it starts (%)" help="How often it starts when called on. One that fails to start has failed for the rest of the mission."
                error={startOk ? null : "A percentage from 0 to 100."}>
-          <TextInput type="number" inputMode="decimal" min="0" max="100" step="any" value={starts} disabled={busy} onChange={(e) => setStarts(e.target.value)} />
+          <QuantityInput label="Chance it starts (%)" suffix="%" chars={4} min="0" max="100" value={starts} disabled={busy} onChange={setStarts} />
         </Field>
       )}
       <div className="msd-actions">
