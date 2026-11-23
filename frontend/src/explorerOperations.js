@@ -101,11 +101,12 @@ export function opsPhoneLine(op) {
 }
 
 // Where a position's duty is set: its operating plan on the Operations tab (?plan=), inside the
-// asset opened (`root`, else the position itself). A date by running hours with no duty says it
-// assumes 24 h a day and links here (basis kind "continuous").
+// asset opened (`root`, else the position itself). A date by running hours with no duty says what
+// it rests on instead (the readings' rate, else 24 h a day) and links here.
 export function dutyHref(positionId, root = null) {
   const q = new URLSearchParams({ arrange: "positions", root: root || positionId, sel: positionId, tab: "operations", plan: positionId });
   return `${EXPLORER_PATH}?${q}`;
 }
 
-export const assumesContinuous = (basis) => basis?.kind === "continuous";
+// A basis with no duty behind it: the readings' rate ("rate") or running all the time ("continuous").
+export const noDutyBasis = (basis) => basis?.kind === "continuous" || basis?.kind === "rate";

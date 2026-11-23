@@ -157,6 +157,7 @@ def _calendar(m: Maintenance, position_id: str, root, period, end, only, subject
                               "by_position", "states", "notes", "prompts", "cost_basis", "truncated")},
         "rows": rows, "occurrences": occ, "occurrences_cut": cut,
         "not_placed": _not_placed(fc["not_on_dates"], m, root, "calendar"),
+        "_hours_kind": fc.get("hours_source"), "_rate_per_day": fc.get("hours_rate_per_day"),
     }
 
 
@@ -173,10 +174,8 @@ def _hours_rows(horizon: float, every: float) -> list[tuple[float, float]]:
 
 def _map_for(m: Maintenance, node: dict, root, today: date, far: date, reading):
     """The position's map between dates and running hours for the hours basis: (map, duty?).
-    The duty's, else running all the time, 24 h a day (running_clock's rule); anchored on the
+    The duty's, else the readings' rate, else running all the time, 24 h a day; anchored on the
     hours reading given, else the latest recorded (``_hours_map`` with ``strict``)."""
-    from backend.maintenance import schedule
-
     duty = m.duty_of(node["id"], root)
     end_excl = far + timedelta(days=1)
     if reading is None:
@@ -188,16 +187,18 @@ def _map_for(m: Maintenance, node: dict, root, today: date, far: date, reading):
     counter = svc._counter_on(m.s, m.org, node["id"], "hours")
     readings = svc._readings(m.s, m.org, counter, m.tz) if counter else []
     value = float(reading or 0.0)
+    rate = svc._rate(readings) if len(readings) >= 2 else None
+    per_day = min(rate, 24.0) if rate and rate > 0 else None
+    now = {"value": value, "on": today.isoformat()}
     if duty is not None:
         usage = duty["plan"].forecast(today, end_excl, readings={"hours": value}, read_at=today)
         text = f"Hours from the operating plan ({duty['text']}), from {value:,.6g} h now"
         kind = "plan"
     else:
-        usage = schedule.DutyPlan(schedule.Continuous()).forecast(today, end_excl, readings={"hours": value},
-                                                                  read_at=today)
-        text = f"{pf.CONTINUOUS_NOTE}, from {value:,.6g} h now"
-        kind = "continuous"
-    basis = {"kind": kind, "text": text, "reading": {"value": value, "on": today.isoformat()}}
+        usage = svc.meter_usage(datetime(today.year, today.month, today.day), end_excl, now, per_day)
+        text = f"{svc.rate_text(per_day) if per_day else pf.CONTINUOUS_NOTE}, from {value:,.6g} h now"
+        kind = "rate" if per_day else "continuous"
+    basis = {"kind": kind, "text": text, "reading": now, "rate_per_day": per_day}
     return {"usage": usage, "counter": counter, "readings": readings, "basis": basis}, duty is not None
 
 
@@ -263,7 +264,7 @@ def _hours(m: Maintenance, position_id: str, root, horizon, every, reading, only
             lab_each, mat_each = pf._split_each(view)
             cost_each = (view.get("cost") or {}).get("amount")
             for k in keep:
-                i = min(n - 1, int(np.searchsorted(edges, at[k], side="right")))
+                i = min(n - 1, int(np.searchsorted(edges, at[k] - 1e-9, side="left")))
                 count[i] += 1
                 labour[i] += lib.duration or 0.0
                 planned[i] += float(cost_each or 0.0)
@@ -315,7 +316,7 @@ def _hours(m: Maintenance, position_id: str, root, horizon, every, reading, only
     by_key = {(t["position"]["id"], key): h for t in tasks_out for key, h in zip(t["_keys"], t["hours"])}
     for (pid, key), (cost, _day) in pf.visit_list(m, keyed).items():
         h = by_key.get((pid, key), 0.0)
-        i = min(n - 1, int(np.searchsorted(edges, h, side="right")))
+        i = min(n - 1, int(np.searchsorted(edges, h - 1e-9, side="left")))
         visit_cost[i] += cost
         visit_count[i] += 1
     planned = planned + visit_cost
@@ -377,6 +378,8 @@ def _hours(m: Maintenance, position_id: str, root, horizon, every, reading, only
         "hours": pf._num(horizon, 6), "every": pf._num(every, 6), "reading": pf._num(start_h, 6),
         "covers": words, "answer": answer, "range": pf.RANGE_WORDS, "range_level": pf.RANGE_LEVEL,
         "hours_basis": own_basis["text"] if own_basis else None, "rows": rows, "totals": totals,
+        "_hours_kind": own_basis["kind"] if own_basis else None,
+        "_rate_per_day": own_basis.get("rate_per_day") if own_basis else None,
         "tasks": tasks_out, "models": models, "not_forecast": not_forecast, "states": [], "notes": notes,
         "prompts": None, "cost_basis": None, "by_position": [], "truncated": len(tree) >= pf.MAX_POSITIONS,
         "occurrences": occ, "occurrences_cut": cut, "not_placed": _not_placed(not_on, m, root, "hours"),
@@ -426,10 +429,14 @@ def forecast_details(m: Maintenance, position_id: str, root: str | None = None, 
         out = _calendar(m, position_id, root, period, end, only, subject, fetch)
     else:
         out = _hours(m, position_id, root, hours, every, reading, only, subject, fetch)
-    # Hours and the calendar meet at 24 h a day where there's no duty: said once, with where to set one.
+    # With no duty, hours meet the calendar at the readings' rate, else 24 h a day: said once, with
+    # where to set a duty.
     assumed = None
+    kind, per_day = out.pop("_hours_kind", None), out.pop("_rate_per_day", None)
     if duty is None and (by_use or (basis == "hours" and len(tasks) > by_use) or out.get("models")):
-        assumed = {"text": f"{pf.CONTINUOUS_NOTE}. Set a duty in Operations.", "link": _plan_link(position_id, root)}
+        words = svc.rate_text(per_day) if kind == "rate" and per_day else pf.CONTINUOUS_NOTE
+        assumed = {"text": f"{words}. Set a duty in Operations.", "link": _plan_link(position_id, root),
+                   "kind": "rate" if kind == "rate" else "continuous"}
     return {**out, "basis": basis, "default_basis": default, "duty": duty, "assumed": assumed,
             "duty_link": _plan_link(position_id, root), "subject": subject,
             "by_use_tasks": by_use, "calendar_tasks": len(tasks) - by_use}

@@ -42,9 +42,10 @@ test("cells, the time zone and the phone line", () => {
 });
 
 test("a date by hours with no duty links to where the duty is set", async () => {
-  const { dutyHref, assumesContinuous } = await import("./explorerOperations.js");
+  const { dutyHref, noDutyBasis } = await import("./explorerOperations.js");
   assert.equal(dutyHref("p1", "top"), "/asset-register/explorer?arrange=positions&root=top&sel=p1&tab=operations&plan=p1");
   assert.equal(dutyHref("p1"), "/asset-register/explorer?arrange=positions&root=p1&sel=p1&tab=operations&plan=p1");
-  assert.equal(assumesContinuous({ kind: "continuous" }), true);
-  assert.equal(assumesContinuous({ kind: "plan" }), false);
+  assert.equal(noDutyBasis({ kind: "continuous" }), true);
+  assert.equal(noDutyBasis({ kind: "rate" }), true);
+  assert.equal(noDutyBasis({ kind: "plan" }), false);
 });

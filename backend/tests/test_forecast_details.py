@@ -27,14 +27,16 @@ def _m(store=None, org="org-fc-details"):
     return m
 
 
-def _conveyor(m, duty: bool):
+def _conveyor(m, duty: bool, rate: bool = True):
     """A conveyor with an hours meter (1,180 h today), a 250 h idler check (last done at 1,000 h)
-    and a weekly belt walk ($40, 0.5 h); with a duty, 3 h a day."""
+    and a weekly belt walk ($40, 0.5 h); with a duty, 3 h a day. ``rate``: two readings (about
+    2.95 h a day); else today's alone, so no rate."""
     cv = m.create_position("Conveyor CV-3")["id"]
     if duty:
         m.set_operating_plan(cv, {"background": {"kind": "rate", "amount": 3, "per": "day"}})
     hours = m.add_point(cv, "Hours run", kind="counter", unit="hours")["id"]
-    m.record_reading(hours, 1000, on="2026-10-01")
+    if rate:
+        m.record_reading(hours, 1000, on="2026-10-01")
     m.record_reading(hours, 1180, on="2026-12-01")
     idlers = m.create_task(cv, "Inspect idlers", 250, "hours", last_done="2026-10-01")["id"]
     walk = m.create_task(cv, "Belt walk", 1, "weeks", last_done="2026-11-30")["id"]
@@ -66,24 +68,47 @@ def test_calendar_with_a_duty_dates_both_kinds(monkeypatch):
         "Inspect idlers"]["count"]
 
 
-def test_calendar_without_a_duty_assumes_it_runs_all_the_time(monkeypatch):
-    """No duty: hours meet the calendar at 24 h a day (Derryn, 21 Nov 2026), from the latest reading,
-    said once with where to set a duty. Not the meter's recent rate."""
+def test_no_duty_uses_the_readings_rate_and_agrees_with_next_due(monkeypatch):
+    """No duty: the rate the running-hours readings give (Derryn, 23 Nov 2026: duty, then a measured
+    rate, then 24 h a day), the same map as the task's next due, so the dates agree."""
     _clock(monkeypatch)
     m = _m()
     cv, idlers, walk = _conveyor(m, duty=False)
     out = fd.forecast_details(m, cv, basis="calendar", period="month", end="2027-11-30")
     by = _names(out)
-    # 1,250 h is 70 h after 1,180 h on 1 Dec: 3 Dec at 22:00; then every 250 h, 10 days 10 h.
-    assert by["Inspect idlers"]["dates"][:2] == ["2026-12-03", "2026-12-14"]
-    assert by["Inspect idlers"]["moments"][:2] == ["2026-12-03T22:00", "2026-12-14T08:00"]
-    assert out["not_placed"] == []
-    assert out["assumed"]["text"] == "No duty set: assuming it runs all the time (24 h a day). Set a duty in Operations."
+    view = m._task_view(m.s.node(m.org, idlers))
+    assert view["limits"][0]["basis"]["kind"] == "rate"
+    # 180 h in 61 days is about 2.95 h a day: 70 h more is 23.7 days on, 24 Dec.
+    assert by["Inspect idlers"]["dates"][0] == view["next_due"] == "2026-12-24"
+    assert by["Inspect idlers"]["moments"][0] == view["limits"][0]["due_moment"]
+    assert out["assumed"]["kind"] == "rate"
+    assert out["assumed"]["text"] == "From its running-hours readings, about 2.95 h a day (no duty set). Set a duty in Operations."
     assert f"plan={cv}" in out["assumed"]["link"] and "tab=operations" in out["assumed"]["link"]
-    assert out["totals"]["tasks"] == by["Belt walk"]["count"] + by["Inspect idlers"]["count"]
-    # The plain forecast (MCP, the route without strict) keeps the meter's recent rate.
+    # By running hours, the weekly walk goes through the same rate: about 20.7 h a week.
+    hours = fd.forecast_details(m, cv, basis="hours", hours=1000, every=250)
+    assert _names(hours)["Inspect idlers"]["hours"] == [70, 320, 570, 820]
+    assert 47 <= _names(hours)["Belt walk"]["count"] <= 49
+    # The plain forecast (MCP) agrees.
     plain = {t["name"]: t for t in pf.position_forecast(m, cv, periods=12)["tasks"]}
-    assert plain["Inspect idlers"]["dates"][0] != "2026-12-03"
+    assert plain["Inspect idlers"]["dates"][0] == "2026-12-24"
+
+
+def test_calendar_with_no_duty_or_rate_assumes_it_runs_all_the_time(monkeypatch):
+    """No duty and one reading: 24 h a day from it, said once with where to set a duty; next due agrees."""
+    _clock(monkeypatch)
+    m = _m()
+    cv, idlers, walk = _conveyor(m, duty=False, rate=False)
+    out = fd.forecast_details(m, cv, basis="calendar", period="month", end="2027-11-30")
+    by = _names(out)
+    view = m._task_view(m.s.node(m.org, idlers))
+    # No reading when it was last done: counted from the first, 1,180 h on 1 Dec; 250 h on at 24 h a
+    # day is 11 Dec at 10:00, then every 10 days 10 h.
+    assert by["Inspect idlers"]["dates"][:2] == ["2026-12-11", "2026-12-21"]
+    assert by["Inspect idlers"]["moments"][:2] == ["2026-12-11T10:00", "2026-12-21T20:00"]
+    assert view["next_due"] == "2026-12-11" and view["limits"][0]["basis"]["kind"] == "continuous"
+    assert out["not_placed"] == [] and out["assumed"]["kind"] == "continuous"
+    assert out["assumed"]["text"] == "No duty or readings: assuming it runs all the time (24 h a day). Set a duty in Operations."
+    assert out["totals"]["tasks"] == by["Belt walk"]["count"] + by["Inspect idlers"]["count"]
 
 
 def test_hours_with_a_duty_places_both_kinds(monkeypatch):
@@ -106,16 +131,17 @@ def test_hours_with_a_duty_places_both_kinds(monkeypatch):
 def test_hours_without_a_duty_converts_the_calendar_at_24_hours_a_day(monkeypatch):
     _clock(monkeypatch)
     m = _m()
-    cv, idlers, walk = _conveyor(m, duty=False)
+    cv, idlers, walk = _conveyor(m, duty=False, rate=False)
     out = fd.forecast_details(m, cv, basis="hours", hours=1000, every=250)
     by = _names(out)
-    assert by["Inspect idlers"]["hours"] == [70, 320, 570, 820]
+    assert by["Inspect idlers"]["hours"] == [250, 500, 750, 1000]
     # The weekly walk (last done 30 Nov) at 168 h a week: 7 Dec is 144 h on, then every 168 h.
     assert by["Belt walk"]["hours"] == [144, 312, 480, 648, 816, 984]
-    assert out["not_placed"] == [] and out["assumed"] is not None
+    assert out["not_placed"] == [] and out["assumed"]["kind"] == "continuous"
+    # Each span takes what falls up to its end: 250 h is in "0 to 250 h".
     assert [r["tasks"] for r in out["rows"]] == [2, 3, 2, 3]
     first = out["occurrences"][0]
-    assert first["hours"] == 70 and first["kind"] == "task" and first["name"] == "Inspect idlers"
+    assert first["hours"] == 144 and first["kind"] == "task" and first["name"] == "Belt walk"
 
 
 def test_the_default_basis_follows_the_duty_and_the_tasks(monkeypatch):

@@ -69,11 +69,12 @@ position's duty: how many hours it runs, and when.
 - **With a duty,** both bases count everything. On the calendar, a task by hours
   falls on the day the meter is expected to reach it; in operating hours, a
   calendar task falls at the running hours reached by its date.
-- **Without a duty,** it's taken to run all the time, 24 hours a day, counted
-  from the latest hours reading (or 0 h today with none). A note says so: *No
-  duty set: assuming it runs all the time (24 h a day). Set a duty in
-  Operations*, with the link. Tasks by hours, calendar rules and failures all
-  use the same assumption, so they always share one time basis.
+- **Without a duty,** it uses the rate the running-hours readings give (*From
+  its running-hours readings, about 8 h a day*); with fewer than two readings, it
+  takes it to run all the time, 24 hours a day (*No duty or readings: assuming it
+  runs all the time (24 h a day)*). A note says which, with a link to set a duty
+  in Operations. Tasks by hours, calendar rules and failures all use the same
+  one, and so does each task's next due date, so they always agree.
 
 ## What the details show
 
@@ -114,7 +115,7 @@ A task counts when it can be put on dates:
   done at. With no shutdown planned in the year, it's under **Not placed**.
 - A task counted in operating hours falls due through the position's duty (its
   operating plan, or the one above it), anchored on its hours counter reading;
-  with no duty, at 24 hours a day.
+  with no duty, at the rate its readings give, else 24 hours a day.
 - A task left out says why under **Not placed**, with where to fix it.
 
 Failures come from the life model in use on each position, from each item's

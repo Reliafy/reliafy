@@ -172,7 +172,7 @@ def test_with_no_duty_and_no_rate_it_runs_all_the_time(m):
     assert [v["hours"] for v in visits[:2]] == [50, 100]
     assert [v["tasks"] for v in visits[:2]] == [1, 3]
     basis = pkg["cadence"]["by_hours"]["basis"]
-    assert basis["kind"] == "continuous" and basis["text"] == "No duty set: assuming it runs all the time (24 h a day)"
+    assert basis["kind"] == "continuous" and basis["text"] == "No duty or readings: assuming it runs all the time (24 h a day)"
     view = m._task_view(m.s.node(m.org, x["oil"]))
     assert view["next_due"] == "2026-11-26" and view["due_at_reading"] == 100
     # A task by hours on the counter's position, in no package: the same 24 h a day.

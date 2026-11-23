@@ -707,28 +707,49 @@ def _url(value) -> str:
     return text
 
 
-#: What a date by running hours rests on where the position has no duty (running_clock's rule).
-CONTINUOUS_TEXT = "No duty set: assuming it runs all the time (24 h a day)"
+#: What a date by running hours rests on where the position has no duty: the order everywhere is
+#: the duty, then the rate its running-hours readings give, then running all the time (Derryn, 21
+#: and 23 Nov 2026). The forecast (position_forecast._hours_map) uses the same maps and words.
+CONTINUOUS_TEXT = "No duty or readings: assuming it runs all the time (24 h a day)"
 
 
-def _continuous_map(last: dict, target: float) -> dict | None:
-    """An hours counter with no operating plan, running all the time from its latest reading
-    (RePyability's ``DutyPlan(Continuous())``): the ``mapped`` shape ``_due_from`` reads. None
-    when the reading is too far behind or ahead to map (over 10 years)."""
+def rate_text(per_day: float) -> str:
+    return f"From its running-hours readings, about {per_day:,.3g} h a day (no duty set)"
+
+
+def reading_moment(r: dict) -> datetime:
+    """When a reading was taken (its time where it has one, else the start of its day), naive."""
+    return datetime.fromisoformat(r["at"][:16]) if r.get("at") else datetime.fromisoformat(r["on"][:10])
+
+
+def meter_usage(start, end, last: dict | None, per_day: float | None = None):
+    """RePyability's map between dates and an hours counter with no duty: at ``per_day`` hours a day
+    (the readings' rate), else all the time (``DutyPlan(Continuous())``), anchored on ``last`` (the
+    latest reading; None: 0 h at ``start``)."""
     from backend.maintenance import schedule
 
-    read_at = datetime.fromisoformat(last["at"][:16]) if last.get("at") else datetime.fromisoformat(last["on"][:10])
-    days = max(0.0, (float(target) - float(last["value"])) / 24.0)
+    plan = schedule.DutyPlan(schedule.Continuous() if per_day is None else schedule.Rate(per_day, per="day"))
+    value = float(last["value"]) if last else 0.0
+    read_at = reading_moment(last) if last else start
+    return plan.forecast(start, end, readings={"hours": value}, read_at=read_at)
+
+
+def _meter_map(last: dict, target: float, rate: float | None) -> dict | None:
+    """An hours counter with no operating plan, from its latest reading: at the readings' rate
+    (capped at 24 h a day) where they give one, else all the time: the ``mapped`` shape
+    ``_due_from`` reads. None when it's too far ahead to map (over 10 years)."""
+    per_day = min(float(rate), 24.0) if rate and rate > 0 else None
+    read_at = reading_moment(last)
+    days = max(0.0, (float(target) - float(last["value"])) / (per_day or 24.0))
     if days > 3653:
         return None
-    end = read_at + timedelta(days=days + 2)
     try:
-        usage = schedule.DutyPlan(schedule.Continuous()).forecast(read_at, end, readings={"hours": float(last["value"])},
-                                                                  read_at=read_at)
+        usage = meter_usage(read_at, read_at + timedelta(days=days + 2), last, per_day)
     except (ValueError, TypeError, OverflowError):
         return None
+    kind, text = ("rate", rate_text(per_day)) if per_day else ("continuous", CONTINUOUS_TEXT)
     return {"usage": usage, "meter": "hours",
-            "basis": {"kind": "continuous", "text": CONTINUOUS_TEXT, "ended": None, "exact": False,
+            "basis": {"kind": kind, "text": text, "ended": None, "exact": False, "rate_per_day": per_day,
                       "reading": {"value": last["value"], "on": last["on"][:10]}}}
 
 
@@ -6857,9 +6878,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             return {**out, "next_due": crossed, "basis": {"kind": "readings", "text": "Already reached by the readings"}}
         if not accruing:
             return {**out, "next_due": None, "note": "not fitted anywhere: it adds no use until it's fitted again"}
-        if mapped is None and _norm_unit(counter.get("unit")) == "hours" and not (rate and rate > 0):
-            # No duty and no rate the readings give: running all the time, never "no date".
-            mapped = _continuous_map(last, target)
+        if mapped is None and _norm_unit(counter.get("unit")) == "hours":
+            # No duty: the readings' rate, else running all the time (never "no date"), on the
+            # same RePyability map the forecast uses, so the two agree.
+            mapped = _meter_map(last, target, rate)
         if mapped is not None:
             crossing = mapped["usage"].when(**{mapped["meter"]: target})
             out["basis"] = mapped["basis"]
