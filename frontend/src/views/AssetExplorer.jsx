@@ -18,7 +18,7 @@ import RbdPane, { NEW_RBD, NewRbdPane } from "../components/RbdPane.jsx";
 import MissionPane, { NewMissionPane } from "../components/MissionPane.jsx";
 import MissionSide, { phaseRowChange } from "../components/MissionSide.jsx";
 import { runsOnOptions } from "../missionSetup.js";
-import { MissionCell, MissionModelCell, MissionRollup, MissionsEmpty, missionPhoneRow, useTreeMissions } from "../components/MissionTable.jsx";
+import { MissionCell, MissionModelCell, MissionRollup, MissionsLanding, missionPhoneRow, useTreeMissions } from "../components/MissionTable.jsx";
 import {
   NEW_MISSION, changedPhases, isMissionRow, isPhaseRow, missionKey, missionParam, missionRowActions, movePhase, openForMissions,
   parseMissionParam, phaseKey, positionMissionActions, headRollupText as missionHeadRollup, withNewPhase, withoutPhase,
@@ -521,6 +521,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const [focusBy, setFocusBy] = useState({});
   const [notesAt, setNotesAt] = useState(null); // a function's notes asked for in full: {key, at}
   const [panel, setPanel] = useState(false); // its details beside the table
+  const [missionJump, setMissionJump] = useState(null); // the Missions tab: the open mission's panel switched to a phase (or back)
   const [missionAddRule, setMissionAddRule] = useState(null); // a phase row whose details open on Add node status rule
   const [editing, setEditing] = useState(null); // {key, col}: a cell being edited
   const [deciding, setDeciding] = useState(null); // a failure mode in the decision dialog
@@ -1324,6 +1325,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     // Enter opens the mission editor. The editor open already on that mission: left as it is.
     if (missionsOn && opts.go && isMissionRow(r) && paneKind === "mission" && paneAt?.mission === missionParam(r.ref.rbd.id, r.ref.mission.id)) {
       pick(key, opts);
+      // The Missions tab: the panel switches in place to the row's phase (a covariate's or rule's
+      // too), or back to the mission.
+      if (missionTabOn) setMissionJump((j) => ({ phase: r.ref.phase ? r.ref.phase.index : null, n: (j?.n || 0) + 1 }));
       return;
     }
     if (panePosition && key !== panePosition.id) {
@@ -1335,6 +1339,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (modelsOn && opts.go && isStrategyRow(r) && !(paneKind === "strategy" && paneAt?.strategy === r.ref.link.id)) {
       openStrategy(r.ref.link);
     }
+    // The Missions tab (Derryn, 23 Nov 2026: a mission and a phase have their own details, a panel
+    // filling the table area): a click on a mission, phase, covariate or rule row opens it there.
+    if (missionTabOn && opts.go && isMissionRow(r)) openMissionRow(r);
   };
 
   // Adding from a row's menu, the heading or the details: the new row is
@@ -2801,7 +2808,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // The details expanded (a wide screen, the details shown): only the tree column beside them.
   // The fit or the prediction open (a wide screen): the same, it in the table's room.
   // On the Operations tab the operating plan is the position's details: beside the table, not across it.
-  const paneWide = ((!!panePosition && !(opsOn && paneKind === "plan")) || (tasksOn && !!pkgPane)) && !phone;
+  // The Missions tab on a position with no missions here or below: its landing state fills the table
+  // area (what a mission is for, New mission…, Read the guide), as a section page's empty state does.
+  const missionsLanding = missionTabOn && !panePosition && !!pmissions.links && posRow?.type === "pos"
+    && (display.rows.get(posRow.key)?.mall?.missions || 0) === 0;
+  const paneWide = ((!!panePosition && !(opsOn && paneKind === "plan")) || (tasksOn && !!pkgPane) || missionsLanding) && !phone;
   const wideDetails = wideOn || paneWide;
   const cols = wideDetails ? [] : shownCols.map((id) => colMap[id]).filter(Boolean);
   const widths = {};
@@ -3098,7 +3109,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                     {(display.rows.get(posRow.key)?.mall?.missions || 0) > 0
                       ? <MissionRollup text={missionHeadRollup(display.rows.get(posRow.key) || posRow)} label="New mission…"
                                        onAdd={viewOnly ? null : () => addMission(posRow.key)} />
-                      : <MissionsEmpty row={display.rows.get(posRow.key) || posRow} onAdd={viewOnly ? null : () => addMission(posRow.key)} />}
+                      : "No missions here"}
                   </span>
                 ) : null}
                 menu={headMenu(posRow, positionMissionActions(display.rows.get(posRow.key) || posRow, { viewOnly }).map((it) => ({
@@ -3409,7 +3420,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     <div className="rw tt-side">
       <MissionPane key={`${paneAt.mission}:${seed?.n || 0}`} rbdId={parseMissionParam(paneAt.mission).rbdId}
                    missionId={parseMissionParam(paneAt.mission).missionId} position={panePosition} phone={phone}
-                   answersMode={missionTabOn}
+                   answersMode={missionTabOn} jump={missionTabOn ? missionJump : null}
                    phase={seed?.start?.phase ?? null}
                    headingRef={paneHeading} onClose={() => leavePane().then((ok) => ok && closePane())}
                    onDirty={(d) => { paneDirty.current = d; }}
@@ -3524,7 +3535,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                    readOnly={viewOnly || null} onClose={() => setSheet(null)}
                    onChanged={(text) => { say(text, "ok", { fade: true }); load(); }} />
   ) : null;
-  const side = mergeSide && !phone ? mergeSide : sheetSide && !phone ? sheetSide : opsOn ? paneSide : rcmOn ? rcmSide : measOn ? paneSide || measSide : modelsOn ? paneSide || modelSide || missionSide : missionTabOn ? paneSide || missionSide
+  const side = mergeSide && !phone ? mergeSide : sheetSide && !phone ? sheetSide : opsOn ? paneSide : rcmOn ? rcmSide : measOn ? paneSide || measSide : modelsOn ? paneSide || modelSide || missionSide : missionTabOn ? paneSide || (missionsLanding ? (
+      <div className="rw tt-side">
+        <MissionsLanding row={display.rows.get(posRow.key) || posRow} onAdd={viewOnly ? null : () => addMission(posRow.key)} />
+      </div>
+    ) : missionSide)
     : tasksOn ? pkgSide || paneSide || taskSide : paneSide || (phone ? null : summary);
 
   // The tree's quiet last row: a new position (or location) at the top level.

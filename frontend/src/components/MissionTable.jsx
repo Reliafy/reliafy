@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listPositionMissions } from "../api.js";
 import Chip from "./ui/Chip.jsx";
+import { ShowMe } from "./SectionPage.jsx";
 import {
   canAddMission, noMissionWhy, completesText, covStatus, feedsList, isCovRow, isPhaseRow, isRuleRow, latestOnly, lengthText, pct, phaseLengthText, phaseOfText, phasesText,
   placeholderTitle, placeholderTone, ruleText,
@@ -45,18 +46,21 @@ export function MissionRollup({ text, onAdd = null, label = "Add a mission" }) {
   );
 }
 
-// The Missions tab's heading for a position with no missions here or below: says so, offers New
-// mission… (where one can be added; else why not), and one line on what a mission is for.
-export function MissionsEmpty({ row, onAdd = null }) {
+// The Missions tab's landing state for a position with no missions here or below, in the table area:
+// says so, one line on what a mission is for, New mission… (where one can be added; else why not)
+// and Read the guide.
+export function MissionsLanding({ row, onAdd = null }) {
   const can = canAddMission(row);
   return (
-    <span className="mt-empty">
-      <span>No missions here{can && onAdd ? <>{" · "}<button type="button" className="link mt-add-mission" onClick={onAdd}>New mission…</button></>
-        : !can ? ` · ${noMissionWhy(row, true)}` : ""}</span>
-      <span className="mt-empty-why">
-        A mission is a saved what-if: this system run through phases over a stretch of time, for the chance it completes and the failures to expect.
-      </span>
-    </span>
+    <section className="card missions-landing" aria-labelledby="missions-landing-h">
+      <h3 id="missions-landing-h">No missions here</h3>
+      <p>A mission is a saved what-if: this system run through phases over a stretch of time (a 10-hour sortie, a year of use), for the chance it completes and the failures to expect.</p>
+      <div className="missions-landing-actions">
+        {can && onAdd ? <button type="button" onClick={onAdd}>New mission…</button>
+          : !can ? <span className="rim-tquiet">None can be added here yet: {noMissionWhy(row, true)}.</span> : null}
+        <ShowMe help={{ guide: "missions" }}>Read the guide</ShowMe>
+      </div>
+    </section>
   );
 }
 
