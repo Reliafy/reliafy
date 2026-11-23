@@ -129,10 +129,10 @@ test("Maintenance at 400 px: the tree of tasks, a task opened, an old forecast a
   await expect(side(page).getByRole("form", { name: `Task: Check the seal ${tag}` })).toContainText("$45 each time");
   expect(await sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "maintenance-task-phone");
-  // Open in › from a task's ⋯ on a phone: the submenu opens in place under its item.
+  // Open in from a task's ⋯ on a phone: Select keeps its place, so the tools are under More › (in place).
   await open(page, `/asset-register/explorer?arrange=positions&root=${p.pump.id}&sel=${p.pump.id}&tab=maintenance`);
   await nameRow(page, `Check the seal ${tag}`).getByRole("button", { name: /^Actions for/ }).click();
-  await page.getByRole("menu").first().getByRole("menuitem", { name: /^Open in/ }).click();
+  await page.getByRole("menu").first().getByRole("menuitem", { name: /^More/ }).click();
   await expect(page.getByRole("menuitem", { name: "Cost forecast" })).toBeVisible();
   expect(await sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "maintenance-open-in-phone");

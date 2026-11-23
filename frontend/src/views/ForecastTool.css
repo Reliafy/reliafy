@@ -26,3 +26,6 @@
   font-variant-numeric: tabular-nums;
 }
 .ft-table td, .ft-table th { white-space: nowrap; }
+/* Wide tables scroll inside the card (as .maint-scroll in Maintenance.css, which this page doesn't load). */
+.ft-result .maint-scroll { overflow-x: auto; position: relative; max-width: 100%; }
+.ft-result, .ft-result .rs-details, .ft-result .rs-details-body { min-width: 0; max-width: 100%; }

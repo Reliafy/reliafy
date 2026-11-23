@@ -35,6 +35,7 @@ import "./ForecastTool.css";
 // it, with a link back.
 
 const HELP = { guide: "forecast-tools" };
+const unitsOf = (fc) => (fc.items || []).reduce((t, it) => t + (Number(it.count) || 1), 0);
 const sig3 = (v) => formatNumber(v, { sig: 3 });
 const rangeText = (b, fmt = sig3) => (b?.interval ? `${fmt(b.interval[0])}–${fmt(b.interval[1])}` : "—");
 
@@ -52,10 +53,10 @@ function ByPeriod({ fc, view }) {
           <thead><tr><th scope="col">{head}</th><th scope="col" className="num">Planned</th><th scope="col" className="num">Corrective</th>
             <th scope="col" className="num">Hours</th><th scope="col" className="num">Likely range (90% two-sided)</th></tr></thead>
           <tbody>{h.per_period.map((r) => (
-            <tr key={r.period}><th scope="row">{r.period}</th><td className="num">{sig3(r.planned)} h</td><td className="num">{sig3(r.corrective)} h</td>
+            <tr key={r.period}><td className="num">{r.period}</td><td className="num">{sig3(r.planned)} h</td><td className="num">{sig3(r.corrective)} h</td>
               <td className="num">{sig3(r.hours?.expected)} h</td><td className="num">{rangeText(r.hours)} h</td></tr>
           ))}</tbody>
-          <tfoot><tr><th scope="row">In all</th><td /><td /><td className="num">{sig3(h.total?.expected)} h</td><td className="num">{rangeText(h.total)} h</td></tr></tfoot>
+          <tfoot><tr><td>In all</td><td /><td /><td className="num">{sig3(h.total?.expected)} h</td><td className="num">{rangeText(h.total)} h</td></tr></tfoot>
         </table>
       </div>
     );
@@ -69,10 +70,10 @@ function ByPeriod({ fc, view }) {
           <thead><tr><th scope="col">{head}</th><th scope="col" className="num">Planned</th><th scope="col" className="num">Corrective</th>
             <th scope="col" className="num">Spares</th><th scope="col" className="num">Cost</th><th scope="col" className="num">Likely range (90% two-sided)</th></tr></thead>
           <tbody>{c.per_period.map((r) => (
-            <tr key={r.period}><th scope="row">{r.period}</th><td className="num">{money(r.planned)}</td><td className="num">{money(r.corrective)}</td>
+            <tr key={r.period}><td className="num">{r.period}</td><td className="num">{money(r.planned)}</td><td className="num">{money(r.corrective)}</td>
               <td className="num">{money(r.spares)}</td><td className="num">{money(r.cost?.expected)}</td><td className="num">{rangeText(r.cost, money)}</td></tr>
           ))}</tbody>
-          <tfoot><tr><th scope="row">In all</th><td /><td /><td /><td className="num">{money(c.total?.expected)}</td><td className="num">{rangeText(c.total, money)}</td></tr></tfoot>
+          <tfoot><tr><td>In all</td><td /><td /><td /><td className="num">{money(c.total?.expected)}</td><td className="num">{rangeText(c.total, money)}</td></tr></tfoot>
         </table>
       </div>
     );
@@ -85,7 +86,7 @@ function ByPeriod({ fc, view }) {
         <thead><tr><th scope="col">{head}</th><th scope="col" className="num">Failures</th>{age && <th scope="col" className="num">Planned</th>}
           <th scope="col" className="num">Spares</th><th scope="col" className="num">Likely range (90% two-sided)</th></tr></thead>
         <tbody>{rowsOf(fc).map((r) => (
-          <tr key={r.period}><th scope="row">{r.period}</th><td className="num">{sig3(r.failures?.expected)}</td>
+          <tr key={r.period}><td className="num">{r.period}</td><td className="num">{sig3(r.failures?.expected)}</td>
             {age && <td className="num">{sig3(r.planned?.expected)}</td>}
             <td className="num">{sig3(r.parts?.expected ?? r.failures?.expected)}</td><td className="num">{rangeText(r.parts || r.failures)}</td></tr>
         ))}</tbody>
@@ -310,7 +311,7 @@ export default function ForecastTool() {
       {run.busy && !run.fc && <Loading />}
       {fc && (
         <Card className={"ft-result" + (run.busy ? " is-busy" : "")} aria-busy={run.busy || undefined}>
-          <CardHeader title={view.title} subtitle={`${fc.model_name} · ${unitInText(fc.unit || unit || "")} · ${fc.n_items === 1 && fc.items?.[0]?.count ? `${fc.items[0].count} units` : `${(fc.items || []).length} units`}`}
+          <CardHeader title={view.title} subtitle={`${fc.model_name} · ${unitInText(fc.unit || unit || "")} · ${unitsOf(fc).toLocaleString("en-GB")} ${unitsOf(fc) === 1 ? "unit" : "units"}`}
                       actions={<button type="button" className="secondary sm" onClick={() => downloadCsv(viewCsv(fc, view.value), `${view.title.toLowerCase().replace(/ /g, "-")}.csv`)}>Export CSV</button>} />
           <Answer fc={fc} view={view.value} form={form} />
           {(view.value === "spares" || fc.views?.[view.value]) && !viewNeeds(view.value, form) && (
