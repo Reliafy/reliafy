@@ -94,3 +94,12 @@ test("formatChance: never 100% or 0% unless exactly so", () => {
   assert.equal(formatChance(0), "0%");
   assert.equal(formatChance(0.42), "42%");
 });
+
+test("formatPlain never uses scientific notation", async () => {
+  const { formatPlain, formatWithUnit } = await import("./format.js");
+  assert.equal(formatPlain(2.01e-7), "0.000000201");
+  assert.equal(formatPlain(2.5e8), "250,000,000");
+  assert.equal(formatPlain(0.00025), "0.00025");
+  assert.equal(formatWithUnit(4.03e-7, "hours", { plain: true }), "0.000000403 hours");
+  assert.equal(formatWithUnit(4.03e-7, "hours"), "4.03e-7 hours");
+});

@@ -4,6 +4,7 @@
 // offers Add a strategy…, which opens the tools that fit it in the table pane beside the tree.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { subItem } from "./explorer.js";
+import { choose } from "./select.js";
 
 // An item of a row's menu: at its top level, or under More › (the menu standard keeps ten a level).
 async function menuPick(page, name) {
@@ -105,4 +106,55 @@ test("a life model's strategies: replacement, shutdown replacement and failure f
   await pane.getByRole("tab", { name: "Failure finding" }).click();
   await expect(page).toHaveURL(/how=failureFinding/);
   await expectHealthy(page, problems, { label: "Explorer life model strategy" });
+});
+
+// Strategy answers that must read the right way round: an MTBF typed as a failure rate is caught
+// before it gives "test every 0.0000004 hours", and a cheaper plan is said as a share of the best.
+test("failure finding: a rate that looks like an MTBF is asked about, and the MTBF can be entered", async ({ page, problems }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, "/strategy/failure-finding");
+  await page.getByRole("radio", { name: "Parameters" }).click();
+  await choose(page.getByRole("combobox", { name: "Distribution" }), "exponential");
+  await page.getByLabel("Unit of the model's times").fill("hours");
+  await page.getByLabel(/Failure rate λ/).fill("4000");
+  const hint = page.getByTestId("rate-looks-like-mean");
+  await expect(hint).toContainText("This looks like an MTBF of 4,000 hours; did you mean a rate of 0.00025 per hour?");
+  await hint.getByRole("button", { name: "Use 0.00025" }).click();
+  await expect(page.getByLabel(/Failure rate λ/)).toHaveValue("0.00025");
+  await expect(hint).toHaveCount(0);
+
+  // The other way: the 4,000 entered as the mean life (MTBF).
+  await page.getByLabel(/Failure rate λ/).fill("4000");
+  await page.getByTestId("rate-looks-like-mean").getByRole("button", { name: "Enter 4000 as the mean life" }).click();
+  await expect(page.getByRole("radio", { name: "Mean" })).toBeChecked();
+  await expect(page.getByLabel(/Mean life \(MTBF\)/)).toHaveValue("4000");
+  await page.getByRole("button", { name: "Compute" }).click();
+  const summary = page.locator(".result-summary").first();
+  await expect(summary).toContainText("Test every ≈ 80.5 hours");
+  await expect(summary).toContainText("4,000 hours");
+  await expect(summary).not.toContainText(/e-\d/);
+  await expectHealthy(page, problems, { label: "Failure finding" });
+});
+
+test("overhaul and replace: a cheaper plan is said as a share of the best plan's cost", async ({ page, request, problems }) => {
+  const res = await request.post("/api/recurrent/from-params", {
+    multipart: { name: `Gearbox share ${Date.now()}`, model: "crow_amsaa", alpha: "500", beta: "2.2", horizon: "5000", unit: "Hours" },
+  });
+  expect(res.ok(), await res.text()).toBeTruthy();
+  const model = await res.json();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, `/strategy/overhaul-replace?model=${model.id}`);
+  await page.getByLabel(/Repair cost, per failure/).fill("2000");
+  await page.getByLabel(/Overhaul cost/).fill("15000");
+  await page.getByLabel(/Replacement cost/).fill("60000");
+  await page.getByLabel("An overhaul takes off (% of its age)").fill("60");
+  await page.getByRole("button", { name: "Compute" }).click();
+  // Overhaul only at about 37.34 an hour against the best plan's 39.31: 5.0% less, never "5.3%".
+  const summary = page.locator(".result-summary").first();
+  await expect(summary).toContainText("Overhaul only, never replace costs 5.0% less than this plan");
+  const table = page.locator(".or-table").first();
+  await expect(table.getByRole("columnheader", { name: "Against this plan" })).toBeVisible();
+  await expect(table.getByRole("row", { name: /Overhaul only, never replace/ })).toContainText("costs 5.0% less");
+  await expect(page.locator("body")).not.toContainText("5.3%");
+  await expectHealthy(page, problems, { label: "Overhaul and replace shares" });
 });

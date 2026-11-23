@@ -1243,6 +1243,7 @@ def spares_answer(opts: dict, method: str, model, ages, rates, periods: int, lab
     bounds.append((0.0, float(periods)))  # the whole horizon: the year's demand (spares_year's rule)
     horizon = max(float(periods), (periods - 1) + protect)
     split = None
+    planned_in_hold = 0.0  # planned replacements in the hold's window (already in the year's demand)
 
     if method == "renewals" and opts.get("_replace_at"):
         events = fleet_strategy.simulate(model, ages, rates, horizon, float(opts["_replace_at"]))
@@ -1250,6 +1251,8 @@ def spares_answer(opts: dict, method: str, model, ages, rates, periods: int, lab
         hi = int(np.searchsorted(events["t"], float(periods), side="left"))
         planned = np.asarray(events["planned"][:hi], dtype=float)
         split = float(planned.sum()) * per / max(events["sims"], 1)
+        in_hold = int(np.searchsorted(events["t"], protect, side="left"))
+        planned_in_hold = float(np.asarray(events["planned"][:in_hold], dtype=float).sum()) * per / max(events["sims"], 1)
         basis = (f"From {events['sims']:,} simulated runs, counting planned replacements at age "
                  f"{opts['_replace_at']:g} as well as failures.")
     elif method == "renewals":
@@ -1291,7 +1294,7 @@ def spares_answer(opts: dict, method: str, model, ages, rates, periods: int, lab
     protects = demand[:periods]
     leads = demand[periods:] if lead_len is not None else [None] * periods
     now = spares.answer(protects[0], leads[0], opts.get("stock"), level, opts.get("unit_cost"))
-    year_out = _year_answer(year, now, opts.get("stock"), periods, label, split, repairable)
+    year_out = _year_answer(year, now, opts.get("stock"), periods, label, split, repairable, planned_in_hold)
     plan = [{"period": k + 1, "hold": protects[k].quantile(level),
              "reorder_at": leads[k].quantile(level) if leads[k] is not None else None,
              "expected_demand": protects[k].mean} for k in range(periods)]
@@ -1314,10 +1317,12 @@ def spares_answer(opts: dict, method: str, model, ages, rates, periods: int, lab
                                        rising=words)}
 
 
-def _year_answer(year, now: dict, stock, periods: int, label: str, planned, repairable: bool) -> dict:
+def _year_answer(year, now: dict, stock, periods: int, label: str, planned, repairable: bool,
+                 planned_in_hold: float = 0.0) -> dict:
     """The demand over the whole forecast and what to buy for it (``services.spares_year``'s rule):
-    order now = hold - in stock; buy = expected demand rounded up + hold - in stock, and a high case
-    with the 90th percentile in place of the expected. A repairable pool isn't bought by the year."""
+    order now = hold - in stock; buy = expected demand + the hold's buffer (the hold less the planned
+    replacements in its window, already in the demand) - in stock, rounded up, and a high case with the
+    90th percentile in place of the expected. A repairable pool isn't bought by the year."""
     from backend.services import spares_year
 
     mean = year.mean
@@ -1328,8 +1333,8 @@ def _year_answer(year, now: dict, stock, periods: int, label: str, planned, repa
     if stock is not None and not repairable:
         have = float(stock)
         out.update(order_now=max(0.0, now["hold"] - have),
-                   buy=max(0.0, math.ceil(mean - 1e-9) + now["hold"] - have),
-                   buy_high_case=max(0.0, out["p90"] + now["hold"] - have))
+                   buy=spares_year.buy(mean, now["hold"], planned_in_hold, have),
+                   buy_high_case=spares_year.buy(out["p90"], now["hold"], planned_in_hold, have))
     return out
 
 

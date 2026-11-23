@@ -121,9 +121,18 @@ def _repairs_per_cycle(rep, x: float, cycles: int, factor: float, cp: float, rat
 
 
 def _saving(other: float | None, best: float) -> float | None:
+    """What the best plan saves against ``other``, as a % of ``other`` (negative: it costs more)."""
     if other is None or not math.isfinite(other) or other <= 0:
         return None
     return (other - best) / other * 100.0
+
+
+def _vs_best(other: float | None, best: float) -> float | None:
+    """How much more (positive) or less (negative) ``other`` costs than the best plan, as a % of the
+    best plan: overhaul only at 37.34 against a best plan at 39.31 is -5.0% (5.0% less)."""
+    if other is None or not math.isfinite(other) or not (best > 0):
+        return None
+    return (other - best) / best * 100.0
 
 
 def optimal_overhaul_replace(model_or_params, *, cost_repair, cost_overhaul, cost_replace, overhaul_restores,
@@ -240,6 +249,7 @@ def optimal_overhaul_replace(model_or_params, *, cost_repair, cost_overhaul, cos
     ]
     for c in comparisons:
         c["saving_pct"] = _saving(c.get("cost_rate"), g_best)
+        c["vs_best_pct"] = _vs_best(c.get("cost_rate"), g_best)
 
     repairs = _repairs_per_cycle(rep, x_best, k_best, factor, cp, g_best)
     best = {"interval": x_best, "overhauls": k_best - 1, "cycles": k_best, "replace_every": k_best * x_best,
@@ -257,7 +267,7 @@ def optimal_overhaul_replace(model_or_params, *, cost_repair, cost_overhaul, cos
     cheaper = runner if runner and runner["cost_rate"] < g_best * (1 - 1e-9) else None
     if cheaper:
         base["warnings"].append(
-            f"{cheaper['label']} costs {(-cheaper['saving_pct']):.1f}% less than the best overhaul-and-replace "
+            f"{cheaper['label']} costs {(-cheaper['vs_best_pct']):.1f}% less than the best overhaul-and-replace "
             f"plan searched (up to {kmax} overhauls). Consider it, or raise the most overhauls to search.")
 
     # The curves: cost rate over X for N = 0 … a few (and the best N), around the best X.
@@ -314,9 +324,9 @@ def _sentence(best: dict, unit: str, runner: dict | None) -> str:
         n = best["overhauls"]
         plan = (f"Overhaul every {x} and replace the unit after {n} overhaul{'s' if n != 1 else ''} "
                 f"(every {_fmt(best['replace_every'])}{u})")
-    if runner and runner.get("saving_pct") is not None and runner["saving_pct"] < 0:
-        return (f"{plan}: the best overhaul-and-replace plan. But {runner['label'].lower()} costs "
-                f"{-runner['saving_pct']:.0f}% less again.")
+    if runner and runner.get("vs_best_pct") is not None and runner["vs_best_pct"] < 0:
+        return (f"{plan}: the cheapest overhaul-and-replace plan searched. But {runner['label'].lower()} costs "
+                f"{-runner['vs_best_pct']:.1f}% less than it.")
     if runner and runner.get("saving_pct") is not None and runner["saving_pct"] > 0.05:
         return f"{plan}. That costs {runner['saving_pct']:.0f}% less than the next best: {runner['label'].lower()}."
     return f"{plan}."
