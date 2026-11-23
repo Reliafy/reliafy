@@ -1272,6 +1272,10 @@ def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(m
             # that mode's decision only.
             given = dict(body["restoration"] or {})
             view = m.set_task_restoration(task_id, given or None, failure_mode_id=given.pop("failure_mode_id", None))
+        if "support" in body:
+            # Keeps the item on its life (a supporting task, supporting.py): {failure_mode_ids,
+            # reference, impact {form: hazard_ratio, k}, grace, source, note}; null clears it.
+            view = m.set_task_support(task_id, body["support"])
         if "basis" in body:
             # operating: its interval counts running hours; calendar or null: by its unit.
             view = m.set_task_basis(task_id, body["basis"])
