@@ -406,7 +406,10 @@ test("one order at every level: its notes under the title and chips, what's insi
     await expect(modeNotes.getByRole("group", { name: "Evidence" })).toContainText("None linked");
     await expect(modeNotes.getByRole("button", { name: "+ Add notes" })).toBeVisible();
     // One grid, "step | choice": a row per question, the step's name on the left (Derryn, 9 Nov 2026).
-    await expect(panel(page).locator(".rw-sl")).toHaveText(["1 · Failure effects", "2 · Hidden failure?", "Consequence", "What a failure costs", "3 · Task worth doing?", "Tasks", "Rationale"]);
+    // Under the consequence, what's done if it fails anyway and, with an on-condition task on it, if
+    // an inspection finds it (the corrective and follow-on responses, Nov 2026).
+    await expect(panel(page).locator(".rw-sl")).toHaveText(["1 · Failure effects", "2 · Hidden failure?", "Consequence",
+      "If it fails anyway", "If an inspection finds it", "What a failure costs", "3 · Task worth doing?", "Tasks", "Rationale"]);
     await expect(panel(page).locator(".psec-title", { hasText: /Failure effects|Failure consequences|Proactive task/ })).toHaveCount(0);
     // Step 1 is the effects box alone: the step's title is its label (the box's name, not shown again).
     await expect(panel(page).getByRole("region", { name: "Failure effects" }).getByRole("textbox", { name: /^Failure effects/ })).toBeVisible();
