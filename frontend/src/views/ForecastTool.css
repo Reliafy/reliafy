@@ -64,3 +64,4 @@
 .ft-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: var(--space-3); margin-top: var(--space-6); }
 .ft-stale { color: var(--warning-text); font-size: var(--fs-13); line-height: var(--lh-13); }
 .ft-empty-text { margin: 0; font-size: var(--fs-16); line-height: var(--lh-16); }
+.ft-next-rate { margin: 0; font-size: var(--fs-14); line-height: var(--lh-14); }

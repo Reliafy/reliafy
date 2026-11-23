@@ -91,13 +91,6 @@ export function missing(f, model, unit) {
   return problems(f, model, unit)[0]?.text || null;
 }
 
-// A typed life's name, as the answer and the lines say it: "Part (Weibull 100, 2.2)".
-export function typedName(model) {
-  const dist = String(model?.distribution_id || "life").replace(/_/g, " ");
-  const values = (model?.params || []).map((p) => Number(p.value).toLocaleString("en-GB", { maximumSignificantDigits: 4 }));
-  return `Part (${dist[0].toUpperCase()}${dist.slice(1)}${values.length ? ` ${values.join(", ")}` : ""})`;
-}
-
 // The request (POST /api/fleet/quick-forecast). `start` (an ISO date): today where the user is.
 export function requestOf(f, model, unit, start = null) {
   const body = {
@@ -124,7 +117,7 @@ export function requestOf(f, model, unit, start = null) {
     const { ages } = parseAges(f.ages);
     body.part = {
       distribution_id: model.distribution_id, params: model.params, extras: model.extras || null,
-      unit, name: model.name || typedName(model),
+      unit, name: model.name || "The part",
       ...(ages.length === 1 ? { age: ages[0] } : { ages }),
       hours_if_fails: num(f.hoursIfFails), cost_if_fails: num(f.costIfFails), spare_cost: num(f.spareCost),
       use_per_day: num(f.usePerDay),
@@ -167,8 +160,21 @@ export function answerOf(out, view, money = (v) => `$${sig(v, 4)}`) {
       return { lead: work ? `${sig(work.times.expected)} times in ${when}: no spares given for it.` : `No spares in ${when}.`,
         detail, known: false, leavesOut: out.totals.spares.leaves_out || [] };
     }
-    const parts = items.map((x) => `${sig(x.expected)} × ${x.name}${x.interval && x.number !== "certain" ? ` (${rangeOf(x, sig)}, 90% two-sided)` : ""}`);
-    return { lead: `${parts.join("; ")} in ${when}.`, detail, known: out.totals.spares.known, leavesOut: out.totals.spares.leaves_out || [] };
+    // Plain: "About 99 spares in the next 12 months (90% range: 91–107)." The part's name, when the user gave
+    // it, goes on the line below (Answer), not in brackets here.
+    const chance = items.filter((x) => x.number !== "certain");
+    const certain = items.filter((x) => x.number === "certain");
+    const about = (v) => (v >= 10 ? Math.round(v).toLocaleString("en-GB") : sig(v, 2));
+    const bits = [];
+    let range = "";
+    if (chance.length) {
+      const total = chance.reduce((t, x) => t + Number(x.expected || 0), 0);
+      bits.push(`About ${about(total)} ${Math.abs(total - 1) < 1e-9 ? "spare" : "spares"}`);
+      const iv = chance.length === 1 ? chance[0].interval : null;
+      if (iv) range = ` (90% range${certain.length ? " for the spares" : ""}: ${sig(iv[0])}–${sig(iv[1])})`;
+    }
+    for (const x of certain) bits.push(`${sig(x.expected)} × ${x.name}`);
+    return { lead: `${bits.join(" and ")} in ${when}${range}.`, detail, known: out.totals.spares.known, leavesOut: out.totals.spares.leaves_out || [] };
   }
   const t = out.totals[key];
   const fmt = key === "hours" ? (v) => `${sig(v)} h` : money;
