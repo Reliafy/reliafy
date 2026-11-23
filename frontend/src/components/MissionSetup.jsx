@@ -1,5 +1,6 @@
 import Field from "./ui/Field.jsx";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 import InputGroup, { Addon } from "./ui/InputGroup.jsx";
 import { Select, TextInput } from "./ui/Controls.jsx";
 import { setupErrors } from "../missionSetup.js";
@@ -9,6 +10,8 @@ import { setupErrors } from "../missionSetup.js";
 // hours of running or days, months or years through its calendar; after that the phases rule),
 // its calendar (the position's duty from Operations, or a simple duty of its own) and the state its
 // blocks start in (new, or each at its item's age today). missionSetup.js holds the shape.
+// Start and Calendar are the way in to the fields under them (a date; hours and days), so they're
+// a SegmentedControl, exactly one shown chosen; the starting state is a plain saved value (ChoiceChips).
 //
 //   value {start, calendar, from, length?}   onChange(next)   withLength: show Length (a new one)
 //   withFrom: show Starting state (a plain life model's mission has its own "Starts at")
@@ -24,9 +27,9 @@ export default function MissionSetup({ value, onChange, withLength = false, with
       <Field label="Start" as="fieldset" error={tried ? errs.start : null}
              help={v.start === "now" ? "From today." : "Its dates count from this day."}>
         <div className="mission-setup-row">
-          <ChoiceChips label="Start" disabled={disabled} value={v.start === "now" ? "now" : "date"}
-                       onChange={(x) => x && set({ start: x === "now" ? "now" : (v.start !== "now" ? v.start : "") })}
-                       options={[{ value: "now", label: "Now" }, { value: "date", label: "On a date" }]} />
+          <SegmentedControl label="Start" value={v.start === "now" ? "now" : "date"}
+                            onChange={(x) => !disabled && set({ start: x === "now" ? "now" : (v.start !== "now" ? v.start : "") })}
+                            options={[{ value: "now", label: "Now", disabled }, { value: "date", label: "On a date", disabled }]} />
           {v.start !== "now" && (
             <TextInput type="date" aria-label="Start date" value={v.start || ""} disabled={disabled}
                        onChange={(e) => set({ start: e.target.value })} />
@@ -52,10 +55,10 @@ export default function MissionSetup({ value, onChange, withLength = false, with
       <Field label="Calendar" as="fieldset" error={tried ? errs.calendar : null}
              help={linked ? "Runs as Operations says this position runs (its own duty, or the one from above; all the time with none)." : "Its own duty, for this mission only."}>
         <div className="mission-setup-row">
-          <ChoiceChips label="Calendar" disabled={disabled} value={linked ? "linked" : "own"}
-                       onChange={(x) => x && set({ calendar: x === "linked" ? { linked: true }
-                         : { linked: false, hours_per_day: v.calendar?.hours_per_day ?? 8, days_per_week: v.calendar?.days_per_week ?? 5 } })}
-                       options={[{ value: "linked", label: "Linked to Operations" }, { value: "own", label: "Its own duty" }]} />
+          <SegmentedControl label="Calendar" value={linked ? "linked" : "own"}
+                            onChange={(x) => !disabled && set({ calendar: x === "linked" ? { linked: true }
+                              : { linked: false, hours_per_day: v.calendar?.hours_per_day ?? 8, days_per_week: v.calendar?.days_per_week ?? 5 } })}
+                            options={[{ value: "linked", label: "Linked to Operations", disabled }, { value: "own", label: "Its own duty", disabled }]} />
           {!linked && (
             <>
               <InputGroup label="Hours a day">
