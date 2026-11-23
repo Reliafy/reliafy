@@ -2427,10 +2427,12 @@ export function quickForecast(body) {
 }
 // The forecast by owner for an Explorer node (Open in › in the quick forecast tool): `kind`
 // position (and everything below it), task or package; `root` the asset opened; months 12–60.
-export function getForecastLines({ kind, id, root = null, months = 12 }) {
+export function getForecastLines({ kind, id, root = null, months = 12, whatif = null }) {
   const base = { position: "positions", task: "tasks", package: "packages" }[kind];
   const q = new URLSearchParams({ months: String(months) });
   if (root) q.set("root", root);
+  // A what-if on supporting tasks: {task_id: {drop: true} | {interval: N}} (nothing is written).
+  if (whatif && Object.keys(whatif).length) q.set("whatif", JSON.stringify(whatif));
   return request(`/api/maintenance/${base}/${encodeURIComponent(id)}/forecast-lines?${q}`);
 }
 // What the quick forecast tool and Optimal replacement take from an Explorer node (Open in ›):

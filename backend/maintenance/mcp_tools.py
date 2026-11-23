@@ -142,10 +142,11 @@ GET_KINDS: Table = {
         days."""),
     "operations": ("", "id root", """Each position's duty (own or from the one above), other use, shutdown and
         outage windows and time zone, inside root; id = one position. Set with positions.update."""),
-    "forecast": ("id", "root period periods months", """id = a position (it and everything inside it), a task or
+    "forecast": ("id", "root period periods months whatif", """id = a position (it and everything inside it), a task or
         a work package. Tasks on dates, work, failures and cost per period with a 90% range, and lines by owner
         (each task; each failure mode's corrective and follow-on) with what's not counted; months (12, 24, 36,
-        60): whole months from today (guide topic forecast)."""),
+        60): whole months from today; whatif {task_id: {drop: true} | {interval: N}} on supporting tasks: the same
+        with them changed, beside it, and each supporting task's worth (guide topic forecast)."""),
     "position": ("id", "", """Its path, positions inside it, the item fitted now, every past fitment (with
         from_precision / to_precision for rough dates), failure modes (from RCM, by hand or ad hoc),
         class_failure_modes (seen at other positions of its class), tasks with last-done / next-due and trade,
@@ -1371,6 +1372,9 @@ def register() -> None:
                             "operating_plan, operations, forecast, spares_year: the asset opened; nothing above it is used."))]
                         = None,
                         months: int | None = None, fleet_size: int | None = None,
+                        whatif: Annotated[dict[str, Any] | None, Field(description=(
+                            "forecast: supporting tasks changed for a what-if, {task_id: {drop: true} | "
+                            "{interval: N}}; nothing is written."))] = None,
                         hours_per_day: float | None = None,
                         leave_out: Annotated[list[str] | None, Field(description=(
                             "spares_year, package_parts: task ids taken off their next visit."))] = None
@@ -1435,11 +1439,11 @@ def register() -> None:
             reader = _reader(_caller(ctx))
             fetch = pm.fetcher(_db(), reader.read_owners, reader.hidden)
             label = (m.s.node(m.org, str(rid)) or {}).get("label")
-            if months is not None or label in ("Task", "WorkPackage"):
+            if months is not None or whatif or label in ("Task", "WorkPackage"):
                 from backend.maintenance import forecast_lines
 
                 of = {"Task": "task", "WorkPackage": "package"}.get(label, "position")
-                return run(forecast_lines.node_forecast, m, fetch, of, rid, root, _d(months, 12))
+                return run(forecast_lines.node_forecast, m, fetch, of, rid, root, _d(months, 12), whatif)
             return run(position_forecast.position_forecast, m, rid, root, _d(period, "month"), _d(periods, 12),
                        fetch)
         if kind == "item_class" and fleet:

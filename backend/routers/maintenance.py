@@ -3156,22 +3156,32 @@ def package_forecast_start(package_id: str, root: str | None = None, session=Dep
 
 
 @router.get("/{kind}/{node_id}/forecast-lines")
-def node_forecast_lines(kind: str, node_id: str, root: str | None = None, months: int = 12,
+def node_forecast_lines(kind: str, node_id: str, root: str | None = None, months: int = 12, whatif: str | None = None,
                         session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
                         m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """The forecast by owner for an Explorer node (Open in › in the quick forecast tool): a position
     and everything below it, a task or a work package, from today for months (12, 24, 36 or 60).
     Each task's line (certain), each failure mode's corrective and follow-on lines (worked out, with
-    90% two-sided ranges), totals and what's not counted. Also over MCP and the CLI: maintenance
-    get.forecast with months."""
+    90% two-sided ranges), totals and what's not counted; each supporting task's worth; with whatif
+    (JSON {task_id: {drop: true} | {interval: N}}), the same with those supporting tasks changed. Also
+    over MCP and the CLI: maintenance get.forecast with months and whatif."""
     from backend.maintenance import forecast_lines
     from backend.maintenance import position_models as pm
 
     of = {"positions": "position", "tasks": "task", "packages": "package"}.get(kind)
     if of is None:
         raise HTTPException(status_code=404, detail="Not found.")
+    plan = None
+    if whatif:
+        # A what-if on supporting tasks (JSON): {task_id: {drop: true} | {interval: N}}. Nothing is written.
+        import json
+
+        try:
+            plan = json.loads(whatif)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="whatif is JSON: {task_id: {drop: true} or {interval: N}}.")
     fetch = pm.fetcher(session, ctx.read_owners, ctx.hidden)
-    return _run(forecast_lines.node_forecast, m, fetch, of, node_id, root or None, months)
+    return _run(forecast_lines.node_forecast, m, fetch, of, node_id, root or None, months, plan)
 
 
 @router.get("/positions/{position_id}/forecast")

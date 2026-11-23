@@ -17,13 +17,21 @@ export const WORK_UNITS = ["hours", "days", "weeks", "months", "years"];
 export const EFFECTS = [
   { value: "none", label: "doesn't change the part's life" },
   { value: "replaces", label: "replaces the part" },
+  { value: "supports", label: "keeps the part on its life (supporting)" },
+];
+// A supporting work's what-if (forecast plan step 7): as planned, stretched to another interval, or not done.
+export const WHATIFS = [
+  { value: "", label: "as planned" },
+  { value: "stretch", label: "stretched to…" },
+  { value: "drop", label: "not done" },
 ];
 export const HORIZON_OPTIONS = [
   { value: "12", label: "12 months" }, { value: "24", label: "2 years" },
   { value: "36", label: "3 years" }, { value: "60", label: "5 years" },
 ];
 
-export const BLANK_WORK = { name: "", every: "", unit: "hours", effect: "none", onReplace: "restart", hoursEach: "", costEach: "", sparesEach: "", spareName: "" };
+export const BLANK_WORK = { name: "", every: "", unit: "hours", effect: "none", onReplace: "restart", hoursEach: "", costEach: "", sparesEach: "", spareName: "",
+  impactK: "", grace: "", whatif: "", whatifEvery: "" };
 // When the part is replaced (forecast-rules 1.8): restart (age replacement) or keep (block replacement).
 export const ON_REPLACE = [
   { value: "restart", label: "Restart its schedule (age replacement)" },
@@ -53,6 +61,9 @@ export function missing(f, model, unit) {
   if (f.work) {
     if (!(num(f.work.every) > 0)) return "Enter how often the work is done.";
     if (f.work.effect === "replaces" && !f.part) return "Work that replaces the part needs a part that fails.";
+    if (f.work.effect === "supports" && f.part && f.work.impactK !== "" && !(num(f.work.impactK) >= 1)) {
+      return "The impact is × 1 or more: how many times the failure rate while it isn't done.";
+    }
   }
   if (f.part) {
     if (!model) return "Pick a saved model for the part, or choose a distribution and type its parameters.";
@@ -81,6 +92,12 @@ export function requestOf(f, model, unit, start = null) {
       hours_each: num(w.hoursEach), cost_each: num(w.costEach), spares_each: num(w.sparesEach),
       spare_name: w.spareName.trim() || null,
     };
+    if (f.part && w.effect === "supports") {
+      body.work.impact_k = num(w.impactK);
+      body.work.grace = num(w.grace);
+      const stretched = w.whatif === "stretch" && num(w.whatifEvery) > 0 ? { interval: num(w.whatifEvery) } : null;
+      body.work.whatif = w.whatif === "drop" ? { drop: true } : stretched;
+    }
   }
   if (f.part && model) {
     const { ages } = parseAges(f.ages);
@@ -197,4 +214,14 @@ export function seriesOf(out, view) {
     const high = eng?.interval ? certain + eng.interval[1] : value;
     return { period: r.period, work: r.work, failures: r.failures, value, low: Math.max(0, low), high };
   });
+}
+
+// A what-if beside the answer (supporting work here, or the Explorer's supporting tasks): the view's
+// figure as planned and with the change, and the difference. `a`, `b`: {expected} blocks, or null.
+export function changeText(a, b, view, money = (v) => `$${sig(v, 4)}`) {
+  if (!a || !b || a.expected == null || b.expected == null) return null;
+  const fmt = view === "hours" ? (v) => `${sig(v)} h` : view === "costs" ? money : (v) => sig(v);
+  const d = b.expected - a.expected;
+  const sign = d > 0 ? "+" : d < 0 ? "less " : "";
+  return { planned: fmt(a.expected), changed: fmt(b.expected), diff: d === 0 ? "no change" : `${sign}${fmt(Math.abs(d))}` };
 }

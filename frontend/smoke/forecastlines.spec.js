@@ -6,6 +6,7 @@
 //
 // With SMOKE_SHOTS_DIR set, it saves screenshots (for the pull request).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
+import { choose } from "./select.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -34,6 +35,8 @@ async function deck(request, tag) {
   }
   const grease = await post(`${M}/positions/${top.id}/tasks`, { name: `Grease deck spindles ${tag}`, interval: 50, unit: "hours" });
   await patch(`${M}/tasks/${grease.id}`, { cost: 18, resources: { labour: [{ trade: "Fitter", people: 1, hours: 0.2 }] } });
+  // Greasing keeps the bearings on their life: × 3 if it isn't done (assumed).
+  await patch(`${M}/tasks/${grease.id}`, { support: { failure_mode_ids: [], impact: { form: "hazard_ratio", k: 3 } } });
   const check = await post(`${M}/positions/${top.id}/tasks`, { name: `Inspect bearings for play ${tag}`, interval: 100,
     unit: "hours", outcome: "on_condition", failure_mode_ids: modes });
   await patch(`${M}/tasks/${check.id}`, { cost: 22.5, resources: { labour: [{ trade: "Fitter", people: 1, hours: 0.3 }] } });
@@ -59,6 +62,15 @@ for (const width of [1440, 400]) {
     await expect(gaps).toContainText("no P-F interval");
     await expect(page.getByRole("textbox")).toHaveCount(0); // no form: the records are the inputs
     await shot(page, `forecast-lines-costs-${width}`);
+    // A supporting task: its worth, and a what-if (not done) in a column beside the plan as recorded.
+    const whatif = page.getByRole("region", { name: "Supporting tasks: what if" });
+    await expect(whatif).toContainText(`Grease deck spindles ${tag}`);
+    await expect(whatif).toContainText("Worth: avoids about");
+    await choose(whatif.getByRole("combobox", { name: `What if: Grease deck spindles ${tag}` }), "drop");
+    await expect(table.getByRole("columnheader", { name: "With your changes" })).toBeVisible({ timeout: 30_000 });
+    await expect(whatif).toContainText("failure rate × 3 on average");
+    await shot(page, `forecast-lines-whatif-${width}`);
+    if (width <= 400) expect(await sideways(page)).toBeLessThanOrEqual(0);
     if (width <= 400) expect(await sideways(page)).toBeLessThanOrEqual(0);
     // The same lines on the Hours view.
     await page.getByRole("radiogroup", { name: "Show" }).getByRole("radio", { name: "Labour hours" }).click();

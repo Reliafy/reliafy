@@ -7039,9 +7039,11 @@ def quick_forecast(
     ctx: Context,
     work: Annotated[Optional[dict[str, Any]], Field(description=(
         "Work on a schedule: {name, every, unit (hours|days|weeks|months|years), effect? (none: it doesn't change "
-        "the part's life; replaces: it replaces the part at that age), on_replace? (restart, the default: age "
-        "replacement; keep: block replacement), hours_each?, cost_each?, spares_each?, spare_name?}. Its count is "
-        "certain, assumed just done at the start."))] = None,
+        "the part's life; replaces: it replaces the part at that age; supports: it keeps the part on its life, with "
+        "impact_k? (failure rate × k if not done), grace? (%) and whatif? {drop: true} | {interval: N}: the answer "
+        "with it dropped or stretched beside it, and its worth), on_replace? (restart, the default: age replacement; "
+        "keep: block replacement), hours_each?, cost_each?, spares_each?, spare_name?}. Its count is certain, assumed "
+        "just done at the start."))] = None,
     part: Annotated[Optional[dict[str, Any]], Field(description=(
         "A part that fails: {age or ages (one per unit), hours_if_fails?, cost_if_fails?, spare_cost?, use_per_day? "
         "(a life in cycles, km...)} with model_id or distribution_id + params below."))] = None,

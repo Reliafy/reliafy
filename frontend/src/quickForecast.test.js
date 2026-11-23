@@ -88,3 +88,17 @@ test("by period: the certain work is added to both ends of the part's range", ()
   assert.equal(r.low, 1000);
   assert.equal(r.high, 1000);
 });
+
+test("a what-if beside the answer: as planned, with the change, and the difference", async () => {
+  const { changeText, requestOf: req, BLANK: B, BLANK_WORK: W } = await import("./quickForecast.js");
+  const dollars = (v) => `$${Math.round(v).toLocaleString("en-GB")}`;
+  assert.deepEqual(changeText({ expected: 140150 }, { expected: 179290 }, "costs", dollars),
+    { planned: "$140,150", changed: "$179,290", diff: "+$39,140" });
+  assert.equal(changeText({ expected: 2 }, { expected: 2 }, "hours").diff, "no change");
+  const f = { ...B, part: true, ages: "9000", work: { ...W, every: "250", effect: "supports", impactK: "2.5", whatif: "stretch", whatifEvery: "500" } };
+  const body = req(f, { distribution_id: "weibull", params: [] }, "hours");
+  assert.equal(body.work.effect, "supports");
+  assert.equal(body.work.impact_k, 2.5);
+  assert.deepEqual(body.work.whatif, { interval: 500 });
+  assert.equal(req({ ...f, work: { ...f.work, whatif: "drop" } }, { distribution_id: "weibull", params: [] }, "hours").work.whatif.drop, true);
+});

@@ -164,3 +164,28 @@ def test_work_that_keeps_its_schedule_is_block_replacement():
     assert fail["times"]["expected"] == pytest.approx(0.241, abs=0.001)
     assert out["totals"]["cost"]["expected"] == pytest.approx(511, abs=1)
     assert any("block replacement" in n for n in out["notes"])
+
+
+def test_supporting_work_stretched_and_its_worth():
+    """4.5 in the quick tool: the oil change keeps the engine on its life (× 2.5 if not changed). Stretched to
+    500 h: 0.957 failures (× 1.75 on average), 14 changes; its worth: avoids about 0.45 failures, $81,000 a
+    year, for $16,313. Nothing is saved."""
+    out = quick_forecast({"start": START, "running": {"hours": 20, "per": "day"},
+                          "work": {"name": "Change engine oil", "every": 250, "effect": "supports", "impact_k": 2.5,
+                                   "cost_each": 562.5, "whatif": {"interval": 500}},
+                          "part": {**ENGINE, "age": 9000, "cost_if_fails": 180000}})
+    assert _line(out, "failure")["times"]["expected"] == pytest.approx(0.688, abs=0.002)
+    alt = out["whatif"]
+    assert alt["ratio"]["mult"] == pytest.approx(1.75) and not alt["approximate"]
+    assert next(x for x in alt["lines"] if x["owner_kind"] == "failure")["times"]["expected"] == pytest.approx(0.957, abs=0.003)
+    assert next(x for x in alt["lines"] if x["owner_kind"] == "task")["times"]["expected"] == 14
+    w = out["worth"]
+    assert w["avoids_failures"] == pytest.approx(0.451, abs=0.005) and w["costs"] == pytest.approx(16312.5)
+    assert w["words"].startswith("Worth: avoids about $81")
+    # Dropped: the work's line goes, the engine at × 2.5.
+    dropped = quick_forecast({"start": START, "running": {"hours": 20, "per": "day"},
+                              "work": {"name": "Change engine oil", "every": 250, "effect": "supports", "impact_k": 2.5,
+                                       "whatif": {"drop": True}},
+                              "part": {**ENGINE, "age": 9000, "cost_if_fails": 180000}})
+    assert [x["owner_kind"] for x in dropped["whatif"]["lines"]] == ["failure"]
+    assert dropped["whatif"]["lines"][0]["times"]["expected"] == pytest.approx(1.139, abs=0.003)

@@ -266,9 +266,11 @@ def _lib_task(m: Maintenance, task: dict, hours_map, end: date, name: str | None
 
 
 def _task_rows(m: Maintenance, pos: dict, hours_map, start: date, end: date,
-               only: set | None = None, hours_only: bool = False) -> tuple[list, list, list]:
+               only: set | None = None, hours_only: bool = False, whatif: dict | None = None) -> tuple[list, list, list]:
     """The position's tasks as the library's Tasks: (rows [(library Task, view, task, basis)],
-    not on dates [{task, reason}], the library Tasks). ``only``: just these task ids."""
+    not on dates [{task, reason}], the library Tasks). ``only``: just these task ids. ``whatif``
+    (support_whatif.py): a task dropped is left out, a task stretched counts at its new interval."""
+    from backend.maintenance import support_whatif
     rows, skipped = [], []
     names: set = set()
     for task in sorted(m._tasks_on(pos["id"]), key=lambda t: (t.get("name") or "", t["id"])):
@@ -279,6 +281,11 @@ def _task_rows(m: Maintenance, pos: dict, hours_map, start: date, end: date,
         if svc._on_event_only(task):
             skipped.append({"task": {"id": task["id"], "name": task["name"]}, "reason": "waits for its trigger"})
             continue
+        plan = support_whatif.plan_of(whatif, task["id"])
+        if plan and plan.get("drop"):
+            continue
+        if plan and plan.get("interval"):
+            task = {**task, "interval": plan["interval"], "rule": None}
         name = task["name"] if task["name"] not in names else f"{task['name']} ({task['id'][:6]})"
         found, why = _lib_task(m, task, hours_map, end, name, hours_only=hours_only)
         if why:
@@ -551,7 +558,7 @@ class _Credited:
 
 
 def _model_forecast(m: Maintenance, fetch, pos: dict, hours_map, start: date, end_excl: date, period: str,
-                    link: dict | None = ..., mode_ids=None, windows=None):
+                    link: dict | None = ..., mode_ids=None, windows=None, supporting=None, whatif=None):
     """A life on the position (``link``; by default the model in use), forecast by period with
     the tasks of the failure modes it's for (``mode_ids``; None: all the position's) counted:
     (found, None) or (None, reason). ``windows(life_unit, usage)``: forecast in these windows
@@ -603,6 +610,24 @@ def _model_forecast(m: Maintenance, fetch, pos: dict, hours_map, start: date, en
     fitment = m.current_fitment(pos["id"])
     if fitment is None:
         return None, {**brief, "reason": "nothing fitted here"}
+    # A supporting task's impact (support_whatif.py): dropped, stretched, or the plan past its reference.
+    support_hr = None
+    if supporting:
+        from backend.maintenance import support_whatif
+
+        try:
+            mean = float(np.atleast_1d(dist.mean())[0])
+        except Exception:  # noqa: BLE001 - no finite mean: no "approximate" judgement
+            mean = None
+        support_hr = support_whatif.life_ratio(m, supporting, pos["id"], mode_ids, whatif,
+                                               lambda v, u: _in_life_unit(v, u, unit), mean)
+        if support_hr is not None:
+            extras = dict(r.get("extras") or {})
+            extras["hr"] = float(extras.get("hr") or 1.0) * support_hr["mult"]
+            try:
+                dist, label = _model_from_params(dist_id, r.get("params") or [], extras)
+            except StrategyError as exc:
+                return None, {**brief, "reason": f"the model can't take the supporting task's impact: {exc}"}
     placeholder = not getattr(doc, "dataset_id", "")
     lib_unit = _LIB_UNITS.get(unit)
     if unit in svc.CALENDAR_UNITS and lib_unit:
@@ -720,6 +745,7 @@ def _model_forecast(m: Maintenance, fetch, pos: dict, hours_map, start: date, en
         "tasks_counted": effects["credited"], "tasks_not_counted": effects["not_credited"],
         "found_share": _num(1.0 - effects["miss"], 6) if effects["miss"] < 1.0 else None,
         "mean_life": _num(mean_life) if mean_life and np.isfinite(mean_life) else None,
+        "support_hr": support_hr,
         "replacing_task": ({"id": effects["renew_task"]["id"], "resets": effects["resets"]}
                            if effects.get("renew_task") is not None else None),
         "method": fc.method, "notes": list(fc.notes) + (
@@ -982,7 +1008,7 @@ def served_modes(m: Maintenance, task_ids) -> set:
 
 
 def position_forecast(m: Maintenance, position_id: str, root: str | None = None, period="month", periods=12,
-                      fetch=None, end=None, task_ids=None, strict: bool = False) -> dict:
+                      fetch=None, end=None, task_ids=None, strict: bool = False, whatif: dict | None = None) -> dict:
     """The forecast for a position and everything under it: see the module docstring.
     ``fetch(model_type, model_id)`` opens a saved model (position_models.fetcher); without
     it, no failures are forecast. ``end`` (an ISO date): the horizon's last day instead of
@@ -1025,13 +1051,16 @@ def position_forecast(m: Maintenance, position_id: str, root: str | None = None,
     no_cost_tasks, no_hours_tasks = set(), set()
     model_rows = []
     tree = _subtree(m, position_id)
+    from backend.maintenance import support_whatif
+
+    supporting = support_whatif.supporting_tasks(m, [n["id"] for n, _d in tree]) if fetch is not None else []
     own_map = None
     n_tasks = 0
     for node, depth in tree:
         hours_map = _hours_map(m, node, root, start, end_excl, strict=strict)
         if node["id"] == position_id:
             own_map = hours_map
-        rows, skipped, lib_tasks = _task_rows(m, node, hours_map, start, end, only)
+        rows, skipped, lib_tasks = _task_rows(m, node, hours_map, start, end, only, whatif=whatif)
         n_tasks += len(rows)
         if n_tasks > MAX_TASKS:
             raise Invalid(f"More than {MAX_TASKS} tasks under this position: open a smaller branch.")
@@ -1091,7 +1120,8 @@ def position_forecast(m: Maintenance, position_id: str, root: str | None = None,
                 lives = _lives_served(m, node, lives, served)
             for link, mode_ids in lives:
                 # A life in hours with no duty runs all the time (running_clock), strict or not.
-                found, why = _model_forecast(m, fetch, node, hours_map, start, end_excl, period, link, mode_ids)
+                found, why = _model_forecast(m, fetch, node, hours_map, start, end_excl, period, link, mode_ids,
+                                             supporting=supporting, whatif=whatif)
                 if why:
                     not_forecast.append({**why, "position": here})
                 if found:

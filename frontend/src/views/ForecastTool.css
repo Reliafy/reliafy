@@ -58,3 +58,8 @@
 .ft-lines tfoot th, .ft-lines tfoot td { font-weight: 600; }
 .ft-spares { white-space: normal; min-width: 10em; font-size: var(--fs-13); line-height: var(--lh-13); }
 .ft-assumed { margin-top: var(--space-1); }
+/* Supporting tasks (forecast plan step 7): their worth and a what-if beside the plan as recorded. */
+.ft-whatif { margin: var(--space-4) 0; }
+.ft-whatif-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
+.ft-worth, .ft-whatif-line { margin: 0 0 var(--space-2); font-size: var(--fs-14); line-height: var(--lh-14); }
+.ft-lines .ft-alt { color: var(--accent-text); }
