@@ -62,7 +62,7 @@ export function promptGroups(prompts) {
   if (costs.length) {
     groups.push({
       id: "cost", title: `Failure modes with no failure cost (${costs.length})`,
-      lead: "Enter what one failure costs, and how long it stops the asset, on the failure mode's consequence.",
+      lead: "Enter what one failure costs, and how long it stops the asset, on what's done if it fails (its corrective task on the Maintenance tab).",
       items: costs.map((x) => ({
         key: x.mode ? `c-${x.mode.id}` : `c-${x.position.id}-${x.life}`,
         name: x.mode ? x.mode.text : x.life, where: x.position.name, link: x.link,
@@ -103,50 +103,27 @@ export function plannedTitle(row) {
   return bits.length ? `Planned: ${bits.join(", ")}` : "";
 }
 
-// A failure mode's responses (responses.py): "If it fails anyway" (kind failure, its corrective response)
-// and "If an inspection finds it" (kind found, its follow-on). The panel's fields, each read from the
-// response and sent as the route takes it (PUT …/response/<kind>).
-export const RESPONSE_WORDS = {
-  failure: { title: "If it fails anyway", none: "Nothing recorded: the forecast counts these failures but can't say the hours, spares or cost to put one right.", add: "Add what's done" },
-  found: { title: "If an inspection finds it", none: "Nothing recorded: the forecast counts the finds but can't say what acting on one needs.", add: "Add what's done" },
-};
-
-export function responseFields(sym = workspaceCurrency()) {
-  return [
-    { key: "name", label: "What's done", help: "The work, in a few words: \"Replace the spindle\"." },
-    { key: "hours", label: "Labour", suffix: "h", type: "number", help: "Hours of work to do it once (people × hours)." },
-    { key: "cost", label: "Cost each time", suffix: sym, type: "number", optional: true, help: "All in, once. Left empty, it's worked out from its labour and parts in the LSA." },
-    { key: "spare", label: "Spare it uses", optional: true, help: "The part fitted each time (one), if any." },
-  ];
+// A response is a task raised by its event (responses.py): its kind on the Maintenance tab (the
+// table's Kind, the task panel's head) and the line under its name there.
+export const RESPONSE_KIND = { failure: "Corrective: on failure", found: "Follow-on: when found" };
+export const responseKindOf = (t) => (t?.trigger && RESPONSE_KIND[t.trigger.kind] ? t.trigger.kind : null);
+export function responseTrigger(kind, mode) {
+  const what = mode || "its failure mode";
+  return kind === "failure" ? `Raised when ${what} fails` : `Raised when an inspection finds ${what}`;
 }
 
-// A response's value for a field, as the panel shows it.
-export function responseValue(resp, key) {
-  if (!resp) return "";
-  if (key === "name") return resp.name || "";
-  if (key === "hours") return resp.hours_each ?? "";
-  if (key === "cost") return resp.cost_source === "typed" ? resp.cost_each ?? "" : "";
-  if (key === "spare") return (resp.spares || [])[0]?.name || "";
-  return "";
-}
-
-// One field's change as the route's body, or {error}.
-export function responseBody(key, raw) {
-  const text = String(raw ?? "").trim();
-  if (key === "name") return text ? { body: { name: text } } : { error: "Say what's done, in a few words." };
-  if (key === "spare") return { body: { spares: text ? [{ name: text, qty: 1 }] : [] } };
-  const v = text === "" ? null : Number(text.replace(/[$,\s]/g, ""));
-  if (v != null && (!Number.isFinite(v) || v < 0)) return { error: key === "hours" ? "Enter the hours, 0 or more." : "Enter an amount, 0 or more." };
-  if (key === "hours") return { body: { labour: v ? [{ trade: "", people: 1, hours: v }] : [] } };
-  return { body: { cost: v } };
-}
-
-// The line under a response's fields: what it adds to each failure, or what's still missing.
-export function responseNote(resp) {
-  if (!resp) return "";
+// A response in one line on the RCM tab (ModeResponseLinks): {text, action, gap}. `used`: the failure
+// cost in force (its all-in figure, said after a corrective response when it's more than the repair).
+export function responseLine(kind, resp, used = null) {
+  const lead = kind === "failure" ? "If it fails" : "If an inspection finds it";
+  if (!resp) {
+    return { text: kind === "failure" ? "No response if it fails" : "Nothing recorded for when it's found", action: "Add in Maintenance", gap: true };
+  }
   const bits = [];
   if (resp.hours_each != null) bits.push(`${Number(Number(resp.hours_each).toPrecision(4)).toLocaleString("en-GB")} h`);
-  if (resp.cost_each != null) bits.push(`${money(resp.cost_each)}${resp.cost_source === "typed" ? "" : " (from its LSA)"}`);
-  const gaps = resp.gaps || [];
-  return `${bits.length ? `Each time: ${bits.join(", ")}.` : ""}${gaps.length ? ` Not known yet: ${gaps.join("; ")}.` : ""}`.trim();
+  if (resp.cost_each != null) bits.push(money(resp.cost_each));
+  let text = `${lead}: ${resp.name}${bits.length ? ` (${bits.join(", ")})` : ""}`;
+  if (kind === "failure" && used?.per_failure != null && used.per_failure !== resp.cost_each) text += `; a failure costs ${money(used.per_failure)} all in`;
+  return { text, action: "Edit in Maintenance", gap: false };
 }
+

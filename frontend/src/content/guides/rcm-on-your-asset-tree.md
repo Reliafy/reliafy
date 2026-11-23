@@ -464,35 +464,26 @@ fewer than five failures, it says the effect can't be estimated rather than
 give a number. **Use** fills the fields with the source **Fitted** and keeps
 the fit as the record's evidence; Save keeps it.
 
-### If it fails anyway: what's done after a failure
+### Responses: what's done if it fails, or when it's found
 
 Every failure mode can say what's done when it happens anyway, whatever its
-decision: replace the spindle, swap in the spare pump. In the failure mode's
-details, under its consequence, **If it fails anyway** has **What's done**, its
-**Labour** (hours of work to do it once), its **Cost each time** (all in; left
-empty, it's worked out from its labour and parts in the LSA) and the **Spare it
-uses**. Each field is kept as you leave it. It's a task raised by the failure,
-so it shows on the Maintenance tab as *on event: if … fails* and is never due on
-a date.
+decision (replace the spindle, swap in the spare pump), and, on one a check
+serves, what's done when an inspection finds it early. Both are tasks on the
+**Maintenance** tab, raised by the event, and are edited there with their
+labour, parts, cost and the cost of the failure itself.
 
-- **The cost of a failure** comes from it: **What a failure costs** shows *From
-  its response* until you type a figure there, which then overrides it.
-- **The forecast** takes its hours, spares and cost for each failure it
-  expects. With nothing recorded, the failures are still counted, and the
-  forecast lists *no response if it fails* under **Not counted**, with **Add**
-  opening this row.
-- **Remove** takes it off (the task is retired, kept in the history).
+In the failure mode's details, under its consequence, **Responses** says each
+in one line: *If it fails: Replace drive belt (1.5 h, $85) · Edit in
+Maintenance ›*, or *No response if it fails · Add in Maintenance ›*. **Add
+response if it fails…** and **Add follow-on…** in the failure mode's menu open
+the same form on the Maintenance tab. The decision itself stays here.
 
-On a failure mode an on-condition or failure-finding check serves, **If an
-inspection finds it** sits below it, with the same fields: what's done when the
-check catches the problem early (replace the bearing as planned work, an hour
-and an $85 bearing). The forecast's **follow-on** line takes its hours, spares
-and cost for each find: the failures that would have happened × the share the
-inspection finds in time, which comes from the check's P-F interval. With no
-P-F interval, the finds aren't counted (every failure goes to the corrective
-line) and the forecast says **Add the P-F interval**; with nothing recorded
-here, the finds are counted and what they need is listed under **Not
-counted**, with **Add** opening this row.
+The forecast takes their hours, spares and cost for each failure (or find) it
+expects. With nothing recorded, the failures are still counted, and the
+forecast lists the gap under **Not counted**, with **Add** opening the form. A
+failure's cost comes from the response unless a cost of the failure is typed on
+it; with no P-F interval on the check, the finds aren't counted (every failure
+goes to the corrective line) and the forecast says **Add the P-F interval**.
 
 ## Working out the interval
 

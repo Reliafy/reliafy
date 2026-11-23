@@ -58,20 +58,7 @@ test("the planned cost's title names the visits' cost", () => {
   assert.equal(plannedTitle({ labour_cost: 27, visits_cost: 165 }), "Planned: labour $27, visits' call-out and setup $165");
 });
 
-test("a failure mode's response: its fields, what each sends, and the line under them", async () => {
-  const { placeholderFor: ph, responseBody, responseFields, responseNote, responseValue } = await import("./failureCosts.js");
-  assert.deepEqual(responseFields("$").map((f) => f.key), ["name", "hours", "cost", "spare"]);
-  const resp = { name: "Replace the seal", hours_each: 6, cost_each: 650, cost_source: "typed", spares: [{ name: "Seal kit", qty: 1 }], gaps: [] };
-  assert.equal(responseValue(resp, "hours"), 6);
-  assert.equal(responseValue(resp, "spare"), "Seal kit");
-  assert.equal(responseValue({ ...resp, cost_source: "lsa" }, "cost"), "");
-  assert.deepEqual(responseBody("hours", "4"), { body: { labour: [{ trade: "", people: 1, hours: 4 }] } });
-  assert.deepEqual(responseBody("cost", ""), { body: { cost: null } });
-  assert.deepEqual(responseBody("spare", "Seal kit"), { body: { spares: [{ name: "Seal kit", qty: 1 }] } });
-  assert.match(responseBody("name", " ").error, /Say what's done/);
-  assert.match(responseBody("hours", "-1").error, /hours/);
-  assert.match(responseNote(resp), /^Each time: 6 h, \$650\.$/);
-  assert.match(responseNote({ ...resp, hours_each: null, gaps: ["no labour in it, so its hours are unknown"] }), /Not known yet: no labour/);
-  // The failure cost field says where its figure comes from until one is typed (an override).
-  assert.match(ph("failure_cost", { responses: { failure: resp } }), /^From its response: \$650$/);
+test("the failure cost field says where its figure comes from until one is typed", () => {
+  const resp = { name: "Replace the seal", hours_each: 6, cost_each: 650, cost_source: "typed", spares: [], gaps: [] };
+  assert.match(placeholderFor("failure_cost", { responses: { failure: resp } }), /^From its response: \$650$/);
 });

@@ -73,11 +73,46 @@ test("Maintenance: the tasks in the tree with a roll-up at each level; open one,
   // A task opened: its form beside the table; the cost typed shows in the row.
   await nameRow(page, `Inspect the guard ${tag}`).locator(".tp-nm").click();
   const edit = side(page).getByRole("form", { name: `Task: Inspect the guard ${tag}` });
+  // The order (Derryn, 23 Nov 2026): kind, what's done, how often (one line), then the extras folded.
+  const text = await edit.innerText();
+  expect(text.indexOf("Kind of task")).toBeGreaterThan(-1);
+  expect(text.indexOf("Kind of task")).toBeLessThan(text.indexOf("What's done"));
+  expect(text.indexOf("What's done")).toBeLessThan(text.indexOf("How often"));
+  await expect(edit.getByRole("radio", { name: "Running hours" })).toHaveCount(0); // no four-chip switch
+  // A task added directly edits why it's done here.
+  await expect(edit.getByRole("combobox", { name: "Kind of task" })).toBeVisible();
+  await expect(edit.getByRole("region", { name: "Why it's done" })).toBeVisible();
+  // Cost: folded, nothing set; opened, the box.
+  const cost = edit.getByRole("button", { name: "Cost", exact: true });
+  await expect(cost).toHaveAttribute("aria-expanded", "false");
+  await cost.click();
   await expect(edit).toContainText("Not set yet");
-  await edit.getByRole("spinbutton", { name: /Cost each time/ }).fill("60");
+  await edit.getByRole("spinbutton", { name: /Each time/ }).fill("60");
   await edit.getByRole("button", { name: "Save" }).click();
   await expect(nameRow(page, `Inspect the guard ${tag}`)).toContainText("$60");
   await shot(page, "maintenance-task-desktop");
+  // The cost typed is a row under the task (not a task: the counts don't change), opening the task at its Cost.
+  const guard = nameRow(page, `Inspect the guard ${tag}`);
+  await guard.locator(".tp-chev").click();
+  const costRow = nameRow(page, "Cost · $60 each time");
+  await expect(costRow).toBeVisible();
+  await expect(page.locator(".mt-rollup")).toHaveText("2 here · 3 tasks at and below");
+  await costRow.locator(".tp-nm").click();
+  await expect.poll(() => query(page).get("msec")).toBe("cost");
+  const reopened = side(page).getByRole("form", { name: `Task: Inspect the guard ${tag}` });
+  await expect(reopened.getByRole("button", { name: /^Cost/ })).toHaveAttribute("aria-expanded", "true");
+  await expect(reopened.getByRole("spinbutton", { name: /Each time/ })).toHaveValue("60");
+
+  // A task from an RCM decision: what the RCM owns is one read-only line, edited on the RCM tab only.
+  await nameRow(page, `Check the seal ${tag}`).locator(".tp-nm").click();
+  const fromRcm = side(page).getByRole("form", { name: `Task: Check the seal ${tag}` });
+  await expect(fromRcm.locator(".mt-from")).toContainText(`From RCM: Seal leaks ${tag} · Check condition · Open in RCM ›`);
+  await expect(fromRcm.getByRole("link", { name: "Open in RCM ›" })).toHaveAttribute("href", /tab=rcm/);
+  await expect(fromRcm.getByRole("combobox", { name: "Kind of task" })).toHaveCount(0);
+  await expect(fromRcm.getByRole("region", { name: "Why it's done" })).toHaveCount(0);
+  await expect(fromRcm.getByRole("checkbox", { name: `Seal leaks ${tag}` })).toHaveCount(0);
+  // Its labour is a row under it too, and its Labour fold says so while folded.
+  await expect(fromRcm.getByRole("button", { name: /^Labour/ })).toContainText(`0.5 h Fitter ${tag}`);
 
   // Add task… on the motor (its row menu): a form beside the table, never a dialog.
   await motor.locator(".tp-nm").click({ button: "right" });
@@ -93,8 +128,8 @@ test("Maintenance: the tasks in the tree with a roll-up at each level; open one,
   const form = side(page).getByRole("form", { name: "Add a task" });
   await expect(form).toContainText(`Add a task to Maint motor ${tag}`);
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await form.getByRole("textbox", { name: /Task: the action only/ }).fill(`Check the coupling ${tag}`);
-  await form.getByRole("group", { name: "How often" }).getByRole("spinbutton", { name: "How many" }).fill("6");
+  await form.getByRole("textbox", { name: /What's done/ }).fill(`Check the coupling ${tag}`);
+  await form.getByRole("spinbutton", { name: "How many" }).fill("6");
   await form.getByRole("button", { name: "Add task" }).click();
   await expect(nameRow(page, `Check the coupling ${tag}`)).toBeVisible();
   await expect(motor).toContainText("2 tasks here");
@@ -126,9 +161,15 @@ test("Maintenance at 400 px: the tree of tasks, a task opened, an old forecast a
   expect(await sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "maintenance-tree-phone");
   await nameRow(page, `Check the seal ${tag}`).locator(".tp-nm").click();
-  await expect(side(page).getByRole("form", { name: `Task: Check the seal ${tag}` })).toContainText("$45 each time");
-  // When the item is replaced: restart or keep, the default said with why (a task on its own restarts).
-  await expect(side(page).getByRole("combobox", { name: "When the item is replaced" })).toContainText("Restart the schedule");
+  // Its cost, folded, says what's in force: $45 from its LSA.
+  await expect(side(page).getByRole("form", { name: `Task: Check the seal ${tag}` }).getByRole("button", { name: /^Cost/ }))
+    .toContainText("$45 each time, from its LSA");
+  // When the item is replaced: under More scheduling options (folded, nothing set: no summary),
+  // restart or keep, the default named (a task on its own restarts).
+  const more = side(page).getByRole("button", { name: "More scheduling options" });
+  await expect(more).toHaveAttribute("aria-expanded", "false");
+  await more.click();
+  await expect(side(page).getByRole("combobox", { name: "When the item is replaced" })).toContainText("Restart (default)");
   expect(await sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "maintenance-task-phone");
   // Open in from a task's ⋯ on a phone: Select keeps its place, so the tools are under More › (in place).

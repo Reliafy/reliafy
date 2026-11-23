@@ -1,6 +1,6 @@
-// Calendar schedules on a task (Nov 2026): the task panel's How often picks a type (Running hours,
-// Days, weeks or months, Calendar rule, At shutdowns), then a short sentence; the rule in words and
-// its next five dates show under it as you choose, worked out on the server. Set "the first
+// Calendar schedules on a task (Nov 2026): the task panel's How often is one line, "Every [N] [unit]";
+// under More scheduling options, When it falls due › On set calendar dates turns it into a short
+// sentence; the rule in words and its next dates show under it as you choose, worked out on the server. Set "the first
 // Saturday of every month", save, and the task's Next due on the Maintenance tab is the first of
 // those dates (a rule gives a definite next date, even with no record of it being done). At 400 px the control wraps and nothing scrolls sideways.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
@@ -28,14 +28,18 @@ for (const width of [1440, 400]) {
     await open(page, `/asset-register/explorer?arrange=positions&root=${p.top.id}&sel=${p.pos.id}&tab=maintenance&mtask=${p.task.id}`);
     const how = page.getByRole("group", { name: "How often" });
     await expect(how).toBeVisible();
-    await how.getByRole("radio", { name: "Calendar rule" }).click();
+    await how.getByRole("button", { name: "More scheduling options" }).click();
+    await choose(how.getByRole("combobox", { name: "When it falls due" }), "rule");
     await choose(how.getByRole("combobox", { name: "How often it repeats" }), "months:1");
     await choose(how.getByRole("combobox", { name: "Which day" }), "nth:1");
     await choose(how.getByRole("combobox", { name: "Day of the week" }), "Saturday");
-    // The rule in words, then the next five dates (each a Saturday), from the server.
+    // The rule in words, then the next dates (each a Saturday), from the server.
     const dates = how.locator(".ho-dates");
     await expect(dates).toContainText("The first Saturday of every month.");
-    await expect(dates).toContainText(/Next: (Sat[^·]+ · ){4}Sat/);
+    await expect(dates).toContainText(/Next: (Sat[^·]+ · ){2}Sat/);
+    // Folded again, its line says a rule is set: nothing hidden silently.
+    await how.getByRole("button", { name: "More scheduling options" }).click();
+    await expect(how.getByRole("button", { name: /^More scheduling options/ })).toContainText("On set calendar dates");
     await shot(page, `calendar-rule-editor-${width}`);
     expect(await sideways(page)).toBeLessThanOrEqual(0);
     await page.getByRole("button", { name: "Save", exact: true }).click();

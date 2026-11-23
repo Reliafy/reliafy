@@ -17,7 +17,7 @@ Inside a `Field`, the number takes the field's id, help and error (the box turns
 
 ## Rules
 
-- Use it for every number that has a unit: a mission's length, a phase's duration, a duty's hours a day and days a week, an age, a percentage. Never a bare number box with the unit as loose text beside it, and never a number box and a separate drop-down side by side.
+- Use it for every number that has a unit: a mission's length, a phase's duration, a duty's hours a day and days a week, an age, a percentage, a task's How often ("Every [50 | operating hours ▾]") and its second limit, a response's labour hours. Never a bare number box with the unit as loose text beside it, and never a number box and a separate drop-down side by side.
 - It's only as wide as it needs (`width: fit-content`, never wider than its column). Don't stretch it to a column's width.
 - No spinners: people type numbers. Arrow keys still step a `type="number"` field.
 - The help under it says what the number is in, in a few words ("In flight hours. Cycles or km need a rate per hour.").

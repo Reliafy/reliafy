@@ -8,6 +8,7 @@ The tree pane and a tab's table are the same tree, not two: what's open, the row
 
 - Each position (or place) has the tab's own rows under it: its functions and failure modes, its tasks, its measuring points, its models, its missions. Each level rolls up what's at and below it.
 - A click picks a row and opens its details beside the table; a double-click (or Enter) opens them across the table, with "Back to table" and Esc to return (`expanded`, `onExpand`, `onCollapse`). Which rows do is one rule, `opensWide` (`explorerRcm.js`): see `TablePane`.
+- A task's extras (Maintenance) are rows under it, only when set: "Labour · 1.5 h mechanic", "Part · Spindle kit × 1", "Cost · $40 each time" (`taskExtras.js`), each with a quiet dot. They aren't tasks: no roll-up counts them, they take no pick or filter, and a click opens the task's details at that fold-out (`?msec=`).
 - A work package's row (Maintenance) is a leaf: its tasks show under their own positions only (their Packaged cell names it), and its details list them, each name picking the task in the tree.
 - No forecasts in the tree (Derryn, 23 Nov 2026): quick one-off work lives in the left menu's tools, the saved work in the Explorer. A row's **Open in ›** opens a tool filled in from it (see `ContextMenu`).
 - A parent row's roll-up runs across the columns (`rollupOf`). `rollupLead` names columns it keeps as cells before the roll-up, drawn by `renderLead`: the Maintenance tab's **Next due** comes first, and a level shows the soonest next due at and below it.

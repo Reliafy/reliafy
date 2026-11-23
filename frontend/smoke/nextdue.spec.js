@@ -43,6 +43,6 @@ test("next due: hours and a date from the duty, a dash with why when it isn't kn
   await expect(page.getByText(`Elsewhere ${tag}`)).toHaveCount(0);
   // The details say the same.
   await page.locator(`[id="tp-MT:${inspect.id}"] .tp-nm`).click();
-  await expect(page.locator(".mt-due-basis")).toContainText("Next due: not known. No record of when this was last done.");
+  await expect(page.locator(".mt-due-line")).toContainText("Next due: not known (no record of when this was last done).");
   await expectHealthy(page, problems, { label: "next due" });
 });

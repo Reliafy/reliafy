@@ -15,6 +15,7 @@
 import { counted } from "./menuStandard.js";
 import { cellText, costWhere, fromRcm, kindText, money, SOURCE_WORDS } from "./lsaTab.js";
 import { sig } from "./positionForecast.js";
+import { taskExtras } from "./taskExtras.js";
 
 export const TASK_TYPE = "mtask";
 export const isTaskRow = (r) => r?.type === TASK_TYPE;
@@ -25,8 +26,14 @@ export const PKG_REF_TYPE = "mpref";
 export const isPackageRow = (r) => r?.type === PKG_TYPE;
 export const isPackageRef = (r) => r?.type === PKG_REF_TYPE;
 export const packageKey = (id) => `MP:${id}`;
-// Any of the Maintenance tab's own rows (a task, a package, a reference).
-export const isMaintRow = (r) => isTaskRow(r) || isPackageRow(r) || isPackageRef(r);
+// A task's optional extras as rows under it (Derryn, 23 Nov 2026): "Labour · 1.5 h mechanic",
+// "Part · Spindle kit × 1", "Cost · $40 each time" (taskExtras.js), only when set. Not tasks: they
+// count in no roll-up, take no pick and no filter; a click opens the task at that fold-out.
+export const EXTRA_TYPE = "mxtra";
+export const isExtraRow = (r) => r?.type === EXTRA_TYPE;
+export const extraKey = (taskId, section, i = 0) => `MX:${taskId}:${section}:${i}`;
+// Any of the Maintenance tab's own rows (a task, a package, a reference, a task's extra).
+export const isMaintRow = (r) => isTaskRow(r) || isPackageRow(r) || isPackageRef(r) || isExtraRow(r);
 
 // Next due is the first column (a level's roll-up runs on after its soonest next due) and sorts.
 export const TASK_COLUMNS = [
@@ -76,13 +83,20 @@ export function graftTasks(display, tasks = [], { prune = false, packages = null
     for (const t of [...list].sort((a, b) => String(a.name).localeCompare(String(b.name), "en", { numeric: true }))) {
       const key = taskKey(t.id);
       keys.push(key);
+      const extras = taskExtras(t).map((x, i) => ({ ...x, key: extraKey(t.id, x.section, i) }));
       rows.set(key, {
-        key, type: TASK_TYPE, parent: pk, kids: [], depth: p.depth + 1, own: noStatus(), sum: noStatus(),
+        key, type: TASK_TYPE, parent: pk, kids: extras.map((x) => x.key), depth: p.depth + 1, own: noStatus(), sum: noStatus(),
         ref: {
           name: t.name, task: t, position_id: pk,
           search: [t.name, t.package?.name, t.trade, cellText(t, "from"), kindText(t)].filter(Boolean).join(" ").toLowerCase(),
         },
       });
+      for (const x of extras) {
+        rows.set(x.key, {
+          key: x.key, type: EXTRA_TYPE, parent: key, kids: [], depth: p.depth + 2, own: noStatus(), sum: noStatus(),
+          ref: { name: x.text, section: x.section, task: t, task_key: key, position_id: pk, search: x.text.toLowerCase() },
+        });
+      }
       p.tsum.tasks += 1;
       if (nextOf(t).overdue) p.tsum.overdue += 1;
       p.tsum.next = soonest(p.tsum.next, nextOf(t), t.name);

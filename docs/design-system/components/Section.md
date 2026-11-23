@@ -5,7 +5,7 @@ A section of a panel or form: a 14px heading (`psec-title`), a count pill, and o
 ## Props
 
 - `title`, `count` (a number or null), `headingLevel` (3 by default).
-- `action` — `{label, onClick, ariaLabel?, plus?: true, disabled?, ref?}`: `plus` makes it a ghost "+ Add", else a small secondary.
+- `action` — `{label, onClick, ariaLabel?, plus?: true, quiet?: true, disabled?, ref?}`: `plus` makes it a ghost "+ Add"; `quiet` a ghost with no "+", for an optional tool beside the heading (a task's Optimise… beside How often); else a small secondary.
 - `tip` — a few words of guidance behind a small "?" by the heading, shown on press.
 - `aside` — a node between heading and action (a sort, "✓ Saved").
 - `label`, `id`, `className`, children.

@@ -99,6 +99,15 @@ export function lsaLead(r, { design = false, viewOnly = null } = {}) {
 // The Maintenance tab's own for a row: Add task… (it opens in the panel beside the tree,
 // never a dialog). A position or a place.
 export const MAINT_ADD_TASK = { id: "maint-add-task", label: "Add task…" };
+// A failure mode's response, added on the Maintenance tab (a position's failure mode, picked in the
+// form): in the tab's ⋯ menu for the position picked (a row's menu has no room: ten items a level).
+export const MAINT_ADD_RESPONSE = { id: "maint-add-response", label: "Add response if it fails…", title: "What's done when one of its failure modes fails" };
+export const MAINT_ADD_FOLLOW_ON = { id: "maint-add-follow-on", label: "Add follow-on…", title: "What's done when an inspection finds one of its failure modes" };
+export function maintenanceResponses(r, { viewOnly = null } = {}) {
+  if (!r || r.type !== "pos") return [];
+  return [write(MAINT_ADD_RESPONSE, viewOnly), write(MAINT_ADD_FOLLOW_ON, viewOnly)];
+}
+
 export function maintenanceLead(r, { viewOnly = null } = {}) {
   if (!r || (r.type !== "pos" && r.type !== "loc")) return [];
   return [write(MAINT_ADD_TASK, viewOnly)];

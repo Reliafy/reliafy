@@ -33,7 +33,7 @@ import {
 import {
   PKG_OPEN, PKG_RETIRE, REF_GO, REF_REMOVE, TASK_RETIRE, TASK_ADD_TO, TASK_CLEAR, TASK_DRAFT, TASK_OPEN, TASK_OPTIMISE, TASK_PACKAGE, TASK_SELECT,
   anyFilter, commonHolder, dueOrder, facetValues, facetsOf, filterTasks, filterWords, nextDueSort,
-  graftTasks, isMaintRow, isOpenIn, openInItem, openInLink, isPackageRef, isPackageRow, isTaskRow, keepShown, openForTasks, packageKey, packageRowActions,
+  graftTasks, isExtraRow, isMaintRow, isOpenIn, openInItem, openInLink, isPackageRef, isPackageRow, isTaskRow, keepShown, openForTasks, packageKey, packageRowActions,
   packageWhere, pickTasks, refRowActions, rollupText as taskRollup, shownTasks, taskKey, taskRowActions,
 } from "../explorerTasks.js";
 import CovariateBindPane from "../components/CovariateBindPane.jsx";
@@ -122,7 +122,7 @@ import { EXPLORER_LABEL } from "../navigation.js";
 import { ASSETS_LIST_PATH, explorerCarry } from "../maintenanceAssets.js";
 import { explorerRowMenu } from "../explorerMenu.js";
 import { COPY_LINK, OPEN, copyLink, rowLink } from "../menuStandard.js";
-import { addsFirst, focusNoun, isolateItems, liveKids, lsaLead, maintenanceLead, moveTargets, showsAddRow, summaryActions, tabMenu as menuOnTab, viewOnlyReason, withAssetMoves, withPin } from "../treeRowMenu.js";
+import { addsFirst, focusNoun, isolateItems, liveKids, lsaLead, maintenanceLead, maintenanceResponses, moveTargets, showsAddRow, summaryActions, tabMenu as menuOnTab, viewOnlyReason, withAssetMoves, withPin } from "../treeRowMenu.js";
 import { canIsolate, depthWords, focusFrom, focusKind, focusKinds, focusShown, isolateIncompleteItem, isolateIncompleteOpen, isolateKindOpen, isolateOpen, levelsBelow } from "../treeIsolate.js";
 import { removeTaskFromMode } from "../components/RcmModeTasks.jsx";
 import { MoveModal, RenameModal } from "../components/TreeRowModals.jsx";
@@ -235,6 +235,9 @@ function pickerList(data) {
 // The FME(C)A worksheet's text columns: a parent row's "3 of 5 scored" runs
 // across the first of them it shows (they're blank on a parent row).
 const FMEA_ROLLUP_COLS = new Set(["failure", "cause", "effect_local", "effect_next", "effects", "detection_method"]);
+
+// A failure mode's two responses, added on the Maintenance tab (?respond=).
+const RESPONSE_KINDS = ["failure", "found"];
 
 // Scoped to one tree (`root`, or ?root=: a product's design from its page, an
 // item's tree from Items) it shows that tree alone, by position; unscoped, it
@@ -1081,6 +1084,14 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     mtaskShown.current = id;
     reveal(taskKey(id));
   }, [tasksOn, params, display, reveal]);
+  // A response asked for (?respond=&fm=) that's there already: it opens, rather than a second one.
+  useEffect(() => {
+    const kind = tasksOn ? params.get("respond") : null;
+    const fm = params.get("fm");
+    if (!kind || !fm || !ptasks.tasks) return;
+    const hit = ptasks.tasks.find((t) => t.trigger?.kind === kind && t.trigger?.failure_mode_id === fm);
+    if (hit) setQuery_((q) => { q.set("mtask", hit.id); for (const k of ["addtask", "respond", "fm"]) q.delete(k); });
+  }, [tasksOn, params, ptasks.tasks]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Something added in place in the details (a new row of one of its lists):
   // the way down to it opened in the tree, once the RCM is read again, the
@@ -1304,13 +1315,16 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     // The Maintenance tab: the task opened is in the address (?mtask=), so a reload or a link keeps it.
     if (tasksOn && opts.go) {
       setQuery_((q) => {
-        if (isTaskRow(r)) q.set("mtask", r.ref.task.id);
+        if (isTaskRow(r) || isExtraRow(r)) q.set("mtask", r.ref.task.id);
         else q.delete("mtask");
+        // A task's extra (Labour, Part, Cost under it): the task, opened at that fold-out (?msec=).
+        if (isExtraRow(r)) q.set("msec", r.ref.section);
+        else q.delete("msec");
         // A package's row: its details (?mpkg=); any other row closes them, and What it needs.
         if (isPackageRow(r)) q.set("mpkg", r.ref.pkg.id);
         else q.delete("mpkg");
         if (!isTaskRow(r) || q.get("mtask") !== r.ref.task.id) q.delete("needs");
-        for (const k of ["addtask", "rates"]) q.delete(k);
+        for (const k of ["addtask", "rates", "respond", "fm"]) q.delete(k);
       });
     }
     // On the whole register, an asset's own top row opens that asset on its own (?root=), where
@@ -1984,13 +1998,32 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     q.delete("rates");
     navigate(`${location.pathname}?${q}${location.hash}`, phone ? { state: { treeDetail: r.key } } : { replace: true, state: location.state });
   };
+  // A failure mode's response (kind "failure": if it fails; "found": a follow-on), added on the
+  // Maintenance tab beside the tree: ?respond=<kind>&fm=<mode>&addtask=<its position>. One there already
+  // opens instead (below). From the RCM tab (a failure mode's menu) it switches to Maintenance.
+  const addResponseAt = (posKey, kind, modeId = "") => {
+    setRcmFocus(null);
+    setSelected((s) => ({ ...s, [mode]: posKey }));
+    const q = new URLSearchParams(params);
+    q.set("sel", posKey);
+    q.set(tabKey, "maintenance");
+    q.set("addtask", posKey);
+    q.set("respond", kind);
+    if (modeId) q.set("fm", modeId); else q.delete("fm");
+    for (const k of ["mtask", "rates", "msec", "mpkg", "needs"]) q.delete(k);
+    navigate(`${location.pathname}?${q}${location.hash}`, phone ? { state: { treeDetail: posKey } } : { state: location.state });
+  };
   // The Maintenance tab: a task row opened (its details beside the table).
   const openTaskRow = (r) => {
     // A package's row opens the package; a task listed under it goes to the task itself.
     if (isPackageRow(r)) return openPackageView(r.ref.pkg, { wide: true });
     if (isPackageRef(r)) return reveal(r.ref.task_key);
-    if (!isTaskRow(r)) return;
-    setQuery_((q) => { q.set("mtask", r.ref.task.id); for (const k of ["addtask", "rates", "needs", "mpkg"]) q.delete(k); });
+    if (!isTaskRow(r) && !isExtraRow(r)) return;
+    setQuery_((q) => {
+      q.set("mtask", r.ref.task.id);
+      if (isExtraRow(r)) q.set("msec", r.ref.section); else q.delete("msec");
+      for (const k of ["addtask", "rates", "needs", "mpkg", "respond", "fm"]) q.delete(k);
+    });
     pick(r.key, { go: true });
     if (!phone) setExpanded(true); // a double-click or Enter: the details across the table
     setTimeout(() => detailsHeading.current?.focus({ preventScroll: true }), 0);
@@ -2062,7 +2095,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (isMeasRow(r)) return openMeas(key);
     if (isModelRow(r)) return openModel(key);
     if (isMissionRow(r)) return openMissionRow(r);
-    if (isTaskRow(r)) return openTaskRow(r);
+    if (isTaskRow(r) || isExtraRow(r)) return openTaskRow(r);
     if (isPackageRow(r) || isPackageRef(r)) return openTaskRow(r);
     if (isRcmRow(r) && opensItem(r)) return openItem(key);
     pick(key, { go: true });
@@ -2180,6 +2213,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         return [...acts.slice(0, 1), ...openInItem(r), ...acts.slice(1)];
       }
       if (tasksOn && isPackageRef(r)) return refRowActions(r, { viewOnly });
+      // A task's extra: Open (the task, at that fold-out).
+      if (tasksOn && isExtraRow(r)) return [{ id: TASK_OPEN, label: "Open", title: `Open ${r.ref.task.name} at its ${r.ref.section}` }];
       if (tasksOn && (r.type === "pos" || r.type === "loc")) {
         const own = summaryActions(r, { mode, viewOnly }).filter((it) => MODEL_POSITION_ITEMS.includes(it.id));
         return [...maintenanceLead(r, { viewOnly }), ...openInItem(r, { design: !!designScope }), ...draftItem(r), { separator: true }, ...own, ...isolateItem(r), ...pinItem(r)];
@@ -2233,6 +2268,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
           { query: opsOn ? null : (q) => { q.set(tabKey, "operations"); q.set("arrange", "positions"); } }));
       }
       if (id === "maint-add-task") return addTaskAt(r);
+      if (id === "maint-add-response") return addResponseAt(r.key, "failure");
+      if (id === "maint-add-follow-on") return addResponseAt(r.key, "found");
       if (id === TASK_OPEN) return openTaskRow(r);
       // Open in ›: a left-menu tool, filled in from this row (nothing in the Explorer changes).
       if (isOpenIn(id)) {
@@ -2298,6 +2335,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         ops.editFunction(r).then((ok) => ok && say("Saved."));
       } else if (id === "rename") { setRcmFocus(r.key); setEditing({ key: r.key, col: "name" }); }
       else if (id === "decide") setDeciding(r);
+      else if (id === "add-response" || id === "add-follow-on") addResponseAt(r.ref.position_id, id === "add-response" ? "failure" : "found", r.ref.id);
       else if (id === "open") openItem(r.key);
       // No decision yet: the task is its decision (Decide…); else another task joins it.
       else if (id === "add-task") { if (r.ref.decision) openItem(r.key, { add: "task" }); else setDeciding(r); }
@@ -3066,6 +3104,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const taskHolder = tasksOn && posRow && (posRow.type === "pos" || posRow.type === "loc") ? (display.rows.get(posRow.key) || posRow) : null;
   const taskMenu = taskHolder ? [
     ...maintenanceLead(taskHolder, { viewOnly }).map((it) => ({ ...it, onSelect: () => addTaskAt(taskHolder) })),
+    ...maintenanceResponses(taskHolder, { viewOnly }).map((it) => ({ ...it, onSelect: () => addResponseAt(taskHolder.key, it.id === "maint-add-response" ? "failure" : "found") })),
     ...draftItem(taskHolder).map((it) => ({ ...it, onSelect: () => openDraft(taskHolder) })),
     { separator: true },
     // What the LSA tab's Export CSV gave: every task here and below with what each needs.
@@ -3322,17 +3361,21 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // The Maintenance tab: a task picked (its form), a new task on a level (?addtask=) or the trade
   // rates (?rates=1), beside the table (a sheet on a phone).
   const addingAt = tasksOn ? params.get("addtask") : null;
+  // A failure mode's response added here (?respond=failure|found&fm=<mode>&addtask=<its position>):
+  // the row menus' "Add response if it fails…" / "Add follow-on…" and the forecast's Not counted · Add.
+  const respondAdd = addingAt && RESPONSE_KINDS.includes(params.get("respond")) ? { kind: params.get("respond"), mode: params.get("fm") || "" } : null;
   const ratesOn = tasksOn && params.get("rates") === "1";
   const mtaskRow = tasksOn ? whole.rows.get(taskKey(params.get("mtask") || "")) : null;
   // A package open (?mpkg=, or its row picked): its details beside the table.
   const mpkgId = tasksOn && !addingAt && !ratesOn ? (panel && isPackageRow(focusRow) ? focusRow.ref.pkg.id : params.get("mpkg")) : null;
   const taskRow = !tasksOn || addingAt || ratesOn || (panel && isPackageRow(focusRow)) ? null
-    : panel && isTaskRow(focusRow) ? focusRow : !mpkgId && isTaskRow(mtaskRow) ? mtaskRow : null;
+    : panel && isTaskRow(focusRow) ? focusRow : panel && isExtraRow(focusRow) ? (whole.rows.get(focusRow.ref.task_key) || null)
+      : !mpkgId && isTaskRow(mtaskRow) ? mtaskRow : null;
   const needsOn = !!taskRow && params.get("needs") === "1" && params.get("mtask") === taskRow.ref.task.id;
   const sideHolder = taskRow ? whole.rows.get(taskRow.ref.position_id) : addingAt ? whole.rows.get(addingAt) : null;
   const closeTaskSide = () => {
     setPanel(false);
-    setQuery_((q) => { for (const k of ["addtask", "rates", "mtask", "needs", "mpkg"]) q.delete(k); });
+    setQuery_((q) => { for (const k of ["addtask", "rates", "mtask", "needs", "mpkg", "msec", "respond", "fm"]) q.delete(k); });
     if (focus) setTimeout(() => document.getElementById(`tp-${focus}`)?.focus({ preventScroll: true }), 0);
   };
   const taskSide = (taskRow && sideHolder) || (addingAt && sideHolder) || ratesOn ? (
@@ -3340,14 +3383,14 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       {phone && <div className="rw-scrim" onClick={closeTaskSide} aria-hidden="true" />}
       <TaskSide holder={sideHolder} taskId={taskRow ? taskRow.ref.task.id : null} taskName={taskRow ? taskRow.ref.task.name : ""} rates={ratesOn} phone={phone}
                 expanded={wideDetails} onExpand={expandDetails} onCollapse={collapseDetails}
-                needs={needsOn}
+                needs={needsOn} section={taskRow ? params.get("msec") : null} respond={taskRow ? null : respondAdd}
                 headingRef={detailsHeading} onClose={closeTaskSide}
                 onOptimise={taskRow && !viewOnly ? () => openOptimise(taskRow.ref.task.id, taskRow.ref.position_id) : null}
                 onChanged={() => ptasks.load()}
                 onDone={(text) => {
                   if (text) say(text);
                   setPanel(false);
-                  setQuery_((q) => { for (const k of ["addtask", "rates", "mtask", "needs"]) q.delete(k); });
+                  setQuery_((q) => { for (const k of ["addtask", "rates", "mtask", "needs", "msec", "respond", "fm"]) q.delete(k); });
                   ptasks.load();
                 }} />
     </div>
@@ -3642,7 +3685,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
           if (isMeasRow(r)) return openMeas(key);
           if (isModelRow(r)) return openModel(key);
           if (isMissionRow(r)) return openMissionRow(r);
-          if (isTaskRow(r)) return openTaskRow(r);
+          if (isTaskRow(r) || isExtraRow(r)) return openTaskRow(r);
           if (isPackageRow(r) || isPackageRef(r)) return openTaskRow(r);
           if (isRcmRow(r)) {
             setPanel(true);

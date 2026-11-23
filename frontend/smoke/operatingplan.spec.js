@@ -61,7 +61,8 @@ test("how often: a task on the first Saturday shows its next dates", async ({ pa
   const t = await (await request.post(`${M}/positions/${pos.id}/tasks`, { data: { name: "Grease", interval: 1, unit: "months" } })).json();
   await open(page, `/asset-register/explorer?arrange=positions&root=${pos.id}&sel=${pos.id}&tab=maintenance&mtask=${t.id}`);
   const how = page.getByRole("group", { name: "How often" });
-  await how.getByRole("radio", { name: "Calendar rule" }).click();
+  await how.getByRole("button", { name: "More scheduling options" }).click();
+  await choose(how.getByRole("combobox", { name: "When it falls due" }), "rule");
   await choose(how.getByLabel("Which day"), "nth:1");
   await choose(how.getByLabel("Day of the week"), "Saturday");
   await expect(how.locator(".ho-dates")).toContainText(/Next: Sat /);

@@ -310,7 +310,7 @@ export function positionOf(r) {
   // A task row (the Maintenance tab): the position (or place) it's on.
   if (r.type === "mtask") return r.ref.position_id;
   // A work package (the Maintenance tab), a task listed under it and a Forecast row: where it sits.
-  if (r.type === "mpkg" || r.type === "mpref" || r.type === "mfc" || r.type === "mfcl") return r.ref.position_id;
+  if (r.type === "mpkg" || r.type === "mpref" || r.type === "mfc" || r.type === "mfcl" || r.type === "mxtra") return r.ref.position_id;
   return isRcmRow(r) ? r.ref.position_id : null;
 }
 
@@ -411,6 +411,10 @@ export function rowActions(r, { canRename = true, moves = true, viewOnly = null 
       { id: "add-task", label: "Add a task…" },
       ...open,
       { id: "decide", label: r.ref.decision ? "Change the decision…" : "Decide…" },
+      // What's done when it fails, or when a check finds it: tasks raised by the event, kept on the
+      // Maintenance tab (Derryn, 23 Nov 2026), opened there.
+      { id: "add-response", label: "Add response if it fails…", title: "What's done when it fails: on the Maintenance tab" },
+      { id: "add-follow-on", label: "Add follow-on…", title: "What's done when an inspection finds it: on the Maintenance tab" },
       ...rename,
       { id: "delete", label: "Delete failure mode…", danger: true },
     ];

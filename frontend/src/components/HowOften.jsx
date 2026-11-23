@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { scheduleDates } from "../api.js";
 import { formatDate } from "../dates.js";
 import {
-  MONTH_NAMES, MONTH_STEPS, NTH_CHOICES, WEEKDAY_NAMES, isCalendar, stepChoices, takesAlso, typesFor, unitWord,
+  MONTH_NAMES, MONTH_STEPS, NTH_CHOICES, WEEKDAY_NAMES, changeType, isCalendar, stepChoices, takesAlso, typesFor, unitWord,
 } from "../howOften.js";
 import "./HowOften.css";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
@@ -35,22 +35,7 @@ export default function HowOften({ value, onChange, units, withAlso = false, pat
   const type = types.some((t) => t.value === value.type) ? value.type : types[0]?.value;
   const setType = (t) => {
     if (!t || t === type) return;
-    const next = { ...value, type: t };
-    // Each type keeps a unit it can take: use for running hours, the calendar for the rest.
-    if (t === "hours" && isCalendar(value.unit)) next.unit = units.find((u) => !isCalendar(u)) || value.unit;
-    if (t !== "hours" && !isCalendar(value.unit)) next.unit = "months";
-    // A rule's step and an interval stay in step with each other when the type changes.
-    if (t === "rule" && value.type !== "rule" && isCalendar(next.unit) && Number.isInteger(Number(value.every)) && Number(value.every) > 0
-        && next.unit !== "days") {
-      next.step = `${next.unit}:${Number(value.every)}`;
-      if (next.unit === "weeks") next.pattern = "weekday";
-      else if (next.pattern === "weekday") next.pattern = "nth";
-    }
-    if (value.type === "rule" && t !== "rule" && t !== "hours") {
-      const [unit, every] = String(value.step).split(":");
-      Object.assign(next, { unit, every });
-    }
-    onChange(next);
+    onChange(changeType({ ...value, type }, t, units));
   };
   const shown = usePreview(problem ? null : preview);
   const n = Number(value.every);
@@ -119,7 +104,7 @@ export default function HowOften({ value, onChange, units, withAlso = false, pat
 }
 
 // "On [the first] [Saturday] of [every month]" / "On [Tuesday], [every 2 weeks]" / "… from [March]".
-function RuleLine({ value, onChange, set, disabled, stepUnit }) {
+export function RuleLine({ value, onChange, set, disabled, stepUnit }) {
   const weeks = stepUnit === "weeks";
   const which = value.pattern === "nth" ? `nth:${value.nth}` : value.pattern;
   const setWhich = (e) => {
@@ -182,7 +167,7 @@ function RuleLine({ value, onChange, set, disabled, stepUnit }) {
 }
 
 // The next dates for `preview` (howOften.js previewFor), from the server, a moment after the last change.
-function usePreview(preview) {
+export function usePreview(preview) {
   const key = preview?.request ? JSON.stringify(preview.request) : null;
   const [got, setGot] = useState({ key: null, dates: null, words: "", note: "" });
   useEffect(() => {
