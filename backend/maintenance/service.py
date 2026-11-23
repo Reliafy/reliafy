@@ -81,6 +81,7 @@ from backend.maintenance import supporting as _supporting
 from backend.maintenance import failure_costs as _failure_costs
 from backend.maintenance import responses as _responses
 from backend.maintenance import restart as _restart
+from backend.maintenance import support_fit as _support_fit
 from backend.maintenance import visit_costs as _visit_costs
 from backend.maintenance import shutdowns as _shutdowns
 from backend.maintenance import operations as _operations
@@ -3252,7 +3253,7 @@ def _walk_down(top: str, kids: dict) -> set[str]:
 class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDeleteOps, PositionModelOps,
                   CaptureOps, AssetSearchOps, _restoration.RestorationOps, _supporting.SupportOps, _shutdowns.ShutdownOps, _operations.OperationsOps,
                   _failure_costs.FailureCostOps, _visit_costs.VisitCostOps, _responses.ResponseOps,
-                  _restart.RestartOps):
+                  _restart.RestartOps, _support_fit.SupportFitOps):
     """One organisation's maintenance graph, acted on by one person."""
 
     def __init__(self, store: GraphStore, org: str, actor: str | None = None, limited: bool = True,

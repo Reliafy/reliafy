@@ -56,6 +56,12 @@ test("a task marked as keeping it on its life: its section, the Assumed chip, th
   const saved = await (await request.get(`${M}/tasks/${p.grease.id}/lsa`)).json().catch(() => null);
   if (saved?.task) expect(saved.task.support.impact).toEqual({ form: "hazard_ratio", k: 2 });
   await shot(page, "support-table-desktop");
+  // Fit the impact from history: this new plant has too little history, and it says so rather than give a number.
+  await open(page, `/asset-register/explorer?arrange=positions&root=${p.deck.id}&sel=${p.deck.id}&tab=maintenance&mtask=${p.grease.id}`);
+  const again = page.getByRole("form", { name: `Task: Grease the spindles ${tag}` }).locator(".mt-support");
+  await again.getByRole("button", { name: "Fit the impact from history…" }).click();
+  await expect(again.locator(".mt-fit-out")).toContainText(/Too few failures|No items with a history|can't be estimated/, { timeout: 30_000 });
+  await shot(again, "support-fit-desktop");
 
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&root=${p.deck.id}&sel=${p.deck.id}&tab=maintenance&mtask=${p.grease.id}`);

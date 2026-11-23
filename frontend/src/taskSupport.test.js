@@ -48,3 +48,20 @@ test("words, kinds and one failure mode at a time (the RCM)", () => {
   assert.deepEqual(modeSupportBody({ support: { ...saved, failure_mode_ids: [] } }, "fm1", false, { modes: ["fm1", "fm2"] }).support.failure_mode_ids, ["fm2"]);
   assert.deepEqual(modeSupportBody({ support: saved }, "fm1", true), {});
 });
+
+test("a fit from history fills the fields, Fitted, with its evidence kept on save", async () => {
+  const { withFit } = await import("./taskSupport.js");
+  const task = { support: { failure_mode_ids: [], reference: { value: 50, unit: "hours" }, impact: { form: "hazard_ratio", k: 3 }, grace: 0, source: "assumed", note: "" } };
+  const ev = { method: "covariate fit", k: 1.92, low: 1.25, high: 2.95, failures: 60, overdue_share: 0.31, fitted_on: "2026-11-24" };
+  const f = withFit(supportForm(task), { impact: { form: "hazard_ratio", k: 1.92 }, source: "fitted", evidence: ev });
+  assert.equal(f.k, "1.92");
+  assert.equal(f.supportSource, "fitted");
+  assert.match(f.supportNote, /^Fitted 2026-11-24: covariate fit, 60 failures, 90% two-sided 1\.25 to 2\.95\.$/);
+  const body = supportBody(task, f, { modes: [], unit: "hours" });
+  assert.deepEqual(body.support.evidence, ev);
+  assert.equal(body.support.impact.k, 1.92);
+  // Not shown to matter: no modelled impact, said in the note.
+  const none = withFit(supportForm(task), { impact: null, source: "fitted", evidence: { ...ev, not_shown: true, low: 0.7, high: 2.4 } });
+  assert.equal(none.k, "");
+  assert.match(none.supportNote, /not shown to matter/);
+});

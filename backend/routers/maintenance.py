@@ -3135,6 +3135,14 @@ def position_forecast_start(position_id: str, root: str | None = None, session=D
     return _run(position_start, m, pm.fetcher(session, ctx.read_owners, ctx.hidden), position_id, root or None)
 
 
+@router.get("/tasks/{task_id}/support-fit")
+def task_support_fit(task_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """A supporting task's impact fitted from its history (support_fit.py): k with its 90% two-sided range,
+    "not shown to matter", or why it can't be estimated; ``use`` is what to send as its support. Reads only.
+    Also over MCP and the CLI: maintenance get.support_fit."""
+    return _run(m.fit_support, task_id)
+
+
 @router.get("/tasks/{task_id}/forecast-start")
 def task_forecast_start(task_id: str, root: str | None = None, session=Depends(get_session),
                         ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:

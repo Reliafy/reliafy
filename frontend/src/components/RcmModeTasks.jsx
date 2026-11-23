@@ -1183,7 +1183,7 @@ function ModeSupport({ task, modeId, can, busy, onSave }) {
           {impactWords(s?.impact)}
           {s?.impact ? <> <Chip tone={(s.source || "assumed") === "assumed" ? "warning" : "neutral"}>{SOURCE_WORD[s.source] || "Assumed"}</Chip></> : null}
           {s?.reference ? ` · its life assumes every ${s.reference.value} ${s.reference.unit}` : ""}.
-          {" "}It reads “supports”, not “restores 0%”; the forecast is unchanged. {COMBINE_HELP}
+          {" "}It reads “supports”, not “restores 0%”; its impact counts in what-ifs, and when its interval runs past the reference. {COMBINE_HELP}
           {" "}<Link to={where}>Set its impact on the task</Link>
         </p>
       )}

@@ -3,7 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { noDutyBasis, dutyHref } from "../explorerOperations.js";
 import { dueCell, nextOf, readingWords } from "../explorerTasks.js";
 import {
-  createSubjectTask, getMaintenancePosition, getTaskIntervalBasis, getTaskLsa, linkTaskFailureMode, listTradeRates, retireMaintenanceTask,
+  createSubjectTask, getMaintenancePosition, getSupportFit, getTaskIntervalBasis, getTaskLsa, linkTaskFailureMode, listTradeRates, retireMaintenanceTask,
   setTradeRate, unlinkTaskFailureMode, updateMaintenanceTask,
 } from "../api.js";
 import { today as workspaceToday, useSendOnce } from "./MaintenanceParts.jsx";
@@ -26,7 +26,7 @@ import TaskTwins from "./TaskTwins.jsx";
 import NeedsSection, { useNeeds } from "./TaskNeeds.jsx";
 import { every } from "../taskOptimise.js";
 import { restorationBody, restorationForm, restorationProblem, RESTORE_CHOICES } from "../taskRestoration.js";
-import { canSupport, COMBINE_HELP, SOURCE_WORD, SUPPORT_HELP, SUPPORT_SOURCES, impactWords, supportBody, supportForm, supportProblem } from "../taskSupport.js";
+import { canSupport, COMBINE_HELP, SOURCE_WORD, SUPPORT_HELP, SUPPORT_SOURCES, impactWords, supportBody, supportForm, supportProblem, withFit } from "../taskSupport.js";
 import Chip from "./ui/Chip.jsx";
 
 // A task on the Explorer's Maintenance tab, in the panel beside the tree (never a dialog):
@@ -522,7 +522,8 @@ function RestorationFields({ f, setF, task, problem }) {
 // on the life its model describes rather than renewing it. What it supports (the failure modes it
 // prevents, ticked above, or its whole life), the interval the life model assumes, the optional
 // impact if it isn't done (failure rate × k), grace, and where the impact comes from ("Assumed"
-// by default, shown as a chip). Recorded only: the forecast is unchanged.
+// by default, shown as a chip), or fitted from history (SupportFit). Used in what-ifs and when its interval runs
+// past the reference.
 function SupportFields({ f, setF, task, problem, modes }) {
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
   const flip = (id) => setF((x) => { const m = new Set(x.supports); if (m.has(id)) m.delete(id); else m.add(id); return { ...x, supports: m }; });
@@ -566,14 +567,57 @@ function SupportFields({ f, setF, task, problem, modes }) {
               </Field>
             </div>
           )}
+          {task?.id && task.support && <SupportFit taskId={task.id} onUse={(use) => setF((x) => withFit(x, use))} />}
           <p className="field-help" role="note">
-            {impactWords(f.k === "" ? null : { k: f.k })}: recorded, the forecast is unchanged. {COMBINE_HELP}
+            {impactWords(f.k === "" ? null : { k: f.k })}: the forecast uses it in what-ifs, and when its interval runs past the
+            reference. {COMBINE_HELP}
             {combined ? ` On this part, with ${combined.tasks.filter((t) => t.id !== task.id).map((t) => `${t.name} (× ${t.k})`).join(", ")}: × ${combined.k} if none is done.` : ""}
           </p>
         </>
       )}
       {problem && <p className="field-error" role="alert">{problem}</p>}
     </Section>
+  );
+}
+
+// Fit the impact from history (forecast plan step 9; support_fit.py): k with its 90% two-sided range from the
+// items where the task holds the life up, "not shown to matter" when the range includes 1, or why it can't be
+// estimated (service timing barely varies, too few failures). "Use this" fills the fields (source Fitted, the
+// fit kept as evidence); Save keeps it, as with any change.
+function SupportFit({ taskId, onUse }) {
+  const [fit, setFit] = useState({ busy: false, data: null, error: null });
+  const go = () => {
+    setFit({ busy: true, data: null, error: null });
+    getSupportFit(taskId).then((data) => setFit({ busy: false, data, error: null }),
+      (e) => setFit({ busy: false, data: null, error: e.message }));
+  };
+  const d = fit.data;
+  const fmt = (v) => (v == null ? "∞" : Number(v).toLocaleString("en-GB", { maximumSignificantDigits: 2 }));
+  return (
+    <div className="mt-fit">
+      <button type="button" className="secondary sm" onClick={go} disabled={fit.busy}>
+        {fit.busy ? "Fitting from history…" : "Fit the impact from history…"}
+      </button>
+      {fit.error && <p className="field-error" role="alert">Couldn&apos;t fit it: {fit.error}</p>}
+      {d && (
+        <div className="mt-fit-out" role="status">
+          <p className={d.identifiable ? "" : "mt-fit-gap"}>{d.words}</p>
+          {d.identifiable && (
+            <p className="field-help">
+              {d.method}. Failure rate × {fmt(d.k)} while overdue (90% two-sided: {fmt(d.range?.[0])} to {fmt(d.range?.[1])}),
+              from {d.exposure?.failures} failures, {Math.round((d.exposure?.overdue_share || 0) * 100)}% of the time overdue.
+              {d.group && <> A plain comparison of failures per hour gives × {fmt(d.group.k)}.</>}
+            </p>
+          )}
+          {d.history && <p className="field-help">{d.history.items} items, {d.history.services} times done, by {d.history.clock || "—"}.</p>}
+          {d.use && (
+            <button type="button" className="secondary sm" onClick={() => onUse(d.use)}>
+              {d.use.impact ? `Use × ${d.use.impact.k} (Fitted)` : "Use: supports, no modelled impact"}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
