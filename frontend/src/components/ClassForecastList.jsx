@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { getClassForecast, getPositionClasses } from "../api.js";
+import { getClassForecasts, getPositionClasses } from "../api.js";
 import { useRoles } from "../RolesProvider.jsx";
 import { formatNumber } from "../format.js";
 import { EXPLORER_PARTS_CLASSES_TABS, tabPlace } from "../explorerTabs.js";
@@ -41,13 +41,13 @@ export default function ClassForecastList() {
         const fitted = (d.classes || []).filter((c) => c.model);
         if (!alive) return;
         setClasses(fitted);
-        for (const c of fitted) {
-          // By its key: a design class's label (product › … › position) can change.
-          const key = c.class_key || c.position_class;
-          getClassForecast(key)
-            .then((f) => alive && setForecasts((s) => ({ ...s, [key]: f })))
-            .catch(() => alive && setForecasts((s) => ({ ...s, [key]: { error: true } })));
-        }
+        if (!fitted.length) return;
+        // By its key: a design class's label (product › … › position) can change.
+        // One read for every class: the server reads the register once for them all.
+        const keys = fitted.map((c) => c.class_key || c.position_class);
+        getClassForecasts(keys)
+          .then((d) => alive && setForecasts(Object.fromEntries(keys.map((k) => [k, d?.forecasts?.[k] || { error: true }]))))
+          .catch(() => alive && setForecasts(Object.fromEntries(keys.map((k) => [k, { error: true }]))));
       })
       .catch(() => alive && setClasses([]));
     return () => {

@@ -319,14 +319,18 @@ WORK_ORDERS = [Depends(_work_management_on)]
 # ---- overview ----------------------------------------------------------------------
 
 @router.get("/overview")
-def overview(m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    """late: the late work in the counts Home, Orders and Assets share (Maintenance.late_counts)."""
+def overview(tree: bool = True, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """late: the late work in the counts Home, Orders and Assets share (Maintenance.late_counts).
+    tree=false leaves the asset tree out (Home shows none of it: on a large workspace it is
+    most of the answer)."""
     def read():
         # Work management off: no to-do list (what's due, late, open work orders).
         on = work_management_on()
         due, wos = (m.due_tasks(30), m.work_orders("open")) if on else ([], [])
-        return {"summary": summary(m), "time_zone": m.time_zone, "today": m.today(), "tree": m.tree(),
-                "due": due, "open_work_orders": wos, "late": m.late_counts(wos, due),
+        out = {"summary": summary(m), "time_zone": m.time_zone, "today": m.today()}
+        if tree:
+            out["tree"] = m.tree()
+        return {**out, "due": due, "open_work_orders": wos, "late": m.late_counts(wos, due),
                 "proposals": m.proposals("pending"), "critical_spares": m.critical_spares_short(),
                 "work_management": on}
     return _run(read)
@@ -581,11 +585,18 @@ def _rcm_read(session, ctx: AccessCtx, fn, *args, m: Maintenance | None = None) 
 
 
 @router.get("/rcm")
-def workspace_rcm(within: str | None = None, session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
-                  m: Maintenance = Depends(maintenance)) -> JSONResponse:
+def workspace_rcm(within: str | None = None, rollup_only: bool = False, session=Depends(get_session),
+                  ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """Every position's RCM (those with any), for the asset tree's RCM tab, with each
     decision's evidence check as the reader sees it. within: one asset's alone (a
-    position, or a place: everything the Explorer opened on it shows)."""
+    position, or a place: everything the Explorer opened on it shows). rollup_only:
+    the whole rollup alone, {rollup} (Home's counts), the same numbers without every
+    position's worksheet."""
+    if rollup_only:
+        from backend.maintenance import rcm_graph
+
+        return _run(lambda: {"rollup": rcm_graph.resolve(session, m.rcm_all(within or None), ctx.read_owners,
+                                                         ctx.hidden, m=m, rates=False)["rollup"]})
     return _rcm_read(session, ctx, m.rcm_all, within or None, m=m)
 
 
@@ -1743,6 +1754,38 @@ def class_forecast(position_class: str, period: str = "month", periods: int = 12
 
     return _run(forecast.class_forecast, m, position_class, period, periods, service_level, lead_time_days,
                 review_days)
+
+
+# The most classes one batched forecast read takes (the Forecasts page asks for every
+# class with a fitted model at once).
+MAX_CLASS_FORECASTS = 200
+
+
+@router.get("/classes/forecasts")
+def class_forecasts(request: Request, period: str = "month", periods: int = 12,
+                    m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """Several classes' forecasts in one read (position_class repeated): {forecasts: {class:
+    the same answer GET /classes/forecast gives, or {error, detail} when that one can't be
+    worked out}}. One read of the register serves them all, so the Forecasts page asks once
+    rather than once per class."""
+    from backend.maintenance import forecast
+
+    names = list(dict.fromkeys(v for v in request.query_params.getlist("position_class") if v))
+    if len(names) > MAX_CLASS_FORECASTS:
+        return JSONResponse(status_code=422,
+                            content={"detail": f"Ask for at most {MAX_CLASS_FORECASTS} classes at a time."})
+
+    def read():
+        out = {}
+        for name in names:
+            try:
+                out[name] = forecast.class_forecast(m, name, period, periods, None, None, None)
+            except NotFound:
+                out[name] = {"error": True, "detail": "Not found."}
+            except Invalid as err:
+                out[name] = {"error": True, "detail": client_message(err)}
+        return {"forecasts": out}
+    return _run(read)
 
 
 @router.get("/proposals")

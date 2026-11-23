@@ -12,7 +12,7 @@ from backend.maintenance import rcm_decisions
 from backend.services import running_clock
 
 
-def resolve(db, worksheet: dict, owner_id, hidden=frozenset(), m=None) -> dict:
+def resolve(db, worksheet: dict, owner_id, hidden=frozenset(), m=None, rates: bool = True) -> dict:
     """``worksheet`` (Maintenance.rcm_worksheet or rcm_all) with each decision's
     evidence status, and a rollup per position and for the whole of it (as a
     study's). A position's rollup counts its own failure modes and those of every
@@ -25,18 +25,22 @@ def resolve(db, worksheet: dict, owner_id, hidden=frozenset(), m=None) -> dict:
     rate its criticality uses (``rate_from``, :func:`with_rate`): the one typed on it
     (an override), else the position's own (its parts count or model in use), and
     each position its ``rate``; a position's FME(C)A summary is worked out again from
-    them."""
+    them. rates=False leaves the failure rates out (they change no count in a rollup).
+
+    The linked models and analyses are read in one query per kind first, not one each."""
     fetch = rcm_decisions.evidence_fetcher(db, owner_id, hidden)
+    fetch.prefetch(_evidence_refs(worksheet["positions"]))
     total = rcm_decisions.blank_rollup()
     positions = []
     owns = []
-    rates = _rates(m, db, owner_id, hidden, worksheet["positions"]) if m is not None else {}
+    with_rates = m is not None and rates
+    rates = _rates(m, db, owner_id, hidden, worksheet["positions"]) if with_rates else {}
     for p in worksheet["positions"]:
         rollup = rcm_decisions.blank_rollup()
         rate = rates.get(p["id"])
 
         def mode_out(mode: dict) -> dict:
-            if m is not None:
+            if with_rates:
                 mode = with_rate(mode, rate)
             rollup["modes"] += 1
             decision = mode.get("decision")
@@ -84,6 +88,22 @@ def resolve(db, worksheet: dict, owner_id, hidden=frozenset(), m=None) -> dict:
     for i, p in enumerate(positions):
         p["rollup"] = {**rcm_decisions.finish_rollup(whole[i]), "own": rcm_decisions.finish_rollup(owns[i])}
     return {**worksheet, "positions": positions, "rollup": rcm_decisions.finish_rollup(total)}
+
+
+def _evidence_refs(positions) -> list[tuple]:
+    """(type, id) of every model or analysis the positions' decisions link."""
+    refs = []
+    for p in positions:
+        modes = [md for fn in p.get("functions") or [] for ff in fn.get("failures") or [] for md in ff.get("modes") or []]
+        modes += [md for fn in p.get("functions") or [] for md in fn.get("modes") or []]
+        modes += p.get("unassigned") or []
+        for mode in modes:
+            decision = mode.get("decision") or {}
+            for ev in [decision.get("evidence"), *[o.get("evidence") for o in decision.get("outcomes") or []
+                                                   if isinstance(o, dict)]]:
+                if isinstance(ev, dict) and isinstance(ev.get("type"), str) and isinstance(ev.get("id"), str):
+                    refs.append((ev["type"], ev["id"]))
+    return refs
 
 
 def _rates(m, db, owner_id, hidden, rows) -> dict:

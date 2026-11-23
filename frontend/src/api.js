@@ -2605,8 +2605,10 @@ function postJson(url, body) {
   });
 }
 
-export function getMaintenanceOverview() {
-  return request("/api/maintenance/overview");
+// withTree: false leaves the asset tree out (Home reads none of it; on a large
+// workspace it is most of the answer).
+export function getMaintenanceOverview({ withTree = true } = {}) {
+  return request(`/api/maintenance/overview${withTree ? "" : "?tree=false"}`);
 }
 
 // The asset trees for the tree pane: every position once, flat, with its status,
@@ -2977,8 +2979,13 @@ export function mergeFailureMode(id, intoId) {
 }
 
 // Every position's RCM (those with any), for the Explorer's RCM tab.
-export function getWorkspaceRcm({ within = null } = {}) {
-  return request(`/api/maintenance/rcm${within ? `?within=${encodeURIComponent(within)}` : ""}`);
+// rollupOnly: the whole rollup alone ({rollup}), the same counts without every worksheet.
+export function getWorkspaceRcm({ within = null, rollupOnly = false } = {}) {
+  const q = new URLSearchParams();
+  if (within) q.set("within", within);
+  if (rollupOnly) q.set("rollup_only", "true");
+  const qs = q.toString();
+  return request(`/api/maintenance/rcm${qs ? `?${qs}` : ""}`);
 }
 
 // An FMEA / RCM worksheet (Excel or CSV) added to a position's RCM. The
@@ -3460,6 +3467,12 @@ export function getClassForecast(positionClass, { period = "month", periods = 12
   if (leadTimeDays !== undefined && leadTimeDays !== null && leadTimeDays !== "") q.set("lead_time_days", leadTimeDays);
   if (reviewDays) q.set("review_days", reviewDays);
   return request(`/api/maintenance/classes/forecast?${q}`);
+}
+// Several classes' forecasts in one read: {forecasts: {class: forecast, or {error, detail}}}.
+export function getClassForecasts(positionClasses, { period = "month", periods = 12 } = {}) {
+  const q = new URLSearchParams({ period, periods: String(periods) });
+  for (const c of positionClasses) q.append("position_class", c);
+  return request(`/api/maintenance/classes/forecasts?${q}`);
 }
 // A catalogue part's fields, e.g. its stock-level settings (lead_time_days,
 // service_level, repairable, turnaround_days; null clears one).

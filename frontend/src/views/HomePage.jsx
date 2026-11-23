@@ -301,8 +301,8 @@ export default function HomePage() {
   useEffect(() => {
     if (!access) return undefined;
     let live = true;
-    getMaintenanceOverview().then((o) => live && setMaintenance(o)).catch(() => live && setMaintenance(null));
-    getWorkspaceRcm().then((d) => live && setRcm(d?.rollup || null)).catch(() => live && setRcm(null));
+    getMaintenanceOverview({ withTree: false }).then((o) => live && setMaintenance(o)).catch(() => live && setMaintenance(null));
+    getWorkspaceRcm({ rollupOnly: true }).then((d) => live && setRcm(d?.rollup || null)).catch(() => live && setRcm(null));
     return () => {
       live = false;
     };
