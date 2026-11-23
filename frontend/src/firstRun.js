@@ -46,6 +46,12 @@ export async function loadFirstRun() {
     listDegradationModels().then((r) => r.models),
   ]).catch(() => [null]);
   if (models === null) return false;
+  return firstRunFrom({ models, datasets, rbds, alt, recurrent, degradation }, ws);
+}
+
+// The same answer from lists already read (Home has them in its summary): each
+// as its list endpoint's rows.
+export function firstRunFrom({ models, datasets, rbds, alt, recurrent, degradation }, ws = getWorkspace()) {
   if ([models, datasets, rbds, alt, recurrent, degradation].some(own)) {
     hasOwnWork.add(ws);
     return false;
@@ -58,8 +64,9 @@ export async function loadFirstRun() {
 
 // ``pageHasOwn``: whether the calling page's own list already shows work of
 // the user's own — undefined while it loads, true to skip the fetch entirely.
+// ``lists``: the lists already read (firstRunFrom), so nothing is fetched again.
 // Returns null while unknown, false when hidden, or the starts.
-export function useFirstRun(pageHasOwn) {
+export function useFirstRun(pageHasOwn, lists = null) {
   const [state, setState] = useState(null);
   useEffect(() => {
     if (pageHasOwn === undefined) return undefined;
@@ -68,11 +75,15 @@ export function useFirstRun(pageHasOwn) {
       setState(false);
       return undefined;
     }
+    if (lists) {
+      setState(firstRunFrom(lists));
+      return undefined;
+    }
     let live = true;
     loadFirstRun().then((s) => live && setState(s));
     return () => {
       live = false;
     };
-  }, [pageHasOwn]);
+  }, [pageHasOwn, lists]);
   return pageHasOwn ? false : state;
 }

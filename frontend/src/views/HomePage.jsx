@@ -1,18 +1,9 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  getMaintenanceAccess,
-  getMaintenanceOverview,
-  getWorkspaceChanges,
-  getWorkspaceRcm,
-  listDatasets,
-  listFleets,
-  listRbds,
-  listStrategyAnalyses,
-  listTrackedFleets,
-} from "../api.js";
+import { getHomeSummary } from "../api.js";
+import { cardFailed, homeFromSummary } from "../homeSummary.js";
 import { SAMPLE_MODEL, useFirstRun } from "../firstRun.js";
-import { TYPE_LABEL, loadAllModels } from "../allModels.js";
+import { TYPE_LABEL } from "../modelRows.js";
 import {
   ATTENTION_ROWS, RECENT_ROWS, attentionFailed, attentionReady, attentionRest, attentionRows, dueRows, fleetRows,
   lateFigures, lateSummary, otherRecent, planFigures, recentFor, recentRows, sparesRows, startersPlace, waitingFigures,
@@ -20,7 +11,7 @@ import {
 } from "../home.js";
 import { PACKAGES_PATH } from "../maintenanceOrders.js";
 import { RBDS_LABEL, RBDS_PATH, homeCards } from "../navigation.js";
-import { useAppConfig, useWorkManagementOn } from "../ConfigProvider.jsx";
+import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { useRoles } from "../RolesProvider.jsx";
 import { SectionHeader } from "../components/SectionPage.jsx";
 import { RolesCard } from "../components/RolePicker.jsx";
@@ -31,14 +22,6 @@ import Loading from "../components/ui/Loading.jsx";
 import LoadFailed from "../components/LoadFailed.jsx";
 import { partsPath } from "../redirects.js";
 import { ORDERS_PATH, ordersPath } from "../maintenanceOrders.js";
-
-// A list that can't be read counts as empty for the rows Home draws (each
-// section's own page reports its errors), but `failed` is told: Home then says
-// it couldn't load, never that there's nothing.
-const quiet = (p, key, failed) => p.then((d) => (key ? d[key] : d) || []).catch(() => {
-  failed();
-  return [];
-});
 
 const CARD_ROWS = 5;
 
@@ -123,34 +106,36 @@ function Figures({ items }) {
 
 // A role's card (navigation.js ROLES `home`), from what Home loaded. Cards
 // that need Reliafy Maintenance draw nothing without it.
-function RoleCard({ card, recent, attention, maintenance, rcm, has, onRetry }) {
+function RoleCard({ card, recent, attention, maintenance, rcm, has, failedParts, onRetry }) {
   // Maintenance's overview (or the check for it) failed: the one error state, with Try again.
   const overviewFailed = maintenance === null ? { text: "Couldn't load your maintenance work.", onRetry } : null;
+  // A list it's drawn from couldn't be read: its error card, never "No models of your own yet".
+  const listFailed = cardFailed(card, failedParts) ? { text: "Couldn't load this list.", onRetry } : null;
   const id = `home-${card}`;
   const first = (rows) => rows.slice(0, CARD_ROWS);
   switch (card) {
     case "recent-models":
       return (
         <HomeList id={id} title="Your recent models" all={{ to: "/models", label: "Models" }}
-                  rows={first(recentFor(card, recent))}
+                  rows={first(recentFor(card, recent))} failed={listFailed}
                   empty={<>No models of your own yet. <Link to="/models/new">Fit some data</Link>.</>} />
       );
     case "recent-data":
       return (
         <HomeList id={id} title="Your recent data" all={{ to: "/data", label: "Data" }}
-                  rows={first(recentFor(card, recent))}
+                  rows={first(recentFor(card, recent))} failed={listFailed}
                   empty={<>No datasets of your own yet. <Link to="/data">Upload or paste some</Link>.</>} />
       );
     case "recent-systems":
       return (
         <HomeList id={id} title={`Your recent ${RBDS_LABEL}`} all={{ to: RBDS_PATH, label: RBDS_LABEL }}
-                  rows={first(recentFor(card, recent))}
+                  rows={first(recentFor(card, recent))} failed={listFailed}
                   empty={<>No block diagrams of your own yet. <Link to="/systems/b">Build one</Link>.</>} />
       );
     case "fleets":
       return (
         <HomeList id={id} title="Your fleets" all={{ to: "/forecasts", label: "Forecasts" }}
-                  rows={first(fleetRows(attention, recent))}
+                  rows={first(fleetRows(attention, recent))} failed={listFailed}
                   empty={<>No fleets of your own yet. <Link to="/forecasts?new=1">Forecast one</Link>.</>} />
       );
     case "due": {
@@ -235,78 +220,35 @@ export default function HomePage() {
   const { roles, offer, has } = useRoles();
   // Work management turned off (workManagement.js): the plan card instead of the to-do ones.
   const workManagement = useWorkManagementOn();
-  const { maintenance: maintenanceOn, loaded: configLoaded } = useAppConfig();
-  const [lists, setLists] = useState(null);
-  const [changes, setChanges] = useState(undefined);
-  // Whether this viewer has Reliafy Maintenance (the menu's check; the answer
-  // is fetched once and shared): undefined until it is known, null when the check failed
-  // (then "Needs attention" says it couldn't load, with Try again, never "Loading…" for ever).
-  const [access, setAccess] = useState(undefined);
-  // The Maintenance overview and the RCM on the asset tree (one rollup of
-  // every decision's evidence check): undefined while loading, null when they
-  // couldn't be read.
-  const [maintenance, setMaintenance] = useState(undefined);
-  const [rcm, setRcm] = useState(undefined);
+  // Everything Home shows comes in one request (homeSummary.js): undefined while
+  // it's on its way. Each piece follows the old reads' rules: `lists` null until
+  // in; `changes`, `maintenance` and `rcm` undefined while loading and null when
+  // they couldn't be read; `access` whether this viewer has Reliafy Maintenance
+  // (null when that couldn't be told: "Needs attention" then says it couldn't
+  // load, with Try again). Without Maintenance its pieces stay undefined.
+  const [summary, setSummary] = useState(undefined);
   // Try again: each press reads everything again.
   const [attempt, setAttempt] = useState(0);
   const retry = () => {
-    setLists(null);
-    setChanges(undefined);
-    setMaintenance(undefined);
-    setRcm(undefined);
-    setAccess((a) => (a === null ? undefined : a));
+    setSummary(undefined);
     setAttempt((n) => n + 1);
   };
 
   useEffect(() => {
     let live = true;
-    let failed = false;
-    let trackedFailed = false;
-    const fail = () => { failed = true; };
-    Promise.all([
-      loadAllModels().catch(() => { fail(); return []; }),
-      quiet(listDatasets(), "datasets", fail),
-      quiet(listRbds(), "rbds", fail),
-      quiet(listFleets(), "fleets", fail),
-      quiet(listStrategyAnalyses(), "analyses", fail),
-      quiet(listTrackedFleets(), "fleets", () => { fail(); trackedFailed = true; }),
-    ]).then(([models, datasets, rbds, forecasts, analyses, tracked]) => {
-      if (live) setLists({ models, datasets, rbds, forecasts, analyses, tracked, failed, trackedFailed });
-    });
-    getWorkspaceChanges().then((d) => live && setChanges(d)).catch(() => live && setChanges(null));
+    getHomeSummary().then((d) => live && setSummary(d)).catch(() => live && setSummary(null));
     return () => {
       live = false;
     };
   }, [attempt]);
 
-  useEffect(() => {
-    if (!configLoaded) return undefined;
-    if (!maintenanceOn) {
-      setAccess(false);
-      return undefined;
-    }
-    let live = true;
-    getMaintenanceAccess().then((a) => live && setAccess(!!a?.allowed)).catch(() => {
-      if (!live) return;
-      setAccess(null);
-      setMaintenance(null);
-      setRcm(null);
-    });
-    return () => {
-      live = false;
-    };
-  }, [configLoaded, maintenanceOn, attempt]);
-
-  // Maintenance work and the tree's RCM, for Reliafy Maintenance's operators only.
-  useEffect(() => {
-    if (!access) return undefined;
-    let live = true;
-    getMaintenanceOverview({ withTree: false }).then((o) => live && setMaintenance(o)).catch(() => live && setMaintenance(null));
-    getWorkspaceRcm({ rollupOnly: true }).then((d) => live && setRcm(d?.rollup || null)).catch(() => live && setRcm(null));
-    return () => {
-      live = false;
-    };
-  }, [access, attempt]);
+  const home = useMemo(() => (summary === undefined ? null : homeFromSummary(summary)), [summary]);
+  const lists = home ? home.lists : null;
+  const changes = home ? home.changes : undefined;
+  const access = home ? home.access : undefined;
+  const maintenance = home ? home.maintenance : undefined;
+  const rcm = home ? home.rcm : undefined;
+  const failedParts = home ? home.failedParts : [];
 
   useActivation(lists?.models);
 
@@ -315,7 +257,7 @@ export default function HomePage() {
     : [];
   const ownCount = recent.length;
   // A list that failed makes the count a guess: no new-account welcome then.
-  const firstRun = useFirstRun(lists && !lists.failed ? ownCount > 0 : undefined);
+  const firstRun = useFirstRun(lists && !lists.failed ? ownCount > 0 : undefined, home?.firstRunLists || null);
   // Where the ways to start go, once the lists say how much work there is.
   const place = lists && !lists.failed ? startersPlace(ownCount) : null;
   const lifeSamples = (lists?.models || []).filter((r) => r.is_sample && r.type === "life");
@@ -366,7 +308,7 @@ export default function HomePage() {
           {cards.map((card) => (
             <div key={card} className="home-slot">
               <RoleCard card={card} recent={recent} attention={attention} maintenance={maintenance}
-                        rcm={rcm} has={has} onRetry={retry} />
+                        rcm={rcm} has={has} failedParts={failedParts} onRetry={retry} />
             </div>
           ))}
 
@@ -374,7 +316,10 @@ export default function HomePage() {
               so only one with work waits for it. */}
           {changes === undefined
             ? ownCount > 0 && <HomeList id="home-changes" title="What changed" rows={[]} loading />
-            : <WhatChangedPanel data={changes} />}
+            : changes === null
+              ? <HomeList id="home-changes" title="What changed" rows={[]}
+                          failed={{ text: "Couldn't load what changed.", onRetry: retry }} />
+              : <WhatChangedPanel data={changes} />}
 
           {/* "Nothing" before every source has answered would be a guess. */}
           <HomeList id="home-attention" title="Needs attention" rows={needs.slice(0, ATTENTION_ROWS)}
@@ -389,6 +334,7 @@ export default function HomePage() {
           {rest.length > 0 && (
             <HomeList id="home-recent" title={rest.length < recent.length ? "Other recent work" : "Recent"}
                       rows={rest.slice(0, RECENT_ROWS)}
+                      failed={cardFailed("recent", failedParts) ? { text: "Couldn't load all of your work.", onRetry: retry } : null}
                       note="Your work, most recently saved or edited first" />
           )}
 

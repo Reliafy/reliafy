@@ -42,6 +42,7 @@ import { roughDateValue } from "../maintenanceFields.js";
 import { deviceClockDiffers, workspaceClock, workspaceMoment, workspaceZoneName } from "../workspaceDate.js";
 import { NewPositionModal } from "./MaintenanceHome.jsx";
 import Modal from "../components/Modal.jsx";
+import { useConfirm } from "../components/ConfirmProvider.jsx";
 import { liveReadings, readingWhen } from "../maintenanceReadings.js";
 import ReadingsTable from "../components/ReadingsTable.jsx";
 import { READINGS_INTRO } from "../measuringPoint.js";
@@ -703,12 +704,22 @@ function GroupModal({ p, positions, onClose, onDone }) {
 }
 
 function RbdCard({ p, onChanged }) {
+  const confirm = useConfirm();
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const make = async () => {
+    // One made before is never overwritten unasked: rebuilding it replaces its edits.
+    const had = result?.rbd_id || p.rbd_id;
+    if (had && !(await confirm({
+      title: "Regenerate the RBD from the plant?",
+      body: "The diagram is drawn again from the positions inside. Everything changed on it since it was made is "
+        + "lost: repairable or not, repair times, costs, models set on blocks, wiring and layout.",
+      confirmLabel: "Regenerate and replace my edits",
+    }))) return;
     setBusy(true); setError(null);
-    try { setResult(await generatePositionRbd(p.id)); onChanged(); } catch (e) { setError(e.message); }
+    try { setResult(await generatePositionRbd(p.id, had ? { existing: "rebuild" } : {})); onChanged(); }
+    catch (e) { setError(e.message); }
     setBusy(false);
   };
   const rbdId = result?.rbd_id || p.rbd_id;

@@ -574,7 +574,76 @@ def read_dataframe(file_bytes: bytes) -> pd.DataFrame:
         if df.empty:
             raise FitError("The uploaded CSV is empty.")
     df.attrs["blank_rows"] = int(blank.sum())
+    df.attrs["number_notes"] = read_formatted_numbers(df)
     return df
+
+
+# Thousands separators read in a number column: a comma, a space (thin, narrow no-break, no-break
+# or plain) or an apostrophe (Swiss). Each column takes one, used the same way in every cell.
+_THOUSANDS = {",": "commas", "\u2009": "thin spaces", "\u202f": "narrow spaces", "\u00a0": "spaces",
+              " ": "spaces", "'": "apostrophes", "\u2019": "apostrophes"}
+_PLAIN = re.compile(r"^[+-]?\d+(?:\.\d+)?$")
+_DECIMAL_COMMA = re.compile(r"^[+-]?(?:\d{1,3}(?:[.\u2009\u202f\u00a0 ']\d{3})+|\d+)(?:,\d+)?$")
+
+
+def _grouped(sep: str) -> re.Pattern:
+    return re.compile(r"^[+-]?\d{1,3}(?:" + re.escape(sep) + r"\d{3})+(?:\.\d+)?$")
+
+
+def _number_reading(values: list[str]) -> Optional[tuple[str, str]]:
+    """How a text column's cells read as numbers, if every one does in one consistent way:
+    ``(separator removed, decimal point)`` or None. A comma is a thousands separator when each
+    comma is followed by three digits (14,010); a decimal point only when the whole column says so
+    (some cell with other than three digits after its one comma, 12,5, and no cell with a point
+    as its decimal)."""
+    for sep in _THOUSANDS:
+        grouped = _grouped(sep)
+        if all(grouped.match(v) or _PLAIN.match(v) for v in values) and any(sep in v for v in values):
+            return sep, "."
+    if all(_DECIMAL_COMMA.match(v) for v in values) and any("," in v for v in values):
+        if any(re.search(r",(?:\d{1,2}|\d{4,})$", v) for v in values):
+            sep = next((c for c in ".\u2009\u202f\u00a0 '" if any(c in v.split(",")[0] for v in values)), "")
+            return sep, ","
+    return None
+
+
+def read_formatted_numbers(df: pd.DataFrame) -> list[str]:
+    """Read number columns written with thousands separators (14,010; 14 010; 14'010), or with
+    decimal commas when the whole column uses them (12,5), as numbers, in place. The file is never
+    changed: each column read this way gets a note saying how (one example), for the Data step."""
+    notes = []
+    for col in df.columns:
+        series = df[col]
+        if pd.api.types.is_numeric_dtype(series) or not (
+                series.dtype == object or pd.api.types.is_string_dtype(series)):
+            continue
+        cells = series.dropna().astype(str).str.strip()
+        values = [v for v in cells.tolist() if v]
+        if not values:
+            continue
+        how = _number_reading(values)
+        if how is None:
+            continue
+        sep, point = how
+
+        def as_number(cell, sep=sep, point=point):
+            if cell is None or (isinstance(cell, float) and math.isnan(cell)):
+                return cell
+            text = str(cell).strip()
+            if not text:
+                return float("nan")
+            if sep:
+                text = text.replace(sep, "")
+            return float(text.replace(",", ".") if point == "," else text)
+
+        example = next(v for v in values if (sep and sep in v) or (point == "," and "," in v))
+        df[col] = series.map(as_number).astype(float)
+        read = as_number(example)
+        shown = f"{read:.10g}"
+        what = f"{_THOUSANDS[sep]} as thousands separators" if point == "." else (
+            "commas as decimal points" + (f" and {_THOUSANDS.get(sep, 'points')} as thousands separators" if sep else ""))
+        notes.append(f"“{col}” is read as numbers, with {what}: {example} is {shown}.")
+    return notes
 
 
 def _is_number(cell: str) -> bool:
@@ -655,7 +724,9 @@ def preview(file_bytes: bytes, rows: int = 5, distinct: bool = False) -> dict:
     )
     out = {"columns": columns, "preview": sample, "n_rows": int(df.shape[0]),
            # Rows left wholly blank, skipped (see read_dataframe).
-           "blank_rows": int(df.attrs.get("blank_rows", 0))}
+           "blank_rows": int(df.attrs.get("blank_rows", 0)),
+           # Number columns written with thousands separators or decimal commas, read as numbers.
+           "number_notes": list(df.attrs.get("number_notes") or [])}
     if distinct:
         out["n_unique"] = [int(n) for n in df.nunique(dropna=True).tolist()]
         # What the Data step needs to guess the time and status columns, map a

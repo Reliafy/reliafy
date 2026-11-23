@@ -115,6 +115,9 @@ test("the answer for the whole forecast reads plainly and goes in the CSV", () =
   assert.equal(yearText({ ...year, planned: undefined, periods: 1, period_label: "years" }),
     "about 2.4 over 1 year (likely 1–4)");
   assert.equal(yearText(null), "");
+  // The planned count reads to 3 figures, as the strategy beside it does (109, not 110).
+  assert.ok(yearText({ ...year, mean: 120.4, p10: 114, p90: 123, planned: 109.4, failures: 11 })
+    .endsWith(": 11 failures + 109 planned"));
   const sp = { status: "ok", service_level: 0.95, lead_time: 0.164, review: 0, per_failure: 1, year,
     per_period: [{ period: 1, hold: 0, reorder_at: 0, expected_demand: 0.02 }, { period: 2, hold: 0, reorder_at: 0, expected_demand: 0.02 }] };
   const [head, first, second] = fleetSparesCsv(sp, { fleet: "DE bearings", periodLabel: "months" }).trim().split(/\r?\n/);

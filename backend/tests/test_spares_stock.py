@@ -400,6 +400,22 @@ def test_a_flat_need_keeps_the_plain_headline_and_steps_say_by():
     assert many["summary"].startswith("Hold 1 now, rising to 3 by quarter 5: a 95% chance")
 
 
+def test_the_years_buy_counts_planned_replacements_once():
+    # 120 rollers replaced at 14 months (Weibull 60 months, shape 2), 70 already past it: those 70
+    # are changed now, so the 1-month hold (71) is nearly all planned changes, and the year's demand
+    # (about 116: 110 planned + 5 failures) holds them too. Buy = the demand + the hold's buffer over
+    # the planned ones - 4 in stock: 113, not ceil(116) + 71 - 4 = 183 (each catch-up bought twice).
+    dist = surpyval.Weibull.from_params([60.0, 2.0])
+    ages = np.array([36.0] * 70 + list(np.linspace(0, 13, 50)))
+    out = fleet_service.spares_answer({"lead_time": 1, "stock": 4, "_replace_at": 14}, "renewals", dist,
+                                      ages, np.ones(120), 12, "months")
+    year = out["year"]
+    assert out["hold"] == 71 and year["order_now"] == 67
+    assert year["planned"] == pytest.approx(110.5, abs=1) and year["mean"] == pytest.approx(115.6, abs=1)
+    assert year["buy"] == 113 and year["buy_high_case"] == 115
+    assert year["buy"] < year["mean"]  # well short of mean + hold - stock
+
+
 def test_a_fleet_answer_for_the_year():
     # Four drive-end bearings 844 days old (Weibull 1,173 days, shape 1.955), 30.4375 days of use a
     # month, 12 months; a 5-day lead time and 2 in stock. Hand check: about 1.72 failures in the year

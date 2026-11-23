@@ -343,6 +343,12 @@ class GraphStore:
         self._gap: tuple[int, float] | None = None  # (missing seq, when first seen)
         self._event_counts: dict[str, int] = {}
         self._seq = 0  # the event being projected, recorded against what it writes
+        # Reads kept until the graph changes (read_cache.py): read_token is the applied
+        # position and a generation every rebuild or snapshot load moves on.
+        from backend.maintenance.read_cache import ReadCache
+
+        self.read_cache = ReadCache()
+        self._generation = 0
         # Per-process counters the service keeps its write limits in.
         self.write_windows: dict = {}
         self.series_days: dict = {}
@@ -549,12 +555,19 @@ class GraphStore:
             return False
         return True
 
+    def read_token(self) -> tuple[int, int]:
+        """What the graph is at: (generation, applied position). Any event applied,
+        rebuild or snapshot load changes it (read_cache.py)."""
+        with self._lock:
+            return self._generation, self._applied()
+
     def rebuild(self) -> int:
         """Clear the graph and replay the whole log. Returns the events replayed.
 
         The tables are dropped and made again, so a graph stored with an older
         table layout comes back in the current one."""
         with self._lock:
+            self._generation += 1
             self._set_meta("purge_epoch", str(self._log_epoch()))
             self._conn.execute("DROP TABLE IF EXISTS nodes")
             self._conn.execute("DROP TABLE IF EXISTS edges")
@@ -576,6 +589,7 @@ class GraphStore:
         (for a throwaway copy: see :func:`scratch_copy`). Not a projection: the
         copy's log stays empty and its applied position 0."""
         with self._lock:
+            self._generation += 1
             self._conn.execute("BEGIN")
             try:
                 self._conn.executemany("INSERT OR REPLACE INTO nodes (id, org, label, props) VALUES (?, ?, ?, ?)",

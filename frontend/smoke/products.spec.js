@@ -427,3 +427,24 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     await expectHealthy(page, problems, { label: `parts and classes tabs ${width}`, root: width < 600 ? ".td" : "main" });
   });
 }
+
+// Make an RBD from this structure, again: the RBD made before is never overwritten unasked. Open it
+// (the default), make a new copy, or rebuild it, which says what is lost first.
+test("making the product's RBD again asks first and opens the existing one", async ({ page, request, problems }) => {
+  test.setTimeout(120000);
+  const product = await seeded(request);
+  const first = await postOk(request, `${M}/positions/${product.id}/rbd`, {});
+  await open(page, `/products/${product.id}`);
+  const section = page.locator("#design-analysis");
+  await section.getByRole("button", { name: "Make an RBD from this structure" }).click();
+  const choice = section.getByRole("group", { name: "An RBD from this structure exists" });
+  await expect(choice.getByRole("button", { name: "Open the existing RBD" })).toBeVisible({ timeout: 20000 });
+  await expect(choice.getByRole("button", { name: "Make a new copy" })).toBeVisible();
+  await choice.getByRole("button", { name: /Rebuild it \(replaces your edits\)/ }).click();
+  const confirm = page.getByRole("alertdialog", { name: "Rebuild the RBD from the structure?" });
+  await expect(confirm).toContainText("Everything changed on it since it was made is lost");
+  await confirm.getByRole("button", { name: "Cancel" }).click();
+  await choice.getByRole("button", { name: "Open the existing RBD" }).click();
+  await expect(page).toHaveURL(new RegExp(`/systems/b/${first.rbd_id}`));
+  await expectHealthy(page, problems, { label: "make the product's RBD again" });
+});
