@@ -302,13 +302,13 @@ function FromRecords({ view, from, root }) {
   return (
     <div className="app ft">
       <ToolHeader view={view} />
-      <p className="ft-from" role="note">
-        {got.error ? <>Couldn&apos;t forecast it from the Explorer: {got.error}</>
-          : !out ? "Reading the records…"
+      {/* A refusal or failure shows once, in the error box: the note is only for where it came from. */}
+      {!got.error && <p className="ft-from" role="note">
+        {!out ? "Reading the records…"
             : <>From: <Link to={out.from.link} title="Back to the Explorer">{out.from.path || out.from.name}</Link>
               {out.from.kind === "task" ? ` · ${out.from.name}` : out.from.kind === "package" ? ` · ${out.from.name} (package)` : " and everything below it"}</>}
-      </p>
-      {got.error && <LoadFailed what="Couldn't work out the forecast." error={got.error} />}
+      </p>}
+      {got.error && <LoadFailed what="Couldn't forecast it from the Explorer." error={got.error} />}
       {out && (
         <Card className={"ft-result" + (busy ? " is-busy" : "")} aria-busy={busy || undefined}>
           <CardHeader title={view.title} subtitle={metaLine(out)}

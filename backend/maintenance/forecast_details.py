@@ -230,7 +230,7 @@ def _hours(m: Maintenance, position_id: str, root, horizon, every, reading, only
     tasks_out, not_on, models, not_forecast = [], [], [], []
     hours_at: dict = {}
     served = pf.served_modes(m, only) if only is not None else None
-    tree = pf._subtree(m, position_id)
+    tree = pf._subtree(m, position_id, m.forecast_within(pos["id"], root))
     own_basis = None
     origin = datetime(today.year, today.month, today.day)
     for node, _depth in tree:
@@ -399,14 +399,10 @@ def forecast_details(m: Maintenance, position_id: str, root: str | None = None, 
     calendar when the position has a duty, running hours when it has none and its tasks are
     mostly by use."""
     pos = m._get(position_id, "Position")
-    if root:
-        if m.s.node(m.org, root) is None:
-            raise svc.NotFound(f"Position {root}")
-        if root != position_id and root not in m._ancestor_ids(position_id):
-            raise Invalid("That position isn't inside the asset opened.")
+    within = m.forecast_within(pos["id"], root)
     subject, ids = _subject(m, pos, task_ids, package_id)
     only = set(ids) if ids is not None else None
-    tree = pf._subtree(m, position_id)
+    tree = pf._subtree(m, position_id, within)
     tasks = _tasks_in(m, tree, only)
     duty = _duty_words(m, position_id, root)
     by_use = sum(1 for t in tasks if _by_use(t))

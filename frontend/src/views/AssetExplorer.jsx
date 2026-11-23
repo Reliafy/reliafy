@@ -2234,7 +2234,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       if (id === TASK_OPEN) return openTaskRow(r);
       // Open in ›: a left-menu tool, filled in from this row (nothing in the Explorer changes).
       if (isOpenIn(id)) {
-        const to = openInLink(r, id, root || tasksWithin, { design: !!designScope });
+        // Only the asset opened (?root=) isolates: with the whole register open, a row of any asset opens.
+        const to = openInLink(r, id, root, { design: !!designScope });
         if (to) navigate(to);
         return;
       }
