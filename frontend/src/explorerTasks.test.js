@@ -318,3 +318,21 @@ test("Next due sorts soonest first, then latest, then back; blanks last both way
   // Positions by their soonest: the deck (nothing known) after the engine.
   assert.deepEqual(dueOrder(out, { col: "due", dir: 1 })(["dk", "en"]), ["en", "dk"]);
 });
+
+// ---- Open in › (Derryn, 23 Nov 2026) ----
+import { openInItem, openInLink, openInSource } from "./explorerTasks.js";
+
+test("Open in › on a position, a task and a package opens the left-menu tools filled in from it", () => {
+  const out = graftTasks(mowerTree, [task("oil", "en", inPkg(svc))], { packages: [svc] });
+  const pos = out.rows.get("en");
+  const t = out.rows.get(taskKey("oil"));
+  const p = out.rows.get(packageKey("s50"));
+  assert.deepEqual(openInItem(pos)[0].items.map((x) => x.label), ["Optimise", "Spares forecast", "Hours forecast", "Cost forecast"]);
+  assert.equal(openInLink(pos, "open-in-spares", "mw"), "/forecasts/spares?from=position%3Aen&root=mw");
+  assert.equal(openInLink(t, "open-in-optimise"), "/strategy/replacement?from=task%3Aoil");
+  assert.equal(openInLink(p, "open-in-costs"), "/forecasts/costs?from=package%3As50");
+  // Not on a place, a reference or a product's design.
+  assert.deepEqual(openInItem({ type: "loc", key: "l" }), []);
+  assert.equal(openInSource(pos, { design: true }), null);
+  assert.deepEqual(openInItem(out.rows.get(p.kids[0])), []);
+});

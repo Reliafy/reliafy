@@ -403,12 +403,12 @@ test("an old Maintenance sub-tab address becomes the one table's own", () => {
 
 test("an old Explorer forecast address opens the spares forecast, filled in from where it was", () => {
   const go = (q) => forecastRedirect(new URLSearchParams(q));
-  assert.equal(go("tab=maintenance&forecast=p1&root=a1"), "/forecasts/spares?position=p1&root=a1");
-  assert.equal(go("tab=maintenance&mview=spares&sel=p2"), "/forecasts/spares?position=p2");
-  assert.equal(go("tab=maintenance&sel=MF:MT:t9&root=a1"), "/forecasts/spares?task=t9&root=a1");
+  assert.equal(go("tab=maintenance&forecast=p1&root=a1"), "/forecasts/spares?from=position%3Ap1&root=a1");
+  assert.equal(go("tab=maintenance&mview=spares&sel=p2"), "/forecasts/spares?from=position%3Ap2");
+  assert.equal(go("tab=maintenance&sel=MF:MT:t9&root=a1"), "/forecasts/spares?from=task%3At9&root=a1");
   assert.equal(go("tab=maintenance&sel=MF:MP:k1"), "/forecasts/spares");
   assert.equal(go("tab=maintenance&sel=p2"), null);
-  assert.equal(sparesForecastLink({ position: "p", task: "t" }), "/forecasts/spares?position=p&task=t");
+  assert.equal(sparesForecastLink({ position: "p", task: "t" }), "/forecasts/spares?from=task%3At");
 });
 
 test("a tab or view picked names the address tab and mview to open", () => {

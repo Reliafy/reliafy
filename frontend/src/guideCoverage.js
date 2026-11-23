@@ -45,6 +45,9 @@ export const GUIDE_COVERAGE = [
   { feature: "Test planning: comparison", href: "/strategy/test-planning/comparison" },
   // Fleets.
   { feature: "Fleet failure and spares forecasts", href: "/forecasts" },
+  { feature: "Spares forecast (quick, not saved)", href: "/forecasts/spares" },
+  { feature: "Hours forecast (quick, not saved)", href: "/forecasts/hours" },
+  { feature: "Cost forecast (quick, not saved)", href: "/forecasts/costs" },
   { feature: "Condition monitoring (tracked items)", href: "/risk" },
   // RCM.
   { feature: "RCM studies", href: "/maintenance/rcm" },

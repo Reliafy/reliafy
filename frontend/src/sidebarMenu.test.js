@@ -19,7 +19,7 @@ test("entries with sub-pages toggle; the rest are links", () => {
   });
   const second = (id) => Object.fromEntries(find(live, id).entries.map((e) => [e.id, toggles(e)]));
   assert.deepEqual(second("modelling"), { data: false, models: true, prediction: false, maintainability: false, systems: true });
-  assert.deepEqual(second("decisions"), { strategy: true, forecasts: false, risk: true });
+  assert.deepEqual(second("decisions"), { strategy: true, forecasts: true, risk: true });
   // Maintenance has the RCM studies under it; without Reliafy Maintenance it is that page, a plain link.
   assert.equal(toggles(find(liveEntries(PREVIEW), "maintenance")), true);
   assert.equal(toggles(find(liveEntries({}), "maintenance")), false);
@@ -49,7 +49,7 @@ test("a group lists its entries; an entry lists exactly its children, never its 
     }
   }
   // No sub-pages, nothing.
-  for (const id of ["home", "assets", "data", "forecasts", "reports"]) assert.deepEqual(subItems(find(live, id)), [], id);
+  for (const id of ["home", "assets", "data", "reports"]) assert.deepEqual(subItems(find(live, id)), [], id);
 });
 
 test("an entry whose landing page isn't available opens on its first child; with nothing left under it, it's a link", () => {
@@ -83,7 +83,8 @@ test("the current page's entry and its group start open; nothing else does", () 
   assert.deepEqual(startOpen(live, "/models/m/abc"), ["modelling", "models"]);
   assert.deepEqual(startOpen(live, "/systems/b/abc"), ["modelling", "systems"]);
   assert.deepEqual(startOpen(live, "/strategy/analyses/x"), ["decisions", "strategy"]);
-  assert.deepEqual(startOpen(live, "/forecasts"), ["decisions"]);
+  assert.deepEqual(startOpen(live, "/forecasts"), ["decisions", "forecasts"]);
+  assert.deepEqual(startOpen(live, "/forecasts/costs"), ["decisions", "forecasts"]);
   assert.deepEqual(startOpen(live, "/risk"), ["decisions", "risk"]);
   assert.deepEqual(startOpen(live, "/asset-register/explorer"), []);
   assert.deepEqual(startOpen(liveEntries(PREVIEW), "/maintenance/inbox"), ["maintenance"]);

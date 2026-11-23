@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { areaMenu, explorerRowMenu } from "./explorerMenu.js";
 import { menuProblems } from "./menuStandard.js";
 import { isolateItems, summaryActions, withAssetMoves } from "./treeRowMenu.js";
-import { packageRowActions, refRowActions, taskRowActions } from "./explorerTasks.js";
+import { openInItem, packageRowActions, refRowActions, taskRowActions } from "./explorerTasks.js";
 import { rowActions as rcmRowActions } from "./explorerRcm.js";
 import { rowActions as fmeaRowActions } from "./explorerFmea.js";
 import { missionRowActions } from "./explorerMissions.js";
@@ -72,6 +72,10 @@ test("Maintenance rows: a task Retire…, a package Retire…, a package's task 
   assert.equal(check("package", explorerRowMenu(p, packageRowActions(p))).at(-1).label, "Retire…");
   const ref = { key: "mr", type: "mpref", ref: { name: "Grease", task: { id: "a" } }, kids: [] };
   assert.equal(check("ref", explorerRowMenu(ref, refRowActions(ref))).at(-1).label, "Remove from package…");
+  // Open in › sits in the middle, a submenu of four, and keeps the menu to the standard.
+  const withOpen = check("task with Open in", explorerRowMenu(t, [...taskRowActions(t).slice(0, 2), ...openInItem(t), ...taskRowActions(t).slice(2)]));
+  assert.equal(withOpen.find((it) => it.id === "open-in").items.length, 4);
+  assert.equal(withOpen.at(-1).label, "Retire…");
   // A forecast is the left menu's Spares forecast now (Derryn, 23 Nov 2026): no row offers Forecast….
   for (const menu of [tm, explorerRowMenu(p, packageRowActions(p))]) assert.ok(!labels(menu).some((l) => /forecast/i.test(l)));
 });

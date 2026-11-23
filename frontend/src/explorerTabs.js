@@ -195,8 +195,8 @@ export function maintenanceRedirect(params, { tabKey = "tab" } = {}) {
 // from a position (and one of its tasks) in the asset opened (`root`): it fills in what's recorded.
 export function sparesForecastLink({ position = null, task = null, root = null } = {}) {
   const q = new URLSearchParams();
-  if (position) q.set("position", position);
-  if (task) q.set("task", task);
+  if (task) q.set("from", `task:${task}`);
+  else if (position) q.set("from", `position:${position}`);
   if (root) q.set("root", root);
   const text = q.toString();
   return `/forecasts/spares${text ? `?${text}` : ""}`;

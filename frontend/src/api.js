@@ -2414,6 +2414,19 @@ export function createFleet(name, modelId, modelKind = "life") {
   });
 }
 
+// A quick spares forecast, not saved (Decisions › Forecasts › Spares forecast): the saved-fleet
+// engine on {distribution_id, params, extras?, unit?, name?, units?, ages, rate, periods,
+// period_label, strategy, replace_at?, failure_cost?, planned_cost?, spares?}.
+export function sparesScratchForecast(body) {
+  return postJson("/api/fleet/scratch-forecast", body);
+}
+// What the quick forecast tool and Optimal replacement take from an Explorer node (Open in ›):
+// `kind` position (and everything below it), task or package; `root` the asset opened.
+export function getForecastStart({ kind, id, root = null }) {
+  const base = { position: "positions", task: "tasks", package: "packages" }[kind];
+  const tail = root ? `?root=${encodeURIComponent(root)}` : "";
+  return request(`/api/maintenance/${base}/${encodeURIComponent(id)}/forecast-start${tail}`);
+}
 export function getFleet(id) {
   return request(`/api/fleet/fleets/${id}`);
 }

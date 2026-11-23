@@ -615,3 +615,44 @@ export function dueOrder(display, sort) {
       .map((x) => x.k);
   };
 }
+
+// ---- Open in › (Derryn, 23 Nov 2026) ----------------------------------------------------------
+// "Quick one-off work lives in the left menu's tools; the detailed, saved work for a specific asset
+// lives in the Explorer." A position (and everything below it), a task or a work package opens the
+// left menu's tools filled in from it: Optimal replacement (a scratch Optimise: Optimise… on the
+// task is the one that changes its interval) and the forecast tool's three views. Nothing is
+// written to the Explorer; the tool names where it came from, with a link back.
+export const OPEN_IN = [
+  { id: "open-in-optimise", label: "Optimise", view: null, title: "Optimal replacement, filled in from here: try other intervals without changing the task" },
+  { id: "open-in-spares", label: "Spares forecast", view: "spares", title: "How many spares these will use, filled in from here and everything below it" },
+  { id: "open-in-hours", label: "Hours forecast", view: "hours", title: "The maintenance hours these will need, filled in from here and everything below it" },
+  { id: "open-in-costs", label: "Cost forecast", view: "costs", title: "What these will cost to maintain, filled in from here and everything below it" },
+];
+const OPEN_IN_IDS = new Set(OPEN_IN.map((x) => x.id));
+export const isOpenIn = (id) => OPEN_IN_IDS.has(id);
+
+// What a row opens the tools from: {kind, id}, or null (a place, a design's row, a reference).
+export function openInSource(r, { design = false } = {}) {
+  if (design) return null;
+  if (r?.type === "pos") return { kind: "position", id: r.key };
+  if (isTaskRow(r)) return { kind: "task", id: r.ref.task.id };
+  if (isPackageRow(r)) return { kind: "package", id: r.ref.pkg.id };
+  return null;
+}
+
+// The row's Open in › submenu ([] where it has none).
+export function openInItem(r, opts = {}) {
+  if (!openInSource(r, opts)) return [];
+  return [{ id: "open-in", label: "Open in", title: "Open a left-menu tool filled in from this row: nothing here changes",
+    items: OPEN_IN.map(({ id, label, title }) => ({ id, label, title })) }];
+}
+
+// Where an Open in item goes: the tool's address, filled in from the row (`root`: the asset opened).
+export function openInLink(r, id, root = null, opts = {}) {
+  const src = openInSource(r, opts);
+  const it = OPEN_IN.find((x) => x.id === id);
+  if (!src || !it) return null;
+  const q = new URLSearchParams({ from: `${src.kind}:${src.id}` });
+  if (root) q.set("root", root);
+  return `${it.view ? `/forecasts/${it.view}` : "/strategy/replacement"}?${q}`;
+}

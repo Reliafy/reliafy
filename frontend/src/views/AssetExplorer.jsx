@@ -31,7 +31,7 @@ import {
 import {
   PKG_OPEN, PKG_RETIRE, REF_GO, REF_REMOVE, TASK_RETIRE, TASK_ADD_TO, TASK_CLEAR, TASK_DRAFT, TASK_OPEN, TASK_OPTIMISE, TASK_PACKAGE, TASK_SELECT,
   anyFilter, commonHolder, dueOrder, facetValues, facetsOf, filterTasks, filterWords, nextDueSort,
-  graftTasks, isMaintRow, isPackageRef, isPackageRow, isTaskRow, keepShown, openForTasks, packageKey, packageRowActions,
+  graftTasks, isMaintRow, isOpenIn, openInItem, openInLink, isPackageRef, isPackageRow, isTaskRow, keepShown, openForTasks, packageKey, packageRowActions,
   packageWhere, pickTasks, refRowActions, rollupText as taskRollup, shownTasks, taskKey, taskRowActions,
 } from "../explorerTasks.js";
 import CovariateBindPane from "../components/CovariateBindPane.jsx";
@@ -2112,14 +2112,21 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       if (missionsOn && isMissionRow(r)) return withPin(missionRowActions(r, { viewOnly }), isolateItem(r));
       // The Maintenance tab: a task's own (Open…); a level's: Add task…, then Rename…, Focus ›, Pin
       // this branch. No Forecast… (Derryn, 23 Nov 2026: it's the left menu's Spares forecast).
-      if (tasksOn && isTaskRow(r)) return taskRowActions(r, { tasks: tasksFor(r).map((x) => x.ref.task), canPackage: !designScope && !viewOnly, canSelect: phone && !designScope && !viewOnly, viewOnly });
+      if (tasksOn && isTaskRow(r)) {
+        const acts = taskRowActions(r, { tasks: tasksFor(r).map((x) => x.ref.task), canPackage: !designScope && !viewOnly, canSelect: phone && !designScope && !viewOnly, viewOnly });
+        // Open in › right after Optimise… (the menu folds its tail into More ›, never this).
+        return [...acts.slice(0, 2), ...openInItem(r, { design: !!designScope }), ...acts.slice(2)];
+      }
       // A package (at the meeting point of its tasks): Open…; a task listed under it: Show the task
       // (under its own position).
-      if (tasksOn && isPackageRow(r)) return packageRowActions(r, { viewOnly });
+      if (tasksOn && isPackageRow(r)) {
+        const acts = packageRowActions(r, { viewOnly });
+        return [...acts.slice(0, 1), ...openInItem(r), ...acts.slice(1)];
+      }
       if (tasksOn && isPackageRef(r)) return refRowActions(r, { viewOnly });
       if (tasksOn && (r.type === "pos" || r.type === "loc")) {
         const own = summaryActions(r, { mode, viewOnly }).filter((it) => MODEL_POSITION_ITEMS.includes(it.id));
-        return [...maintenanceLead(r, { viewOnly }), ...draftItem(r), { separator: true }, ...own, ...isolateItem(r), ...pinItem(r)];
+        return [...maintenanceLead(r, { viewOnly }), ...openInItem(r, { design: !!designScope }), ...draftItem(r), { separator: true }, ...own, ...isolateItem(r), ...pinItem(r)];
       }
       // The Operations tab: a position's operating plan (its details), then the position items that
       // make sense here, Focus and Pin. An item runs as its position: Focus and Pin only.
@@ -2171,6 +2178,12 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       }
       if (id === "maint-add-task") return addTaskAt(r);
       if (id === TASK_OPEN) return openTaskRow(r);
+      // Open in ›: a left-menu tool, filled in from this row (nothing in the Explorer changes).
+      if (isOpenIn(id)) {
+        const to = openInLink(r, id, root || tasksWithin, { design: !!designScope });
+        if (to) navigate(to);
+        return;
+      }
       if (id === TASK_OPTIMISE) return openOptimise(r.ref.task.id, r.ref.position_id);
       if (id === TASK_PACKAGE) return openPackaging("new", r);
       if (id === TASK_ADD_TO) return openPackaging("add", r);

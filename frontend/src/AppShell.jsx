@@ -54,6 +54,8 @@ const StrategyTracking = lazy(() => import("./views/StrategyTracking.jsx"));
 const FleetForecasts = lazy(() => import("./views/FleetForecasts.jsx"));
 const FleetTrackingHome = lazy(() => import("./views/FleetTrackingHome.jsx"));
 const FleetForecastPage = lazy(() => import("./views/FleetForecastPage.jsx"));
+// The quick forecast tool (Spares, Hours and Cost forecast): one page, three views, nothing saved.
+const ForecastTool = lazy(() => import("./views/ForecastTool.jsx"));
 const StrategyAnalysisPage = lazy(() => import("./views/StrategyAnalysisPage.jsx"));
 // Reliability prediction: a parts count from handbook base rates.
 const ReliabilityPredictions = lazy(() => import("./views/ReliabilityPredictions.jsx"));
@@ -321,6 +323,9 @@ function Shell() {
             <Route path="/predictions/:id" element={<ReliabilityPredictionPage />} />
             {/* The fleets' forecasts and (Reliafy Maintenance) the position classes'. */}
             <Route path="/forecasts" element={<FleetForecasts />} />
+            <Route path="/forecasts/spares" element={<ForecastTool />} />
+            <Route path="/forecasts/hours" element={<ForecastTool />} />
+            <Route path="/forecasts/costs" element={<ForecastTool />} />
             <Route path="/forecasts/:id" element={<FleetForecastPage />} />
 
             {/* Blank pages for menu entries not built yet (plannedPages.js). */}
