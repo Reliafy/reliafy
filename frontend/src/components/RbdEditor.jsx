@@ -50,10 +50,12 @@ import {
   KNode,
   RbdCcfContext,
   RbdRenameContext,
+  RbdVoteFixContext,
   RbdRepairableContext,
   RbdUnitContext,
   StructureNode,
 } from "./RbdNodes.jsx";
+import { clampNote, clampVotes, inputCounts } from "../rbdVotes.js";
 import { lazy, Suspense } from "react";
 import { unitInText } from "./unitText.js";
 import Chip from "./ui/Chip.jsx";
@@ -949,6 +951,27 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     fitWhenMeasured();
   }, [full, fitWhenMeasured]);
 
+  // Wires removed below what a vote node needs: it's clamped to the inputs left, and the
+  // flash says so (never silently). Wiring in never changes it.
+  const onEdgesChangeVotes = useCallback((changes) => {
+    const removed = new Set(changes.filter((c) => c.type === "remove").map((c) => c.id));
+    if (removed.size) {
+      const all = getEdges();
+      const { nodes: next, clamped } = clampVotes(getNodes(), inputCounts(all),
+        inputCounts(all.filter((e) => !removed.has(e.id))));
+      if (clamped.length) {
+        const ids = new Set(clamped.map((c) => c.id));
+        setNodes((nds) => nds.map((nd) => (ids.has(nd.id) ? next.find((x) => x.id === nd.id) : nd)));
+        setConnectHint(clampNote(clamped));
+      }
+    }
+    onEdgesChange(changes);
+  }, [getEdges, getNodes, setNodes, onEdgesChange]);
+  // "Make it 1 of 2" on a vote node that needs all of its inputs.
+  const fixVote = useCallback((id, n) => {
+    setNodes((nds) => nds.map((nd) => (nd.id === id ? { ...nd, data: { ...nd.data, n } } : nd)));
+  }, [setNodes]);
+
   // Clear the transient "connected N links" note after a moment.
   useEffect(() => {
     if (!connectHint) return undefined;
@@ -1045,7 +1068,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         nds.concat({
           id: `k${i}`,
           type: "knode",
-          data: { n, k, ...(label ? { label } : {}) },
+          data: { n, ...(k != null ? { k } : {}), ...(label ? { label } : {}) },
           position: clearSpot(nds, flowPos || { x: 240, y: 40 + ((i * 70) % 200) }),
         })
       );
@@ -1148,7 +1171,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           nds.map((node) => {
             if (node.id !== knodeCtx.nodeId) return node;
             const { label: _old, ...rest } = node.data;
-            return { ...node, data: { ...rest, n, k, ...(label ? { label } : {}) } };
+            return { ...node, data: { ...rest, n, ...(k != null ? { k } : {}), ...(label ? { label } : {}) } };
           })
         );
       } else {
@@ -1591,7 +1614,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           { id: "add-component", label: "Add component", onSelect: () => addComponent(flow) },
           ...(network ? [] : [
             { id: "add-junction", label: "Add junction", onSelect: () => addKNode(flow, 1, 2) },
-            { id: "add-vote", label: "Add voting node (MooN)", onSelect: () => { setKnodeCtx({ mode: "add", flowPos: flow, n: 2, k: 3 }); setModal("knode"); } },
+            { id: "add-vote", label: "Add voting node (MooN)", onSelect: () => { setKnodeCtx({ mode: "add", flowPos: flow, n: 1 }); setModal("knode"); } },
           ]),
           // A standby group works in both: repairable, its units are each repaired (#156).
           { id: "add-standby", label: "Add standby node", onSelect: () => addBlock("standby", flow) },
@@ -1632,7 +1655,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         ...(t === "series" || t === "parallel" ? [{ id: "node-count", label: "Set count (n)",
           onSelect: () => { setCountCtx({ nodeId: id, kind: node?.type, label: node?.data.label, n: node?.data.n ?? 2 }); setModal("count"); } }] : []),
         ...(t === "knode" ? [{ id: "node-vote", label: "Edit vote (MooN)",
-          onSelect: () => { setKnodeCtx({ mode: "edit", nodeId: id, n: node?.data.n ?? 2, k: node?.data.k ?? 3, label: node?.data.label || "" }); setModal("knode"); } }] : []),
+          onSelect: () => { setKnodeCtx({ mode: "edit", nodeId: id, n: node?.data.n ?? 1, inputs: inputCounts(getEdges())[id] || 0, label: node?.data.label || "" }); setModal("knode"); } }] : []),
         ...(t === "standby" ? [{ id: "node-standby", label: "Edit standby", onSelect: () => { setStandbyCtx({ nodeId: id, ...node?.data }); setModal("standby"); } }] : []),
         ...(t === "loadshare" ? [{ id: "node-loadshare", label: "Edit load-sharing", onSelect: () => { setLoadshareCtx({ nodeId: id, ...node?.data }); setModal("loadshare"); } }] : []),
         ...(t === "subsystem" ? [{ id: "node-subsystem", label: "Select RBD…", onSelect: () => { setSubsystemNodeId(id); setModal("subsystem"); } }] : []),
@@ -1702,8 +1725,8 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           setKnodeCtx({
             mode: "edit",
             nodeId: node.id,
-            n: node.data?.n ?? 2,
-            k: node.data?.k ?? 3,
+            n: node.data?.n ?? 1,
+            inputs: inputCounts(getEdges())[node.id] || 0,
             label: node.data?.label || "",
           });
           setModal("knode");
@@ -2009,6 +2032,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     <RbdRepairableContext.Provider value={repairable}>
     <RbdCcfContext.Provider value={ccfMap}>
     <RbdRenameContext.Provider value={rename}>
+    <RbdVoteFixContext.Provider value={savedRbdReadOnly ? null : fixVote}>
     <div className="rbd-shell" ref={shellRef}>
     {/* Beside the tree (no page title, and no pane heading on a wide screen) the diagram's name
         is the pane's title. */}
@@ -2051,7 +2075,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           Junction
         </button>
         <button className="ovm-item" onClick={() => {
-          setKnodeCtx({ mode: "add", flowPos: centrePos(), n: 2, k: 3 });
+          setKnodeCtx({ mode: "add", flowPos: centrePos(), n: 1 });
           setModal("knode");
         }}>
           Voting node (MooN)…
@@ -2272,7 +2296,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         edges={flowEdges}
         nodeTypes={nodeTypes}
         onNodesChange={handleNodesChange}
-        onEdgesChange={onEdgesChange}
+        onEdgesChange={onEdgesChangeVotes}
         onSelectionChange={onSelectionChange}
         onConnect={onConnect}
         onPaneContextMenu={onPaneContextMenu}
@@ -2603,6 +2627,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
       </div>
     )}
     </div>
+    </RbdVoteFixContext.Provider>
     </RbdRenameContext.Provider>
     </RbdCcfContext.Provider>
     </RbdRepairableContext.Provider>

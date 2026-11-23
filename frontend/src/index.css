@@ -1149,8 +1149,23 @@ h6 {
   text-align: center;
 }
 
-.rbd-knode.invalid .rbd-knode-title {
+.rbd-knode.invalid .rbd-knode-title,
+.rbd-knode.invalid .rbd-knode-sub {
   color: var(--danger-text);
+}
+
+/* Needs all of its inputs: valid, but no redundancy (a caveat, not an error). */
+.rbd-knode.warn {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+}
+
+.rbd-knode.warn .rbd-knode-sub {
+  color: var(--warning-text);
+}
+
+.rbd-knode-fix {
+  margin-top: var(--space-1);
 }
 
 .rbd-knode-sub {

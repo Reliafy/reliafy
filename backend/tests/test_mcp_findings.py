@@ -304,7 +304,7 @@ def test_stage_settings_are_refused_not_clamped(env):
     knode = next(n for n in doc["graph"]["nodes"] if n["type"] == "knode")
     assert knode["data"]["n"] == 2
     # 2 of 2 is a series structure: warned, in our words (no "strucuture").
-    assert any("series structure" in w for w in ok["warnings"])
+    assert any("adds no redundancy" in w for w in ok["warnings"])
     assert not any("strucuture" in w for w in ok["warnings"])
 
 
@@ -496,7 +496,7 @@ def test_impossible_vote_node_is_explained(env):
     edges = [{"source": "input", "target": "a"}, {"source": "input", "target": "b"},
              {"source": "a", "target": "v"}, {"source": "b", "target": "v"}, {"source": "v", "target": "output"}]
     msg = _err(_call(env.token[A], "change", {"action": "rbd_create", "name": "Vote", "nodes": nodes, "edges": edges}))
-    assert "Vote node “v” requires 5 working inputs but only 2 branches feed it" in msg
+    assert "Vote node “v” needs at least 5 inputs for 5-of-n; it has 2" in msg
     assert "no paths through" not in msg
 
 
