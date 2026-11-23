@@ -147,6 +147,7 @@ const SIGNED_IN = [
   ["POST", "/api/maintenance/positions/x/missions"],
   ["GET", "/api/rbds/x/missions"],
   ["POST", "/api/rbds/x/missions"],
+  ["POST", "/api/rbds/x/missions/mission/answers"],
   ["GET", "/api/rbds/x/missions/m"],
   ["POST", "/api/rbds/x/missions/m/calculate"],
   ["GET", "/api/maintenance/rcm/options"], // the decision dialog's vocabulary
