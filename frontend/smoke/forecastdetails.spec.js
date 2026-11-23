@@ -71,7 +71,7 @@ test("a task's Forecast: 12 months by month is 12 rows, When next pages 20 at a 
   await expect(hside.locator(".fcd-table tbody tr")).toHaveCount(10);
   await expect(hside.getByRole("region", { name: "When next" })).toContainText("in 250 h");
   const note = hside.getByRole("note");
-  await expect(note).toContainText("No duty set: assuming it runs all the time (24 h a day)");
+  await expect(note).toContainText("No duty or readings: assuming it runs all the time (24 h a day)");
   await expect(note.getByRole("link", { name: "Set a duty in Operations" })).toHaveAttribute("href", /tab=operations.*plan=|plan=.*tab=operations/);
   // The calendar view of the same task: dated through the same 24 h a day.
   await hside.getByRole("radiogroup", { name: "Basis" }).getByRole("radio", { name: "Calendar" }).click();

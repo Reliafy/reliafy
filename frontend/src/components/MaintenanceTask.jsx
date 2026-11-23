@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { assumesContinuous, dutyHref } from "../explorerOperations.js";
+import { noDutyBasis, dutyHref } from "../explorerOperations.js";
 import {
   createSubjectTask, getMaintenancePosition, getTaskIntervalBasis, getTaskLsa, linkTaskFailureMode, listTradeRates, retireMaintenanceTask,
   setTradeRate, unlinkTaskFailureMode, updateMaintenanceTask,
@@ -95,7 +95,7 @@ function DueBasis({ task, positionId = null, root = null }) {
               {l.stop_after && l.stop_after !== l.due_moment ? `; it stops at ${l.stop_after.slice(11)}${l.stop_after.slice(0, 10) !== l.next_due ? ` on ${fmtDate(l.stop_after.slice(0, 10))}` : ""}` : ""}. </>
           ) : <>{l.note[0].toUpperCase() + l.note.slice(1)}. </>}
           {l.basis.text}.
-          {assumesContinuous(l.basis) && positionId ? <> <Link to={dutyHref(positionId, root)}>Set a duty in Operations</Link>.</> : null}
+          {noDutyBasis(l.basis) && positionId ? <> <Link to={dutyHref(positionId, root)}>Set a duty in Operations</Link>.</> : null}
         </p>
       ))}
     </div>

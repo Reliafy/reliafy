@@ -111,10 +111,11 @@ reaches the next multiple:
    latest reading and goes forward through the plan.
 2. If it has a plan but no reading, it counts hours from the plan alone.
 3. With no plan but a counter that has two readings at least a day apart, it
-   uses the counter's recent rate.
+   uses the rate they give, and says so: *From its running-hours readings,
+   about 8 h a day*, with a link to set a duty in Operations.
 4. With no plan and no rate (one reading), it assumes the equipment runs all the
-   time, 24 hours a day, from that reading, and says so: *No duty set: assuming
-   it runs all the time (24 h a day)*, with a link to set a duty in Operations.
+   time, 24 hours a day, from that reading, and says so: *No duty or readings:
+   assuming it runs all the time (24 h a day)*, with a link to set a duty in Operations.
 
 Under the task's **How often**, a line says which it used and when the next one
 falls due (*Due by use at 14:00 on 12 Feb 2027 ... Hours from the operating

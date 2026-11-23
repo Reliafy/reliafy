@@ -36,7 +36,7 @@ from backend.maintenance.service import Invalid, Maintenance
 
 PERIODS = ("day", "week", "month", "quarter", "year")
 MAX_MONTHS = 120
-CONTINUOUS_NOTE = "No duty set: assuming it runs all the time (24 h a day)"
+CONTINUOUS_NOTE = svc.CONTINUOUS_TEXT
 MAX_ROWS = 400  # periods in one read (a year by day; ten years by week is too many)
 MAX_POSITIONS = 500  # positions under the one opened, forecast in one read
 MAX_TASKS = 2000
@@ -137,12 +137,10 @@ def _hours_map(m: Maintenance, pos: dict, root, start: date, end_excl: date, str
     """The position's map from dates to operating hours over the horizon: from its operating
     plan (anchored on its hours counter's latest reading, when it has one), else the hours
     counter's recent rate; {usage, basis {kind, text}, counter, reading}. None with neither.
-    ``strict`` (the forecast details): the duty, else running all the time, 24 h a day, never
-    the meter's rate (Derryn, 21 Nov 2026: "assume continuous use unless there is a duty against
-    that position"), anchored on the latest hours reading, else 0 h today; basis kind
-    "continuous" says it's assumed."""
-    from backend.maintenance import schedule
-
+    ``strict`` (the forecast details): with neither, running all the time, 24 h a day (Derryn,
+    21 and 23 Nov 2026: duty, then the readings' rate, then 24 h a day), anchored on the latest
+    hours reading, else 0 h today; basis kind "continuous" says it's assumed. The same maps as a
+    task's next due (service.meter_usage), so the two agree."""
     counter = svc._counter_on(m.s, m.org, pos["id"], "hours")
     readings = svc._readings(m.s, m.org, counter, m.tz) if counter else []
     if counter and readings:
@@ -160,29 +158,23 @@ def _hours_map(m: Maintenance, pos: dict, root, start: date, end_excl: date, str
         return {"usage": usage, "counter": counter, "readings": readings,
                 "basis": {"kind": "plan", "text": text, "plan": duty["text"], "inherited_from": duty["inherited_from"],
                           "ended": duty["ended"], "reading": None}}
-    if strict:
-        last = readings[-1] if readings else None
-        value = float(last["value"]) if last else 0.0
-        read_at = last["on"][:10] if last else start.isoformat()
-        usage = schedule.DutyPlan(schedule.Continuous()).forecast(start, end_excl, readings={"hours": value},
-                                                                  read_at=read_at)
-        anchor = (f", from {value:,.6g} h on {_short(read_at)}" if last else ", counted from 0 h today (no hours reading)")
+    # No duty: the readings' rate, else (strict) running all the time, on the maps next due uses.
+    last = readings[-1] if readings else None
+    rate = svc._rate(readings) if counter and len(readings) >= 2 else None
+    if rate and rate > 0:
+        per_day = min(rate, 24.0)
+        usage = svc.meter_usage(start, end_excl, last, per_day)
+        text = f"{svc.rate_text(per_day)}, anchored on {float(last['value']):,.6g} h on {_short(last['on'])}"
         return {"usage": usage, "counter": counter, "readings": readings,
-                "basis": {"kind": "continuous", "reading": {"value": value, "on": read_at},
+                "basis": {"kind": "rate", "text": text, "rate_per_day": _num(per_day),
+                          "reading": {"value": last["value"], "on": last["on"][:10]}}}
+    if strict:
+        usage = svc.meter_usage(start, end_excl, last)
+        value = float(last["value"]) if last else 0.0
+        anchor = (f", from {value:,.6g} h on {_short(last['on'])}" if last else ", counted from 0 h today (no hours reading)")
+        return {"usage": usage, "counter": counter, "readings": readings,
+                "basis": {"kind": "continuous", "reading": {"value": value, "on": last["on"][:10] if last else start.isoformat()},
                           "text": f"{CONTINUOUS_NOTE}{anchor}"}}
-    if counter and len(readings) >= 2:
-        rate = svc._rate(readings)
-        if rate and rate > 0:
-            per_day = min(rate, 24.0)
-            last = readings[-1]
-            usage = schedule.DutyPlan(schedule.Rate(per_day, per="day")).forecast(
-                start, end_excl, readings={"hours": float(last["value"])}, read_at=last["on"][:10])
-            text = (f"Hours from the recent meter rate ({_num(per_day, 3):g} h a day, from {counter['name']}'s "
-                    f"readings; no operating plan here), anchored on {float(last['value']):,.6g} h on "
-                    f"{_short(last['on'])}")
-            return {"usage": usage, "counter": counter, "readings": readings,
-                    "basis": {"kind": "rate", "text": text, "rate_per_day": _num(per_day),
-                              "reading": {"value": last["value"], "on": last["on"][:10]}}}
     return None
 
 
@@ -1193,6 +1185,7 @@ def position_forecast(m: Maintenance, position_id: str, root: str | None = None,
         "covers": words, "answer": answer, "range": RANGE_WORDS, "range_level": RANGE_LEVEL,
         "hours_basis": own_map["basis"]["text"] if own_map else None,
         "hours_source": own_map["basis"]["kind"] if own_map else None,
+        "hours_rate_per_day": own_map["basis"].get("rate_per_day") if own_map else None,
         "rows": rows, "totals": totals, "tasks": tasks_out, "not_on_dates": not_on_dates,
         "models": models, "not_forecast": not_forecast, "by_position": by_position,
         "states": states, "notes": notes, "prompts": prompts, "cost_basis": cost_basis,

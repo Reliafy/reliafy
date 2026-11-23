@@ -103,8 +103,10 @@ def test_an_items_use_is_summed_over_its_fitments_at_different_positions(m):
     assert used["points"] == {meter_a, meter_b} and used["rows"][-1] == {"on": m.today(), "value": 700}
     [limit] = overhaul["limits"]
     assert limit["counter"]["derived"] and limit["counter"]["reading"] == 700 and limit["due_at_reading"] == 1000
-    # 700 hours in 100 days: the last 300 take about 43 more.
-    assert limit["next_due"] == (date.fromisoformat(m.today()) + timedelta(days=43)).isoformat()
+    # 700 hours in 100 days: the last 300 take 42.9 more, so the meter gets there on day 42 (the
+    # day it crosses, from RePyability's map at that rate, as the forecast has it).
+    assert limit["next_due"] == (date.fromisoformat(m.today()) + timedelta(days=42)).isoformat()
+    assert limit["basis"]["kind"] == "rate"
 
     # The position's own tasks know nothing of it; the position shows the fitted item's.
     assert m.position(b)["tasks"] == [] and [t["name"] for t in m.position(b)["item_tasks"]] == ["Overhaul"]
