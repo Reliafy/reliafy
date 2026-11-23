@@ -37,7 +37,7 @@ export default function MissionBlockGrid({ blocks = [], phases = [], readOnly = 
                 <tr key={b.id}>
                   <th scope="row">
                     {b.label}
-                    {b.placeholder && <> <Chip tone="warning" title="No model: a placeholder life stands in, so results that need this block aren't real figures">Placeholder</Chip></>}
+                    {b.placeholder && <> <Chip tone="warning" title="No life model: the mission has no answer while a phase needs this block">No model</Chip></>}
                   </th>
                   {phases.map((p, i) => {
                     const state = blockState(p, b.id);

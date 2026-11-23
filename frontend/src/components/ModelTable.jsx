@@ -369,7 +369,7 @@ function RbdDetails({ d, model, age, onAge }) {
                 <tr key={b.id} title={hover || undefined}>
                   <td>{b.label}</td>
                   <td>
-                    {b.placeholder ? <Chip tone="warning" title={b.inside ? "Every block inside this sub-system is a placeholder" : "A placeholder: no model in use for this position yet"}>{b.inside ? `Placeholders (${b.inside.placeholders} of ${b.inside.basic})` : "Placeholder"}</Chip>
+                    {b.placeholder ? <Chip tone="warning" title={b.inside ? "No block inside this sub-system has a real life model yet" : "No real life model for this position yet"}>{b.inside ? `No model (${b.inside.placeholders} of ${b.inside.basic})` : "No model"}</Chip>
                       : b.inside?.placeholders ? <>{b.model} <Chip tone="warning">{b.inside.placeholders} of {b.inside.basic} placeholders</Chip></> : b.model}
                     {hover && <span className="sr-only">. {hover}</span>}
                   </td>

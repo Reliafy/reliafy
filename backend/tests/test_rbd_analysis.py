@@ -1001,3 +1001,12 @@ def test_a_life_invented_when_built_from_the_tree_counts_as_no_model():
     import math
 
     assert analyze(graph)["mttf"] == pytest.approx(900 * math.gamma(1 + 1 / 1.4), rel=1e-3)
+
+
+def test_a_sub_system_block_never_needs_a_model_of_its_own():
+    from backend.services.rbd_analysis import blocks_needing_models
+
+    graph = {"nodes": _io_nodes() + [
+        {"id": "s", "type": "component", "data": {"label": "Gimbal", "rbd": {"id": "r1"}}},
+        {"id": "c", "type": "component", "data": {"label": "Comms"}}]}
+    assert blocks_needing_models(graph) == [{"id": "c", "label": "Comms"}]

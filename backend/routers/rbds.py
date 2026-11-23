@@ -736,7 +736,8 @@ def analyze_graph(
     except rbd_standby.SimulationNeedsPro as exc:
         return JSONResponse(status_code=402, content=standby_pro_payload(exc))
     except AnalysisError as exc:
-        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+        needs = {"needs_model": exc.blocks} if getattr(exc, "blocks", None) else {}
+        return JSONResponse(status_code=422, content={"detail": client_message(exc), **needs})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to analyse RBD graph")
         return JSONResponse(

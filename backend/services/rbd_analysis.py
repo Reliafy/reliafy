@@ -98,6 +98,8 @@ def blocks_needing_models(graph: dict) -> list[dict]:
         data = node.get("data") or {}
         if data.get("state") in ("working", "failed") or rbd_repeats.repeat_of(node) is not None:
             continue
+        if isinstance(data.get("rbd"), dict) and data["rbd"].get("id"):
+            continue  # a sub-system: its own blocks answer for it
         models = _unit_models(data) if node.get("type") == "standby" else [data.get("model")]
         if not models or any(_lacks_model(m, data) for m in models):
             out.append({"id": node.get("id"), "label": data.get("label") or node.get("id")})

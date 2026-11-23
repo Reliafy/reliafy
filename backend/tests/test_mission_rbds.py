@@ -752,6 +752,7 @@ def test_blocks_with_no_model_not_needed_in_any_phase_are_left_out(m, db):
     got = rm.analyze(db, OWNERS, graph, [{**p, "not_needed": off} for p in DEPLOYMENT])
     assert got["reliability"] == pytest.approx(MODELLED, rel=1e-9)
     assert got["placeholders"] == [] and got["without_placeholders"] is None
+    assert sorted(p["label"] for p in got["placeholders_left_out"]) == ["Battery", "Control panel", "Fuel system"]
     assert "placeholders" not in rbd_phases.agent_summary(got) and "weakest_note" not in got
     # Needed in one phase only: it needs a model again.
     with pytest.raises(AnalysisError, match="needs a life model.*Battery"):

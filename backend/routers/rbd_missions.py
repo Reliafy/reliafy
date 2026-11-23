@@ -344,7 +344,9 @@ def calculate_mission(rbd_id: str, mission_id: str, phases: list | None = Body(d
     except rbd_standby.SimulationNeedsPro as exc:
         return JSONResponse(status_code=402, content=_pro_payload(exc))
     except AnalysisError as exc:
-        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+        # Blocks a phase needs with no life model: named, so the pane can offer what to do.
+        needs = {"needs_model": exc.blocks} if getattr(exc, "blocks", None) else {}
+        return JSONResponse(status_code=422, content={"detail": client_message(exc), **needs})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to analyse a mission")
         return JSONResponse(status_code=500, content={

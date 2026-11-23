@@ -845,7 +845,8 @@ def _placeholders(graph: dict) -> list[str]:
     for n in (graph or {}).get("nodes") or []:
         d = n.get("data") or {}
         if (d.get("model") or {}).get("placeholder") or (
-                n.get("type") == "component" and not d.get("model") and d.get("state") not in ("working", "failed")):
+                n.get("type") == "component" and not d.get("model") and not d.get("rbd")
+                and d.get("state") not in ("working", "failed")):
             out.append(d.get("label") or n.get("id"))
     return out
 
