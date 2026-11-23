@@ -1513,7 +1513,11 @@ def add_position_mission(position_id: str, body: dict = Body(default={}), sessio
     it has nothing inside; saved as "<position> — <mission>". name: the mission's (default
     "Mission N"); link_id: one of its model rows to fly it on (Add a mission on a model's row: an RBD,
     or any life or covariate model, in use or not). Its phases (or, on a life model with no
-    covariates, its length and starting age) are then set through /api/rbds/{rbd id}/missions/mission."""
+    covariates, its length and starting age) are then set through /api/rbds/{rbd id}/missions/mission.
+    The Missions tab's form: link_id may be an RBD on a position inside this one; tree: true builds
+    it from the positions inside (in series where nothing says what's redundant); setup: {start,
+    calendar, from} (rbd_missions.parse_setup); length: {value, unit (hours, days, months, years)},
+    its one first phase, through the calendar."""
     from backend.maintenance import position_models as pm
     from backend.services import billing as billing_service
 
@@ -1525,8 +1529,11 @@ def add_position_mission(position_id: str, body: dict = Body(default={}), sessio
     name = body.get("name") if isinstance(body, dict) else None
     # link_id: the position's model row to fly it on (an RBD copied, or its model in use as one block).
     link_id = body.get("link_id") if isinstance(body, dict) and isinstance(body.get("link_id"), str) else None
+    body = body if isinstance(body, dict) else {}
+    setup = body.get("setup") if isinstance(body.get("setup"), dict) else None
+    length = body.get("length") if isinstance(body.get("length"), dict) else None
     return _run(pm.build_mission_rbd, m, session, ctx.read_owners, ctx.hidden, position_id, ctx.write_owner, name,
-                link_id)
+                link_id, body.get("tree") is True, setup, length)
 
 
 @router.post("/rbd-tree-plan")

@@ -5637,6 +5637,10 @@ def analyse_rbd_mission(
         "or {age: <time it has run>}); blocks left out are new. The mission then flies from now: each aged "
         "block starts it at its age, and a failed block stays failed. "
         "Omit to fly it from new."))] = None,
+    answers: Annotated[bool, Field(description=(
+        "With mission_id: add the Missions tab's two answers (chance of completing with its 90% one-sided "
+        "lower bound; part failures to expect, failed blocks replaced like new, with a 90% two-sided range: "
+        "simulated, Pro), its calendar, starting state and plan, from its saved setup."))] = False,
 ) -> dict[str, Any]:
     """A mission's chance of completing: each phase's failure probability, reliability at its end and
     weakest block, plus the Use / Environment covariates its phases can set (the blocks each feeds). A
@@ -5695,8 +5699,18 @@ def analyse_rbd_mission(
                    "blocks": [b["label"] for b in r["blocks"]],
                    "by_phase": {p["name"]: next((x["value"] for x in p["covariates"] if x["name"] == r["name"]), None)
                                 for p in detail["phases"]}} for r in detail["covariates"]]
-    return {"rbd_id": rbd.id, "mission_id": mission["id"], "name": mission["name"], "unit": graph.get("unit") or "",
-            "phases": mission["phases"], "covariates": covariates, "result": result}
+    out = {"rbd_id": rbd.id, "mission_id": mission["id"], "name": mission["name"], "unit": graph.get("unit") or "",
+           "phases": mission["phases"], "covariates": covariates, "result": result}
+    if answers:
+        from backend.routers.rbd_missions import mission_answers_for
+        from backend.services.access import AccessCtx
+
+        actx = AccessCtx(user=user, uid=user["uid"], workspace="personal", write_owner=user["uid"],
+                         read_owners=owners, list_owners=user["uid"], share_fallback=False,
+                         time_zone=time_zones.of_owner(db, user["uid"]))
+        status, got = mission_answers_for(db, actx, rbd, mission["id"])
+        out["answers"] = got if status == 200 else {"available": False, "message": got.get("detail")}
+    return out
 
 
 def save_rbd_mission(
@@ -5707,6 +5721,9 @@ def save_rbd_mission(
     phases: Annotated[Optional[list[MissionPhase]], Field(max_length=50, description=(
         "Replaces its phases, in order ([] on the diagram's own mission removes it)."))] = None,
     delete: Annotated[bool, Field(description="Delete the mission (only when the user asks).")] = False,
+    setup: Annotated[Optional[dict[str, Any]], Field(description=(
+        "A mission with an RBD of its own: {start: 'now' | 'YYYY-MM-DD', calendar: {linked: true} (its "
+        "position's duty) | {hours_per_day, days_per_week}, from: 'new' | 'today' (blocks at today's ages)}."))] = None,
 ) -> dict[str, Any]:
     """Add, change or delete a named phased mission on a non-repairable diagram: phases with durations, blocks
     not needed, vote counts and Use / Environment values per phase (values once per phase, block_values per
@@ -5724,7 +5741,8 @@ def save_rbd_mission(
             graph, mission = rbd_missions.remove(graph, mission_id), None
         else:
             raw = [p.model_dump(exclude_none=True) for p in phases] if phases is not None else None
-            graph, mission = rbd_missions.save(graph, mission_id, name, raw)
+            graph, mission = rbd_missions.save(graph, mission_id, name, raw,
+                                               **({"setup": setup} if setup is not None else {}))
         rbd_graph.check_limits(graph)
     except (rbd_missions.MissionError, rbd_graph.GraphError) as exc:
         raise ToolError(f"Nothing was saved — {exc}") from None
