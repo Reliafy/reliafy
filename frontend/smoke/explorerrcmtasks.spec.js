@@ -110,7 +110,7 @@ test("a failure mode's tasks are rows of the tree; add one, use an existing one,
   await expect(checkRow).toHaveAttribute("aria-selected", "true");
   await expect(panel(page).getByRole("navigation", { name: "Inside" })).toContainText(`Acid under-dosed ${tag}`);
   await expect(chipsOf(page)).toContainText("On condition");
-  await expect(chipsOf(page)).toContainText("every 1 week");
+  await expect(chipsOf(page)).not.toContainText("every 1 week"); // how often is the Interval row's, not a chip again
   // The failure mode's grid style, "step | choice": a muted label column, one line per row. No
   // instructions (how it's done is the LSA's: Cost and needs links there) and no notes box. What the
   // interval rests on is one row with its calculation (Derryn, 23 Nov 2026); a check's outcome is pass or
@@ -142,7 +142,9 @@ test("a failure mode's tasks are rows of the tree; add one, use an existing one,
   const needs = section(page, "Cost and needs");
   await expect(needs.getByRole("button", { name: /^Cost/ })).toBeVisible();
   await expect(needs.getByRole("button", { name: /^Labour/ })).toBeVisible();
-  await expect(needs.getByRole("link", { name: "What it needs" })).toHaveAttribute("href", new RegExp(`tab=maintenance&mtask=${p.own}&needs=1`));
+  await needs.getByRole("button", { name: /^Tools and method/ }).click();
+  await expect(needs.getByRole("region", { name: "Tools and method" }).getByRole("link", { name: "Add in Maintenance ›" }))
+    .toHaveAttribute("href", new RegExp(`tab=maintenance&mtask=${p.own}&needs=1`));
 
   // Add a task (from the mode's step 3): in place, its kind first (every kind, on condition again too:
   // one kind may come more than once; it starts on one the decision doesn't have), then its name and how
@@ -171,7 +173,7 @@ test("a failure mode's tasks are rows of the tree; add one, use an existing one,
   await expect(kindOf(page)).toHaveText("Task");
   await expect(titleOf(page)).toHaveText(`Replace the acid pump ${tag}`);
   await expect(chipsOf(page)).toContainText("Fixed interval");
-  await expect(chipsOf(page)).toContainText("every 24 months");
+  await expect(section(page, "Interval").getByRole("spinbutton", { name: "Interval" })).toHaveValue("24");
   const pumpRow = trow(page, `^Task: Replace the acid pump ${tag}`);
   await expect(pumpRow).toHaveAttribute("aria-selected", "true");
   // A fixed-interval task has no "Then, if found".
@@ -181,7 +183,7 @@ test("a failure mode's tasks are rows of the tree; add one, use an existing one,
   await every.fill("36");
   await every.press("Enter");
   await expect(section(page, "Interval").getByRole("status")).toHaveText("✓ Saved");
-  await expect(chipsOf(page)).toContainText("every 36 months");
+  await expect(section(page, "Interval").getByRole("spinbutton", { name: "Interval" })).toHaveValue("36");
   // Its name, a click on the title: kept on Enter (the row follows).
   await titleOf(page).getByRole("button").click();
   const box = panel(page).getByRole("textbox", { name: "Task" });
@@ -437,13 +439,15 @@ test("Interval based on, in an on-condition task's details: the calculation in p
   const calc = section(page, "Interval based on").getByRole("group", { name: "Work out the check interval" });
   await expect(calc).toBeVisible();
   // What it works out, in words, before any number.
-  await expect(calc.locator(".ivc-what")).toContainText("The time from that first sign to the failure is the P-F interval.");
+  await expect(calc.locator(".ivc-what").first()).toHaveText("Check at least every half P-F interval to catch the warning in time. Why?");
+  await calc.getByRole("button", { name: "Why?" }).click();
+  await expect(calc.locator(".ivc-whytext")).toContainText("The time from that first sign to the failure is the P-F interval.");
   // A safety failure: the costs wait behind "Show costs"; the P-F interval alone gives the answer.
   await expect(calc.getByText("the task must make the risk tolerable whatever it costs", { exact: false })).toBeVisible();
   await expect(calc.getByRole("spinbutton", { name: "Cost of a check ($)" })).toHaveCount(0);
   await calc.getByRole("spinbutton", { name: "P-F interval" }).fill("10");
   await choose(calc.getByRole("combobox", { name: "P-F interval unit" }), "weeks");
-  await expect(calc.getByText("Assumed: every check finds a warning that's there.", { exact: false })).toBeVisible();
+  await expect(calc.getByText("Assumed: every check finds it.", { exact: false })).toBeVisible();
   await calc.getByRole("button", { name: "Work it out" }).click();
   await expect(calc.locator(".ivc-answer")).toHaveText("Check every 5 weeks: half the P-F interval of 10 weeks.");
   await expect(calc.locator(".ivc-result")).toContainText("Costs only matter for whether the check pays for itself, not for the P-F interval.");
@@ -460,7 +464,6 @@ test("Interval based on, in an on-condition task's details: the calculation in p
   await calc.getByRole("button", { name: "Use 5 weeks" }).click();
   await expect(calc).toHaveCount(0);
   await expect(kind.getByRole("spinbutton", { name: "Interval" })).toHaveValue("5");
-  await expect(chipsOf(page)).toContainText("every 5 weeks");
   // The calculation linked as the decision's evidence (the task's, a plain decision's one task).
   await expect(section(page, "Interval based on")).toContainText("Supported");
   await expect(section(page, "Interval based on")).toContainText("from a P-F interval of 10 weeks");

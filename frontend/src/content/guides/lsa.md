@@ -10,7 +10,7 @@ hidden: true
 ---
 
 The LSA (logistic support analysis) holds the *how* of your maintenance. In
-the Explorer it's part of the **Maintenance** tab: a **What it needs** section in each task's details. The RCM says what is done and why; the LSA says what each task
+the Explorer it's part of the **Maintenance** tab: each task's details have **Labour**, **Parts** and **Tools and method**. The RCM says what is done and why; the LSA says what each task
 needs to be done: who does it and for how long, the tools and instruments, the
 spares and consumables to bring, access and downtime, and the method. It's
 also where tasks are packaged into visits.
@@ -150,8 +150,8 @@ package's menu opens the quick **Spares**, **Hours** or **Cost forecast** in
 Open a task (double-click its row, or choose **Open…** from its **⋯**). Its
 **Labour** (a line per trade: how many people and the hours each, plus the
 elapsed hours of the job) and **Parts** (pick a part from the parts register,
-or type a name) are fold-outs of their own. The rest is in **What it needs**,
-folded to one line until you choose **Show**. Opened, it lists the failure
+or type a name) are fold-outs of their own. The rest is in **Tools and
+method**, folded to one line saying what's set. Opened, it lists the failure
 modes the task serves, then a group for each other thing it needs. There is no
 Save of its own: change what you like and use the details' **Save** at the
 foot, which saves the task and what it needs together:

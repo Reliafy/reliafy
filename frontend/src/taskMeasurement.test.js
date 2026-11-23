@@ -59,7 +59,7 @@ test("the task dialog's field says what it counts and sends only a change", () =
   assert.deepEqual(lines, { counts: "Engine hours on Truck 12", reads: "Reads 1,900 hours (2026-03-15)", lastDone: "Last done 2026-03-01 at 1,600 hours" });
   assert.match(measurementLines({ ...VIEW, last_done_reading_estimated: true }).lastDone, /an estimate, worked out from the date/);
   assert.equal(measurementLines({ ...VIEW, by_use: false }).counts, "");
-  assert.equal(measurementLines({ ...VIEW, measurement: null }).counts, "Nothing yet: no hours counter here");
+  assert.equal(measurementLines({ ...VIEW, measurement: null }).counts, "no hours counter yet");
   assert.equal(fieldBody(VIEW, "", "estimate", ""), null); // automatic, as it was
   assert.deepEqual(fieldBody(VIEW, "h99", "estimate", ""), { point_id: "h99" });
   assert.deepEqual(fieldBody(VIEW, "h99", "enter", "12"), { point_id: "h99", last_done_reading: 12 });

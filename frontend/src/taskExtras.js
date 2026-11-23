@@ -53,3 +53,31 @@ export function taskExtras(t) {
   if (cost) out.push({ section: "cost", text: `Cost · ${cost}` });
   return out;
 }
+
+// A work package's extras: its tasks' together (labour hours by trade, each part's total, the
+// typed costs a visit), in the same words: "Labour · 3 h fitter", "Part · Belt × 2", "Cost · $120 a visit".
+export function packageExtras(tasks = []) {
+  const hours = new Map();
+  const parts = new Map();
+  let cost = 0;
+  let costed = false;
+  for (const t of tasks || []) {
+    const r = t?.resources || {};
+    for (const x of r.labour || []) {
+      if (!(n(x.hours) > 0)) continue;
+      const trade = String(x.trade || "").trim();
+      hours.set(trade, (hours.get(trade) || 0) + n(x.hours) * Math.max(1, Math.round(n(x.people) || 1)));
+    }
+    for (const x of r.spares || []) {
+      const name = String(x.name || "").trim();
+      if (name) parts.set(name, (parts.get(name) || 0) + (n(x.qty) || 1));
+    }
+    if (t?.cost?.typed != null && Number.isFinite(Number(t.cost.typed))) { cost += Number(t.cost.typed); costed = true; }
+  }
+  const out = [];
+  if (hours.size) out.push({ section: "labour", text: `Labour · ${[...hours].map(([trade, h]) => `${sig(h)} h${trade ? ` ${trade}` : ""}`).join(", ")}` });
+  for (const [name, q] of parts) out.push({ section: "parts", text: `Part · ${name} × ${sig(q)}` });
+  if (costed) out.push({ section: "cost", text: `Cost · ${money(cost)} a visit` });
+  return out;
+}
+

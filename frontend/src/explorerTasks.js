@@ -15,7 +15,7 @@
 import { counted } from "./menuStandard.js";
 import { cellText, costWhere, fromRcm, kindText, money, SOURCE_WORDS } from "./lsaTab.js";
 import { sig } from "./positionForecast.js";
-import { taskExtras } from "./taskExtras.js";
+import { packageExtras, taskExtras } from "./taskExtras.js";
 
 export const TASK_TYPE = "mtask";
 export const isTaskRow = (r) => r?.type === TASK_TYPE;
@@ -30,10 +30,12 @@ export const packageKey = (id) => `MP:${id}`;
 // "Part · Spindle kit × 1", "Cost · $40 each time" (taskExtras.js), only when set. Not tasks: they
 // count in no roll-up, take no pick and no filter; a click opens the task at that fold-out.
 export const EXTRA_TYPE = "mxtra";
-export const isExtraRow = (r) => r?.type === EXTRA_TYPE;
+// A task's extra (ref.task), or a package's (ref.pkg: its tasks' totals, opening the package).
+export const isExtraRow = (r) => r?.type === EXTRA_TYPE && !!r.ref?.task;
+export const isPackageExtra = (r) => r?.type === EXTRA_TYPE && !!r.ref?.pkg;
 export const extraKey = (taskId, section, i = 0) => `MX:${taskId}:${section}:${i}`;
 // Any of the Maintenance tab's own rows (a task, a package, a reference, a task's extra).
-export const isMaintRow = (r) => isTaskRow(r) || isPackageRow(r) || isPackageRef(r) || isExtraRow(r);
+export const isMaintRow = (r) => isTaskRow(r) || isPackageRow(r) || isPackageRef(r) || r?.type === EXTRA_TYPE;
 
 // Next due is the first column (a level's roll-up runs on after its soonest next due) and sorts.
 export const TASK_COLUMNS = [
@@ -116,8 +118,16 @@ export function graftTasks(display, tasks = [], { prune = false, packages = null
       const members = home.tasks.filter((t) => shown.has(t.id) && rows.has(taskKey(t.id)));
       // A filter on: a package none of whose tasks match isn't on the way to a match.
       if (prune && !members.length) continue;
+      // Its tasks' extras together, as rows under it (the tasks themselves stay under their positions).
+      const extras = packageExtras(home.tasks).map((x, i) => ({ ...x, key: `MX:P:${home.pkg.id}:${x.section}:${i}` }));
+      for (const x of extras) {
+        rows.set(x.key, {
+          key: x.key, type: EXTRA_TYPE, parent: pkey, kids: [], depth: h.depth + 2, own: noStatus(), sum: noStatus(),
+          ref: { name: x.text, section: x.section, pkg: home.pkg, position_id: h.key, search: x.text.toLowerCase() },
+        });
+      }
       rows.set(pkey, {
-        key: pkey, type: PKG_TYPE, parent: h.key, kids: [], depth: h.depth + 1, own: noStatus(), sum: noStatus(),
+        key: pkey, type: PKG_TYPE, parent: h.key, kids: extras.map((x) => x.key), depth: h.depth + 1, own: noStatus(), sum: noStatus(),
         ref: {
           name: home.pkg.name, pkg: home.pkg, tasks: home.tasks, outside: home.outside, position_id: h.key,
           search: [home.pkg.name, home.pkg.trade, "package"].filter(Boolean).join(" ").toLowerCase(),

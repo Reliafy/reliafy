@@ -90,9 +90,11 @@ export function TaskMeasurementField({ taskId, unit, disabled = false, onChange,
     <Box className={compact ? "tm-field tm-compact" : "tm-field"} {...(compact ? { role: "group", "aria-label": "Measurement" } : {})}>
       {!compact && <legend>Measurement</legend>}
       <p className="tm-counts">
-        {compact ? "Counts: " : ""}{lines.counts}{relation && <span className="tm-help"> ({relation})</span>}
+        {compact ? "Counted on: " : ""}{lines.counts}{relation && <span className="tm-help"> ({relation})</span>}
         {compact && !editing && !unitChanged && (
-          <> · <button type="button" className="link tm-change" disabled={disabled} onClick={() => setEditing(true)}>Change…</button></>
+          <> · <button type="button" className="link tm-change" disabled={disabled} onClick={() => setEditing(true)}>
+            {view.measurement ? "Change…" : "Set one…"}
+          </button></>
         )}
       </p>
       {lines.reads && (!compact || editing) && <p className="tm-help">{lines.reads}</p>}

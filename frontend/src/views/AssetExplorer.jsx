@@ -33,7 +33,7 @@ import {
 import {
   PKG_OPEN, PKG_RETIRE, REF_GO, REF_REMOVE, TASK_RETIRE, TASK_ADD_TO, TASK_CLEAR, TASK_DRAFT, TASK_OPEN, TASK_OPTIMISE, TASK_PACKAGE, TASK_SELECT,
   anyFilter, commonHolder, dueOrder, facetValues, facetsOf, filterTasks, filterWords, nextDueSort,
-  graftTasks, isExtraRow, isMaintRow, isOpenIn, openInItem, openInLink, isPackageRef, isPackageRow, isTaskRow, keepShown, openForTasks, packageKey, packageRowActions,
+  graftTasks, isExtraRow, isMaintRow, isPackageExtra, isOpenIn, openInItem, openInLink, isPackageRef, isPackageRow, isTaskRow, keepShown, openForTasks, packageKey, packageRowActions,
   packageWhere, pickTasks, refRowActions, rollupText as taskRollup, shownTasks, taskKey, taskRowActions,
 } from "../explorerTasks.js";
 import CovariateBindPane from "../components/CovariateBindPane.jsx";
@@ -1349,7 +1349,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         if (isExtraRow(r)) q.set("msec", r.ref.section);
         else q.delete("msec");
         // A package's row: its details (?mpkg=); any other row closes them, and What it needs.
-        if (isPackageRow(r)) q.set("mpkg", r.ref.pkg.id);
+        if (isPackageRow(r) || isPackageExtra(r)) q.set("mpkg", r.ref.pkg.id);
         else q.delete("mpkg");
         if (!isTaskRow(r) || q.get("mtask") !== r.ref.task.id) q.delete("needs");
         for (const k of ["addtask", "rates", "respond", "fm"]) q.delete(k);
@@ -2044,7 +2044,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // The Maintenance tab: a task row opened (its details beside the table).
   const openTaskRow = (r) => {
     // A package's row opens the package; a task listed under it goes to the task itself.
-    if (isPackageRow(r)) return openPackageView(r.ref.pkg, { wide: true });
+    if (isPackageRow(r) || isPackageExtra(r)) return openPackageView(r.ref.pkg, { wide: true });
     if (isPackageRef(r)) return reveal(r.ref.task_key);
     if (!isTaskRow(r) && !isExtraRow(r)) return;
     setQuery_((q) => {
@@ -2124,7 +2124,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (isModelRow(r)) return openModel(key);
     if (isMissionRow(r)) return openMissionRow(r);
     if (isTaskRow(r) || isExtraRow(r)) return openTaskRow(r);
-    if (isPackageRow(r) || isPackageRef(r)) return openTaskRow(r);
+    if (isPackageRow(r) || isPackageRef(r) || isPackageExtra(r)) return openTaskRow(r);
     if (isRcmRow(r) && opensItem(r)) return openItem(key);
     pick(key, { go: true });
     if (!phone) setTimeout(() => headingRef.current?.focus({ preventScroll: true }), 0);
@@ -2243,6 +2243,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       if (tasksOn && isPackageRef(r)) return refRowActions(r, { viewOnly });
       // A task's extra: Open (the task, at that fold-out).
       if (tasksOn && isExtraRow(r)) return [{ id: TASK_OPEN, label: "Open", title: `Open ${r.ref.task.name} at its ${r.ref.section}` }];
+      if (tasksOn && isPackageExtra(r)) return [{ id: PKG_OPEN, label: "Open", title: `Open ${r.ref.pkg.name}` }];
       if (tasksOn && (r.type === "pos" || r.type === "loc")) {
         const own = summaryActions(r, { mode, viewOnly }).filter((it) => MODEL_POSITION_ITEMS.includes(it.id));
         return [...maintenanceLead(r, { viewOnly }), ...openInItem(r, { design: !!designScope }), ...draftItem(r), { separator: true }, ...own, ...isolateItem(r), ...pinItem(r)];
@@ -3395,8 +3396,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const ratesOn = tasksOn && params.get("rates") === "1";
   const mtaskRow = tasksOn ? whole.rows.get(taskKey(params.get("mtask") || "")) : null;
   // A package open (?mpkg=, or its row picked): its details beside the table.
-  const mpkgId = tasksOn && !addingAt && !ratesOn ? (panel && isPackageRow(focusRow) ? focusRow.ref.pkg.id : params.get("mpkg")) : null;
-  const taskRow = !tasksOn || addingAt || ratesOn || (panel && isPackageRow(focusRow)) ? null
+  const mpkgId = tasksOn && !addingAt && !ratesOn ? (panel && (isPackageRow(focusRow) || isPackageExtra(focusRow)) ? focusRow.ref.pkg.id : params.get("mpkg")) : null;
+  const taskRow = !tasksOn || addingAt || ratesOn || (panel && (isPackageRow(focusRow) || isPackageExtra(focusRow))) ? null
     : panel && isTaskRow(focusRow) ? focusRow : panel && isExtraRow(focusRow) ? (whole.rows.get(focusRow.ref.task_key) || null)
       : !mpkgId && isTaskRow(mtaskRow) ? mtaskRow : null;
   const needsOn = !!taskRow && params.get("needs") === "1" && params.get("mtask") === taskRow.ref.task.id;
@@ -3714,7 +3715,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
           if (isModelRow(r)) return openModel(key);
           if (isMissionRow(r)) return openMissionRow(r);
           if (isTaskRow(r) || isExtraRow(r)) return openTaskRow(r);
-          if (isPackageRow(r) || isPackageRef(r)) return openTaskRow(r);
+          if (isPackageRow(r) || isPackageRef(r) || isPackageExtra(r)) return openTaskRow(r);
           if (isRcmRow(r)) {
             setPanel(true);
             return setTimeout(() => detailsHeading.current?.focus(), 0);

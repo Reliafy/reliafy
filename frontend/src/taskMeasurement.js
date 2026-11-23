@@ -104,7 +104,7 @@ export function withMeasurement(operations, index, measurement) {
 export function measurementLines(view, fmtDate = (d) => d) {
   if (!view?.by_use) return { counts: "", reads: "", lastDone: "" };
   const m = view.measurement;
-  const counts = m ? pointLabel(m) : `Nothing yet: no ${view.unit} counter here`;
+  const counts = m ? pointLabel(m) : `no ${view.unit} counter yet`;
   const reads = m && !m.derived && m.reading != null
     ? `Reads ${readingText(m.reading, m.unit || view.unit)} (${fmtDate(m.read_on)})`
     : m && !m.derived ? "No readings yet" : "";

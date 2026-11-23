@@ -26,6 +26,7 @@ import Chip from "./ui/Chip.jsx";
 import ChoiceChips from "./ui/ChoiceChips.jsx";
 import Field, { SavedMark } from "./ui/Field.jsx";
 import InputGroup from "./ui/InputGroup.jsx";
+import QuantityInput from "./ui/QuantityInput.jsx";
 import { Select, TextArea, TextInput } from "./ui/Controls.jsx";
 import { PlusIcon } from "./icons.jsx";
 import TaskTwins from "./TaskTwins.jsx";
@@ -558,16 +559,12 @@ function Row2({ lead, id, children, hideLabel = false }) {
 // "every [6] [months]" in row 1: where the card's "· every 6 months" is.
 function EveryInputs({ interval, unit, onInterval, onUnit, busy, invalid = false }) {
   const units = INTERVAL_UNITS.includes(unit) ? INTERVAL_UNITS : [unit, ...INTERVAL_UNITS];
+  // One control, the number and its unit (QuantityInput), sized to the number and left-aligned.
   return (
     <span className="rim-every">
       <span className="rim-every-word" aria-hidden="true">every</span>
-      <InputGroup label="Every">
-        <TextInput type="number" inputMode="decimal" min="0" step="any" value={interval} readOnly={busy} aria-label="Interval"
-                   aria-invalid={invalid ? "true" : undefined} placeholder="e.g. 6" onChange={(e) => onInterval(e.target.value)} />
-        <Select value={unit} disabled={busy} aria-label="Interval unit" onChange={(e) => onUnit(e.target.value)}>
-          {units.map((u) => <option key={u} value={u}>{u}</option>)}
-        </Select>
-      </InputGroup>
+      <QuantityInput label="Interval" value={interval} onChange={onInterval} units={units} unit={unit} onUnitChange={onUnit}
+                     unitLabel="Interval unit" chars={5} placeholder="e.g. 6" disabled={busy} invalid={invalid} />
     </span>
   );
 }
@@ -902,6 +899,12 @@ function Instructions({ text }) {
 // mode's answers, the worth-doing test as its tooltip. A member of the decision changes
 // the decision (decisionWithKind); a task outside it changes its own outcome. Read-only,
 // or with one kind only: the kind in words.
+// Whether a task's kind can be changed here: editable, a kind of task, and another the diagram allows.
+export function kindEditable(mode, kind, ops, can) {
+  const answers = modeAnswers(mode.ref);
+  return !!(can && ops?.decide && TASK_ORDER.includes(kind) && allowedChoices(TASK_ORDER, answers.hidden, answers.consequence, kind).length >= 2);
+}
+
 export function KindChip({ mode, task, kind, ops = null, can = false, onSaid = null }) {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null);
@@ -909,7 +912,7 @@ export function KindChip({ mode, task, kind, ops = null, can = false, onSaid = n
   const kinds = allowedChoices(TASK_ORDER, answers.hidden, answers.consequence, kind);
   const label = OUTCOME_LABEL[kind] || kind;
   const tip = worthLine(kind, answers.hidden, answers.consequence) || undefined;
-  if (!can || !ops?.decide || !TASK_ORDER.includes(kind) || kinds.length < 2) return <span className="rim-kindtext" title={tip}>{label}</span>;
+  if (!kindEditable(mode, kind, ops, can)) return <span className="rim-kindtext" title={tip}>{label}</span>;
   const change = async (next) => {
     const d = mode.ref.decision || null;
     const decision = decisionWithKind(d, tasksOf(mode.ref), task.id, next);
@@ -1028,14 +1031,16 @@ export function RcmTaskSections({ r, mode, ops, readOnly = false, onSaid, basis 
   const then = ROLE[outcome]?.then || "Then, if found:";
   return (
     <>
-      <section className="rw-sg rw-steps-first" aria-label="Kind">
-        <StepLabel>Kind</StepLabel>
-        <div className="rw-sc rim-tcell">
-          {outcome ? <KindChip mode={mode} task={t} kind={outcome} ops={ops} can={can} onSaid={onSaid} />
-            : <span className="rim-tquiet">Not in a decision yet: decide the failure mode to give it a kind.</span>}
-        </div>
-      </section>
-      <section className="rw-sg" aria-label="Interval">
+      {/* Its kind is the chip under the title; a row here only to change it (Derryn, 23 Nov 2026). */}
+      {outcome && kindEditable(mode, outcome, ops, can) && (
+        <section className="rw-sg rw-steps-first" aria-label="Kind">
+          <StepLabel>Kind</StepLabel>
+          <div className="rw-sc rim-tcell">
+            <KindChip mode={mode} task={t} kind={outcome} ops={ops} can={can} onSaid={onSaid} />
+          </div>
+        </section>
+      )}
+      <section className={"rw-sg" + (outcome && kindEditable(mode, outcome, ops, can) ? "" : " rw-steps-first")} aria-label="Interval">
         <StepLabel saved={saved.interval}>Interval</StepLabel>
         <div className="rw-sc rim-tcell">
           <div className="rim-ivline">

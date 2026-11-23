@@ -30,7 +30,7 @@ import { AGE_NOTE, lengthNote, tooLong } from "../maintenanceText.js";
 import { explorerHere } from "../products.js";
 import { workspaceCurrency } from "../money.js";
 import TaskTwins from "./TaskTwins.jsx";
-import NeedsSection, { LabourRows, SparesRows, useNeeds } from "./TaskNeeds.jsx";
+import NeedsBody, { LabourRows, SparesRows, needsTotals, useNeeds } from "./TaskNeeds.jsx";
 import { every } from "../taskOptimise.js";
 import { restorationBody, restorationForm, restorationProblem, RESTORE_CHOICES } from "../taskRestoration.js";
 import { canSupport, COMBINE_HELP, SOURCE_WORD, SUPPORT_HELP, SUPPORT_SOURCES, impactWords, supportBody, supportForm, supportProblem, withFit } from "../taskSupport.js";
@@ -134,6 +134,7 @@ function DueBasis({ task, positionId = null, root = null }) {
       {n.on ? <span className={n.overdue ? "pk-overdue" : undefined}>{c.words}{n.overdue ? " · overdue" : ""}</span>
         : n.at_reading != null ? c.words : "not known"}
       {n.on && n.at_reading != null ? ` (${readingWords(n)})` : ""}
+      {n.on && n.at_reading == null && byUse ? `, or sooner if ${["hours", "h"].includes(byUse.counter?.unit || task.unit) ? "the hours get" : "the meter gets"} there first` : ""}
       {!n.on && n.why ? ` (${n.why.charAt(0).toLowerCase()}${n.why.slice(1)})` : ""}.
       {noDuty ? <> <Link to={dutyHref(positionId, root)}>Set a duty</Link>.</> : null}
     </p>
@@ -149,13 +150,10 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
   const confirm = useConfirm();
   const adding = !taskId;
   const [loaded, setLoaded] = useState({ key: null, task: null, data: null, modes: [], counters: [], costs: null, error: null });
-  // What it needs: a section of the form, folded until asked for (or opened by an address with ?needs=1).
-  const [needsShown, setNeedsShown] = useState(needsOpen);
-  const needsRef = useRef(null);
-  // The extras' fold-outs: Cost, Labour, Parts (and a corrective response's failure cost); `section`
-  // (a sub-item clicked in the tree, ?msec=) opens one.
-  const [folds, setFolds] = useState(() => (section ? { [section]: true } : {}));
-  const foldRefs = { cost: useRef(null), labour: useRef(null), parts: useRef(null) };
+  // The extras' fold-outs: Cost, Labour, Parts, Tools and method (and a corrective response's failure
+  // cost); `section` (a sub-item clicked in the tree, ?msec=) opens one, ?needs=1 Tools and method.
+  const [folds, setFolds] = useState(() => ({ ...(section ? { [section]: true } : {}), ...(needsOpen ? { needs: true } : {}) }));
+  const foldRefs = { cost: useRef(null), labour: useRef(null), parts: useRef(null), needs: useRef(null) };
   const [f, setF] = useState(() => startFrom(null));
   const [rates, setRates] = useState({});
   const [attempt, setAttempt] = useState(0); // Try again after a failed load
@@ -190,8 +188,10 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
   const task = loaded.key === key ? loaded.task : null;
   const needs = useNeeds(loaded.key === key ? loaded.data : null);
   useEffect(() => {
-    if (needsOpen && needs.ready) setTimeout(() => needsRef.current?.scrollIntoView({ block: "start" }), 0);
-  }, [needsOpen, needs.ready]);
+    if (!needsOpen) return;
+    setFolds((x) => ({ ...x, needs: true }));
+    if (needs.ready) setTimeout(() => foldRefs.needs.current?.scrollIntoView({ block: "start" }), 0);
+  }, [needsOpen, needs.ready]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!section) return;
     setFolds((x) => ({ ...x, [section]: true }));
@@ -358,10 +358,6 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
   const today = workspaceToday();
   const preview = resp ? null : previewFor(f.how, { from: task?.last_done || today, after: !!task?.last_done, anchor: taskAnchor(task, today),
     positionId: onPosition ? subject.id : null, count: 3 });
-  const showNeeds = () => {
-    setNeedsShown(true);
-    setTimeout(() => needsRef.current?.scrollIntoView({ block: "start", behavior: "smooth" }), 0);
-  };
   const firstMode = rcm ? (task.failure_modes || [])[0] : null;
   const rcmPath = task ? explorerHere(location.pathname, location.search, {
     sel: task.subject?.id, tab: "rcm", ...(firstMode ? { fm: rcmTaskKey(firstMode.id, task.id) } : {}),
@@ -430,7 +426,7 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
           <Section title="How often" className="ruled mt-sec"
                    action={onOptimise ? { label: "Optimise…", quiet: true, onClick: onOptimise, ariaLabel: `Optimise how often to do ${task.name}`, disabled: send.busy } : null}>
             <TaskSchedule value={f.how} onChange={setHow} units={units} shutdowns={onPosition} disabled={send.busy}
-                          problem={howProblem} preview={preview} replace={replaceField}
+                          problem={howProblem} preview={preview} replace={replaceField} fromToday={!!task && !task.last_done}
                           trigger={task ? { task, state: f.trig, set: (trig) => setF((x) => ({ ...x, trig })) } : null} />
             {trigProblem && f.trig.mode === "event" && <p className="field-error" role="alert">{trigProblem}</p>}
             {task && <DueBasis task={task} positionId={task.subject?.kind === "position" ? task.subject.id : null}
@@ -524,6 +520,9 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
               ) : <p className="field-help">Add its parts once it&apos;s saved.</p>}
             </>
           ) },
+          // The rest of what it needs (its LSA): tools, consumables, access, method and instructions.
+          task && needs.ready ? { key: "needs", title: "Tools and method", summary: needsTotals(loaded.data.task.resources || {}),
+            ref: foldRefs.needs, id: "task-needs", body: <NeedsBody data={loaded.data} needs={needs} disabled={send.busy} /> } : null,
           resp === "failure" ? { key: "failure", title: "Cost of the failure itself (besides the repair)", summary: failSum, id: "task-failure-cost", body: (
             <>
               <div className="mt-restore-row">
@@ -541,14 +540,6 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
             </>
           ) } : null,
         ]} />
-        {!adding && !resp && (
-          <p className="field-help mt-rcm-uses">The RCM uses its cost. <button type="button" className="link" onClick={showNeeds}>What else it needs</button></p>
-        )}
-        {task && needs.ready && (
-          <div ref={needsRef}>
-            <NeedsSection data={loaded.data} needs={needs} open={needsShown} onToggle={() => setNeedsShown((o) => !o)} disabled={send.busy} />
-          </div>
-        )}
         {respProblem && f.name.trim() && <p className="field-error" role="alert">{respProblem}</p>}
         {uses}
         {send.error && <p className="field-error" role="alert">{send.error}</p>}

@@ -128,3 +128,13 @@ test("saving a task keeps its reference (not the supporting task's reference int
   assert.match(src, /source: f\.source, reference: f\.docRef/);
   assert.doesNotMatch(src, /source: f\.source, reference: f\.reference/);
 });
+
+test("a package's extras: its tasks' labour by trade, parts and typed costs, together", async () => {
+  const { packageExtras } = await import("./taskExtras.js");
+  const tasks = [
+    { resources: { labour: [{ trade: "fitter", people: 1, hours: 1 }], spares: [{ name: "Belt", qty: 1 }] }, cost: { typed: 40 } },
+    { resources: { labour: [{ trade: "fitter", people: 2, hours: 1 }], spares: [{ name: "Belt", qty: 1 }] }, cost: { typed: null } },
+  ];
+  assert.deepEqual(packageExtras(tasks).map((x) => x.text), ["Labour · 3 h fitter", "Part · Belt × 2", "Cost · $40 a visit"]);
+  assert.deepEqual(packageExtras([{ resources: {} }]), []);
+});

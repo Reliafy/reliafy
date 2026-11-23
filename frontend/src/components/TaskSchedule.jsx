@@ -33,7 +33,7 @@ const WHEN = [
 ];
 
 export default function TaskSchedule({ value, onChange, units, shutdowns = false, replace = null, preview = null, problem = null,
-  disabled = false, startOpen = false, trigger = null }) {
+  disabled = false, startOpen = false, trigger = null, fromToday = false }) {
   const trig = trigger?.state || null;
   const onEvent = trig?.mode === "event";
   const eventOnly = onEvent && !trig.withInterval;
@@ -53,6 +53,19 @@ export default function TaskSchedule({ value, onChange, units, shutdowns = false
   };
   const options = units.map((u) => ({ value: u, label: unitWord(u, n || 2) }));
   const list = preview ? shown.dates : null;
+  // Running hours dated only by a calendar second limit: its dates are the second limit's, shown
+  // with it inside the fold, not under the Every line (Derryn, 23 Nov 2026).
+  const byLimit = value.type === "hours" && Number(value.also) > 0 && isCalendar(value.alsoUnit);
+  // A saved task with no record of being done: the dates are counted as if done today, and say so.
+  const lead = fromToday && when === "count" && shown.lead ? `If done today, ${shown.lead.charAt(0).toLowerCase()}${shown.lead.slice(1)}` : shown.lead;
+  const dates = (
+    <p className="ho-dates field-help" aria-live="polite">
+      {preview && shown.words && when !== "count" && <>{shown.words[0].toUpperCase() + shown.words.slice(1)}. </>}
+      {list && list.length > 0
+        ? <>{lead}: {list.map((d) => formatDate(d, { weekday: true })).join(" · ")}{shown.after ? `, ${shown.after}` : ""}</>
+        : (preview && shown.busy ? "Working out the dates…" : shown.note || "")}
+    </p>
+  );
   return (
     <div className="how-often task-schedule" role="group" aria-label="How often">
       {eventOnly ? (
@@ -74,14 +87,7 @@ export default function TaskSchedule({ value, onChange, units, shutdowns = false
                          unit={value.unit} onUnitChange={(u) => onChange(withUnit(value, u))} unitLabel="Unit" chars={6} disabled={disabled} />
         </div>
       )}
-      {eventOnly ? null : problem ? <p className="field-error" role="alert">{problem}</p> : (
-        <p className="ho-dates field-help" aria-live="polite">
-          {preview && shown.words && when !== "count" && <>{shown.words[0].toUpperCase() + shown.words.slice(1)}. </>}
-          {list && list.length > 0
-            ? <>{shown.lead}: {list.map((d) => formatDate(d, { weekday: true })).join(" · ")}{shown.after ? `, ${shown.after}` : ""}</>
-            : (preview && shown.busy ? "Working out the dates…" : shown.note || "")}
-        </p>
-      )}
+      {eventOnly ? null : problem ? <p className="field-error" role="alert">{problem}</p> : !byLimit && dates}
       <Fold title="More scheduling options" summary={summary} open={open} onToggle={setOpen} className="mt-more-sched">
         <Field label="When it falls due">
           <Select value={when} onChange={setWhen} disabled={disabled} ariaLabel="When it falls due" className="mt-when"
@@ -98,6 +104,8 @@ export default function TaskSchedule({ value, onChange, units, shutdowns = false
                            onUnitChange={(u) => onChange({ ...value, alsoUnit: u })} unitLabel="Second limit's unit" chars={6} disabled={disabled} />
           </Field>
         )}
+        {/* The second limit's dates (by hours, dated by the calendar limit) sit with it. */}
+        {byLimit && !problem && dates}
         {replace?.node}
       </Fold>
     </div>

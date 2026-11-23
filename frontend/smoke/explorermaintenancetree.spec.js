@@ -49,8 +49,8 @@ test("packages sit where their tasks meet; Next due by row and by level, sorted;
   await nameRow(page, `Engine ${tag}`).locator(".tp-chev").click();
   await expect(eng).toBeVisible();
   await expect(eng).toHaveAttribute("aria-level", "3");
-  // Nothing under it (no double up): its tasks show under their own positions only, marked Packaged.
-  await expect(svc.locator(".tp-chev")).toHaveCount(0);
+  // No task under it (no double up): its tasks show under their own positions only, marked Packaged.
+  // Only its tasks' extras together (labour, parts, cost a visit) may hang under it.
   await expect(page.locator(`[id^="tp-mpref:"]`)).toHaveCount(0);
   await expect(page.locator(`[id="tp-MT:${p.oil.id}"]`).locator(".mt-pkg-link")).toHaveText(`Monthly service ${tag}`);
   await expect(page.locator(`[id="tp-MT:${p.oil.id}"]`)).toHaveCount(1);
