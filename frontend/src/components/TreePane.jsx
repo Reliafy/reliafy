@@ -1044,6 +1044,9 @@ export default function TreePane({
       {multiSel.mode && <button type="button" onClick={multiSel.onDone} title="Keep the selection and go back to opening rows">Done</button>}
     </span>
   ) : null;
+  // Nothing picked yet: a quiet one-line hint that several rows can be (no boxes to show it).
+  const selHint = table?.multi && !selHead && !focusHead && table.multi.hint
+    ? <span className="tt-select-hint" title={table.multi.hint}>{table.multi.hint}</span> : null;
   // The two slim rows over the tree (a wide screen, both tabs): the tree's
   // title, counts and ⋯ over the tree column, beside the panel's heading (the
   // way up over the row's name, and its actions); then the search box over the
@@ -1066,7 +1069,7 @@ export default function TreePane({
       {titleRow}
       {phoneTabs}
       {search}
-      {(focusHead || selHead) && <div className="tt-filterline">{focusHead}{selHead}</div>}
+      {(focusHead || selHead || selHint) && <div className="tt-filterline">{focusHead}{selHead}{selHint}</div>}
       {tfilter && (
         <div className="tt-filterline">
           <ColumnFilter wide label="Filter" facets={tfilter.facetsAll()} chosen={tfilter.chosen} onChange={tfilter.onChange} onClear={tfilter.onClear} />
@@ -1088,10 +1091,11 @@ export default function TreePane({
          style={{ width: wideTable ? table.total : width, height: HEAD_H }}>
       <div className="tt-h tt-h-tree" role={wideTable ? "columnheader" : undefined} style={{ width: wideTable ? table.treeW : width }}
            aria-label={wideTable && (pinHead || focusHead || selHead) ? table.treeHead || TREE_HEAD : undefined}
-           title={wideTable && !pinHead && !focusHead && !selHead && !table.treeHead ? TREE_HEAD_TIP : undefined}>
+           title={wideTable && !selHead && table.multi?.hint && (pinHead || focusHead || filterHead) ? table.multi.hint : wideTable && !pinHead && !focusHead && !selHead && !table.treeHead ? TREE_HEAD_TIP : undefined}>
         {pinHead || ((wideTable && filterHead) || focusHead || selHead ? null : wideTable ? table.treeHead || TREE_HEAD : treeLabel || title)}
         {focusHead}
         {selHead}
+        {selHint && wideTable && !filterHead && !pinHead ? selHint : null}
         {wideTable && filterHead}
       </div>
       {wideTable && table.cols.map((c) => {
