@@ -1,5 +1,5 @@
 import ResultSummary, { ResultDetails } from "./ui/ResultSummary.jsx";
-import { formatNumber, formatPercent, formatTarget, formatWithUnit } from "../format.js";
+import { formatNumber, formatPercent, formatPlain, formatTarget, formatWithUnit as fmtUnit } from "../format.js";
 import { unitInText } from "./unitText.js";
 import { useCurrency } from "../WorkspaceProvider.jsx";
 import { formatCost } from "../money.js";
@@ -10,6 +10,9 @@ import { formatCost } from "../money.js";
 // MTTF behind it, then how it was worked out under Details (#313).
 // ``actions`` (the live tool's Save) sits with the answer. Analyses saved
 // before the interval came from the model's curve keep their old reading.
+// Plain figures at any size: "2.01e-7 hours" hid an MTBF typed as a rate.
+const formatWithUnit = (v, unit, opts) => fmtUnit(v, unit, { ...opts, plain: true });
+
 export default function FfiResult({ result, actions = null, stale = false }) {
   const currency = useCurrency();
   const unit = result?.unit ? unitInText(result.unit) : "";
@@ -46,7 +49,7 @@ export default function FfiResult({ result, actions = null, stale = false }) {
           } : { label: "MTTF", value: formatWithUnit(result.mttf, unit) },
           result.tests_cost_per_year != null && {
             label: "Tests a year", value: formatCost(result.tests_cost_per_year, currency, { sig: 3 }),
-            hint: `${formatNumber(result.tests_per_year, { sig: 3 })} tests`,
+            hint: `${formatPlain(result.tests_per_year, { sig: 3 })} tests`,
           },
         ]}
       >

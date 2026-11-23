@@ -82,15 +82,16 @@ export default function CompareResult({ result, name = null, actions = null }) {
   return (
     <>
       <ResultSummary
-        tone={mixed || (tested && !tests.significant) ? "caveat" : "neutral"}
+        tone={mixed || (tested && (!tests.significant || tests.caveat)) ? "caveat" : "neutral"}
         sentence={verdictSentence(result, unit)}
         stats={stats}
       >
         {result.b10_reading && <>{result.b10_reading} </>}
         {tested &&
           (tests.significant
-            ? `The difference is statistically significant (p < ${tests.alpha}): unlikely to be chance.`
+            ? `The difference is statistically significant (p < ${tests.alpha}): a gap this large would be unusual if the two had the same reliability.`
             : `Not statistically significant (p ≥ ${tests.alpha}): the data don't establish a difference.`)}
+        {tested && tests.caveat && <> {tests.caveat}</>}
       </ResultSummary>
       {actions && <div className="rs-actions">{actions}</div>}
 

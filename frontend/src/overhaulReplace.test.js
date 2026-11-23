@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { modelUnit, overhaulReplaceBody, overhaulReplaceInputs, overhaulReplaceMissing, savingWords } from "./overhaulReplace.js";
+import { modelUnit, overhaulReplaceBody, overhaulReplaceInputs, overhaulReplaceMissing, savingPctText, vsBestPct, vsBestWords } from "./overhaulReplace.js";
 
 const saved = { source: "saved", modelId: "r1", name: "Gearbox", form: "crow_amsaa",
   params: [{ name: "alpha", value: 100 }, { name: "beta", value: 2.5 }], unit: "Flight hours" };
@@ -31,10 +31,13 @@ test("the request reads a saved model on the server; the saved inputs keep its f
   assert.deepEqual(overhaulReplaceBody({ source: "params", form: "duane", params: ["10", "2"] }, f, "cycles").params, [10, 2]);
 });
 
-test("savings in words", () => {
-  assert.equal(savingWords(12.4), "12%");
-  assert.equal(savingWords(1.234), "1.2%");
-  assert.equal(savingWords(-4), "costs 4% more");
-  assert.equal(savingWords(0.01), "the same");
-  assert.equal(savingWords(null), "—");
+test("other plans against the best plan, as a % of the best plan's cost", () => {
+  // Overhaul only at $37.34/h against the best overhaul-and-replace plan at $39.31/h: 5.0% less
+  // (not 5.3%, which is the best plan's excess as a % of overhaul only).
+  assert.equal(vsBestWords(vsBestPct(37.34, 39.31)), "costs 5.0% less");
+  assert.equal(vsBestWords(vsBestPct(44.0, 39.31)), "costs 12% more");
+  assert.equal(vsBestWords(vsBestPct(39.311, 39.31)), "the same");
+  assert.equal(vsBestWords(vsBestPct(null, 39.31)), "—");
+  assert.equal(savingPctText(12.4), "12");
+  assert.equal(savingPctText(1.234), "1.2");
 });

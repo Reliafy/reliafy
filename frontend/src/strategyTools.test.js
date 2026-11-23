@@ -61,3 +61,8 @@ test("a long compute says what it's doing and for how long", () => {
   assert.equal(computeWaitText("Working out the best rule", 5), "Working out the best rule: 5 s so far.");
   assert.match(computeWaitText("Working out the best rule", 95), /1 min 35 s so far\. .*Cancel stops it\./);
 });
+
+test("failure finding: an empty mean-life entry asks for the mean life", async () => {
+  const { failureFindingMissing } = await import("./strategyTools.js");
+  assert.equal(failureFindingMissing({ model: null, availability: "99", source: "mean" }), "Enter the mean life.");
+});

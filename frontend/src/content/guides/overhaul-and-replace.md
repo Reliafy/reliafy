@@ -65,10 +65,11 @@ each at its own best:
 - **Overhaul only, never replace.**
 - **Replace only, no overhauls.**
 
-Read this table before acting. The cheapest plan of another kind can beat the
-best overhaul-and-replace plan, and when it does, the answer says so. In the
-gearbox example, overhauling every 737 flight hours and never replacing costs
-about 5% less again, because each overhaul takes off so much age that the unit
+Read this table before acting. Its last column says how much more or less each
+plan costs than the best one, as a share of the best plan's cost. The cheapest
+plan of another kind can beat the best overhaul-and-replace plan, and when it
+does, the answer says so. In the gearbox example, overhauling every 737 flight
+hours and never replacing costs 5.0% less, because each overhaul takes off so much age that the unit
 never gets old enough for a replacement to pay. A best plan at the most
 overhauls searched points the same way: search more and compare.
 

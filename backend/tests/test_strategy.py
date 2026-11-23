@@ -89,6 +89,23 @@ def test_compare_two_difference_test_significant():
     assert tests["significant"] is True  # alpha=180 vs 100 differ strongly
 
 
+def test_compare_two_significance_on_few_failures_says_so():
+    """A p-value under 0.05 resting on 3 failures says so plainly, with no verdict wording."""
+    a = {"label": "Old seal", "kind": "nonparametric",
+         "x": [100.0 * i for i in range(1, 14)] + [1500.0] * 11, "c": [0] * 13 + [1] * 11}
+    b = {"label": "New seal", "kind": "nonparametric",
+         "x": [400.0, 900.0, 1400.0] + [1500.0] * 15, "c": [0] * 3 + [1] * 15}
+    tests = st.compare_two(a, b)["tests"]
+    assert tests["significant"] is True
+    assert tests["failures"] == {"a": 13, "b": 3}
+    assert tests["caveat"] == "This is based on 3 failures in New seal: one more or fewer could change this."
+    assert tests["caveat"] in tests["summary"]
+    assert "unlikely to be due to chance" not in tests["summary"]
+    # Plenty of failures on both sides: no caveat.
+    many = st.compare_two({**a, "x": a["x"], "c": [0] * 24}, {**b, "c": [0] * 18})["tests"]
+    assert many["caveat"] is None
+
+
 def test_compare_two_difference_test_unavailable_for_parametric():
     a = {"label": "A", "kind": "parametric", "distribution_id": "weibull",
          "params": [{"name": "alpha", "value": 100}, {"name": "beta", "value": 2}]}
@@ -286,3 +303,17 @@ def test_optimal_replacement_answers_in_the_models_own_unit():
     assert "hours" not in res["recommendation"]
     bare = st.optimal_replacement("weibull", params, 1050, 9000)
     assert "about 316." in bare["recommendation"] and "hour" not in bare["recommendation"]
+
+
+def test_failure_finding_says_when_a_rate_looks_like_an_mtbf():
+    """An MTBF of 50,000 h typed as the rate λ gives a mean life of 0.00002 h: said in plain figures,
+    with the rate it likely means; a plausible rate gives no such warning."""
+    from backend.services.strategy import failure_finding
+
+    r = failure_finding("exponential", [{"name": "failure_rate", "value": 50000}], 0.99, "hours")
+    assert r["mttf"] == pytest.approx(2e-5)
+    assert r["warnings"][0] == ("The mean life is 0.00002 hours, under one hour. If 50,000 is an MTBF, the failure "
+                                "rate is 1 ÷ MTBF = 0.00002 per hour; enter that, or enter the MTBF as the mean life.")
+    assert "e-" not in r["note"]
+    ok = failure_finding("exponential", [{"name": "failure_rate", "value": 0.00002}], 0.99, "hours")
+    assert ok["warnings"] == [] and ok["mttf"] == pytest.approx(50000)
