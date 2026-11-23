@@ -207,7 +207,12 @@ def build(m, fc: dict, model_rows: list[dict], tree, root) -> dict:
         left = float(row["expected_failures"] or 0.0)
         n_all = left / (1.0 - found) if found and found < 1.0 else left
         each = row.get("cost_per_failure")
-        key = (_modes_text(row), each, round(found, 6), (row.get("response") or {}).get("id"))
+        def sig(resp):
+            return None if resp is None else (resp["name"], resp.get("hours_each"), resp.get("cost_each"),
+                                              tuple((x["name"], x["qty"]) for x in resp.get("spares") or []))
+
+        # The same response on several positions (each mode its own task) is one owner.
+        key = (_modes_text(row), each, round(found, 6), sig(row.get("response")))
         g = groups.setdefault(key, {"owner": key[0], "each": each, "found": found, "n": 0.0, "pmfs": [],
                                     "positions": [], "rows": [], "methods": set(), "ranged": True})
         g["n"] += n_all
