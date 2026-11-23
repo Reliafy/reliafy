@@ -11,6 +11,7 @@
 // the server's roll-up, Maintenance.subtree_ids, never another asset's). Pure functions, tested in
 // explorerTasks.test.js; the cells are drawn by TaskTreeTable.jsx.
 
+import { counted } from "./menuStandard.js";
 import { cellText, costWhere, fromRcm, kindText, money, SOURCE_WORDS } from "./lsaTab.js";
 import { sig } from "./positionForecast.js";
 import { treeSummary } from "./forecastDetails.js";
@@ -219,25 +220,34 @@ export const TASK_CLEAR = "mtask-clear";
 export const TASK_SELECT = "mtask-select";
 // Package the tasks… on a level: drafts packages from its tasks in none, in the table area.
 export const TASK_DRAFT = "mtask-draft";
+export const TASK_RETIRE = "mtask-retire";
 // A task row's menu: Open…, Optimise… (this row's task), then Package… and Add to package… for the tasks selected (the row
 // itself when it isn't one of them), each greyed with the reason when none of them can go.
 // `tasks`: the task-table rows it acts on; `canPackage`: false on a product's design, or view only.
-export function taskRowActions(r, { tasks = null, canPackage = true, canSelect = false } = {}) {
-  const out = [{ id: TASK_OPEN, label: "Open…" },
-    { id: TASK_OPTIMISE, label: "Optimise…", title: "How often to do it, worked out from the life model of the failure modes it prevents" }];
-  if (canSelect) out.push({ id: TASK_SELECT, label: "Select", title: "Pick this task, then tap others to add them" });
-  if (!canPackage) return out;
+export function taskRowActions(r, { tasks = null, canPackage = true, canSelect = false, viewOnly = null } = {}) {
   const list = tasks?.length ? tasks : r?.ref?.task ? [r.ref.task] : [];
-  const free = list.filter((t) => !t.why_not && !t.package);
-  const stuck = list.length && list.every((t) => t.why_not);
-  const why = stuck ? `${list.length === 1 ? "It can't" : "They can't"} join a package: ${list[0].why_not}`
-    : !free.length ? `${list.length === 1 ? "It's" : "They're"} in a package already: take ${list.length === 1 ? "it" : "them"} out there first`
-      : null;
-  const n = list.length > 1 ? ` ${list.length} tasks` : "";
-  out.push({ separator: true },
-    { id: TASK_PACKAGE, label: "Package…", disabled: !!why, reason: why || undefined, title: `A new work package with${n || " this task"}` },
-    { id: TASK_ADD_TO, label: "Add to package…", disabled: !!why, reason: why || undefined, title: `Put${n || " this task"} in a package already on this asset` });
-  if (list.length > 1) out.push({ id: TASK_CLEAR, label: "Clear the selection" });
+  const many = list.length > 1;
+  // Several picked: what acts on one task says so; Package and Add to package count them.
+  const one = many ? { disabled: true, reason: `It works on one task: ${list.length} are picked.` } : {};
+  const out = [{ id: TASK_OPEN, label: "Open", ...one },
+    { id: TASK_OPTIMISE, label: "Optimise…", title: "How often to do it, worked out from the life model of the failure modes it prevents", ...one }];
+  if (canSelect) out.push({ id: TASK_SELECT, label: "Select", title: "Pick this task, then tap others to add them" });
+  if (canPackage) {
+    const free = list.filter((t) => !t.why_not && !t.package);
+    const stuck = list.length && list.every((t) => t.why_not);
+    const why = stuck ? `${list.length === 1 ? "It can't" : "They can't"} join a package: ${list[0].why_not}`
+      : !free.length ? `${list.length === 1 ? "It's" : "They're"} in a package already: take ${list.length === 1 ? "it" : "them"} out there first`
+        : null;
+    const n = many ? ` ${list.length} tasks` : "";
+    out.push(
+      { id: TASK_PACKAGE, label: counted("Package…", list.length), disabled: !!why, reason: why || undefined, title: `A new work package with${n || " this task"}` },
+      { id: TASK_ADD_TO, label: many ? `Add ${list.length} tasks to a package…` : "Add to package…", disabled: !!why, reason: why || undefined,
+        title: `Put${n || " this task"} in a package already on this asset` });
+    if (many) out.push({ id: TASK_CLEAR, label: "Clear the selection" });
+  }
+  // Retire… (it stops falling due; its history stays), last, one task at a time.
+  const retireWhy = viewOnly || (many ? "Retire one task at a time." : null);
+  out.push({ id: TASK_RETIRE, label: "Retire…", danger: true, ...(retireWhy ? { disabled: true, reason: retireWhy } : {}) });
   return out;
 }
 
@@ -566,16 +576,23 @@ export const forecastWanted = (open) => [...(open || [])].some((k) => typeof k =
 export const PKG_OPEN = "mpkg-open";
 export const PKG_FORECAST = "mpkg-forecast";
 export const REF_GO = "mpref-go";
+export const PKG_RETIRE = "mpkg-retire";
+export const REF_REMOVE = "mpref-remove";
 export const FC_OPEN = "mfc-open";
-export function packageRowActions() {
-  return [{ id: PKG_OPEN, label: "Open…", title: "Its tasks, visits, what each visit needs, and pause or retire" },
-    { id: PKG_FORECAST, label: "Forecast…", title: "The full forecast where its tasks meet: work, failures, costs and spares, by month" }];
+export function packageRowActions(r, { viewOnly = null } = {}) {
+  const pkg = r?.ref?.pkg;
+  const wo = pkg?.open_work_order;
+  const why = viewOnly || (wo ? `Close or cancel work order #${wo.number} first.` : null);
+  return [{ id: PKG_OPEN, label: "Open", title: "Its tasks, visits, what each visit needs, and pause or retire" },
+    { id: PKG_FORECAST, label: "Forecast…", title: "The full forecast where its tasks meet: work, failures, costs and spares, by month" },
+    { id: PKG_RETIRE, label: "Retire…", danger: true, ...(why ? { disabled: true, reason: why } : {}) }];
 }
-export function refRowActions(r) {
-  return [{ id: REF_GO, label: "Show the task", title: `${r.ref.name}, on ${r.ref.on || "its position"}` }];
+export function refRowActions(r, { viewOnly = null } = {}) {
+  return [{ id: REF_GO, label: "Show the task", title: `${r.ref.name}, on ${r.ref.on || "its position"}` },
+    { id: REF_REMOVE, label: "Remove from package…", danger: true, ...(viewOnly ? { disabled: true, reason: viewOnly } : {}) }];
 }
 export const FC_LEVEL = "mfc-level";
 export function forecastRowActions() {
-  return [{ id: FC_OPEN, label: "Open…", title: "Its forecast: set the horizon and grouping, the counts and costs by period, and when next" },
+  return [{ id: FC_OPEN, label: "Open", title: "Its forecast: set the horizon and grouping, the counts and costs by period, and when next" },
     { id: FC_LEVEL, label: "Forecast for this level…", title: "The forecast for the position it's under and everything inside it, with spares for the year" }];
 }

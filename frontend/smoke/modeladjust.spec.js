@@ -3,6 +3,17 @@
 // Explorer, on a model row, in the table pane beside the tree. Never a modal. The hand check: a Weibull
 // with alpha 1,000 h and beta 2 has a B10 of 325 h; at 1.5 times the hazard, 265 h.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
+import { subItem } from "./explorer.js";
+
+// An item of a row's menu: at its top level, or under More › (the menu standard keeps ten a level).
+async function menuPick(page, name) {
+  const menu = page.getByRole("menu").last();
+  await expect(menu).toBeVisible();
+  const direct = menu.locator(":scope > [role='menuitem']").filter({ hasText: name });
+  if (await direct.count()) return menu.getByRole("menuitem", { name }).first();
+  return subItem(page, menu, "More", name, { exact: false });
+}
+
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -56,7 +67,7 @@ for (const width of [1440, 400]) {
     const row = page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: `Pump model ${tag}` }) });
     await expect(row).toBeVisible();
     await row.locator(".tp-nm").click({ button: "right" });
-    await page.getByRole("menu").last().getByRole("menuitem", { name: "Adjust for conditions…" }).click();
+    await (await menuPick(page, "Adjust for conditions…")).click();
     const pane = page.locator(".table-pane", { hasText: "Adjust for conditions" });
     await expect(pane).toBeVisible();
     await expect(page).toHaveURL(/adjust=/);

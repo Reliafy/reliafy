@@ -280,7 +280,7 @@ test("menus: a mission's starts with Add a phase; a phase's opens, moves and del
   assert.deepEqual(ids(phaseKey("r1", "m1", 1)), ["mission-rule-add", "—", "mission-phase-open", "mission-phase-earlier", "mission-phase-later", "mission-phase-delete"]);
   const first = missionRowActions(d.rows.get(phaseKey("r1", "m1", 0))).slice(2);
   const last = missionRowActions(d.rows.get(phaseKey("r1", "m1", 2))).slice(2);
-  assert.deepEqual(first.map((a) => a.label), ["Open in the mission editor…", "Move earlier", "Move later", "Delete…"]);
+  assert.deepEqual(first.map((a) => a.label), ["Open", "Move earlier", "Move later", "Delete…"]);
   assert.equal(first[1].disabled, true);
   assert.equal(first[2].disabled, undefined);
   assert.equal(last[2].disabled, true);

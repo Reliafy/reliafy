@@ -4167,6 +4167,19 @@ function asJsonBody(method, body) {
 export function getOperatingPlan(kind, id, root = null) {
   return request(`/api/maintenance/${kind === "item" ? "items" : "positions"}/${id}/operating-plan${root ? `?root=${encodeURIComponent(root)}` : ""}`);
 }
+// The Explorer's Operations tab in one read: each position's duty (its own, or the one it takes
+// from above it), other use, shutdown and outage windows (own and inherited) and time zone, inside
+// `root` (the asset opened).
+export function getOperations(root = null) {
+  return request(`/api/maintenance/operations${root ? `?root=${encodeURIComponent(root)}` : ""}`);
+}
+// A planned outage on a position: {start?, until?, reason}. Back in service ends it.
+export function takeOutOfService(positionId, body) {
+  return postJson(`/api/maintenance/positions/${positionId}/out-of-service`, body);
+}
+export function backInService(positionId) {
+  return postJson(`/api/maintenance/positions/${positionId}/back-in-service`, {});
+}
 // The forecast for a position and everything inside it (inside `root`, the asset opened): tasks on
 // dates, work per period, expected failures and cost with a 90% range, and what each rests on.
 export function getPositionForecast(positionId, { root = null, period = "month", periods = 12 } = {}) {

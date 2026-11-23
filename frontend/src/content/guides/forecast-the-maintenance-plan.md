@@ -33,7 +33,7 @@ times a year · $1,240 a year*. A package counts its visits. No dates are listed
 in the tree.
 
 Click the **Forecast** row to see its details beside the table; double-click it
-(or press Enter on it, or choose **Open…** in its menu) to see them across the
+(or press Enter on it, or choose **Open** in its menu) to see them across the
 table, with the tree kept beside them. **Back to table** or Esc puts the table
 back. On a phone the details open as a sheet. **Forecast for this level…** in
 the row's menu opens the forecast for the position it sits under. A task's

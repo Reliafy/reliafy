@@ -8,6 +8,7 @@
 // sideways at 400 px.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { choose, expectChosen } from "./select.js";
+import { subItem } from "./explorer.js";
 
 const M = "/api/maintenance";
 const BEARING = "nswc-11:bearing-rolling-load-rating";
@@ -70,9 +71,9 @@ test("missions: a product's mission by phase, its covariates with the blocks the
   await expect(nameRow(page, `Corridor inspection ${tag}`)).toHaveCount(1);
   // The drone's roll-up counts its own models and then its own missions (open: its own).
   await expect(nameRow(page, `Survey drone ${tag}`).first()).toContainText("1 model · 1 mission");
-  // + Mission on a model's row: the RBD's menu leads with it.
+  // + Mission on a model's row: the RBD's menu leads its middle section with it.
   await rbdRow.locator(".tp-nm").click({ button: "right" });
-  await expect(page.getByRole("menuitem").first()).toHaveText(/Add a mission…/);
+  await expect(page.getByRole("menu").first().locator(":scope > [role='separator'] + [role='menuitem']").first()).toHaveText(/Add a mission…/);
   await page.keyboard.press("Escape");
 
   // Open the mission: the table area, phases as rows.
@@ -181,7 +182,8 @@ test("missions: each mission builds its own RBD; blocks set working, standby or 
   await open(page, `/asset-register/explorer?arrange=positions&sel=${station.id}&tab=models`);
   const stationRow = nameRow(page, `Pump station ${tag}`).first();
   await stationRow.locator(".tp-nm").click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Add a mission…", exact: true }).click();
+  // A position's Add a mission… is under More › (Life model › and RBD › lead its middle section).
+  await (await subItem(page, page.getByRole("menu").first(), "More", "Add a mission…")).click();
   await nameMission(page, "Mission 1");  // named first, nothing saved until then (#833)
   const made = page.waitForResponse((r) => r.url().includes(`${M}/positions/${station.id}/missions`) && r.request().method() === "POST");
   await page.getByRole("region", { name: "New mission" }).getByRole("button", { name: "Add the mission" }).click();
@@ -255,7 +257,7 @@ test("missions: a leaf with a model gets a one-block mission; the RBD list label
   await shot(page, "missions-rollups-1440");
   // The bare leaf's Add a mission is greyed, with what to do.
   await nameRow(page, `Bare leaf ${tag}`).locator(".tp-nm").click({ button: "right" });
-  await expect(page.getByRole("menuitem", { name: /Add a mission/ })).toBeDisabled();
+  await expect(await subItem(page, page.getByRole("menu").first(), "More", /Add a mission/, { exact: false })).toBeDisabled();
   await page.keyboard.press("Escape");
 
   // The leaf with a model: Add a mission… on its model's row, a mission of one block.

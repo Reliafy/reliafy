@@ -182,7 +182,7 @@ test("a function's text is kept to 200 characters where it's typed; one saved lo
   const longRow = trow(page, `^Function: Keep the pool water moving ${tag}`);
   await expect(longRow.locator(".tp-nm")).toHaveAttribute("title", long);
   await longRow.locator(".tt-tree").click({ button: "right" });
-  await page.getByRole("menu").getByRole("menuitem", { name: "Edit description" }).click();
+  await page.getByRole("menu").getByRole("menuitem", { name: "Rename…", exact: true }).click();
   const edit = page.getByRole("dialog", { name: "Edit the function" });
   const editBox = edit.getByRole("textbox");
   await expect(editBox).toHaveValue(long);

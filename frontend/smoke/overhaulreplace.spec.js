@@ -3,6 +3,17 @@
 // "Strategy is optional"): a model row has no Strategy item until one is saved for it; its ⋯
 // offers Add a strategy…, which opens the tools that fit it in the table pane beside the tree.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
+import { subItem } from "./explorer.js";
+
+// An item of a row's menu: at its top level, or under More › (the menu standard keeps ten a level).
+async function menuPick(page, name) {
+  const menu = page.getByRole("menu").last();
+  await expect(menu).toBeVisible();
+  const direct = menu.locator(":scope > [role='menuitem']").filter({ hasText: name });
+  if (await direct.count()) return menu.getByRole("menuitem", { name }).first();
+  return subItem(page, menu, "More", name, { exact: false });
+}
+
 
 const M = "/api/maintenance";
 const SAMPLE = "Bearing life — Weibull (sample)";
@@ -56,7 +67,7 @@ for (const width of [1440, 400]) {
     // Strategy is optional: no Strategy row until one is saved.
     await expect(page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: /^Strategy$/ }) })).toHaveCount(0);
     await row.locator(".tp-nm").click({ button: "right" });
-    await page.getByRole("menu").last().getByRole("menuitem", { name: "Add a strategy…" }).click();
+    await (await menuPick(page, "Add a strategy…")).click();
     const pane = page.locator(".strategy-pane");
     await expect(pane).toBeVisible();
     // A repairable (minimal repair) model: overhaul and replace, and the optimal overhaul.

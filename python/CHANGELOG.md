@@ -4,6 +4,13 @@
 
 Needs a server on the same release.
 
+- **Operations** (Maintenance, operators): `maintenance get.operations` reads every position's duty in
+  one call (`root` the asset opened, or `id` one position): its own operating plan or the one it takes
+  from the nearest position above it (`duty.source` own / inherited / none, `duty.from`), what clearing
+  its own would leave it on (`parent_duty`), other use (km or cycles a day), the shutdown and outage
+  windows that take it off-line over the next year, its own and inherited, and its time zone.
+  `reliafy maintenance get.operations --root …`. Duties are still set with `positions.update`
+  (`operating_plan`, `end_operating_plan`).
 - **Calendar schedules on tasks** (Reliafy Maintenance): a task's `rule` takes `{kind: 'shutdowns', every:
   12, unit: 'months'}`, done at the first planned shutdown of its position that long after it was last
   done; a monthly rule every 2, 3, 4 or 6 months with an `anchor` falls in the same months each year (1

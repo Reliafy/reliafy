@@ -78,7 +78,8 @@ export function graftFmea(display, rcm) {
 export function rowActions(r, { canRename = true, viewOnly = null } = {}) {
   if (!r) return [];
   const open = r.type === "fn" || r.type === "mode" ? [{ id: "open", label: "Open…" }] : [];
-  const rename = canRename ? [{ id: "rename", label: "Edit description" }] : [];
+  const rename = [canRename ? { id: "rename", label: "Edit description" }
+    : { id: "rename", label: "Edit description", disabled: true, reason: "On a phone, change its text in its details: Open." }];
   // Delete… on any row takes everything under it (a dialog counts it first; Undo brings it back).
   if (r.type === "pos") {
     return withPositionDelete([

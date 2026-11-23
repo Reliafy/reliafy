@@ -190,7 +190,7 @@ that range from every snapshot, old and new, and draws it in **Level over time**
   panel's **…** menu; each reading's **⋯** menu corrects or voids it. A voided
   reading stays listed, struck out, and is left out of rates, due dates and
   alarms.
-- **Move…** (in a point's **⋯** menu in **Monitoring › Readings**, or in the **⋯**
+- **Move to…** (in a point's row menu in **Monitoring › Readings**; **Move…** in the **⋯**
   menu while its details are open) moves a hand-read or fed point to another position, for when it
   was added to the wrong one. Its readings and any open alarm work order go
   with it, and tasks that counted it keep counting it. A band or level stays

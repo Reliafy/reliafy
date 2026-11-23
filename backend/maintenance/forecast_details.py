@@ -100,8 +100,8 @@ def _duty_words(m: Maintenance, position_id: str, root) -> dict | None:
 
 
 def _plan_link(position_id: str, root) -> str:
-    """Where a duty is set: the position's operating plan (Monitoring › Readings, ?plan=)."""
-    return pf._explorer_link(position_id, root, "measurements", plan=position_id)
+    """Where a duty is set: the position's operating plan, on the Operations tab (?plan=)."""
+    return pf._explorer_link(position_id, root, "operations", plan=position_id)
 
 
 # ---- When next ------------------------------------------------------------------------------------

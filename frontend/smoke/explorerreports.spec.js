@@ -57,15 +57,16 @@ test("Failure reports: file one from the row menu, see it under the parent, and 
   await expect(panel(page).getByRole("searchbox", { name: "Search failure reports" })).toHaveCount(0);
   // No Add button in the tab or its heading: the heading's "…" has Add failure report… (and Open the full page).
   await expect(panel(page).getByRole("button", { name: /^Add failure report/ })).toHaveCount(0);
-  await expect((await headMenu(page)).locator(".ovm-menu .ovm-item")).toHaveText(["Add failure report…", "Open the full page"]);
+  expect(await menuLabels(page, await headMenu(page))).toEqual(expect.arrayContaining(["Add failure report…", "Open the full page"]));
   await page.keyboard.press("Escape");
 
-  // Right-click the pump: the tab's own add leads its menu, before New position inside.
+  // Right-click the pump: after the general section, the tab's own add leads the middle, before New position inside.
   await row(page, `Report pump ${tag}`).locator(".tp-nm").click({ button: "right" });
   const menu = rowMenu(page, `Report pump ${tag}`);
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole("menuitem").first()).toHaveText("Add failure report…");
-  await expect(menu.getByRole("menuitem").nth(1)).toHaveText("New position inside");
+  await expect(menu.locator(":scope > [role='menuitem']").first()).toHaveText("Open");
+  await expect(menu.locator(":scope > [role='menuitem']").nth(6)).toHaveText("Add failure report…");
+  await expect(menu.locator(":scope > [role='menuitem']").nth(7)).toHaveText("New position inside");
   await menu.getByRole("menuitem", { name: "Add failure report…" }).click();
   const dialog = page.getByRole("dialog", { name: "New failure report" });
   await expect(dialog).toContainText(`At Report pump ${tag}`);
@@ -200,3 +201,17 @@ test("Failure reports at 400 px: the ⋯ button offers Add failure report…, th
   await shot(page, "reports-phone-list");
   await expectHealthy(page, problems, { label: "failure reports at 400 px", root: ".tx-detail" });
 });
+
+// Every label in a menu: its top level and the items under More › (the menu standard folds what
+// doesn't fit in ten there).
+async function menuLabels(page, menu) {
+  const read = (loc) => loc.evaluateAll((els) => els.map((e) => e.dataset.label || e.textContent.trim()));
+  const out = await read(menu.locator(":scope > [role='menuitem']"));
+  if (out.includes("More")) {
+    await menu.getByRole("menuitem", { name: "More", exact: true }).hover();
+    const sub = page.getByRole("menu", { name: "More", exact: true });
+    await expect(sub).toBeVisible();
+    out.push(...await read(sub.getByRole("menuitem")));
+  }
+  return out;
+}

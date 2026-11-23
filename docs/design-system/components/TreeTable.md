@@ -13,7 +13,7 @@ The tree pane and a tab's table are the same tree, not two: what's open, the row
 
 ## Focus and Pin
 
-Two different things, in every row's menu (`ContextMenu`) on every tab, with the same words:
+Two different things, in every row's menu (`ContextMenu`) on every tab, with the same words. Both sit in the menu's general section: **Focus ›** (one entry; its submenu holds the items below and Clear focus) then **Pin this branch**.
 
 - **Focus here** — this row opened at every level below it, so everything in it shows (every task, failure mode, measuring point or model in that branch), and every other branch closed. The closed branches stay on show: nothing is hidden.
 - **The words** name what the open tab shows: Focus tasks (Maintenance), Focus failure modes (RCM, FME(C)A), Focus measurements, Focus models, Focus missions; Focus here on the plain tree or a tab with no table of its own. Focus to a depth › is the same on every tab.
@@ -38,7 +38,7 @@ While a focus is on (`focused`: `{name, onClear}`):
 - **Column filters:** a focus decides what's open; the filters apply inside it. A filter on keeps the way down to its matches as usual, and the filter's values come from the rows open, so focusing a branch narrows the values offered to it.
 - **Multi-select:** focusing closes branches, so picks in them leave (picks off screen are dropped, as for any close).
 - **Details:** a focus doesn't close the details beside or across the table; the focused row is picked and brought into view.
-- **Forecast… and the tab's own actions** stay in the same menu, before Focus and Pin.
+- **Forecast… and the tab's own actions** stay in the same menu, in its middle section, after Focus › and Pin (the general section) and before the one destructive item.
 
 ## Look
 

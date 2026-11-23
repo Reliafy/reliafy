@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Link } from "react-router-dom";
 import { portalHost } from "../fullScreen.js";
 import { placeMenu, placeSubmenu } from "../menuPlace.js";
 import usePhone from "../usePhone.js";
@@ -15,6 +16,8 @@ import ProTag from "./ProTag.jsx";
 // scroll that moves its row (the element `anchorId` names) away from it.
 // `onClose` puts the focus back where it belongs (the row).
 //
+// Type a letter to jump to the next item starting with it (the letters typed together, a word).
+//
 // items: [{id, label, danger?, disabled?, reason?, pro?, items?} | {separator: true}]; onChoose(id) runs
 // after the menu has closed. A disabled item stays in the menu (so it can be
 // found and its reason read: under its label, and to a screen reader as its
@@ -29,6 +32,21 @@ import ProTag from "./ProTag.jsx";
 
 const top = (el) => [...el.querySelectorAll(":scope > [data-path], :scope > [role='group'] > [data-path]")];
 
+// Type to jump: the next item (after the focused one, round the end) whose label starts with the
+// letters typed in the last 700 ms. `all`: the items' elements; `typed`: the letters so far.
+export function jumpTo(all, from, typed) {
+  const t = typed.toLowerCase();
+  const n = all.length;
+  // One letter typed again moves on to the next match; more letters stay on a match that still fits.
+  const start = t.length > 1 ? from : from + 1;
+  for (let k = 0; k < n; k += 1) {
+    const el = all[((start + k) % n + n) % n];
+    const text = (el?.dataset.label || el?.textContent || "").trim().toLowerCase();
+    if (text.startsWith(t)) return el;
+  }
+  return null;
+}
+
 export default function RowMenu({ items, at, label, anchorId, onChoose, onClose }) {
   const ref = useRef(null);
   const subRef = useRef(null);
@@ -39,6 +57,16 @@ export default function RowMenu({ items, at, label, anchorId, onChoose, onClose 
   const [sub, setSub] = useState(null);
   const [subPos, setSubPos] = useState(null);
   const close = useCallback(() => onClose(), [onClose]);
+  const typed = useRef({ text: "", at: 0 });
+  // A printable key: type-to-jump within `all`. True when it was one.
+  const typeAhead = (e, all, i) => {
+    if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey || e.key === " ") return false;
+    const now = Date.now();
+    const t = now - typed.current.at < 700 ? typed.current.text + e.key : e.key;
+    typed.current = { text: t, at: now };
+    jumpTo(all, i, t)?.focus();
+    return true;
+  };
   useMenuDismiss(true, close, ref);
 
   // Measured where it has the whole width (hidden at the top left until placed): measured at the
@@ -127,7 +155,7 @@ export default function RowMenu({ items, at, label, anchorId, onChoose, onClose 
     else if (e.key === "Escape" && phone && sub) backToParent();
     else if (e.key === "Escape" || e.key === "Tab") close();
     else if ((e.key === "Enter" || e.key === " ") && at_) choose(at_, { keyboard: true });
-    else return;
+    else if (!typeAhead(e, all, i)) return;
     e.preventDefault();
     e.stopPropagation();
   };
@@ -143,7 +171,7 @@ export default function RowMenu({ items, at, label, anchorId, onChoose, onClose 
     else if (e.key === "ArrowLeft" || e.key === "Escape") backToParent();
     else if (e.key === "Tab") close();
     else if ((e.key === "Enter" || e.key === " ") && i >= 0) choose(itemAt(all[i].dataset.path), { keyboard: true });
-    else return;
+    else if (!typeAhead(e, all, i)) return;
     e.preventDefault();
     e.stopPropagation();
   };
@@ -151,8 +179,17 @@ export default function RowMenu({ items, at, label, anchorId, onChoose, onClose 
   const button = (it, path, { hover = null } = {}) => {
     const radio = typeof it.checked === "boolean";
     const why = it.disabled && it.reason ? `${uid}-${path}` : undefined;
+    // An item with `to` is a link (Open the full page): a real address, opened by the router.
+    if (it.to && !it.disabled) {
+      return (
+        <Link key={it.id} to={it.to} role="menuitem" tabIndex={-1} data-path={path} data-label={it.label} className="ovm-item"
+              onPointerEnter={hover} onClick={() => onClose()}>
+          {it.label}
+        </Link>
+      );
+    }
     return (
-      <button key={it.id} type="button" role={radio ? "menuitemradio" : "menuitem"} tabIndex={-1} data-path={path}
+      <button key={it.id} type="button" role={radio ? "menuitemradio" : "menuitem"} tabIndex={-1} data-path={path} data-label={it.label}
               aria-checked={radio ? String(it.checked) : undefined}
               className={"ovm-item" + (it.danger ? " danger" : "") + (it.disabled ? " off" : "") + (radio ? " row-menu-radio" : "")
                 + (radio && it.checked ? " on" : "")}
@@ -175,11 +212,12 @@ export default function RowMenu({ items, at, label, anchorId, onChoose, onClose 
       {items.map((it, i) => {
         // A line between groups (not an item: the arrow keys pass over it).
         if (it.separator) return <div key={`sep-${i}`} role="separator" className="row-menu-sep" />;
-        if (!it.items) return button(it, String(i), { hover: phone ? null : () => setSub(null) });
+        // A submenu that can't be used now is a greyed item with its reason, like any other.
+        if (!it.items || it.disabled) return button(it, String(i), { hover: phone ? null : () => setSub(null) });
         const open = sub?.id === it.id;
         return (
           <Fragment key={it.id}>
-            <button type="button" role="menuitem" tabIndex={-1} data-path={String(i)} data-sub={it.id}
+            <button type="button" role="menuitem" tabIndex={-1} data-path={String(i)} data-sub={it.id} data-label={it.label}
                     className={"ovm-item row-menu-parent" + (open ? " open" : "") + (phone ? " inline" : "")}
                     aria-haspopup="menu" aria-expanded={open}
                     onPointerEnter={phone ? undefined : () => setSub((s) => (s?.id === it.id ? s : { id: it.id, focus: false }))}
@@ -188,14 +226,14 @@ export default function RowMenu({ items, at, label, anchorId, onChoose, onClose 
             </button>
             {open && phone && (
               <div role="group" aria-label={it.label} data-group={it.id} className="row-menu-inline">
-                {it.items.map((s, j) => button(s, `${i}.${j}`))}
+                {it.items.map((s, j) => (s.separator ? <div key={`sep-${i}.${j}`} role="separator" className="row-menu-sep" /> : button(s, `${i}.${j}`)))}
               </div>
             )}
             {open && !phone && (
               <div ref={subRef} className="ovm-menu row-menu row-submenu" role="menu" aria-label={it.label} tabIndex={-1}
                    style={subPos ? { left: subPos.left, top: subPos.top } : { left: 0, top: 0, visibility: "hidden" }}
                    onKeyDown={onSubKey}>
-                {it.items.map((s, j) => button(s, `${i}.${j}`))}
+                {it.items.map((s, j) => (s.separator ? <div key={`sep-${i}.${j}`} role="separator" className="row-menu-sep" /> : button(s, `${i}.${j}`)))}
               </div>
             )}
           </Fragment>
