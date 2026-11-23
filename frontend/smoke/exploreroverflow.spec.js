@@ -36,14 +36,15 @@ test("panel tabs: the flat row, inner views, an old address", async ({ page, req
   // Its package is a row of the table (where its tasks meet).
   await expect(page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: "Smoke test weekly round" }) }).first()).toBeVisible();
   await expectHealthy(page, problems, { root: ".tx" });
-  // The old inner views' addresses open the one table: Packages with a package open, Forecast as Forecast….
+  // The old inner views' addresses open the one table (Packages with a package open); the old
+  // Forecast view opens the left menu's spares forecast, filled in from the row.
   await open(page, at(id, "&tab=lsa&mview=packages"));
   await expect(page).toHaveURL(/tab=maintenance/);
   await expect(page).not.toHaveURL(/mview=/);
   await expect(bar(page).getByRole("tab", { name: "Maintenance" })).toHaveAttribute("aria-selected", "true");
   await open(page, at(id, "&tab=maintenance&mview=forecast"));
-  await expect(page).toHaveURL(new RegExp(`forecast=${id}`));
-  await expect(page.locator("section.fc-view").first()).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/forecasts/spares\\?from=position%3A${id}`));
+  await expect(page.locator(".ft-from")).toBeVisible();
 
   // An old address: ?tab=condition is Monitoring › Life left.
   await open(page, at(id, "&tab=condition"));

@@ -2115,7 +2115,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       if (tasksOn && isTaskRow(r)) {
         const acts = taskRowActions(r, { tasks: tasksFor(r).map((x) => x.ref.task), canPackage: !designScope && !viewOnly, canSelect: phone && !designScope && !viewOnly, viewOnly });
         // Open in › right after Optimise… (the menu folds its tail into More ›, never this).
-        return [...acts.slice(0, 2), ...openInItem(r, { design: !!designScope }), ...acts.slice(2)];
+        // Several tasks picked: the menu acts on them all, and Open in › works on one row: left out.
+        const one = tasksFor(r).length <= 1;
+        // After Open, Optimise… and (a phone) Select, so Select never folds under More ›.
+        const at = acts.findIndex((it) => it.id === TASK_SELECT) + 1 || 2;
+        return [...acts.slice(0, at), ...(one ? openInItem(r, { design: !!designScope }) : []), ...acts.slice(at)];
       }
       // A package (at the meeting point of its tasks): Open…; a task listed under it: Show the task
       // (under its own position).
