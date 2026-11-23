@@ -11,6 +11,8 @@ import { TASK_WITH_INTERVAL, cellRow, fitWidths, isRcmRow, opensPanel, phonePosi
 import { isFullScreenKey } from "../fullScreen.js";
 import { LEVEL_OF, NAME_COLUMN, ROLE } from "../rcmWorksheet.js";
 import { isDeleteKey } from "../treeDelete.js";
+import { isEditable, panelRowMore } from "../contextMenu.js";
+import { areaMenu } from "../explorerMenu.js";
 import { badge as redundancyBadge } from "../redundancy.js";
 import "./RedundancyPane.css";
 
@@ -483,12 +485,13 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
     } : undefined,
     // Right-click opens the row's menu (the browser's own stays on a field
     // being edited in it, and on a row with no menu).
+    // The browser's menu is blocked only when the row's own opens (never a right-click that does
+    // nothing); a row with no menu leaves it to the tree's own fallback (TreePane's onContextMenu).
     onContextMenu: onMenu ? (e) => {
-      if (e.target.closest("input, textarea, select, .sel-trigger, .sel-menu, [contenteditable='true']")) return;
-      e.preventDefault();
+      if (isEditable(e.target)) return;
       // From the keyboard (the Menu key, Shift+F10) there's no pointer: under the row's name.
       const kb = e.button !== 2 || (!e.clientX && !e.clientY);
-      onMenu(r.key, kb ? cornerOf(e.currentTarget) : { x: e.clientX, y: e.clientY }, { keyboard: kb });
+      if (onMenu(r.key, kb ? cornerOf(e.currentTarget) : { x: e.clientX, y: e.clientY }, { keyboard: kb })) e.preventDefault();
     } : undefined,
     ...(phone && onMenu && !pinned ? {
       onTouchStart: (e) => {
@@ -707,11 +710,49 @@ export default function TreePane({
   const [rowOpen, setRowOpen] = useState(null);
   const itemsFor = (key, { keyboard = true } = {}) => (rowMenu && display.rows.has(key) ? rowMenu.actions(display.rows.get(key), { keyboard }) : []);
   const openMenu = (key, at, { keyboard = false } = {}) => {
-    if (!itemsFor(key, { keyboard }).length) return;
+    if (!itemsFor(key, { keyboard }).length) return false;
     // A row outside the rows picked together becomes the one picked (its menu acts on it alone).
     table?.multi?.onMenu?.(key);
     if (key !== focus) onPick(key, {});
+    setAreaOpen(null);
     setRowOpen({ key, at, keyboard });
+    return true;
+  };
+  // The tree's areas that aren't a row (column headers, the space under the rows, the add row, the
+  // headings): the tree's own menu (explorerMenu.js areaMenu). The panel beside it (its heading,
+  // tabs and body): the menu of the row it's about; a row in it with its own ⋯ opens that.
+  const [areaOpen, setAreaOpen] = useState(null);
+  const areaItems = areaMenu({
+    add: addRow ? { label: addRow.label, disabled: addRow.disabled, reason: addRow.reason } : null,
+    levels: !!onLevel, focused: !!focused, pinned: !!branch,
+  });
+  const onArea = (id) => {
+    if (id === "area-add") return addRow?.onAdd?.();
+    if (id.startsWith("level:")) return id === "level:0" ? onCloseAll?.() : onLevel?.(Number(id.slice(6)));
+    if (id === "focus-clear-area") return focused?.onClear?.();
+    if (id === "unpin-area") return branch?.onUnpin?.();
+    return undefined;
+  };
+  const fallbackMenu = (e) => {
+    if (e.defaultPrevented || isEditable(e.target) || e.target.closest(".ovm-menu")) return;
+    const at = { x: e.clientX, y: e.clientY };
+    const inRow = e.target.closest(".tp-row");
+    // A row of the panel with its own ⋯ (an LSA list, readings, the RCM worksheet's rows).
+    const more = !inRow && panelRowMore(e.target);
+    if (more) {
+      e.preventDefault();
+      more.click();
+      return;
+    }
+    const inTree = e.target.closest(".tp-scroll, .tt-head, .tp-head, .tt-bar > .tt-cell, .tt-row2 > .tt-cell, .tp-addrow-line, .tp-railcol");
+    if (!inTree && focus != null && display.rows.has(focus) && openMenu(focus, at)) {
+      e.preventDefault();
+      return;
+    }
+    if (!areaItems.length) return;
+    e.preventDefault();
+    setRowOpen(null);
+    setAreaOpen({ at });
   };
   const closeMenu = () => {
     const key = rowOpen?.key;
@@ -1068,7 +1109,7 @@ export default function TreePane({
   );
 
   return (
-    <aside className={"tp" + (table ? " tp-table" : "") + (railed ? " tp-railed" : "")} aria-label={title}>
+    <aside className={"tp" + (table ? " tp-table" : "") + (railed ? " tp-railed" : "")} aria-label={title} onContextMenu={fallbackMenu}>
       {controls}
       <div className={"tt-main" + (expanded ? " tt-expanded" : "")}>
         {railed ? <div className="tp-railcol" style={{ width: PANE.rail }} /> : (
@@ -1128,6 +1169,10 @@ export default function TreePane({
       {rowOpen && itemsFor(rowOpen.key, rowOpen).length > 0 && (
         <RowMenu items={itemsFor(rowOpen.key, rowOpen)} at={rowOpen.at} label={menuLabel(display.rows.get(rowOpen.key))} anchorId={`tp-${rowOpen.key}`} onClose={closeMenu}
                  onChoose={(id) => rowMenu.onAction(display.rows.get(rowOpen.key), id)} />
+      )}
+      {areaOpen && (
+        <RowMenu items={areaItems} at={areaOpen.at} label={`Actions for ${treeLabel || title}`} anchorId={null}
+                 onClose={() => setAreaOpen(null)} onChoose={onArea} />
       )}
       {wide && !railed && (
         <div className="tp-edge" role="separator" aria-orientation="vertical" aria-label={table ? "Resize the tree column" : "Resize the tree"}
