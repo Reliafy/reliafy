@@ -27,8 +27,11 @@ def workspace_changes_summary(days: int | None = None, since: str | None = None,
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
 
 
-def changes_payload(session, ctx: AccessCtx, days: int | None = None, since: str | None = None) -> dict:
-    """What changed over the period (also Home's summary); raises PeriodError for a bad one."""
+def changes_payload(session, ctx: AccessCtx, days: int | None = None, since: str | None = None,
+                    rcm_all=None) -> dict:
+    """What changed over the period (also Home's summary, which passes the RCM it has
+    already read as ``rcm_all``); raises PeriodError for a bad one."""
     period = workspace_changes.resolve_period(session, ctx.uid, since=since, days=days,
                                               tz=time_zones.zone(ctx.time_zone))
-    return workspace_changes.summarize(session, ctx.list_owners, ctx.uid, period, user=ctx.user)
+    return workspace_changes.summarize(session, ctx.list_owners, ctx.uid, period, user=ctx.user,
+                                       rcm_all=rcm_all)

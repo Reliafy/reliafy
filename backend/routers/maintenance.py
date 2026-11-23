@@ -600,12 +600,14 @@ def workspace_rcm(within: str | None = None, rollup_only: bool = False, session=
     return _rcm_read(session, ctx, m.rcm_all, within or None, m=m)
 
 
-def rcm_rollup(session, ctx: AccessCtx, m: Maintenance, within: str | None = None) -> dict:
+def rcm_rollup(session, ctx: AccessCtx, m: Maintenance, within: str | None = None, rcm=None) -> dict:
     """The whole RCM rollup alone (Home's counts, also its summary): every decision's
-    evidence check, without every position's worksheet."""
+    evidence check, without every position's worksheet. rcm: m.rcm_all(within) when
+    the caller has already read it."""
     from backend.maintenance import rcm_graph
 
-    return rcm_graph.resolve(session, m.rcm_all(within), ctx.read_owners, ctx.hidden, m=m, rates=False)["rollup"]
+    rcm = rcm if rcm is not None else m.rcm_all(within)
+    return rcm_graph.resolve(session, rcm, ctx.read_owners, ctx.hidden, m=m, rates=False)["rollup"]
 
 
 @router.get("/positions/{position_id}/rcm")

@@ -81,6 +81,8 @@ def test_each_part_is_what_its_own_endpoint_answers(client):
     out = r.json()
     assert out["errors"] == {}
     assert out["maintenance"] is True
+    # What each part took, for the network panel.
+    assert "changes;dur=" in r.headers["server-timing"] and "rcm;dur=" in r.headers["server-timing"]
     for name, res in singles.items():
         assert res.status_code == 200, (name, res.text)
     for name in ENDPOINTS:
@@ -121,3 +123,43 @@ def test_a_team_workspace_reads_the_teams_lists(client):
     # Not a member: refused, as every list endpoint refuses it.
     r = client.get("/api/home/summary", headers={"X-Workspace-Id": "team-nobody"})
     assert r.status_code == 403
+
+
+def test_what_changed_reads_the_rcm_once_and_says_the_same(client, monkeypatch):
+    """The summary reads the RCM once for its counts and What changed: the evidence rows
+    are the ones /api/changes finds reading the RCM itself."""
+    from datetime import datetime, timezone
+
+    from backend import db as db_mod
+    from backend.maintenance.service import Maintenance
+    from backend.routers import maintenance as maintenance_router
+    from backend.services import workspace_changes as wc
+
+    db = db_mod._db
+    old = datetime.now(timezone.utc) - timedelta(days=90)
+    weibull = {"kind": "distribution", "distribution_id": "weibull", "distribution": "Weibull",
+               "params": [{"name": "alpha", "value": 1000.0}, {"name": "beta", "value": 2.0}], "n": 20,
+               "unit": "Hours"}
+    wear_out = {**weibull, "randomness": {"verdict": "wear_out", "beta": 3.1, "beta_ci": [2.2, 4.4]}}
+    random_ = {**weibull, "randomness": {"verdict": "random", "beta": 1.1, "beta_ci": [0.7, 1.6]}}
+    db.models.insert_one({"_id": "seal-model", "id": "seal-model", "name": "Seal", "owner_id": ORG,
+                          "created_at": old, "updated_at": old, "results": wear_out})
+    m = Maintenance(maintenance_router._store, ORG, ORG)
+    pid = m.create_position("Pump")["id"]
+    ff = m.add_functional_failure(m.add_function(pid, "Pump water")["id"], "No flow")
+    mode = m.add_failure_mode(pid, "Seal leak", functional_failure_id=ff["id"])
+    m.decide_failure_mode(mode["id"], "operational", {"outcome": "rtf", "rtf_basis": "random",
+                                                       "evidence": {"type": "model", "id": "seal-model"}})
+    wc.record_refit(db, "seal-model", ORG, random_, wear_out,
+                    now=datetime.now(timezone.utc) - timedelta(days=4))
+
+    calls = []
+    real = Maintenance.rcm_all
+    monkeypatch.setattr(Maintenance, "rcm_all", lambda self, *a, **k: calls.append(1) or real(self, *a, **k))
+    out = client.get("/api/home/summary").json()
+    assert out["errors"] == {}
+    assert len(calls) == 1, "the RCM is read once"
+    alone = client.get("/api/changes").json()
+    assert [r["mode"] for r in out["sections"]["changes"]["rcm_evidence"]] == ["Seal leak"]
+    assert _same_clock(out["sections"]["changes"]) == _same_clock(alone)
+    assert out["sections"]["rcm_rollup"] == client.get("/api/maintenance/rcm?rollup_only=true").json()["rollup"]
