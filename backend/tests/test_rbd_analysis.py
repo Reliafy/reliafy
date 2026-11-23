@@ -474,6 +474,44 @@ def test_validate_flags_dangling_node():
     assert any("B" in e for e in v["errors"])
 
 
+@pytest.mark.parametrize("repairable", [False, True])
+def test_unwired_blocks_fail_the_check_and_calculate_in_the_same_words(repairable):
+    """Four of five blocks with no wires: the builder's check isn't "valid" (it was, and only
+    Calculate refused), and both name every unwired block."""
+    labels = ["Control", "Pump", "Motor", "Priming system", "Skid frame"]
+    make = (lambda i, lb: _repairable_component(i, lb, 1000, 1.5, 1.0)) if repairable else (
+        lambda i, lb: _component(i, lb, "weibull", [("alpha", 1000), ("beta", 1.5)]))
+    graph = {"nodes": _io_nodes() + [make(f"c{i}", lb) for i, lb in enumerate(labels)],
+             "edges": [_edge("input", "c0"), _edge("c0", "output"), _edge("c0", "c3")],
+             "repairable": repairable}
+    v = validate_graph(graph)
+    assert not v["valid"] and not v["can_calculate"]
+    [msg] = [e for e in v["errors"] if "not wired between" in e]
+    assert msg.startswith("4 blocks are not wired between the input and the output")
+    assert "Pump, Motor and Skid frame (not wired in at all)" in msg
+    assert "Priming system (it doesn't lead on to the output)" in msg
+    assert not any("don't lead anywhere" in e for e in v["errors"])  # said once, not twice
+    with pytest.raises(AnalysisError) as err:
+        ra.analyze_availability(graph, n_simulations=10) if repairable else analyze(graph)
+    assert str(err.value) == msg
+    # Wired in: valid again.
+    graph["edges"] = [_edge("input", f"c{i}") for i in range(5)] + [_edge(f"c{i}", "output") for i in range(5)]
+    assert validate_graph(graph)["valid"]
+
+
+def test_structure_that_never_fails_needs_no_repair_time():
+    """A "Base frame" with no repair time blocks Calculate on a repairable diagram, and the message
+    says how to leave it out; marked Never fails (state working) the diagram calculates."""
+    frame = _component("f", "Base frame", "weibull", [("alpha", 1000), ("beta", 1.5)])
+    graph = {"nodes": _io_nodes() + [_repairable_component("p", "Pump", 1000, 1.5, 1.0), frame],
+             "edges": [_edge("input", "p"), _edge("p", "f"), _edge("f", "output")], "repairable": True}
+    v = validate_graph(graph)
+    assert not v["valid"] and any("Base frame" in e and "Never fails" in e for e in v["errors"]), v["errors"]
+    frame["data"] = {"label": "Base frame", "model": None, "state": "working"}
+    v = validate_graph(graph)
+    assert v["valid"] and v["can_calculate"], v["errors"]
+
+
 def test_validate_cold_standby_is_analytic():
     graph = {
         "nodes": _io_nodes()

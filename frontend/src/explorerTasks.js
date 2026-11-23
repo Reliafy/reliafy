@@ -434,15 +434,16 @@ export function rankPackages(pkgs, tasks, display) {
   return rows.sort((a, b) => a.rank - b.rank || String(a.pkg.name).localeCompare(String(b.pkg.name), "en", { numeric: true }));
 }
 // A level's Forecast…: everything below this point, in the table area. A position on an asset:
-// its work, failures, costs and spares for the year. A place on an asset, and a design's rows: the
-// spares for the year alone (work and failures are forecast by position, and a design has no
-// due dates; its spares are the items built from it, or a planned fleet).
+// its work, failures, costs and spares. A place on an asset, and a design's rows: the spares alone
+// (work and failures are forecast by position, and a design has no due dates; its spares are the
+// items built from it, or a planned fleet). One name on every row: there is no separate
+// "Spares for the year" menu item (it lives inside the forecast details).
 export function forecastItem(r, { design = false } = {}) {
   if (r?.type !== "pos" && r?.type !== "loc") return [];
   if (r.type === "pos" && !design) {
     return [{ id: TASK_FORECAST, label: "Forecast…", title: "The work, failures, costs and spares to come at this level and everything inside it, by month" }];
   }
-  return [{ id: TASK_FORECAST, label: "Spares for the year…", title: design
+  return [{ id: TASK_FORECAST, label: "Forecast…", title: design
     ? "The parts the items built from this design will use: what to hold, order and buy"
     : "What failures and tasks here and inside it will use: what to hold, order and buy" }];
 }

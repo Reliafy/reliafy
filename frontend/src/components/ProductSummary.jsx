@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { generatePositionRbd, getPartStructure, getProduct, listProductItems, listRbds } from "../api.js";
 import Section from "./ui/Section.jsx";
+import { useConfirm } from "./ConfirmProvider.jsx";
 import RedundancyAsk from "./RedundancyAsk.jsx";
 import { arrangementsFrom, askProblem } from "../redundancyAsk.js";
 import { fmtDate } from "./MaintenanceParts.jsx";
@@ -136,6 +137,7 @@ function BillOfMaterials({ product }) {
 // after it), Make an RBD from this structure, and a reliability prediction.
 function Analyses({ product }) {
   const navigate = useNavigate();
+  const confirm = useConfirm();
   const [rbds, setRbds] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -143,13 +145,37 @@ function Analyses({ product }) {
   const [sets, setSets] = useState(null);
   const [answers, setAnswers] = useState({});
   const [tried, setTried] = useState(false);
+  // The RBD made from this structure before ({rbd_id, name, updated_at, ask}): it's never
+  // overwritten unasked. `mode`: what was chosen for it (copy or rebuild), carried through the ask.
+  const [found, setFound] = useState(null);
+  const [mode, setMode] = useState(null);
   useEffect(() => {
     listRbds().then((d) => setRbds(productRbds(product, d.rbds || []))).catch((e) => setError(e.message));
   }, [product]);
   const fail = (e) => { setError(`The RBD wasn't made: ${e.message}`); setBusy(false); };
-  const make = (arrangements = []) => generatePositionRbd(product.id, arrangements.length ? { arrangements } : {})
-    .then((r) => navigate(`/systems/b/${r.rbd_id}`)).catch(fail);
+  const make = (arrangements = [], existing = mode) => generatePositionRbd(product.id, {
+    ...(arrangements.length ? { arrangements } : {}), ...(existing ? { existing } : {}),
+  }).then((r) => navigate(`/systems/b/${r.rbd_id}`)).catch(fail);
   const unanswered = sets ? askProblem(sets, answers) : null;
+  const reset = () => { setSets(null); setAnswers({}); setTried(false); setFound(null); setMode(null); };
+  // Copy or rebuild the one made before: the look-alikes are asked about first, as for a new one.
+  const go = (existing) => {
+    const ask = found?.ask || [];
+    setFound(null); setMode(existing);
+    if (ask.length) { setSets(ask); return; }
+    setBusy(true);
+    make([], existing);
+  };
+  const rebuild = async () => {
+    const ok = await confirm({
+      title: "Rebuild the RBD from the structure?",
+      body: `“${found.name}” is drawn again from ${product.name}'s structure. Everything changed on it since it was `
+        + "made is lost: repairable or not, repair times, costs, models set on blocks, wiring and layout. "
+        + "To keep them, make a new copy instead.",
+      confirmLabel: "Rebuild and replace my edits",
+    });
+    if (ok) go("rebuild");
+  };
   const derive = () => {
     setError(null);
     if (sets?.length) {
@@ -161,7 +187,10 @@ function Analyses({ product }) {
     }
     setBusy(true);
     generatePositionRbd(product.id, { check: true }).then((r) => {
-      if (r.ask?.length) { setSets(r.ask); setBusy(false); return; }
+      setBusy(false);
+      if (r.existing) { setFound({ ...r.existing, ask: r.ask || [] }); return; }
+      if (r.ask?.length) { setSets(r.ask); return; }
+      setBusy(true);
       make();
     }).catch(fail);
   };
@@ -178,15 +207,31 @@ function Analyses({ product }) {
           ))}
         </ul>
       )}
+      {found && (
+        <div className="pp-existing" role="group" aria-label="An RBD from this structure exists">
+          <p>An RBD was made from this structure before: <Link to={`/systems/b/${found.rbd_id}`}>{found.name}</Link>
+            {found.updated_at && <span className="lib-date"> · updated {fmtDate(String(found.updated_at).slice(0, 10))}</span>}.
+            {" "}Open it to keep your edits, or make a new copy beside it.</p>
+          <div className="maint-row">
+            <button type="button" className="sm" onClick={() => navigate(`/systems/b/${found.rbd_id}`)}>
+              Open the existing RBD</button>
+            <button type="button" className="secondary sm" onClick={() => go("copy")}>Make a new copy</button>
+            <button type="button" className="secondary danger sm" onClick={rebuild}>Rebuild it (replaces your edits)…</button>
+            <button type="button" className="ghost sm" onClick={reset}>Cancel</button>
+          </div>
+        </div>
+      )}
       {sets?.length > 0 && (
         <RedundancyAsk sets={sets} answers={answers} onChange={setAnswers} disabled={busy} tried={tried} />
       )}
       <div className="maint-row">
-        <button type="button" className="secondary sm" onClick={derive} disabled={busy}>
-          {busy ? "Making…" : sets?.length ? "Make the RBD" : "Make an RBD from this structure"}</button>
+        {!found && (
+          <button type="button" className="secondary sm" onClick={derive} disabled={busy}>
+            {busy ? "Making…" : !sets?.length ? "Make an RBD from this structure"
+              : mode === "copy" ? "Make the copy" : mode === "rebuild" ? "Rebuild the RBD" : "Make the RBD"}</button>
+        )}
         {sets?.length > 0 && (
-          <button type="button" className="secondary sm" disabled={busy}
-                  onClick={() => { setSets(null); setAnswers({}); setTried(false); }}>Cancel</button>
+          <button type="button" className="secondary sm" disabled={busy} onClick={reset}>Cancel</button>
         )}
         <button type="button" className="secondary sm" onClick={() => navigate(newPredictionPath({ product: product.id }))}>
           New prediction from its parts list
@@ -195,7 +240,7 @@ function Analyses({ product }) {
       <p className="td-quiet">Making an RBD turns each part directly under {product.name} into a block, wired by its connections
         and redundancy sets. Each block takes its position's model (or its class's, or its parts-count rate; a part made of
         others becomes a sub-system); only one with none of these gets a placeholder, which the RBD says. Parts that look
-        alike are asked about first. A prediction is
+        alike are asked about first. Making it again never changes the one you have unless you choose to rebuild it. A prediction is
         a parts count from handbook base rates, for a design with no failure data yet.</p>
     </Section>
   );

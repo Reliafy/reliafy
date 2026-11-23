@@ -13,6 +13,8 @@ const SIGNED_IN = [
   // Libraries: making one (reads are public, so only the writes need a sign-in).
   ["POST", "/api/libraries"],
   ["POST", "/api/rbds/standby-route"], // a standby block's route and words (#363)
+  ["GET", "/api/home/summary"], // everything Home shows, in one request
+  ["GET", "/api/me/bootstrap"], // the app frame's settings, in one request
   ["GET", "/api/extensions"], // optional extensions' pages (an empty list without any)
   ["GET", "/api/search?q=pump"], // the one search for everything (the header's search, ⌘K)
   ["GET", "/api/datasets/sample-ds-pumps/csv"], // a dataset's Download CSV

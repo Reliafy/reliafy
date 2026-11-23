@@ -94,7 +94,8 @@ def test_either_pump_set_will_do_is_parallel(m, db):
     # The answer is on the tree: a redundancy set, used by every rebuild, and not asked again.
     [g] = m.groups_of(ids["Pump set 1"])
     assert (g["mode"], g["k"], g["n"]) == ("active", 1, 2)
-    assert rbd_derive.save(m, db, ids["top"], OWNERS, check=True) == {"ask": []}
+    again = rbd_derive.save(m, db, ids["top"], OWNERS, check=True)
+    assert again["ask"] == [] and again["existing"]["rbd_id"] == out["rbd_id"]
 
 
 def test_duty_and_standby_is_one_standby_block(m, db):

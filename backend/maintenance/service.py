@@ -6607,7 +6607,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return {"functions": functions, "unassigned": unassigned, "analysed": self._analysed(index, pid),
                 "fmea": fmea.position_summary(views)}
 
-    def rcm_all(self, within: str | None = None, evidence_ids=None) -> dict:
+    def rcm_all(self, within: str | None = None, evidence_ids=None, shared: bool = False) -> dict:
         """The RCM of every live position that has any (functions or failure
         modes), for the asset tree's RCM tab: each position's functions ›
         functional failures › failure modes and its unassigned modes, read in
@@ -6623,6 +6623,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         evidence_ids (a set of model ids): only the positions with a failure mode whose decision
         links one of them, each read exactly as without it (what
         "What changed" needs); the parents and names then cover just those."""
+        # The graph alone: kept until it changes (read_cache.py).
+        from backend.maintenance.read_cache import cached
+
+        # shared: the kept read itself, not a copy, for a caller that only reads it
+        # (the rollup, What changed): never change what it returns.
+        ids = frozenset(evidence_ids) if evidence_ids is not None else None
+        return cached(self.s, ("rcm_all", self.org, within, ids), lambda: self._rcm_all(within, evidence_ids),
+                      frozen=shared)
+
+    def _rcm_all(self, within: str | None, evidence_ids) -> dict:
         keep = self.positions_inside(within) if within is not None else None
         index = self._rcm_index()
         out = []
