@@ -22,9 +22,10 @@ phase by phase.
 
 Each mission is flown on an RBD of its own, so it belongs to the **position**
 it was added on. Open **Assets → Explorer** (or a product's page) and choose
-the **Models** tab. It's one tree: under each position are its models, and
-under each model the missions flown on it, then each mission's phases, then
-each phase's covariates and node status rules:
+the **Missions** tab: every mission here and below, each under its position,
+with its start, calendar and two answers (the Missions guide).
+The **Models** tab shows them too, under the model each is flown on, then
+each mission's phases, then each phase's covariates and node status rules:
 
 - **Position** › **model** (an RBD, or a life or covariate model) ›
   **mission** › **phase** › **covariates** and **node status rules**.

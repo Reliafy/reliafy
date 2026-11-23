@@ -144,6 +144,8 @@ def _rbd_brief(rbd, ctx: AccessCtx) -> dict:
 
     return {"id": rbd.id, "name": rbd.name, "unit": (rbd.graph or {}).get("unit") or "",
             "repairable": bool((rbd.graph or {}).get("repairable")),
+            # A mission's own RBD (one built for it on its position): it takes a start, calendar and starting state.
+            "mission_rbd": bool((rbd.graph or {}).get("mission_of")),
             "read_only": not access_service.can_write(ctx, rbd.owner_id),
             "updated_at": rbd.updated_at.isoformat() if rbd.updated_at else None}
 

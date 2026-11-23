@@ -314,6 +314,8 @@ def answers(db, owner_id, graph: dict, mission: dict, *, m=None, position_id: Op
         fails = expected_failures(_twin(merged, merged_covs), resolve_model, total, start_state, simulate)
     clock = clock_for(m, position_id, setup)
     span = calendar_span(total, unit, clock, setup["start"], today or date.today().isoformat())
+    if not (setup.get("calendar") or {}).get("linked"):
+        span["clock"]["text"] = clock.plan  # "its own duty: 8 h a day, 5 days a week"
     return {
         "mission": {"id": mission["id"], "name": mission["name"]},
         "unit": unit, "length": total, "phases": len(got["phases"]), "setup": setup, "calendar": span,
