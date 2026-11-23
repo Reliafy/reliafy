@@ -15,6 +15,7 @@
 import { counted } from "./menuStandard.js";
 import { cellText, costWhere, fromRcm, kindText, money, SOURCE_WORDS } from "./lsaTab.js";
 import { sig } from "./positionForecast.js";
+import { formatDate } from "./dates.js";
 import { packageExtras, taskExtras } from "./taskExtras.js";
 
 export const TASK_TYPE = "mtask";
@@ -564,8 +565,8 @@ export function packageNext(p) {
   return { ...BLANK_NEXT, why: p?.status === "paused" ? "Paused" : p?.status === "retired" ? "Retired" : "No visit to come" };
 }
 
-const DAY = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
-export const dayWords = (iso) => (iso ? DAY.format(new Date(`${iso.slice(0, 10)}T00:00:00Z`)) : "");
+// "5 Dec 2026", the one date format (dates.js): a day as written, whatever the browser's language.
+export const dayWords = (iso) => (iso ? formatDate(String(iso).slice(0, 10)) : "");
 const UNIT_SHORT = { hours: "h", hour: "h", h: "h" };
 // "at 1,250 h" (a reading's unit as the counter says it).
 export const readingWords = (n) => (n?.at_reading == null ? ""
