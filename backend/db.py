@@ -127,6 +127,9 @@ def init_db() -> None:
     db.tracked_items.create_index([("owner_id", 1), ("model_id", 1)])
     db.tracked_items.create_index([("model_id", 1), ("created_at", -1)])
     db.fleets.create_index([("owner_id", 1), ("created_at", -1)])
+    # Their lists read by owner, newest first (Home and Forecasts list both).
+    db.alt_models.create_index([("owner_id", 1), ("created_at", -1)])
+    db.recurrent_models.create_index([("owner_id", 1), ("created_at", -1)])
     db.tracked_fleets.create_index([("owner_id", 1), ("created_at", -1)])
     db.tracked_items.create_index([("fleet_id", 1)])
     db.teams.create_index([("members.uid", 1)])

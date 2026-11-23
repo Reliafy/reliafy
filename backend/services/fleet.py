@@ -26,8 +26,13 @@ model — never stored — so it always reflects the model's current fit.
 
 from __future__ import annotations
 
+import copy
+import hashlib
+import json
 import math
+import threading
 import uuid
+from collections import OrderedDict
 
 import numpy as np
 import pandas as pd
@@ -503,6 +508,68 @@ def _compute(db, fleet: Fleet, owners, *, item_periods: bool = False, spares_opt
     results = model.results or {}
     if results.get("kind") == "regression":
         return _compute_covariate(db, fleet, owners, model, item_periods, spares_opts)
+    # The rest is a pure function of these inputs (seeded draws, no clock, no reads), so a
+    # forecast already worked out for exactly them is handed back, not simulated again.
+    inputs = _LifeInputs(model.id, model.name, {k: results.get(k) for k in _LIFE_RESULT_KEYS},
+                         fleet.settings or {}, fleet.items or [], item_periods, spares_opts)
+    return _LIFE_MEMO.get_or_compute(inputs.key(), lambda: _compute_life(inputs))
+
+
+# The saved results a plain-life forecast reads; nothing else of the model is used.
+_LIFE_RESULT_KEYS = ("params", "distribution_id", "extras", "unit")
+
+
+class _LifeInputs:
+    """Everything a plain-life forecast depends on."""
+
+    def __init__(self, model_id, model_name, results, settings, items, item_periods, spares_opts):
+        self.model_id, self.model_name, self.results = model_id, model_name, results
+        self.settings, self.items = settings, items
+        self.item_periods, self.spares_opts = item_periods, spares_opts
+
+    def key(self) -> str:
+        raw = json.dumps([self.model_id, self.model_name, self.results, self.settings, self.items,
+                          bool(self.item_periods), self.spares_opts], sort_keys=True, default=str)
+        return hashlib.sha256(raw.encode()).hexdigest()
+
+
+class _Memo:
+    """A small, thread-safe, least-recently-used memo of worked-out forecasts. Each caller
+    gets its own copy, so changing a result never changes the memo."""
+
+    def __init__(self, size: int):
+        self._size = size
+        self._rows: OrderedDict = OrderedDict()
+        self._lock = threading.Lock()
+
+    def get_or_compute(self, key: str, work, same=None):
+        """``same``: an object the answer was worked out from (a live fit), held with the
+        entry; a hit counts only for that very object."""
+        with self._lock:
+            hit = self._rows.get(key)
+            if hit is not None and hit[0] is same:
+                self._rows.move_to_end(key)
+                return copy.deepcopy(hit[1])
+        out = work()
+        with self._lock:
+            self._rows[key] = (same, copy.deepcopy(out))
+            self._rows.move_to_end(key)
+            while len(self._rows) > self._size:
+                self._rows.popitem(last=False)
+        return out
+
+    def clear(self) -> None:
+        with self._lock:
+            self._rows.clear()
+
+
+_LIFE_MEMO = _Memo(256)
+
+
+def _compute_life(inputs: _LifeInputs) -> dict:
+    """A plain-life fleet's forecast (renewals or first failures) from its inputs alone."""
+    results = inputs.results
+    item_periods, spares_opts = inputs.item_periods, inputs.spares_opts
     if not results.get("params"):
         return {"status": "stale",
                 "reason": "The linked model can't be evaluated as a plain distribution."}
@@ -513,7 +580,7 @@ def _compute(db, fleet: Fleet, owners, *, item_periods: bool = False, spares_opt
     except StrategyError as exc:
         return {"status": "stale", "reason": client_message(exc)}
 
-    settings = fleet.settings or {}
+    settings = inputs.settings
     periods = int(settings.get("periods", 12))
     default_rate = float(settings.get("default_rate", 0) or 0)
     method = settings.get("method", "renewals")
@@ -524,15 +591,15 @@ def _compute(db, fleet: Fleet, owners, *, item_periods: bool = False, spares_opt
                 "reason": "The linked model is a limited-failure-population fit - "
                           "renewals forecasting can't sample replacement lives from it. "
                           "Switch this forecast to the 'first failures' method."}
-    items = fleet.items or []
+    items = inputs.items
 
     base = {
         "status": "ok",
         "method": method,
         "periods": periods,
         "period_label": settings.get("period_label", "months"),
-        "model_name": model.name,
-        "model_id": model.id,
+        "model_name": inputs.model_name,
+        "model_id": inputs.model_id,
         "model_kind": "life",
         "unit": results.get("unit", ""),
         "n_items": len(items),
@@ -1305,11 +1372,24 @@ def _compute_recurrent(db, fleet: Fleet, owners, spares_opts=None) -> dict:
     family = (doc.results or {}).get("family", "nhpp")
     if family == "regression":
         return {"status": "stale", "reason": REPAIRABLE_FAMILIES}
+    # The rest reads only these, and the live fit (the same object until it is fitted again):
+    # a forecast already worked out for exactly them is handed back.
+    raw = json.dumps([doc.id, doc.name, family, ((doc.results or {}).get("model") or {}).get("name"),
+                      (doc.results or {}).get("unit", ""), fleet.settings or {}, fleet.items or [], spares_opts],
+                     sort_keys=True, default=str)
+    return _REPAIRABLE_MEMO.get_or_compute(
+        f"{id(live)}:{hashlib.sha256(raw.encode()).hexdigest()}",
+        lambda: _compute_repairable(doc, live, family, fleet.settings or {}, fleet.items or [], spares_opts),
+        same=live)
 
-    settings = fleet.settings or {}
+
+_REPAIRABLE_MEMO = _Memo(64)
+
+
+def _compute_repairable(doc, live, family: str, settings: dict, items: list, spares_opts) -> dict:
+    """A repairable fleet's forecast from its model's live fit and its own settings and items."""
     periods = int(settings.get("periods", 12))
     default_rate = float(settings.get("default_rate", 0) or 0)
-    items = fleet.items or []
     base = {
         "status": "ok",
         "method": "repairable",
