@@ -49,3 +49,11 @@
 .ft-gap { color: var(--warning-text); }
 .ft-gaps { margin-top: var(--space-4); }
 .ft-gaps ul { margin: 0; padding-left: var(--space-5); font-size: var(--fs-13); line-height: var(--lh-13); }
+/* Opened from the Explorer: lines by owner (forecast plan 5.4). A failure mode's follow-on and
+   corrective lines sit indented under it. */
+.ft-lines .ft-sub th[scope="row"] { padding-left: var(--space-6); }
+.ft-lines .ft-sub .ft-owner { font-weight: 400; color: var(--text-secondary); }
+.ft-lines .ft-group th, .ft-lines .ft-group td { border-top: 1px solid var(--border); }
+.ft-lines tfoot th, .ft-lines tfoot td { font-weight: 600; }
+.ft-spares { white-space: normal; min-width: 10em; font-size: var(--fs-13); line-height: var(--lh-13); }
+.ft-assumed { margin-top: var(--space-1); }

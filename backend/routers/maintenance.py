@@ -3126,6 +3126,25 @@ def package_forecast_start(package_id: str, root: str | None = None, session=Dep
     return _run(package_start, m, pm.fetcher(session, ctx.read_owners, ctx.hidden), package_id, root or None)
 
 
+@router.get("/{kind}/{node_id}/forecast-lines")
+def node_forecast_lines(kind: str, node_id: str, root: str | None = None, months: int = 12,
+                        session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                        m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The forecast by owner for an Explorer node (Open in › in the quick forecast tool): a position
+    and everything below it, a task or a work package, from today for months (12, 24, 36 or 60).
+    Each task's line (certain), each failure mode's corrective and follow-on lines (worked out, with
+    90% two-sided ranges), totals and what's not counted. Also over MCP and the CLI: maintenance
+    get.forecast with months."""
+    from backend.maintenance import forecast_lines
+    from backend.maintenance import position_models as pm
+
+    of = {"positions": "position", "tasks": "task", "packages": "package"}.get(kind)
+    if of is None:
+        raise HTTPException(status_code=404, detail="Not found.")
+    fetch = pm.fetcher(session, ctx.read_owners, ctx.hidden)
+    return _run(forecast_lines.node_forecast, m, fetch, of, node_id, root or None, months)
+
+
 @router.get("/positions/{position_id}/forecast")
 def position_forecast(position_id: str, root: str | None = None, period: str = "month", periods: int = 12,
                       end: str | None = None, strict: bool = False,

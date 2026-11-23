@@ -35,31 +35,6 @@ const CALENDAR = new Set(["day", "days", "week", "weeks", "month", "months", "ye
 export const isHours = (unit) => HOURS.has(String(unit || "").trim().toLowerCase());
 export const isCalendar = (unit) => CALENDAR.has(String(unit || "").trim().toLowerCase());
 
-// The form filled in from an Explorer node's prefill (GET …/forecast-start).
-export function formFromStart(start, form = BLANK) {
-  if (!start) return form;
-  const ages = start.ages || [];
-  const out = { ...form };
-  if (start.hours_per_day != null) Object.assign(out, { runPer: "day", runHours: String(start.hours_per_day) });
-  if (start.model) {
-    out.part = true;
-    if (ages.length) out.ages = ages.map((a) => String(Math.round(a * 1000) / 1000)).join(", ");
-    if (start.failure_cost != null) out.costIfFails = String(start.failure_cost);
-  }
-  out.units = ages.length > 1 ? String(ages.length) : start.units ? String(start.units) : out.units;
-  if (start.task) {
-    const t = start.task;
-    out.work = {
-      ...BLANK_WORK, name: t.name || "", every: t.interval != null ? String(t.interval) : "",
-      unit: WORK_UNITS.includes(String(t.unit || "").toLowerCase()) ? String(t.unit).toLowerCase() : isHours(t.unit) ? "hours" : "days",
-      effect: start.replace_at != null ? "replaces" : "none",
-      hoursEach: start.planned_hours != null ? String(start.planned_hours) : "",
-      costEach: start.planned_cost != null ? String(start.planned_cost) : "",
-    };
-  }
-  return out;
-}
-
 // What's missing before an answer can be worked out (null: ready), said under the sentence.
 export function missing(f, model, unit) {
   if (!f.work && !f.part) return "Add work on a schedule, or a part that fails.";

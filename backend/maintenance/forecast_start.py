@@ -1,5 +1,5 @@
-"""What the quick forecast tool (Decisions › Forecasts: Spares, Hours and Cost forecast) and Optimal
-replacement take from a node in the Explorer (Derryn, 23 Nov 2026: "Open in ›"), so they open filled
+"""What Optimal replacement takes from a node (the quick forecast tool shows a node's forecast by owner
+instead: forecast_lines.py). From a node in the Explorer (Derryn, 23 Nov 2026: "Open in ›"), so they open filled
 in: a position and everything below it, one task, or a work package. Only what's recorded:
 
 - the model: the non-repairable model in use on the positions there (the one most of them use);

@@ -2425,6 +2425,14 @@ export function sparesScratchForecast(body) {
 export function quickForecast(body) {
   return postJson("/api/fleet/quick-forecast", body);
 }
+// The forecast by owner for an Explorer node (Open in › in the quick forecast tool): `kind`
+// position (and everything below it), task or package; `root` the asset opened; months 12–60.
+export function getForecastLines({ kind, id, root = null, months = 12 }) {
+  const base = { position: "positions", task: "tasks", package: "packages" }[kind];
+  const q = new URLSearchParams({ months: String(months) });
+  if (root) q.set("root", root);
+  return request(`/api/maintenance/${base}/${encodeURIComponent(id)}/forecast-lines?${q}`);
+}
 // What the quick forecast tool and Optimal replacement take from an Explorer node (Open in ›):
 // `kind` position (and everything below it), task or package; `root` the asset opened.
 export function getForecastStart({ kind, id, root = null }) {

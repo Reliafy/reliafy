@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { BLANK, BLANK_WORK, answerOf, boundText, formFromStart, lineCells, missing, requestOf, seriesOf } from "./quickForecast.js";
+import { BLANK, BLANK_WORK, answerOf, boundText, lineCells, missing, requestOf, seriesOf } from "./quickForecast.js";
 
 const WEIBULL = { distribution_id: "weibull", params: [{ name: "alpha", value: 14000 }, { name: "beta", value: 2.2 }], name: "Engine" };
 
@@ -36,18 +36,6 @@ test("a part with a list of ages counts the units; replaces only with a part", (
   assert.equal(body.work.effect, "replaces");
   const noPart = requestOf({ ...f, part: false }, WEIBULL, "hours");
   assert.equal(noPart.work.effect, "none");
-});
-
-test("filled in from the Explorer: duty, ages, the task's needs", () => {
-  const f = formFromStart({ hours_per_day: 20, model: { id: "m" }, ages: [9000], failure_cost: 180000,
-    task: { name: "Replace engine", interval: 9000, unit: "hours" }, replace_at: 9000, planned_cost: 50000, planned_hours: 40 });
-  assert.equal(f.runPer, "day");
-  assert.equal(f.runHours, "20");
-  assert.equal(f.part, true);
-  assert.equal(f.ages, "9000");
-  assert.equal(f.costIfFails, "180000");
-  assert.equal(f.work.effect, "replaces");
-  assert.equal(f.work.costEach, "50000");
 });
 
 const OUT = {
