@@ -43,7 +43,9 @@ function LastDoneReading({ name, lastDone, unit, estimate, mode, value, disabled
 // task: the item's own), with the last-done reading on it. Nothing shows for a
 // task on the calendar. `onChange(body, error)`: the task update's
 // {point_id, last_done_reading?} (null: no change), and what's missing.
-export function TaskMeasurementField({ taskId, unit, disabled = false, onChange }) {
+// `compact` (the RCM task panel, Derryn, 23 Nov 2026: "no large empty bordered box"): one quiet line,
+// "Counts: <what> · Change…", the picker only once Change… is pressed; no box round it.
+export function TaskMeasurementField({ taskId, unit, disabled = false, onChange, compact = false }) {
   const [view, setView] = useState(null);
   const [failed, setFailed] = useState(null);
   const [editing, setEditing] = useState(false);
@@ -83,19 +85,25 @@ export function TaskMeasurementField({ taskId, unit, disabled = false, onChange 
     || (pick === "" ? view.choices.find((c) => c.relation === "here" && c.on?.id === view.subject?.id) : null);
   const norm = (u) => String(u || "").trim().toLowerCase().replace(/s$/, "");
   const unitChanged = !!unit && norm(unit) !== norm(view.unit);
+  const Box = compact ? "div" : "fieldset";
   return (
-    <fieldset className="tm-field">
-      <legend>Measurement</legend>
-      <p className="tm-counts">{lines.counts}{relation && <span className="tm-help"> ({relation})</span>}</p>
-      {lines.reads && <p className="tm-help">{lines.reads}</p>}
-      {lines.lastDone && <p className="tm-help">{lines.lastDone}</p>}
+    <Box className={compact ? "tm-field tm-compact" : "tm-field"} {...(compact ? { role: "group", "aria-label": "Measurement" } : {})}>
+      {!compact && <legend>Measurement</legend>}
+      <p className="tm-counts">
+        {compact ? "Counts: " : ""}{lines.counts}{relation && <span className="tm-help"> ({relation})</span>}
+        {compact && !editing && !unitChanged && (
+          <> · <button type="button" className="link tm-change" disabled={disabled} onClick={() => setEditing(true)}>Change…</button></>
+        )}
+      </p>
+      {lines.reads && (!compact || editing) && <p className="tm-help">{lines.reads}</p>}
+      {lines.lastDone && (!compact || editing) && <p className="tm-help">{lines.lastDone}</p>}
       {unitChanged ? (
         <p className="tm-help">Save the new unit first, then pick the measurement in it.</p>
-      ) : !editing ? (
+      ) : !editing ? (compact ? null : (
         <button type="button" className="link tm-change" disabled={disabled} onClick={() => setEditing(true)}>
           Change the measurement…
         </button>
-      ) : (
+      )) : (
         <div className="tm-edit">
           <label className="tm-label">
             <span>Count</span>
@@ -117,7 +125,7 @@ export function TaskMeasurementField({ taskId, unit, disabled = false, onChange 
           </button>
         </div>
       )}
-    </fieldset>
+    </Box>
   );
 }
 

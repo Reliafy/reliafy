@@ -3,7 +3,7 @@
 // method) is a section of its details panel (folded; ?mtask=…&needs=1
 // opens it), saved with the task's Save; the old ?tab=lsa&task= address opens it there. Package the tasks…
 // on a level drafts packages from its tasks, in the table area, and the packages then sit at the
-// meeting point of their tasks. The RCM's Logistics links to What it needs and back. A product's
+// meeting point of their tasks. The RCM's Cost and needs links to What it needs and back. A product's
 // design has What it needs too (no packaging there), and its links stay on the product's page.
 // At 400 px nothing scrolls sideways. Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
@@ -131,10 +131,10 @@ test("a task's LSA and its row on the RCM tab link to each other: Serves → the
   const table = page.getByRole("treegrid", { name: /and their RCM/ });
   const taskRow = table.getByRole("row", { name: new RegExp(`^Task: Look in the basket ${tag}`) });
   await expect(taskRow).toHaveAttribute("aria-selected", "true");
-  // Its details: Logistics, with What it needs back to the task's LSA.
+  // Its details: Cost and needs, with What it needs back to the task's LSA.
   await taskRow.locator(".tp-nm").dblclick();
-  const logistics = page.getByRole("complementary", { name: "Details" }).getByRole("region", { name: "Logistics" });
-  await expect(logistics).toContainText("No labour, tools or method set yet.");
+  const logistics = page.getByRole("complementary", { name: "Details" }).getByRole("region", { name: "Cost and needs" });
+  await expect(logistics.getByRole("button", { name: /^Labour/ })).toBeVisible();
   await logistics.getByRole("link", { name: "What it needs" }).click();
   await expect.poll(() => [query(page).get("tab"), query(page).get("mtask"), query(page).get("needs")]).toEqual(["maintenance", taskId, "1"]);
   await expect(side(page).getByRole("heading", { name: `Look in the basket ${tag}` })).toBeVisible();

@@ -3,7 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { noDutyBasis, dutyHref } from "../explorerOperations.js";
 import { dueCell, nextOf, readingWords } from "../explorerTasks.js";
 import {
-  createSubjectTask, getFailureModeCosts, getMaintenancePosition, getSupportFit, getTaskIntervalBasis, getTaskLsa, linkTaskFailureMode, listTradeRates,
+  createSubjectTask, getFailureModeCosts, getFailureModeIntervalInputs, getStrategyAnalysis, getMaintenancePosition, getSupportFit, getTaskIntervalBasis, getTaskLsa, linkTaskFailureMode, listTradeRates,
   retireMaintenanceTask, setModeResponse, setTradeRate, unlinkTaskFailureMode, updateFailureMode, updateMaintenanceTask,
 } from "../api.js";
 import { today as workspaceToday, useSendOnce } from "./MaintenanceParts.jsx";
@@ -15,11 +15,13 @@ import { formatDate } from "../dates.js";
 import LoadFailed from "./LoadFailed.jsx";
 import Loading from "./ui/Loading.jsx";
 import TaskSchedule from "./TaskSchedule.jsx";
-import Fold from "./ui/Fold.jsx";
+import TaskExtras from "./TaskExtras.jsx";
 import QuantityInput from "./ui/QuantityInput.jsx";
 import { formFromTask, howOftenProblem, previewFor, taskAnchor, taskBody, taskUnitChoices } from "../howOften.js";
 import { costFields, figureText, placeholderFor, RESPONSE_KIND, responseKindOf, responseTrigger, usedText } from "../failureCosts.js";
 import { costWords, labourWords, partWords } from "../taskExtras.js";
+import { basisLine } from "../intervalBasis.js";
+import { triggerBody, triggerState, triggerWhy } from "../taskTrigger.js";
 import { taskKey as rcmTaskKey } from "../explorerRcm.js";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { costWhere, fromRcm, fromText, money, SOURCE_WORDS } from "../lsaTab.js";
@@ -81,6 +83,9 @@ function startFrom(task) {
     ...restorationForm(task),
     ...supportForm(task),
     onReplace: task?.on_replace?.set || "",
+    // What raises it besides (or instead of) its interval: a reading past a limit, an event logged
+    // (taskTrigger.js). A response's trigger is its failure mode's, never changed here.
+    trig: triggerState(task && !responseKindOf(task) ? task : null),
     // A response added here: its failure mode, its labour (hours and trade) and its part.
     respMode: "", hours: "", trade: "", spare: "", spareQty: "1",
     // A corrective response: the cost of the failure itself (the failure mode's own figures).
@@ -151,7 +156,6 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
   // (a sub-item clicked in the tree, ?msec=) opens one.
   const [folds, setFolds] = useState(() => (section ? { [section]: true } : {}));
   const foldRefs = { cost: useRef(null), labour: useRef(null), parts: useRef(null) };
-  const fold = (k) => ({ open: !!folds[k], onToggle: (o) => setFolds((x) => ({ ...x, [k]: o })) });
   const [f, setF] = useState(() => startFrom(null));
   const [rates, setRates] = useState({});
   const [attempt, setAttempt] = useState(0); // Try again after a failed load
@@ -205,11 +209,13 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
   const restoreProblem = !resp && f.outcome === "fixed_interval" && !f.supporting ? restorationProblem(f) : null;
   const supportable = !resp && canSupport(f.outcome);
   const supportIssue = supportable ? supportProblem(f) : null;
-  const howProblem = resp ? null : howOftenProblem(f.how);
+  const eventOnly = !resp && f.trig.mode === "event" && !f.trig.withInterval;
+  const howProblem = resp || eventOnly ? null : howOftenProblem(f.how);
+  const trigProblem = resp ? "" : triggerWhy(f.trig);
   const failProblem = Object.values(f.fail).every(validMoney) ? null : "Enter the failure's figures as numbers, 0 or more.";
   const respProblem = resp && adding ? (!f.respMode ? "Pick the failure mode it answers." : !validMoney(f.hours) ? "Enter the hours, 0 or more." : null) : null;
   const can = ready && !!f.name.trim() && !tooLong(f.name) && !howProblem && validMoney(f.cost) && validMoney(f.visitCost)
-    && Object.values(rates).every(validMoney) && !restoreProblem && !supportIssue && !failProblem && !respProblem;
+    && Object.values(rates).every(validMoney) && !restoreProblem && !supportIssue && !failProblem && !respProblem && !trigProblem;
   const subject = { kind: row.type === "loc" ? "location" : "position", id: row.key, name: row.ref?.name };
 
   // The failure's own figures, when changed (on the failure mode: failure_costs.py).
@@ -236,6 +242,9 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
     }
     const ids = [...f.modes];
     const how = resp ? {} : taskBody(f.how, taskAnchor(task, workspaceToday()));
+    // Its trigger, when changed (a response's is its failure mode's, never changed here).
+    const trigNow = resp ? null : triggerBody(f.trig);
+    const trigChanged = !resp && JSON.stringify(trigNow) !== JSON.stringify(triggerBody(triggerState(task)));
     // What the RCM owns (its kind of task) isn't sent for an RCM task, nor a response's (its trigger says it).
     const fields = { name: f.name.trim(), ...how, ...(rcm || resp ? {} : { outcome: f.outcome || null }) };
     const needed = adding ? {} : needs.body();
@@ -255,6 +264,7 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
     }
     await updateMaintenanceTask(task.id, {
       ...fields, ...needed, ...(rcm || resp ? {} : { source: f.source, reference: f.docRef }),
+      ...(trigChanged ? { trigger: trigNow } : {}),
       ...((task.cost?.typed ?? null) !== num(f.cost) ? { cost: num(f.cost) } : {}),
       ...(!task.package && (task.visit_cost ?? null) !== num(f.visitCost) ? { visit_cost: num(f.visitCost) } : {}),
     });
@@ -420,9 +430,12 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
           <Section title="How often" className="ruled mt-sec"
                    action={onOptimise ? { label: "Optimise…", quiet: true, onClick: onOptimise, ariaLabel: `Optimise how often to do ${task.name}`, disabled: send.busy } : null}>
             <TaskSchedule value={f.how} onChange={setHow} units={units} shutdowns={onPosition} disabled={send.busy}
-                          problem={howProblem} preview={preview} replace={replaceField} />
+                          problem={howProblem} preview={preview} replace={replaceField}
+                          trigger={task ? { task, state: f.trig, set: (trig) => setF((x) => ({ ...x, trig })) } : null} />
+            {trigProblem && f.trig.mode === "event" && <p className="field-error" role="alert">{trigProblem}</p>}
             {task && <DueBasis task={task} positionId={task.subject?.kind === "position" ? task.subject.id : null}
                                root={new URLSearchParams(location.search).get("root")} />}
+            {task && rcm && firstMode && !eventOnly && <RcmBasis modeId={firstMode.id} task={task} to={rcmPath} />}
             {task && <RestsOn taskId={task.id} onOptimise={onOptimise} />}
             {f.outcome === "fixed_interval" && <More summary="How replace at age is counted">{AGE_NOTE}</More>}
           </Section>
@@ -455,58 +468,64 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
           </Section>
         )}
         {/* The optional extras, each folded with a line saying what's set. */}
-        <div className="ruled mt-sec mt-extras">
-          <Fold title="Cost" summary={costSum} ref={foldRefs.cost} id="task-cost" {...fold("cost")}>
-            <Field label={`Each time (${workspaceCurrency()})`} optional
-                   help={adding ? "Blank: worked out from its labour and parts." : null}>
-              <TextInput type="number" inputMode="decimal" min="0" step="any" value={f.cost} onChange={set("cost")}
-                         placeholder={lsaCost != null ? `${money(lsaCost)} from its LSA` : "e.g. 180"} />
-            </Field>
-            {!adding && (
-              <p className="field-help" role="note">
-                <strong>{task.cost?.amount != null ? `${money(task.cost.amount)} each time. ` : ""}</strong>
-                {costWhere(task.cost)}{" "}
-                {f.cost !== "" && lsaCost != null ? `Clear the box to use its LSA's ${money(lsaCost)}.` : ""}
-              </p>
-            )}
-            {!adding && f.cost === "" && <RateBoxes trades={missing} rates={rates} onRates={setRates} disabled={send.busy} />}
-            {/* A task in no package is a visit of its own: its call-out and setup (backend/maintenance/visit_costs.py). */}
-            {!adding && !task.package && !resp && (
-              <Field label={`Call-out and setup each time (${workspaceCurrency()})`} optional help="Counted in the forecast's planned cost.">
-                <TextInput type="number" inputMode="decimal" min="0" step="any" value={f.visitCost} onChange={set("visitCost")} />
+        <TaskExtras className="ruled mt-sec" open={folds} onToggle={(k, o) => setFolds((x) => ({ ...x, [k]: o }))} items={[
+          { key: "cost", title: "Cost", summary: costSum, ref: foldRefs.cost, id: "task-cost", body: (
+            <>
+              <Field label={`Each time (${workspaceCurrency()})`} optional
+                     help={adding ? "Blank: worked out from its labour and parts." : null}>
+                <TextInput type="number" inputMode="decimal" min="0" step="any" value={f.cost} onChange={set("cost")}
+                           placeholder={lsaCost != null ? `${money(lsaCost)} from its LSA` : "e.g. 180"} />
               </Field>
-            )}
-            {!adding && task.package && (
-              <p className="field-help" role="note">Done on {task.package.name}&apos;s visits: their call-out is set on the package.</p>
-            )}
-          </Fold>
-          <Fold title="Labour" summary={labourSum} ref={foldRefs.labour} id="task-labour" {...fold("labour")}>
-            {needs.ready ? <LabourRows data={loaded.data} needs={needs} disabled={send.busy} /> : (
-              <div className="mt-restore-row">
-                <Field label="Hours">
-                  <QuantityInput label="Hours" value={f.hours} onChange={(v) => setF((x) => ({ ...x, hours: v }))} suffix="h" chars={5} />
+              {!adding && (
+                <p className="field-help" role="note">
+                  <strong>{task.cost?.amount != null ? `${money(task.cost.amount)} each time. ` : ""}</strong>
+                  {costWhere(task.cost)}{" "}
+                  {f.cost !== "" && lsaCost != null ? `Clear the box to use its LSA's ${money(lsaCost)}.` : ""}
+                </p>
+              )}
+              {!adding && f.cost === "" && <RateBoxes trades={missing} rates={rates} onRates={setRates} disabled={send.busy} />}
+              {/* A task in no package is a visit of its own: its call-out and setup (backend/maintenance/visit_costs.py). */}
+              {!adding && !task.package && !resp && (
+                <Field label={`Call-out and setup each time (${workspaceCurrency()})`} optional help="Counted in the forecast's planned cost.">
+                  <TextInput type="number" inputMode="decimal" min="0" step="any" value={f.visitCost} onChange={set("visitCost")} />
                 </Field>
-                <Field label="Trade" optional>
-                  <TextInput value={f.trade} onChange={set("trade")} placeholder="e.g. Mechanic" maxLength={200} />
-                </Field>
-              </div>
-            )}
-            {adding && !resp && <p className="field-help">Add its labour once it&apos;s saved.</p>}
-          </Fold>
-          <Fold title="Parts" summary={partSum} ref={foldRefs.parts} id="task-parts" {...fold("parts")}>
-            {needs.ready ? <SparesRows data={loaded.data} needs={needs} disabled={send.busy} /> : resp ? (
-              <div className="mt-restore-row">
-                <Field label="Part" optional>
-                  <TextInput value={f.spare} onChange={set("spare")} placeholder="e.g. Drive belt" maxLength={200} />
-                </Field>
-                <Field label="Quantity">
-                  <QuantityInput label="Quantity" value={f.spareQty} onChange={(v) => setF((x) => ({ ...x, spareQty: v }))} suffix="×" chars={3} />
-                </Field>
-              </div>
-            ) : <p className="field-help">Add its parts once it&apos;s saved.</p>}
-          </Fold>
-          {resp === "failure" && (
-            <Fold title="Cost of the failure itself (besides the repair)" summary={failSum} id="task-failure-cost" {...fold("failure")}>
+              )}
+              {!adding && task.package && (
+                <p className="field-help" role="note">Done on {task.package.name}&apos;s visits: their call-out is set on the package.</p>
+              )}
+            </>
+          ) },
+          { key: "labour", title: "Labour", summary: labourSum, ref: foldRefs.labour, id: "task-labour", body: (
+            <>
+              {needs.ready ? <LabourRows data={loaded.data} needs={needs} disabled={send.busy} /> : (
+                <div className="mt-restore-row">
+                  <Field label="Hours">
+                    <QuantityInput label="Hours" value={f.hours} onChange={(v) => setF((x) => ({ ...x, hours: v }))} suffix="h" chars={5} />
+                  </Field>
+                  <Field label="Trade" optional>
+                    <TextInput value={f.trade} onChange={set("trade")} placeholder="e.g. Mechanic" maxLength={200} />
+                  </Field>
+                </div>
+              )}
+              {adding && !resp && <p className="field-help">Add its labour once it&apos;s saved.</p>}
+            </>
+          ) },
+          { key: "parts", title: "Parts", summary: partSum, ref: foldRefs.parts, id: "task-parts", body: (
+            <>
+              {needs.ready ? <SparesRows data={loaded.data} needs={needs} disabled={send.busy} /> : resp ? (
+                <div className="mt-restore-row">
+                  <Field label="Part" optional>
+                    <TextInput value={f.spare} onChange={set("spare")} placeholder="e.g. Drive belt" maxLength={200} />
+                  </Field>
+                  <Field label="Quantity">
+                    <QuantityInput label="Quantity" value={f.spareQty} onChange={(v) => setF((x) => ({ ...x, spareQty: v }))} suffix="×" chars={3} />
+                  </Field>
+                </div>
+              ) : <p className="field-help">Add its parts once it&apos;s saved.</p>}
+            </>
+          ) },
+          resp === "failure" ? { key: "failure", title: "Cost of the failure itself (besides the repair)", summary: failSum, id: "task-failure-cost", body: (
+            <>
               <div className="mt-restore-row">
                 {costFields().map((c) => (
                   <Field key={c.key} label={c.key === "failure_cost" ? "Or a failure's whole cost, typed" : c.label} optional
@@ -519,12 +538,12 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
               </div>
               {loaded.costs && <p className="field-help" role="note">{usedText(loaded.costs.used)}</p>}
               {failProblem && <p className="field-error" role="alert">{failProblem}</p>}
-            </Fold>
-          )}
-          {!adding && !resp && (
-            <p className="field-help mt-rcm-uses">The RCM uses its cost. <button type="button" className="link" onClick={showNeeds}>What else it needs</button></p>
-          )}
-        </div>
+            </>
+          ) } : null,
+        ]} />
+        {!adding && !resp && (
+          <p className="field-help mt-rcm-uses">The RCM uses its cost. <button type="button" className="link" onClick={showNeeds}>What else it needs</button></p>
+        )}
         {task && needs.ready && (
           <div ref={needsRef}>
             <NeedsSection data={loaded.data} needs={needs} open={needsShown} onToggle={() => setNeedsShown((o) => !o)} disabled={send.busy} />
@@ -543,6 +562,31 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
         {!adding && !rcm && <button type="button" className="ghost rw-del" onClick={(e) => { if (e.detail < 2) retire(); }} disabled={send.busy}>Retire…</button>}
       </div>
     </form>
+  );
+}
+
+// A task from an RCM decision: what its interval rests on, the same one line as the RCM tab's
+// "Interval based on" (intervalBasis.js), from the calculation saved with its decision. The
+// calculation itself opens in place there (it's the decision's evidence), so the way is a link.
+function RcmBasis({ modeId, task, to }) {
+  const [got, setGot] = useState(null);
+  const [headline, setHeadline] = useState(null);
+  useEffect(() => {
+    let live = true;
+    getFailureModeIntervalInputs(modeId, task.id).then((g) => {
+      if (!live) return;
+      setGot(g || {});
+      if (g?.evidence?.type === "strategy_analysis") getStrategyAnalysis(g.evidence.id).then((a) => live && setHeadline(a?.headline || null), () => {});
+    }, () => live && setGot({}));
+    return () => { live = false; };
+  }, [modeId, task.id]);
+  if (!got) return null;
+  const line = basisLine(task, got, got.evidence ? { artifact_name: got.evidence.name, headline } : null);
+  return (
+    <p className="field-help mt-basis" role="note">
+      <strong>Interval based on:</strong> {line.text}{" "}
+      <Link to={to} className="mt-rcm-link">{line.worked ? "Change in RCM ›" : "Work it out in RCM ›"}</Link>
+    </p>
   );
 }
 

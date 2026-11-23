@@ -428,7 +428,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const paneSaving = useRef(false);
   const paneHeading = useRef(null);
   const { full, toggle: toggleFull } = useFullScreen(frame, { returnFocus: fullBtn });
-  const pending = useRef(params.get("sel") || paneFromQuery(params)?.id || location.state?.treeReveal || null);
+  // A row whose details are open on the RCM tab (?fm=) is the one to bring back, before ?sel= (its position).
+  const pending = useRef((rcmOn && params.get("fm")) || params.get("sel") || paneFromQuery(params)?.id || location.state?.treeReveal || null);
 
   // The address and router state as they are now, for the tree read's answer (it lands later).
   const here = useRef(null);
@@ -536,6 +537,18 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // shows them beside the table again.
   const [expanded, setExpanded] = useState(false);
   useEffect(() => { if (!panel && expanded) setExpanded(false); }, [panel, expanded]);
+  // Back and Forward come back to the same details (Derryn, 23 Nov 2026): across the table is in
+  // the address (?wide=1), as the row open is (?fm= on the RCM tab, ?mtask= on Maintenance).
+  const wantWide = useRef(params.get("wide") === "1");
+  useEffect(() => {
+    if (!panel || !wantWide.current) return;
+    wantWide.current = false;
+    if (!phone) setExpanded(true);
+  }, [panel]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (wantWide.current) return;
+    setQuery_((q) => { if (expanded) q.set("wide", "1"); else q.delete("wide"); });
+  }, [expanded]); // eslint-disable-line react-hooks/exhaustive-deps
   const [addStart, setAddStart] = useState(null); // {key, list, at}: a row's list in its details opened on its add row (a row menu's Add …)
   const [linking, setLinking] = useState(null); // {row, direction}: the picker that links functional failures
   const [options, setOptions] = useState(null);
@@ -938,6 +951,20 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     reveal(fmParam);
     setPanel(true);
   }, [fmParam, display]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The RCM row whose details are open is kept in the address (?fm=), so following a link from the
+  // details and pressing Back opens them again (Derryn, 23 Nov 2026). One asked for by the address
+  // waits until it's open.
+  const fmFromAddress = useRef(!!fmParam);
+  useEffect(() => {
+    if (!rcmOn) return;
+    const key = panel && rcmFocus && isRcmRow(display.rows.get(rcmFocus)) ? rcmFocus : null;
+    if (fmFromAddress.current) {
+      if (!key) return;
+      fmFromAddress.current = false;
+    }
+    fmShown.current = key;
+    setQuery_((q) => { if (key) q.set("fm", key); else q.delete("fm"); });
+  }, [rcmOn, panel, rcmFocus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const openAfter = useRef(null);
   useEffect(() => {
@@ -1083,6 +1110,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     if (!id || mtaskShown.current === id || !display.rows.has(taskKey(id))) return;
     mtaskShown.current = id;
     reveal(taskKey(id));
+    setPanel(true); // its details open (so Expand, and ?wide=1 on Back, take them across the table)
   }, [tasksOn, params, display, reveal]);
   // A response asked for (?respond=&fm=) that's there already: it opens, rather than a second one.
   useEffect(() => {

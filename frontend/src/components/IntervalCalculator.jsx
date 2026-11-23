@@ -36,7 +36,10 @@ import {
 const blank = (v) => v === "" || v == null;
 const n = (v) => (blank(v) ? null : Number(v));
 
-export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
+// `inline` (Derryn, 23 Nov 2026: "the saved result shouldn't be a separate page, it should just be
+// the calculation"): the same calculator drawn in place in a task's panel ("Interval based on"),
+// no dialog; started from a saved calculation (its inputs), it works the answer out at once.
+export default function IntervalCalculator({ r, task, kind, onClose, onUse, inline = false }) {
   const calc = calculatorFor(kind);
   const [form, setForm] = useState(() => startForm(calc.key, task));
   const [from, setFrom] = useState({}); // where a prefilled value came from, by field
@@ -50,6 +53,8 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
   const [showCosts, setShowCosts] = useState(!safety);
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
+  // Inline, from a saved calculation: work it out once its inputs are in.
+  const runSaved = useRef(false);
   const set = (k) => (e) => { const v = e.target.value; setForm((f) => ({ ...f, [k]: v })); setResult(null); };
 
   useEffect(() => {
@@ -100,6 +105,10 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
       const prev = got.previous?.inputs;
       if (prev && got.previous.kind === ANALYSIS_KIND[calc.key]) {
         for (const [k, v] of Object.entries(prev)) if (k in next && blank(next[k]) && !blank(v)) next[k] = String(v);
+        // The saved calculation's own unit and chance of finding, not the starting ones.
+        if (calc.key === "pf" && prev.pf_unit) next.pf_unit = prev.pf_unit;
+        if (calc.key === "pf" && !blank(prev.detection_probability)) next.detection_probability = String(Number(prev.detection_probability) * 100);
+        if (inline) runSaved.current = true;
       }
       return next;
     });
@@ -196,6 +205,12 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
     }
   };
 
+  useEffect(() => {
+    if (!runSaved.current || busy || result) return;
+    runSaved.current = false;
+    if (!missing()) work();
+  }, [form]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const use = useOf(calc.key, result);
   const cheapest = result?.out?.cost_optimal?.recommended && !sameUse(result.out.cost_optimal.recommended, use)
     ? { ...result.out.cost_optimal.recommended, cheapest: true } : null;
@@ -220,21 +235,21 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
     }
   };
 
-  return (
-    <Modal title={calc.title} onClose={onClose} locked={busy} className="ivc-dialog"
-           footer={(
-             <>
-               <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
-               {cheapest && (
-                 <button type="button" className="secondary" onClick={() => apply(cheapest)} disabled={busy}>
-                   Use the cheapest, {withUnit(cheapest.value, cheapest.unit)}
-                 </button>
-               )}
-               <button type="button" onClick={() => apply()} disabled={!use || busy} aria-busy={busy || undefined}>
-                 {use ? `Use ${withUnit(use.value, use.unit)}` : "Use"}
-               </button>
-             </>
-           )}>
+  const acts = (
+    <>
+      <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
+      {cheapest && (
+        <button type="button" className="secondary" onClick={() => apply(cheapest)} disabled={busy}>
+          Use the cheapest, {withUnit(cheapest.value, cheapest.unit)}
+        </button>
+      )}
+      <button type="button" onClick={() => apply()} disabled={!use || busy} aria-busy={busy || undefined}>
+        {use ? `Use ${withUnit(use.value, use.unit)}` : "Use"}
+      </button>
+    </>
+  );
+  const content = (
+    <>
       <p className="ivc-what">{WHAT[calc.key]}</p>
       <form className="ivc-form" onSubmit={(e) => { e.preventDefault(); work(); }}>
         {calc.key === "pf" && (
@@ -344,6 +359,19 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
       </form>
       {failed && <p className="field-error" role="alert">{failed}</p>}
       {result && <Result k={calc.key} out={result.out} task={task} use={use} />}
+    </>
+  );
+  if (inline) {
+    return (
+      <div className="ivc-inline" role="group" aria-label={calc.title}>
+        {content}
+        <div className="ivc-inline-acts">{acts}</div>
+      </div>
+    );
+  }
+  return (
+    <Modal title={calc.title} onClose={onClose} locked={busy} className="ivc-dialog" footer={acts}>
+      {content}
     </Modal>
   );
 }
