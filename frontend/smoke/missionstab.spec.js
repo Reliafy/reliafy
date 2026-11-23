@@ -119,28 +119,32 @@ test("missions tab: phases, their covariates and a schedule within a phase, as b
   await expect(table).toHaveCount(2);
   await expect(table.nth(1)).toContainText("Hot");
   await expect(table.nth(1)).toContainText(/\d+(\.\d+)?%/);
+  // A range of 0 to 0 reads plainly, never "between 0 and 0".
+  await expect(page.locator(".mission-cards")).not.toContainText("between 0 and 0");
   await expectHealthy(page, problems, { root: ".tx" });
   await shot(page, "mission-details-desktop");
 
   // A phase's own details: from the mission's table, then Next / Previous and Back to the mission.
   // (Its covariates: one value, or a schedule over the phase, edited in place.)
   await table.nth(0).getByRole("button", { name: "Cool", exact: true }).click();
-  await expect(page.getByText(/Phase 1 of 2 · Hot season/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Phase 1 of 2 · Cool/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Covariates in this phase" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "What runs in this phase" })).toBeVisible();
   await page.getByRole("button", { name: "Next phase ›" }).click();
-  await expect(page.getByText(/Phase 2 of 2 · Hot season/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Phase 2 of 2 · Hot/ })).toBeVisible();
   await expect(page.getByLabel("Phase name")).toHaveValue("Hot");
   await expect(page.getByRole("heading", { name: "Result" })).toBeVisible();
   await expect(page.locator(".mission-phase-result-list")).toContainText("Still going");
   await expect(page.getByRole("radiogroup", { name: `One value or a schedule over the phase for ${first}` }).getByRole("radio", { checked: true })).toHaveText("Schedule");
   await expect(page.locator(".mission-cov-list")).not.toContainText("[object Object]");
   await shot(page, "phase-details-desktop");
+  // Back to the mission is in the heading, at the top, wherever the panel is scrolled.
+  await expect(page.getByRole("button", { name: /Back to Hot season/ })).toBeInViewport();
   await page.getByRole("button", { name: /Back to Hot season/ }).click();
   await expect(page.getByRole("heading", { name: "Phases" })).toBeVisible();
   // The tree's phase row switches the panel in place to that phase.
   await hot.locator(".tp-nm").click();
-  await expect(page.getByText(/Phase 2 of 2 · Hot season/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Phase 2 of 2 · Hot/ })).toBeVisible();
   // Escape (or ×) closes it: the Missions table again.
   await page.getByRole("button", { name: /^Close/ }).first().click();
   await expect(page.locator(".mission-phase-table")).toHaveCount(0);
@@ -152,7 +156,7 @@ test("missions tab: phases, their covariates and a schedule within a phase, as b
   await expect.poll(() => sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "mission-details-phone");
   await page.locator(".mission-phase-table tbody tr").nth(1).getByRole("button", { name: "Hot", exact: true }).click();
-  await expect(page.getByText(/Phase 2 of 2/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Phase 2 of 2/ })).toBeVisible();
   await expect.poll(() => sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "phase-details-phone");
 });

@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import Card, { CardHeader } from "./ui/Card.jsx";
 import Chip from "./ui/Chip.jsx";
 import { fmt, lengthText, pct } from "../explorerMissions.js";
-import { boundText, calendarText, chanceSentence, failuresSentence } from "../missionSetup.js";
+import { boundText, calendarText, chanceSentence, failuresSentence, rangeShort } from "../missionSetup.js";
 
 // A mission's two answers as plain cards (the Missions tab, 23 Nov 2026): the chance of completing
 // the whole phased mission, with its 90% one-sided lower bound, and the part failures to expect
@@ -49,7 +49,7 @@ export default function MissionAnswers({ answers, busy = false, error = null, on
             <p className="mission-figure">
               <b>{fmt(failures.expected)}</b>
               <span className="mission-figure-sub">
-                {failures.range ? `90% range ${fmt(failures.range.lower)} to ${fmt(failures.range.upper)} (two-sided)` : "part failures, each replaced like new"}
+                {failures.range ? rangeShort(failures.range) : "part failures, each replaced like new"}
               </span>
             </p>
           )}

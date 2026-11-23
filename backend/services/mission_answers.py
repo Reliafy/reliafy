@@ -211,8 +211,10 @@ def expected_failures(twin: dict, resolve_model, length: float, state: Optional[
         return out
     tail = 50.0 * (1.0 - RANGE_LEVEL)
     lo, hi = np.percentile(counts, [tail, 100.0 - tail], method="inverted_cdf")
+    # p_any: the share of simulated missions with one failure or more, so a range of 0 to 0 can be
+    # said plainly ("about 1 in 43 has a failure").
     out["range"] = {"lower": float(lo), "upper": float(hi), "level": RANGE_LEVEL, "side": "two-sided",
-                    "runs": int(np.size(counts))}
+                    "runs": int(np.size(counts)), "p_any": float(np.mean(counts > 0))}
     if out["expected"] is None:
         out.update(expected=float(np.mean(counts)), system=float(np.mean(system)), method="simulated")
     return out

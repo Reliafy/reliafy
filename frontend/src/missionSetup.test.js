@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  DEFAULT_SETUP, boundText, calendarText, chanceSentence, failuresSentence, runsOnBody, runsOnOptions, sameSetup, setupBody,
+  DEFAULT_SETUP, boundText, rangeSentence, rangeShort, calendarText, chanceSentence, failuresSentence, runsOnBody, runsOnOptions, sameSetup, setupBody,
   setupErrors, setupForm,
 } from "./missionSetup.js";
 
@@ -50,6 +50,12 @@ test("the answers in plain words, the bound and the range saying which side", ()
   assert.equal(failuresSentence({ expected: 0.6, range: { lower: 0, upper: 2 } }, 30, "hours"),
     "Expect about 0.6 part failures over the 30 hours. In 90 of 100 missions like this, between 0 and 2 (two-sided).");
   assert.equal(failuresSentence({ expected: 1, range: null }, 10, "hours"), "Expect about 1 part failure over the 10 hours.");
+  // A range of 0 to 0 said plainly, from the share of missions with a failure (1 in 43 for 2.35%).
+  assert.equal(failuresSentence({ expected: 0.0235, range: { lower: 0, upper: 0, p_any: 0.0233, runs: 2000 } }, 720, "hours"),
+    "Expect about 0.0235 part failures over the 720 hours. In more than 9 of 10 missions like this, nothing fails; about 1 in 43 has a failure.");
+  assert.equal(rangeSentence({ lower: 0, upper: 0, p_any: 0, runs: 2000 }), "None of the 2,000 simulated missions had a failure.");
+  assert.equal(rangeShort({ lower: 0, upper: 0, p_any: 0.02 }), "nothing fails in more than 9 of 10 missions");
+  assert.equal(rangeShort({ lower: 1, upper: 4 }), "90% range 1 to 4 (two-sided)");
   assert.equal(failuresSentence({ expected: null, note: "Not yet." }, 10, "hours"), "Not yet.");
   assert.equal(calendarText({ start: "2026-12-01", end: "2026-12-15", clock: { text: "its own duty: 8 h a day, 5 days a week" } }),
     "1 Dec 2026 to about 15 Dec 2026 · its own duty: 8 h a day, 5 days a week");

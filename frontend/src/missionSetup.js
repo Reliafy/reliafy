@@ -100,9 +100,28 @@ export function failuresSentence(failures, length, unit) {
   if (e == null) return failures?.note || "";
   const n = Number(e);
   const what = n === 1 ? "part failure" : "part failures";
-  const range = failures.range
-    ? ` In 90 of 100 missions like this, between ${fmt(failures.range.lower)} and ${fmt(failures.range.upper)} (two-sided).` : "";
+  const range = failures.range ? ` ${rangeSentence(failures.range)}` : "";
   return `Expect about ${fmt(n)} ${what} over the ${lengthText(length, unit)}.${range}`;
+}
+
+// A count's 90% two-sided range in words: "In 90 of 100 missions like this, between 1 and 4
+// (two-sided)". When it collapses to 0 to 0, plainly, from the share of missions with a failure:
+// "In more than 9 of 10 missions like this, nothing fails; about 1 in 43 has a failure."
+export function rangeSentence(range) {
+  if (!range) return "";
+  if (Number(range.upper) === 0) {
+    const p = Number(range.p_any);
+    if (!(p > 0)) return `None of the ${(range.runs || 0).toLocaleString("en-AU")} simulated missions had a failure.`;
+    return `In more than 9 of 10 missions like this, nothing fails; about 1 in ${Math.round(1 / p).toLocaleString("en-AU")} has a failure.`;
+  }
+  return `In 90 of 100 missions like this, between ${fmt(range.lower)} and ${fmt(range.upper)} (two-sided).`;
+}
+
+// The range beside the card's figure: "90% range 1 to 4 (two-sided)", or "nothing fails in more than 9 of 10".
+export function rangeShort(range) {
+  if (!range) return "";
+  return Number(range.upper) === 0 ? "nothing fails in more than 9 of 10 missions"
+    : `90% range ${fmt(range.lower)} to ${fmt(range.upper)} (two-sided)`;
 }
 
 // "1 Dec 2026 to about 1 Dec 2027 · at 8 h a day" (or the start alone when it can't be put on the calendar).
