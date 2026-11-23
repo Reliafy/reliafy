@@ -8,6 +8,7 @@ The tree pane and a tab's table are the same tree, not two: what's open, the row
 
 - Each position (or place) has the tab's own rows under it: its functions and failure modes, its tasks, its measuring points, its models, its missions. Each level rolls up what's at and below it.
 - A click picks a row and opens its details beside the table; a double-click (or Enter) opens them across the table, with "Back to table" and Esc to return (`expanded`, `onExpand`, `onCollapse`).
+- A row of numbers about another row (the Maintenance tab's Forecast row under a task or package) is one line: a summary run across the columns (`rollupOf`), never a list of dates or periods under it. It opens like any row: a click shows its details beside the table, a double-click or Enter across it (`ForecastSide`, with the shared `ForecastDetails`).
 - Columns filter from their headers (`ColumnFilter`); a table that acts on several rows lets you pick them with no row checkboxes: click, Shift-click a range, Ctrl/⌘-click to toggle, Space and Shift+arrows, **Select** on a phone (`table.multi`, see `ColumnFilter`).
 
 ## Focus and Pin

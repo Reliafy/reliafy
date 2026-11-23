@@ -4174,6 +4174,13 @@ export function getPositionForecast(positionId, { root = null, period = "month",
   if (root) q.set("root", root);
   return request(`/api/maintenance/positions/${positionId}/forecast?${q}`);
 }
+// A forecast's details (the Explorer's Forecast rows and Forecast…): `q` {root?, basis? (calendar |
+// hours), period?, months?, end?, hours?, every?, reading?, task_id?, package_id?}
+// (forecastDetails.js detailsQuery builds it).
+export function getForecastDetails(positionId, q = {}) {
+  const p = new URLSearchParams(Object.entries(q).filter(([, v]) => v != null && v !== "").map(([k, v]) => [k, String(v)]));
+  return request(`/api/maintenance/positions/${encodeURIComponent(positionId)}/forecast/details?${p}`);
+}
 // {plan, name?, time_zone?, from?, notes?}: how it runs from a date (default today).
 export function setOperatingPlan(positionId, body) {
   return putJson(`/api/maintenance/positions/${positionId}/operating-plan`, body);

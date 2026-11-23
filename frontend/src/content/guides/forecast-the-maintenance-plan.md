@@ -20,39 +20,85 @@ again, and read the difference.
 Open **Assets → Explorer**, then the **Maintenance** tab, and choose
 **Forecast…** in a position's **⋯** menu (or the heading's). The forecast is for
 that position **and everything inside it**, inside the asset you opened:
-nothing above it is used. So the same pane gives you one pump, a pump station or
+nothing above it is used. So the same view gives you one pump, a pump station or
 a whole plant, depending on the row you pick. It opens in the table area with
-the tree still beside it, and the spares for the year follow it. Choose
-**Months**, **Quarters** or **Years** under **By**.
+the tree still beside it, and the spares for the year follow it.
 
 ## One task or one package
 
-Each task and each package in the table has a **Forecast** row under it. Open
-it and its lines say when it's next due (a package: its next visit), how many
-times it comes in each month, the labour, the parts and spares it uses and
-what it costs, with the total over the year. The numbers come from the same
-forecast as the level's. **Open the full forecast…** on that row opens the
-forecast for the level the task or package sits at.
+Each task and each package in the table has one **Forecast** row under it, with
+a summary across the columns: when it's next due, how many times it comes in
+the next year and what it costs in that year, for example *next 5 Dec 2026 · 12
+times a year · $1,240 a year*. A package counts its visits. No dates are listed
+in the tree.
+
+Click the **Forecast** row to see its details beside the table; double-click it
+(or press Enter on it, or choose **Open…** in its menu) to see them across the
+table, with the tree kept beside them. **Back to table** or Esc puts the table
+back. On a phone the details open as a sheet. **Forecast for this level…** in
+the row's menu opens the forecast for the position it sits under. A task's
+forecast counts that task, and the failures of the failure modes it serves; a
+package's counts its tasks and its visits.
+
+## Set the horizon and how it's grouped
+
+Every forecast, a task's, a package's or a level's, has the same controls:
+
+- **Basis:** **Calendar** or **Operating hours**. It starts on the calendar when
+  the position has a duty (an operating plan), and on operating hours when it
+  has none and its tasks are counted in hours.
+- On the **Calendar:** a **Horizon** of **3 months**, **6 months**, **12
+  months**, **2 years** or **5 years** from today, each to the end of a month (12
+  months is this month and the next 11), or **Pick dates** to end on a day you
+  choose. **Group by** **Day**, **Week** (Monday to Sunday), **Month**,
+  **Quarter** or **Year**. Day goes up to about a year.
+- On **Operating hours:** a **Horizon** of the next 500 to 10,000 running hours,
+  **Group every** 50, 100, 250, 500 or 1,000 h, and the **Meter now** reading to
+  count from (blank: the latest recorded).
+
+The forecast starts today, so the first row is marked *(from 23 Nov)*: it covers
+the rest of that month, not a whole one.
+
+## Calendar or operating hours, with or without a duty
+
+A task can fall due by the calendar (*every week*, *the first Saturday of every
+month*) or by use (*every 250 h*). Turning one into the other needs the
+position's duty: how many hours it runs, and when.
+
+- **With a duty,** both bases count everything. On the calendar, a task by hours
+  falls on the day the meter is expected to reach it; in operating hours, a
+  calendar task falls at the running hours reached by its date.
+- **Without a duty,** hours stay hours. On the calendar a task by hours is listed
+  under **Not placed** as *every 250 h, not dated: set a duty in Operations*,
+  and its Forecast row says the same; on operating hours a calendar task is
+  listed as *calendar rule, not placed in hours*. Each has a link to where you
+  set the duty. Nothing is guessed.
+
+## What the details show
 
 The answer comes first, in a sentence:
 
-> To 30 Nov 2027: **58** tasks, about **46** labour hours, **$2,800** planned;
+> To 31 Oct 2027: **58** tasks, about **46** labour hours, **$2,800** planned;
 > **0.62** failures expected (0 to 1, 90% range), about **$2,990**; about
 > **$5,790** in all (**$2,800** planned, **$2,990** unplanned).
 
-Under it, a line says where the hours came from (the operating plan, or the
-hours counter's recent rate). Then a table by month, quarter or year:
-**Operating hours**, **Tasks**, **Labour hours**, **Planned cost**, **Expected
-failures**, **Unplanned cost**, **Downtime** (when a failure's downtime is set),
-**Total cost**, and **Besides the routine**, which names the jobs that fall
-due only a few times in the forecast (a service, an overhaul), with their dates,
-so the weekly round doesn't fill every row. Hover a column's heading to see what it rests
-on. The table scrolls inside its card on a phone. Ranges are 90% of outcomes
-(the 5th to 95th percentile), and the last row, **In all**, adds up the period
-and gives the chance of at least one failure.
+Under it, a line says what it covers and the duty it rests on. Then a bar
+chart of how many times something is done in each period, and a table by
+period (or by span of running hours): **Times done**, **Labour** (hours),
+**Labour cost**, **Parts and consumables**, **Visit cost**, **Planned cost**,
+**Expected failures** and **Failure cost** (when a life model is counted), and
+**Total**. A cost column nothing in the forecast has is left out, and a line
+under the table says which and where to set them. Expected failures and their
+cost carry their range: 90% two-sided, the 5th to 95th percentile of outcomes.
+The last row, **In all**, adds up the horizon. Hover a column's heading to see
+what it rests on. **Export CSV** saves the table, ranges in their own columns.
+The table scrolls inside its card on a phone.
 
-The forecast starts from today, so the first row is marked *(from 14 Nov)*: it
-covers the rest of that month, not a whole one.
+**When next** lists each time something is done, soonest first, 20 to a page
+with **Previous** and **Next**: the day (and the time, when the meter reaches it
+mid-shift), or on operating hours how many hours from now and the meter
+reading then. A package's line is a visit with the tasks done on it, so a
+100 h task shows on every second 50 h visit.
 
 ## Which tasks count
 
@@ -64,13 +110,10 @@ A task counts when it can be put on dates:
   package falls due at the package's visits.
 - A task **at shutdowns** falls due at the first planned shutdown once its time
   has passed since it was last done, so it counts once for each shutdown it is
-  done at. With no shutdown planned in the year, it's under **Left out**.
-- A task counted in operating hours falls due through the position's operating
-  plan, or its hours counter's recent rate.
-- A task left out says why under **Left out**: for example a task by hours on a
-  position with no operating plan and no hours reading. The answer says *Say how
-  this runs (an operating plan), or record an hours reading, to put the tasks by
-  use on dates.* The fix is on that position; see below.
+  done at. With no shutdown planned in the year, it's under **Not placed**.
+- A task counted in operating hours falls due through the position's duty (its
+  operating plan, or the one above it), anchored on its hours counter reading.
+- A task left out says why under **Not placed**, with where to fix it.
 
 Failures come from the life model in use on each position, from each item's
 age. A degradation model linked to a failure mode counts too: each time the
@@ -82,21 +125,21 @@ under **Failures: the life models used** says which tasks were counted and which
 weren't, with the reason. A life model that was typed in, not fitted from data,
 is flagged as a placeholder.
 
-Other folds: **Tasks on dates** lists every task with its dates and cost each
-time; **By position** splits the answer by what's inside; **Cost by kind** splits
-the cost (below); **Left out** names everything not forecast.
+Other folds: **By position** splits a level's answer by what's inside; **Not
+placed** names everything not forecast, and why.
 
 ## Planned and unplanned cost
 
 The cost to come is in two parts, each saying what it rests on:
 
-- **Planned:** each task's cost each time, times the times it falls due.
-  **Cost by kind** splits it into **Labour** (the task's LSA labour at the
-  trade rates), **Parts and consumables** (its LSA lines) and **Visits**: each
+- **Planned:** each task's cost each time, times the times it falls due. The
+  table splits it into **Labour cost** (the task's What it needs labour at the
+  trade rates), **Parts and consumables** (its spares and consumables) and
+  **Visit cost**: each
   visit's call-out and setup, set on the package (**Each visit's call-out and
   setup** in its Edit pane), or on a task in no package. Tasks due at the same
   time on the same position are one visit, charged once. A cost typed on a
-  task that its LSA doesn't explain is **Other planned**.
+  task that its What it needs lines don't explain is in **Planned cost** too.
 - **Unplanned:** the expected failures times what one failure costs: its
   repair, plus the hours it keeps the asset out of use times the cost of an
   hour out of use.
@@ -136,7 +179,8 @@ it's assumed, and you can change it there or on the failure mode's decision.
 The forecast is worked out each time you open it, so comparing two plans is a
 matter of changing one thing and reading again:
 
-1. Open the forecast and write down the answer: the sentence, or the **In all** row.
+1. Open the forecast and write down the answer: the sentence, or the **In all**
+   row (or **Export CSV**).
 2. Change the one thing: a task's interval, a package's visit, or a position's
    operating plan.
 3. Open the forecast again at the same level and period. The difference is the

@@ -5,14 +5,15 @@
 // row each, with the table's columns beside them: how often, when next due, what it costs each
 // time, its package, where it came from and its kind. Each position's roll-up counts the tasks on
 // it and on everything below it, at any depth. A position's menu has Forecast…: the forecast for
-// that level and everything inside it, in the table area (PositionForecast.jsx).
+// that level and everything inside it, in the table area (ForecastDetails.jsx).
 //
 // The tasks come in one read for the asset opened (GET /api/maintenance/task-table?within=<root>:
 // the server's roll-up, Maintenance.subtree_ids, never another asset's). Pure functions, tested in
 // explorerTasks.test.js; the cells are drawn by TaskTreeTable.jsx.
 
 import { cellText, costWhere, fromRcm, kindText, money, SOURCE_WORDS } from "./lsaTab.js";
-import { dayText, hoursText, moneyText, periodLabel, sig } from "./positionForecast.js";
+import { sig } from "./positionForecast.js";
+import { treeSummary } from "./forecastDetails.js";
 
 export const TASK_TYPE = "mtask";
 export const isTaskRow = (r) => r?.type === TASK_TYPE;
@@ -22,7 +23,7 @@ export const taskKey = (id) => `MT:${id}`;
 export const PKG_TYPE = "mpkg";
 export const PKG_REF_TYPE = "mpref";
 export const FC_TYPE = "mfc";
-export const FC_LINE_TYPE = "mfcl";
+export const FC_LINE_TYPE = "mfcl"; // the lines under a Forecast row before 23 Nov 2026: none now
 export const isPackageRow = (r) => r?.type === PKG_TYPE;
 export const isPackageRef = (r) => r?.type === PKG_REF_TYPE;
 export const isForecastRow = (r) => r?.type === FC_TYPE || r?.type === FC_LINE_TYPE;
@@ -510,10 +511,12 @@ export function packageWhere(r, display) {
 
 // ---- forecasts under a task and a package --------------------------------------------------
 // Derryn, 22 Nov 2026: "For forecasts (of cost and spares), I think they are sub items of either a
-// task or a maintenance package". Under each task and each package, a Forecast row: open it and
-// its lines say when it's next due, how many times it comes in each month, the labour, the parts
-// and spares it uses, and what it costs. They're read from the level's forecast (the same server
-// forecast Forecast… opens: backend position_forecast), so the numbers agree with it.
+// task or a maintenance package". 23 Nov: "I don't like that all the future dates are underneath the
+// forecast item. I think the details page for a forecast should have this information." So under
+// each task and each package, one compact Forecast row: a summary across the columns ("next 5 Dec
+// 2026 · 12 times a year · $1,240 a year"), read from the level's forecast for the next year (the
+// server's forecast details, by the calendar: forecastDetails.js treeSummary); opening it shows the
+// details (ForecastDetails.jsx) beside or across the table.
 
 export const FORECAST_LABEL = "Forecast";
 const fcKey = (parent) => `MF:${parent}`;
@@ -527,116 +530,37 @@ export function taskParts(task) {
   return out;
 }
 
-const addParts = (into, parts, times) => {
-  for (const x of parts) {
-    const e = into.get(x.key) || { ...x, qty: 0 };
-    e.qty += x.qty * times;
-    into.set(x.key, e);
-  }
-};
 // "6 × Spin-on oil filter, 12 L Engine oil" (a count says ×; "each" is a count).
 const COUNTED = new Set(["", "each", "ea", "no", "pcs", "piece", "pieces"]);
 export const partsText = (parts) => parts.map((x) => `${sig(x.qty)}${COUNTED.has(String(x.unit).toLowerCase()) ? " ×" : ` ${x.unit}`} ${x.name}`).join(", ");
 
-// One task's or one package's forecast from the level's: {entries, next, overdue, periods:
-// [{label, count, labour, cost, priced}], count, labour, cost (null: none priced), unpriced, parts,
-// end, why (none on dates: why)}. `fc`: the forecast read; `tasks`: the task-table rows.
-export function forecastOf(tasks, fc) {
-  const byId = new Map((fc?.tasks || []).map((e) => [e.id, e]));
-  const why = new Map((fc?.not_on_dates || []).map((x) => [x.task?.id, x.reason]));
-  const rows = fc?.rows || [];
-  const periods = rows.map((r, i) => ({ start: r.start, label: periodLabel(r, fc.period || "month", i === 0), count: 0, labour: 0, cost: 0, priced: 0 }));
-  const parts = new Map();
-  let n = 0, labour = 0, cost = 0, priced = 0, unpriced = 0, next = null, overdue = false;
-  const reasons = [];
-  for (const t of tasks) {
-    const e = byId.get(t.id);
-    if (!e) {
-      if (why.has(t.id)) reasons.push({ task: t, reason: why.get(t.id) });
-      continue;
-    }
-    const dates = e.dates || [];
-    n += dates.length;
-    labour += (Number(e.labour_each) || 0) * dates.length;
-    if (e.cost_each != null) { cost += Number(e.cost_each) * dates.length; priced += dates.length; } else if (dates.length) unpriced += 1;
-    if (dates[0] && (!next || dates[0] < next)) next = dates[0];
-    if (e.overdue) overdue = true;
-    addParts(parts, taskParts(t), dates.length);
-    for (const d of dates) {
-      let i = periods.length - 1;
-      while (i > 0 && d < periods[i].start) i -= 1;
-      const p = periods[i];
-      if (!p) continue;
-      p.count += 1;
-      p.labour += Number(e.labour_each) || 0;
-      if (e.cost_each != null) { p.cost += Number(e.cost_each); p.priced += 1; }
-    }
-  }
-  return {
-    next, overdue, periods, count: n, labour, cost: priced ? cost : null, unpriced, end: fc?.end || null,
-    // Spares first, then consumables, each in the order the tasks name them.
-    parts: [...parts.values()].filter((x) => x.qty > 0),
-    why: reasons,
-  };
+// The Forecast row's text across the columns: `forecast` {fc, error} once read (null: not yet).
+export function forecastRowText(forecast, ids, pkg = null) {
+  if (forecast?.error) return { text: `Couldn't work out the forecast: ${forecast.error}`, tone: "danger" };
+  if (!forecast?.fc) return { text: "Working out…", tone: null };
+  return { text: treeSummary(forecast.fc, ids, { pkg }), tone: null };
 }
 
-const timesWord = (n, kind) => (kind === "package" ? count(n, "task") : count(n, "time"));
-
-// The Forecast row's roll-up: "12 times to 30 Nov 2027 · 24 h labour · $1,440".
-export function forecastSummary(f, kind = "task") {
-  if (!f) return "";
-  if (!f.count) return f.why.length ? "Not on dates" : `None due to ${dayText(f.end)}`;
-  return [`${timesWord(f.count, kind)} to ${dayText(f.end)}`, f.labour ? `${hoursText(f.labour)} labour` : null,
-    f.cost != null ? `${moneyText(f.cost)}${f.unpriced ? " (some not priced)" : ""}` : "cost not set"].filter(Boolean).join(" · ");
-}
-
-// The lines under a Forecast row: [{id, label (the tree column), text (across the columns),
-// title?, tone?}].
-export function forecastLines(f, { kind = "task", pkg = null } = {}) {
-  if (!f) return [];
-  const out = [];
-  const visit = kind === "package" ? nextVisit(pkg) : null;
-  if (visit) out.push({ id: "next", label: "Next visit", text: dayText(visit) });
-  else if (f.next) out.push({ id: "next", label: f.overdue ? "Overdue" : "Next due", text: f.overdue ? `done first, on ${dayText(f.next)}` : dayText(f.next), tone: f.overdue ? "danger" : null });
-  for (const x of f.why) out.push({ id: `why:${x.task.id}`, label: "Not on dates", text: kind === "package" ? `${x.task.name}: ${x.reason}` : x.reason });
-  if (!f.count && !f.why.length) out.push({ id: "none", label: "Not due", text: `before ${dayText(f.end)}` });
-  for (const p of f.periods) {
-    if (!p.count) continue;
-    out.push({ id: `p:${p.start}`, label: p.label, text: [timesWord(p.count, kind), p.labour ? `${hoursText(p.labour)} labour` : null,
-      p.priced ? moneyText(p.cost) : null].filter(Boolean).join(" · ") });
-  }
-  if (f.count) {
-    out.push({ id: "parts", label: "Parts and spares", text: f.parts.length ? partsText(f.parts) : "None in its LSA",
-      title: f.parts.length ? `What the LSA says is used, times the ${count(f.count, "time")} it comes to ${dayText(f.end)}` : "Add spares and consumables to the task's LSA: open the task, then What it needs" });
-    out.push({ id: "total", label: "In all", text: forecastSummary(f, kind) });
-  }
-  return out;
-}
-
-// The Forecast row (and its lines) under a task or a package, into `rows`: its key, in a list.
-// `forecast`: {fc, error} once read (null: not yet, so its line asks for it).
+// The Forecast row under a task or a package, into `rows`: its key, in a list. No rows under it.
 function forecastRows(rows, parentKey, { kind, task = null, pkg = null, tasks = null, forecast = null }) {
   const parent = rows.get(parentKey);
   const key = fcKey(parentKey);
-  const list = kind === "task" ? [task] : tasks || [];
-  const f = forecast?.fc ? forecastOf(list, forecast.fc) : null;
-  const lines = forecast?.error ? [{ id: "error", label: "Not worked out", text: `Couldn't work out the forecast: ${forecast.error}`, tone: "danger" }]
-    : f ? forecastLines(f, { kind, pkg }) : [{ id: "wait", label: "Working out…", text: "" }];
-  const kids = lines.map((l) => {
-    const k = `${key}:${l.id}`;
-    rows.set(k, { key: k, type: FC_LINE_TYPE, parent: key, kids: [], depth: parent.depth + 2, own: noStatus(), sum: noStatus(),
-      ref: { name: l.label, line: l, of: parentKey, position_id: parent.ref.position_id } });
-    return k;
-  });
+  const ids = kind === "task" ? [task.id] : (tasks || []).map((t) => t.id);
+  const said = forecastRowText(forecast, ids, kind === "package" ? pkg?.id : null);
   rows.set(key, {
-    key, type: FC_TYPE, parent: parentKey, kids, depth: parent.depth + 1, own: noStatus(), sum: noStatus(),
-    ref: { name: FORECAST_LABEL, of: parentKey, kind, summary: f ? forecastSummary(f, kind) : "", position_id: parent.ref.position_id },
+    key, type: FC_TYPE, parent: parentKey, kids: [], depth: parent.depth + 1, own: noStatus(), sum: noStatus(),
+    ref: {
+      name: FORECAST_LABEL, of: parentKey, kind, summary: said.text, tone: said.tone, position_id: parent.ref.position_id,
+      task_id: kind === "task" ? task.id : null, package_id: kind === "package" ? pkg?.id : null,
+      subject: kind === "task" ? task.name : pkg?.name || "",
+    },
   });
   return [key];
 }
 
-// Whether any Forecast row is open in the tree (`open`: the keys open), so the forecast is read.
-export const forecastWanted = (open) => [...(open || [])].some((k) => typeof k === "string" && k.startsWith("MF:"));
+// Whether a Forecast row shows (its task or package open: `open`, the keys open), so the level's
+// forecast is read.
+export const forecastWanted = (open) => [...(open || [])].some((k) => typeof k === "string" && (k.startsWith("MT:") || k.startsWith("MP:")));
 
 // A package row's menu, a reference's, and a Forecast row's.
 export const PKG_OPEN = "mpkg-open";
@@ -650,6 +574,8 @@ export function packageRowActions() {
 export function refRowActions(r) {
   return [{ id: REF_GO, label: "Show the task", title: `${r.ref.name}, on ${r.ref.on || "its position"}` }];
 }
+export const FC_LEVEL = "mfc-level";
 export function forecastRowActions() {
-  return [{ id: FC_OPEN, label: "Open the full forecast…", title: "The forecast for this level and everything inside it, with spares for the year" }];
+  return [{ id: FC_OPEN, label: "Open…", title: "Its forecast: set the horizon and grouping, the counts and costs by period, and when next" },
+    { id: FC_LEVEL, label: "Forecast for this level…", title: "The forecast for the position it's under and everything inside it, with spares for the year" }];
 }
