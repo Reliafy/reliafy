@@ -7,6 +7,7 @@ import {
   typicalWeek,
 } from "../operatingPlan.js";
 import { today as workspaceToday } from "./MaintenanceParts.jsx";
+import { timeZoneOptions } from "../workspaceDate.js";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { ShowMe } from "./SectionPage.jsx";
 import TablePane from "./TablePane.jsx";
@@ -167,7 +168,8 @@ function Overnight({ form }) {
 const STATUS = { current: "Running now", planned: "From", ended: "Ended" };
 
 export default function OperatingPlanPane({ position, root = null, phone = false, headingRef = null, onClose, onDirty, onChanged,
-  readOnly = null }) {
+  readOnly = null, title = "Operating plan", clearText = null, children = null }) {
+  const zones = useMemo(() => timeZoneOptions(), []);
   const confirm = useConfirm();
   const today = workspaceToday();
   const [data, setData] = useState(null);
@@ -201,7 +203,7 @@ export default function OperatingPlanPane({ position, root = null, phone = false
     setSaving(true);
     setFailed(null);
     try {
-      await setOperatingPlan(position.id, { plan: preview, name: form.name.trim(), from: form.from || null });
+      await setOperatingPlan(position.id, { plan: preview, name: form.name.trim(), from: form.from || null, time_zone: form.timeZone || null });
       edit(null);
       setN((x) => x + 1);
       onChanged?.(`Saved how ${position.name} runs: ${planWords(preview)}.`);
@@ -216,7 +218,7 @@ export default function OperatingPlanPane({ position, root = null, phone = false
     setSaving(true);
     setFailed(null);
     try {
-      await setOperatingPlan(position.id, { plan: { ...data.plan.plan, utilisation }, name: data.plan.name || "" });
+      await setOperatingPlan(position.id, { plan: { ...data.plan.plan, utilisation }, name: data.plan.name || "", time_zone: data.plan.time_zone || null });
       setN((x) => x + 1);
       onChanged?.(`${position.name}'s plan now counts ${Math.round(utilisation * 100)}% of its planned hours.`);
     } catch (e) {
@@ -227,8 +229,9 @@ export default function OperatingPlanPane({ position, root = null, phone = false
   };
   const end = async () => {
     const ok = await confirm({
-      title: "End this plan?", body: `${position.name} stops running to it from today, and runs to the plan above it (if any) again. It stays in the history.`,
-      confirmLabel: "End the plan", pendingLabel: "Ending…", failedWhat: "end it",
+      title: clearText ? `${clearText}?` : "End this plan?",
+      body: `${position.name} stops running to its own plan from today, and runs to the plan above it (if any) again. Its plan stays in the history.`,
+      confirmLabel: clearText || "End the plan", pendingLabel: "Ending…", failedWhat: "end it",
       run: () => endOperatingPlan(position.id).then(() => true),
     });
     if (ok) { setN((x) => x + 1); onChanged?.(`Ended ${position.name}'s own operating plan.`); }
@@ -237,7 +240,7 @@ export default function OperatingPlanPane({ position, root = null, phone = false
   const plan = data?.plan;
   const own = plan && !data.inherited_from;
   return (
-    <TablePane title="Operating plan" subject={position.name} phone={phone} busy={saving} headingRef={headingRef} onClose={onClose}
+    <TablePane title={title} subject={position.name} phone={phone} busy={saving} headingRef={headingRef} onClose={onClose}
                className="op-pane" actions={<ShowMe help={{ guide: "operating-plans-and-how-often" }} asHelp />}>
       <div className="op-body">
         {error && <LoadFailed what="Couldn't load the operating plan." error={error} />}
@@ -286,7 +289,7 @@ export default function OperatingPlanPane({ position, root = null, phone = false
                     <button type="button" className="secondary" onClick={() => edit({ ...formFromPlan(plan, data.today || today), name: own ? plan.name : "" })}>
                       {own ? "Change it" : "Give this its own plan"}
                     </button>
-                    {own && <button type="button" className="link td-danger" onClick={end}>End this plan…</button>}
+                    {own && <button type="button" className="link td-danger" onClick={end}>{clearText ? `${clearText}…` : "End this plan…"}</button>}
                   </div>
                 )}
               </>
@@ -335,6 +338,11 @@ export default function OperatingPlanPane({ position, root = null, phone = false
               <div className="op-row op-meta">
                 <label htmlFor="op-from">From</label>
                 <DateInput id="op-from" value={form.from} min={own ? plan.from : undefined} onChange={(e) => set({ from: e.target.value })} disabled={saving} />
+                <label htmlFor="op-zone">Time zone</label>
+                <Select id="op-zone" className="op-per" value={form.timeZone} disabled={saving} onChange={(e) => set({ timeZone: e.target.value })}>
+                  <option value="">The workspace&apos;s</option>
+                  {(form.timeZone && !zones.includes(form.timeZone) ? [form.timeZone, ...zones] : zones).map((z) => <option key={z} value={z}>{z}</option>)}
+                </Select>
                 <label htmlFor="op-name">Name <span className="field-opt">optional</span></label>
                 <TextInput id="op-name" className="op-name" value={form.name} maxLength={200} placeholder="e.g. Day shifts" onChange={(e) => set({ name: e.target.value })} disabled={saving} />
               </div>
@@ -378,6 +386,7 @@ export default function OperatingPlanPane({ position, root = null, phone = false
             </ul>
           </section>
         )}
+        {children}
       </div>
     </TablePane>
   );

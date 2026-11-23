@@ -31,7 +31,7 @@ def _summary(fleet, ctx: AccessCtx, forecast: dict | None = None) -> dict:
         "model_id": fleet.model_id,
         "model_kind": fleet.model_kind,
         "settings": fleet.settings,
-        "n_items": len(fleet.items or []),
+        "n_items": fleet_service.unit_count(fleet.items),
         "is_sample": samples_service.is_sample(fleet.owner_id),
         "read_only": not access_service.can_write(ctx, fleet.owner_id),
         "updated_by": (fleet.updated_by or {}).get("name"),
@@ -194,7 +194,9 @@ def running_units(
     try:
         out = fleet_items_service.running_units(session, fleet, [*ctx.read_owners, fleet.owner_id])
     except fleet_items_service.NoModelData as exc:
-        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+        # Nothing to list (a model typed from parameters, its data gone): an
+        # answer, not an error, so the page simply offers no button.
+        return JSONResponse(content={"items": [], "running": 0, "skipped": [], "reason": client_message(exc)})
     return JSONResponse(content=out)
 
 

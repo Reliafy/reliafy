@@ -79,6 +79,7 @@ from backend.maintenance import restoration as _restoration
 from backend.maintenance import failure_costs as _failure_costs
 from backend.maintenance import visit_costs as _visit_costs
 from backend.maintenance import shutdowns as _shutdowns
+from backend.maintenance import operations as _operations
 from backend.maintenance import purge as _purge
 
 logger = logging.getLogger(__name__)
@@ -1648,13 +1649,31 @@ def _task_rule_set(s: GraphStore, org: str, p: dict) -> None:
     s.patch_node(org, p["task_id"], {"rule": p.get("rule")})
 
 
-def _rule_due(task: dict) -> str | None:
+#: How far ahead a task at shutdowns looks for its shutdown (none in that time: no date).
+SHUTDOWN_LOOKAHEAD_DAYS = 10 * 366
+
+
+def _rule_due(task: dict, m=None) -> str | None:
     """A task's next date on its rule: the first after it was last done; else the date it
-    was set to fall due; else the first on or after the day it was made."""
+    was set to fall due; else the first on or after the day it was made. At shutdowns
+    (``m`` needed): the first planned shutdown of its position once its interval has passed
+    since it was last done (or made)."""
     rule = task["rule"]
-    cad = how_often.cadence(rule, task["start"])
     done = task.get("last_done")
     first = _first_due(task)
+    if rule["kind"] == "shutdowns":
+        from backend.maintenance.shutdowns import shutdown_dates
+
+        subject = _subject(m.s, m.org, task) if m is not None else None
+        if subject is None:
+            return None
+        ready = first or add_interval(done or task["start"], rule["every"], rule["unit"])
+        if ready is None:
+            return None
+        until = (date.fromisoformat(ready) + timedelta(days=SHUTDOWN_LOOKAHEAD_DAYS)).isoformat()
+        shuts = shutdown_dates(m, subject["id"], ready, until)
+        return shuts[0]["on"] if shuts else None
+    cad = how_often.cadence(rule, task["start"])
     if first:
         return first
     found = cad.after(done) if done else cad.on_or_after(task["start"])
@@ -3181,7 +3200,7 @@ def _walk_down(top: str, kids: dict) -> set[str]:
 
 
 class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDeleteOps, PositionModelOps,
-                  CaptureOps, AssetSearchOps, _restoration.RestorationOps, _shutdowns.ShutdownOps,
+                  CaptureOps, AssetSearchOps, _restoration.RestorationOps, _shutdowns.ShutdownOps, _operations.OperationsOps,
                   _failure_costs.FailureCostOps, _visit_costs.VisitCostOps):
     """One organisation's maintenance graph, acted on by one person."""
 
@@ -6690,8 +6709,13 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         if subject.get("id") in self._design_ids():
             return {"limit": limit, "next_due": None, "note": "a design's task: due on the items built from it"}
         if rule and _is_calendar(unit):
-            # On a pattern (the first Saturday of every month): its dates, not an interval's.
-            return {"limit": how_often.describe(rule), "next_due": _rule_due(task)}
+            # On a pattern (the first Saturday of every month): its dates, not an interval's. At
+            # shutdowns: the first planned shutdown once its interval has passed.
+            due = _rule_due(task, self)
+            if due is None and rule["kind"] == "shutdowns":
+                return {"limit": how_often.describe(rule), "next_due": None,
+                        "note": "no planned shutdown here once it's due: add a shutdown on this position or above it"}
+            return {"limit": how_often.describe(rule), "next_due": due}
         if _is_calendar(unit):
             first = _first_due(task)
             if first:
@@ -10198,6 +10222,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                           "by operating hours (unit hours) on its position, or leave it on its own.")
         if task.get("include_positions"):
             raise Invalid(f"{task['name']} is a round (a line for each position at its location): it stays on its own.")
+        if (task.get("rule") or {}).get("kind") == "shutdowns":
+            # Done at the shutdowns: only a shutdown's visits are those (how_often.py).
+            pkg = self.s.node(self.org, joining, "WorkPackage") if joining else None
+            if not (pkg and self._package_chain(pkg)[-1].get("shutdown")):
+                raise Invalid(f"{task['name']} is done at planned shutdowns: it joins a shutdown package only. Make "
+                              "the package a shutdown first, or give the task a calendar rule.")
         if area["label"] == "Position":
             # Any task on the same asset (Derryn, 22 Nov 2026): the package then lives where its
             # tasks meet (_package_subject), which moves up when a task from another branch joins.
@@ -11038,6 +11068,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             rows.append({"id": task["id"], "name": task["name"], "subject": brief,
                          "modes": modes, "kind": kind, "interval": task.get("interval"), "unit": task.get("unit"),
                          "rule_text": task.get("rule") and how_often.describe(task["rule"]),
+                         "rule_kind": (task.get("rule") or {}).get("kind"),
                          "trigger": self._trigger_view(task.get("trigger")) if task.get("trigger") else None,
                          "on_event": _on_event_only(task), "trade": task.get("trade", ""),
                          "next_due": view["next_due"], "overdue": bool(view["overdue"]), "package": pkg,
@@ -12013,7 +12044,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         if not _is_calendar(task["unit"]):
             raise Invalid(f"This task goes by use ({task['unit']}): a calendar pattern goes on a task by days, "
                           "weeks, months or years.")
-        if checked["kind"] != "every" and "anchor" not in checked:
+        if checked["kind"] == "shutdowns":
+            subject = _subject(self.s, self.org, task) or {}
+            if subject.get("label") not in ("Position", "Item"):
+                raise Invalid("A task at shutdowns goes on a position (or an item on one): a shutdown takes a "
+                              "position off-line.")
+            home = self._package_index().get(task_id)
+            if home and not home["root"].get("shutdown"):
+                raise Invalid(f"{task['name']} is in {home['package']['name']}, which isn't a shutdown: its visits "
+                              "set its dates. Take it out first, or make that package a shutdown.")
+        if checked["kind"] not in ("every", "shutdowns") and "anchor" not in checked:
             # Weeks, months and years counted from when the task was made, unless the rule says.
             checked["anchor"] = task["start"]
         interval, unit = how_often.interval_of(checked)
@@ -15257,7 +15297,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         dues = []
         for k, (interval, unit) in enumerate(limits):
             if k == 0 and task.get("rule") and _is_calendar(unit):
-                due = _rule_due(task)
+                due = _rule_due(task, self)
             elif _is_calendar(unit) and not (subject_label == "Item" and task.get("while_stored") == "pause"):
                 due = _first_due(task) or add_interval(task.get("last_done") or task["start"], interval, unit)
             else:
