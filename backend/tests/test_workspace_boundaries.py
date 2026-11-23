@@ -128,6 +128,31 @@ def test_preview_fit_of_a_saved_dataset_returns_its_id(client):
     assert r.status_code == 200 and r.json()["dataset_id"] == ds.id
 
 
+def _life_csv() -> bytes:
+    rng = np.random.default_rng(7)
+    rows = [{"hours": round(float(x), 2), "censored": int(i % 4 == 0)}
+            for i, x in enumerate(rng.weibull(1.8, 20) * 1000)]
+    return _csv(pd.DataFrame(rows))
+
+
+@pytest.mark.parametrize("path", ["/api/fit/weibull", "/api/data-reading"])
+def test_a_team_dataset_fits_in_the_team_workspace(client, path):
+    """A dataset saved in a team is fitted (and read) by its members from the team workspace,
+    not looked up under the member's own account (which 404ed)."""
+    from backend.services import datasets as datasets_service
+
+    tid = _team_with_member(client)
+    ds = datasets_service.create_dataset(client.db, "team seals", _life_csv(), f"team:{tid}")
+    form = {"dataset_id": ds.id, "x": "hours", "c": "censored"}
+    for uid in (OWNER, MEMBER):
+        client.act_as(uid)
+        r = client.post(path, data=form, headers={"X-Workspace-Id": tid})
+        assert r.status_code == 200, (uid, r.text)
+    # Someone outside the team still can't reach it, from any workspace.
+    client.act_as(OTHER)
+    assert client.post(path, data=form).status_code == 404
+
+
 @pytest.mark.parametrize("preview, save, form, data", PREVIEWS)
 def test_view_only_member_can_preview_but_not_store_in_the_team(client, preview, save, form, data):
     tid = _team_with_member(client)

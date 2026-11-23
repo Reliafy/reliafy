@@ -67,7 +67,8 @@ function Fold({ title, summary, open: initialOpen, children }) {
 // costs stay folded. Pre-filled with the node's current models.
 export default function LifeModelModal({ initial, onClose, onSubmit, repairable = false, crews = false,
                                          safety = false, capacity = false, jointBlock = false, conditions = [],
-                                         nodeId = null, onEditPlan = null, tree = null, onTreeLink = null }) {
+                                         nodeId = null, onEditPlan = null, tree = null, onTreeLink = null,
+                                         canNeverFail = false }) {
   // A block whose model's covariates were left open at its position (covariate_binding.py): its
   // covariates are set here (or from the diagram's values) unless another model is chosen.
   const wasBound = initial?.model?.kind === "bound";
@@ -77,6 +78,9 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
   const [model, setModel] = useState(initial?.model ?? null);
   const [repair, setRepair] = useState(initial?.repair ?? null);
   const [instant, setInstant] = useState(!!initial?.instant_repair);
+  // Never fails (``state: "working"``): structure such as a frame or a base, left out of the model,
+  // so it needs no life model or repair time. The same pin as the block's Status › Working.
+  const [neverFails, setNeverFails] = useState(initial?.state === "working");
   const [extras, setExtras] = useState({ extras: null, valid: true });
   // Planned work (schedule, group, duty) is edited in the Maintenance plan (D5): here only the
   // costs and the crew priority, so saving the dialog leaves the plan as it is.
@@ -91,21 +95,31 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
   const processBlock = repairable && model?.kind === "repairable";
   // Throughput while it works (#122): its own section, for component blocks.
   const [cap, setCap] = useState({ value: initial?.capacity ?? null, valid: true });
-  const valid = model && (!repairable || repair || instant) && extras.valid && cap.valid
-    && (processBlock ? replacement.valid : quality.valid);
+  const valid = (neverFails && canNeverFail) || (model && (!repairable || repair || instant) && extras.valid && cap.valid
+    && (processBlock ? replacement.valid : quality.valid));
+  // Ticking it sets the pin; unticking clears only a pin it set (a block pinned failed stays so).
+  const stateExtras = !canNeverFail ? {} : neverFails ? { state: "working" }
+    : initial?.state === "working" ? { state: null } : {};
   const capExtras = { ...(capacity ? { capacity: cap.value } : {}), ...(keepBound && covExtras ? covExtras : {}),
     ...(wasBound && !keepBound ? { covariate_values: null, covariate_map: null } : {}) };
 
   const payload = () => {
     const label = name.trim() || initial?.label;
-    if (!repairable) return { model, repair: undefined, label, extras: Object.keys(capExtras).length ? capExtras : undefined };
+    if (neverFails && canNeverFail) {
+      // Left out of the model: whatever was set on it stays, for when it's put back in.
+      return { model: initial?.model ?? model ?? null, repair: undefined, label, extras: stateExtras };
+    }
+    if (!repairable) {
+      const more = { ...capExtras, ...stateExtras };
+      return { model, repair: undefined, label, extras: Object.keys(more).length ? more : undefined };
+    }
     return {
       label,
       model,
       repair: instant ? repair ?? undefined : repair,
       extras: { ...(extras.extras || {}), instant_repair: instant || null,
                 repair_quality: processBlock ? null : quality.value,
-                replacement: processBlock ? replacement.value : null, ...capExtras },
+                replacement: processBlock ? replacement.value : null, ...capExtras, ...stateExtras },
     };
   };
   const submit = () => {
@@ -182,6 +196,20 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
     <Modal title={initial?.label || "Block"} onClose={onClose} footer={footer}>
       {/* A block on the canvas has a name; a design alternative's model doesn't. */}
       {initial?.label != null && <BlockNameField value={name} onChange={setName} />}
+      {canNeverFail && (
+        <section className="rbd-dlg-sec">
+          <Checkbox className="rbd-never-fails" checked={neverFails} onChange={(e) => setNeverFails(e.target.checked)}
+                    title="For structure such as a frame, a base or a housing: it needs no life model or repair time, and the system never fails or goes down because of it."
+                    label={<>Never fails <span className="muted">— leave it out of the model (a frame, a base)</span></>} />
+          {neverFails && (
+            <p className="hint m-0">
+              It counts as always working: no life model{repairable ? " or repair time" : ""} is needed, and it never brings
+              the system down. Untick it to give it a model. (The same as Status › Working on the block’s menu.)
+            </p>
+          )}
+        </section>
+      )}
+      {!(neverFails && canNeverFail) && (<>
       <section className="rbd-dlg-sec">
         <h3>Failure</h3>
         {keepBound && (
@@ -248,6 +276,7 @@ export default function LifeModelModal({ initial, onClose, onSubmit, repairable 
       )}
       {capacity && !safety && <RbdCapacityFold initial={initial?.capacity} onChange={setCap} />}
       {repairable && <ExtrasErrors ctl={ctl} />}
+      </>)}
     </Modal>
   );
 }

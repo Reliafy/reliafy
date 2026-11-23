@@ -2129,13 +2129,15 @@ def impact(position_id: str, m: Maintenance = Depends(maintenance)) -> JSONRespo
 @router.post("/positions/{position_id}/rbd")
 def generate_rbd(position_id: str, body: dict = Body(default={}), session=Depends(get_session),
                  ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """Make (or remake) the position's RBD from the positions inside it. check true: only the
-    look-alike positions to ask about first ({ask}); arrangements [{position_ids, how: parallel |
-    standby | series, k?, standby?}]: the answers, recorded as redundancy sets before building."""
+    """Make the position's RBD from the positions inside it. check true: only the look-alike
+    positions to ask about first ({ask}) and the RBD made before ({existing}); arrangements
+    [{position_ids, how: parallel | standby | series, k?, standby?}]: the answers, recorded as
+    redundancy sets before building. existing open (default) | copy | rebuild: what to do when one
+    was made before (open returns it unchanged; rebuild replaces its edits)."""
     from backend.maintenance import rbd_derive
 
     return _run(rbd_derive.save, m, session, position_id, ctx.read_owners, ctx.hidden, body.get("arrangements"),
-                bool(body.get("check")))
+                bool(body.get("check")), body.get("existing"))
 
 
 # ---- graph queries in Cypher (#423): owner-only ------------------------------------------
