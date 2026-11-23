@@ -451,8 +451,8 @@ test("a block that never fails is left out of a repairable diagram from its sett
   await expect(dialog.getByText("Repair-time distribution (time to repair)")).toHaveCount(0);
   await dialog.getByRole("button", { name: "Save block" }).click();
   await expect(dialog).toHaveCount(0);
-  const check = await (await request.post("/api/rbds/validate", { data: { ...graph,
-    nodes: graph.nodes.map((n) => (n.id === "f" ? { ...n, data: { ...n.data, state: "working" } } : n)) } })).json();
+  const check = await (await request.post("/api/rbds/validate", { data: { graph: { ...graph,
+    nodes: graph.nodes.map((n) => (n.id === "f" ? { ...n, data: { ...n.data, state: "working" } } : n)) } } })).json();
   expect(check.valid).toBe(true);
   await expect(page.locator(".rbd-valid-menu .rbd-valid-toggle")).toContainText(/Valid/, { timeout: 15_000 });
   await expectHealthy(page, problems, { label: "never fails block" });

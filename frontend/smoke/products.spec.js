@@ -441,8 +441,8 @@ test("making the product's RBD again asks first and opens the existing one", asy
   await expect(choice.getByRole("button", { name: "Open the existing RBD" })).toBeVisible({ timeout: 20000 });
   await expect(choice.getByRole("button", { name: "Make a new copy" })).toBeVisible();
   await choice.getByRole("button", { name: /Rebuild it \(replaces your edits\)/ }).click();
-  const confirm = page.getByRole("dialog");
-  await expect(confirm.getByText(/Everything changed on it since it was made is lost/)).toBeVisible();
+  const confirm = page.getByRole("alertdialog", { name: "Rebuild the RBD from the structure?" });
+  await expect(confirm).toContainText("Everything changed on it since it was made is lost");
   await confirm.getByRole("button", { name: "Cancel" }).click();
   await choice.getByRole("button", { name: "Open the existing RBD" }).click();
   await expect(page).toHaveURL(new RegExp(`/systems/b/${first.rbd_id}`));
