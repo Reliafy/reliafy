@@ -15384,7 +15384,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             kids.setdefault(r["parent_id"], []).append(pid)
         return _walk_down(root_id, kids)
 
-    def subtree_ids(self, node_id: str, within: str | None = None) -> set[str]:
+    def subtree_ids(self, node_id: str, within: str | None = None, to: str = "see") -> set[str]:
         """The Explorer's roll-up: a tree node and everything the tree shows below it, at any
         depth, as ids. For a position, it and every position nested inside it (one an item
         carries included); for a place (a location), it, the places inside it and every position
@@ -15411,9 +15411,20 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             # opened by Positions shows the positions its positions sit in): then what's inside the
             # asset below it.
             if node["label"] == "Position" and node["id"] not in allowed and not ids & allowed:
-                raise Invalid(f"{node.get('name') or node_id} isn't inside the asset opened.")
+                raise Invalid(f"{node.get('name') or node_id} isn't inside the asset opened. "
+                              f"Open the Explorer on the whole register to {to} it.")
             ids &= allowed
         return ids
+
+    def forecast_within(self, position_id: str, root: str | None) -> set[str] | None:
+        """The one isolation check for a position's forecast with an asset opened (?root=): the
+        ids it may count, as the Explorer shows that asset (positions nested through a fitted
+        item's position, a place's positions set or inherited, and the rows above a place's own
+        with only what's inside it below them). None with no asset opened (everything below
+        the position counts). A position outside the asset is refused, saying what to do."""
+        if root in (None, ""):
+            return None
+        return self.subtree_ids(position_id, within=root, to="forecast")
 
     def _tree_task_due(self, task: dict, subject_label: str) -> str | None:
         """A task's next due date, as _task_view gives it, without its store reads
