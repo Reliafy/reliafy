@@ -1272,6 +1272,10 @@ def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(m
             # that mode's decision only.
             given = dict(body["restoration"] or {})
             view = m.set_task_restoration(task_id, given or None, failure_mode_id=given.pop("failure_mode_id", None))
+        if "support" in body:
+            # Keeps the item on its life (a supporting task, supporting.py): {failure_mode_ids,
+            # reference, impact {form: hazard_ratio, k}, grace, source, note}; null clears it.
+            view = m.set_task_support(task_id, body["support"])
         if "basis" in body:
             # operating: its interval counts running hours; calendar or null: by its unit.
             view = m.set_task_basis(task_id, body["basis"])
@@ -3127,6 +3131,25 @@ def package_forecast_start(package_id: str, root: str | None = None, session=Dep
     from backend.maintenance.forecast_start import package_start
 
     return _run(package_start, m, pm.fetcher(session, ctx.read_owners, ctx.hidden), package_id, root or None)
+
+
+@router.get("/{kind}/{node_id}/forecast-lines")
+def node_forecast_lines(kind: str, node_id: str, root: str | None = None, months: int = 12,
+                        session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                        m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The forecast by owner for an Explorer node (Open in › in the quick forecast tool): a position
+    and everything below it, a task or a work package, from today for months (12, 24, 36 or 60).
+    Each task's line (certain), each failure mode's corrective and follow-on lines (worked out, with
+    90% two-sided ranges), totals and what's not counted. Also over MCP and the CLI: maintenance
+    get.forecast with months."""
+    from backend.maintenance import forecast_lines
+    from backend.maintenance import position_models as pm
+
+    of = {"positions": "position", "tasks": "task", "packages": "package"}.get(kind)
+    if of is None:
+        raise HTTPException(status_code=404, detail="Not found.")
+    fetch = pm.fetcher(session, ctx.read_owners, ctx.hidden)
+    return _run(forecast_lines.node_forecast, m, fetch, of, node_id, root or None, months)
 
 
 @router.get("/positions/{position_id}/forecast")

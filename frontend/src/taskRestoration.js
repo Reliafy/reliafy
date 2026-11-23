@@ -68,7 +68,10 @@ export function restorationBody(task, f) {
   const ownNorm = own && own.kind !== "as_new" ? own : null;
   const decided = task?.restoration?.source === "decision";
   const assumed = task?.restoration?.source === "assumed" ? task.restoration.restoration : null;
-  if (fixed && assumed) {
+  // A supporting task (taskSupport.js) keeps the item on its life: the server sets that it restores none.
+  if (f.supporting) {
+    // nothing: its support says what it does to the part
+  } else if (fixed && assumed) {
     // Assumed from its name: kept as it is unless changed; As new is then said in so many words.
     if (!same(assumed, want)) body.restoration = want ?? { kind: "as_new" };
   } else if (fixed && (!same(ownNorm, want) || (decided && want !== null))) body.restoration = want;

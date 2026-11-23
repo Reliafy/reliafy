@@ -29,3 +29,31 @@
 /* Wide tables scroll inside the card (as .maint-scroll in Maintenance.css, which this page doesn't load). */
 .ft-result .maint-scroll { overflow-x: auto; position: relative; max-width: 100%; }
 .ft-result, .ft-result .rs-details, .ft-result .rs-details-body { min-width: 0; max-width: 100%; }
+/* The sentence: "[1] unit, running [12] [h a week], over [the next 12 months]" (forecast plan 5.2). */
+.ft-sentence, .ft-clause { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.ft-sentence { margin-bottom: var(--space-4); font-size: var(--fs-16); line-height: var(--lh-16); }
+.ft-clause + .ft-clause { margin-top: var(--space-3); }
+.ft-words { color: var(--text-secondary); font-size: var(--fs-14); line-height: var(--lh-14); }
+.ft .ft-n { width: 5em; }
+.ft .ft-age { width: 7em; }
+.ft .ft-name { width: 16em; max-width: 100%; }
+.ft-clause .ctl-group { width: auto; }
+.ft-inputs .psec { margin-top: var(--space-4); }
+.ft-inputs .add-row { margin-top: var(--space-3); }
+.ft-inputs .rs-details { margin-top: var(--space-4); }
+.ft-lead { font-weight: 600; }
+.ft-lines th[scope="row"] { font-weight: 400; text-align: left; white-space: normal; min-width: 12em; }
+.ft-owner { display: block; color: var(--text); font-weight: 500; }
+.ft-owner-meta, .ft-kind { display: block; color: var(--text-secondary); font-size: var(--fs-12); line-height: var(--lh-12); }
+.ft-kind { white-space: normal; }
+.ft-gap { color: var(--warning-text); }
+.ft-gaps { margin-top: var(--space-4); }
+.ft-gaps ul { margin: 0; padding-left: var(--space-5); font-size: var(--fs-13); line-height: var(--lh-13); }
+/* Opened from the Explorer: lines by owner (forecast plan 5.4). A failure mode's follow-on and
+   corrective lines sit indented under it. */
+.ft-lines .ft-sub th[scope="row"] { padding-left: var(--space-6); }
+.ft-lines .ft-sub .ft-owner { font-weight: 400; color: var(--text-secondary); }
+.ft-lines .ft-group th, .ft-lines .ft-group td { border-top: 1px solid var(--border); }
+.ft-lines tfoot th, .ft-lines tfoot td { font-weight: 600; }
+.ft-spares { white-space: normal; min-width: 10em; font-size: var(--fs-13); line-height: var(--lh-13); }
+.ft-assumed { margin-top: var(--space-1); }

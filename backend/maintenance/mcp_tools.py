@@ -102,6 +102,11 @@ Restoration = Annotated[dict[str, Any] | None, Field(description=(
     "the age since the last task) | kijima2 (of its whole age), q (0 as good as new to 1 as bad as old) or "
     "restores (the %), replace_every? (every Nth task a full replacement), replacement_cost?, "
     "failure_mode_id? (that mode's decision only)}; {} clears it."))]
+Support = Annotated[dict[str, Any] | None, Field(description=(
+    "update: keeps the item on its life (a supporting task: greasing, an oil change): {failure_mode_ids? "
+    "([] its whole life), reference? (the interval its life assumes; default its own), impact? ({form: "
+    "'hazard_ratio', k}: failure rate × k if not done; null: none), grace? (% overdue first), source? "
+    "(assumed|maker|fitted), note?}; {} clears it."))]
 OlderThan = Annotated[dict[str, Any] | None, Field(description=(
     "update: at a shutdown, do it only on an item older than {value, unit (days/weeks/months/years)}; "
     "{} clears it."))]
@@ -134,8 +139,10 @@ GET_KINDS: Table = {
         days."""),
     "operations": ("", "id root", """Each position's duty (own or from the one above), other use, shutdown and
         outage windows and time zone, inside root; id = one position. Set with positions.update."""),
-    "forecast": ("id", "root period periods", """id = a position. It and everything inside it: tasks on
-        dates, work, failures and cost per period with a 90% range (guide topic forecast)."""),
+    "forecast": ("id", "root period periods months", """id = a position (it and everything inside it), a task or
+        a work package. Tasks on dates, work, failures and cost per period with a 90% range, and lines by owner
+        (each task; each failure mode's corrective and follow-on) with what's not counted; months (12, 24, 36,
+        60): whole months from today (guide topic forecast)."""),
     "position": ("id", "", """Its path, positions inside it, the item fitted now, every past fitment (with
         from_precision / to_precision for rough dates), failure modes (from RCM, by hand or ad hoc),
         class_failure_modes (seen at other positions of its class), tasks with last-done / next-due and trade,
@@ -516,7 +523,7 @@ TASKS: Table = {
     "update": ("task_id", "name interval unit also_interval also_unit point_id last_done_reading instructions "
                "checklist failure_mode_id unlink_failure_mode source reference outcome clear_outcome trade "
                "while_stored include_positions trigger clear_trigger start cost clear_cost restoration basis older_than "
-               "rule visit_cost", """Rename it or change its interval, second limit (also_interval 0
+               "rule visit_cost support", """Rename it or change its interval, second limit (also_interval 0
         removes it), measurement (point_id, last_done_reading), instructions, checklist, trade ('' clears), failure mode link (unlink_failure_mode
         true removes it), source / reference / outcome (clear_outcome true) of a hand-made task, while_stored
         or include_positions, or its trigger (clear_trigger true: the interval alone again), or when it next
@@ -1423,6 +1430,12 @@ def register() -> None:
 
             reader = _reader(_caller(ctx))
             fetch = pm.fetcher(_db(), reader.read_owners, reader.hidden)
+            label = (m.s.node(m.org, str(rid)) or {}).get("label")
+            if months is not None or label in ("Task", "WorkPackage"):
+                from backend.maintenance import forecast_lines
+
+                of = {"Task": "task", "WorkPackage": "package"}.get(label, "position")
+                return run(forecast_lines.node_forecast, m, fetch, of, rid, root, _d(months, 12))
             return run(position_forecast.position_forecast, m, rid, root, _d(period, "month"), _d(periods, 12),
                        fetch)
         if kind == "item_class" and fleet:
@@ -2032,7 +2045,7 @@ def register() -> None:
                           basis: Annotated[Literal["calendar", "operating"] | None, Field(description=(
                               "update: operating counts its interval in running hours (an RBD puts it on "
                               "the calendar through the block's duty); calendar (default)."))] = None,
-                          older_than: OlderThan = None,
+                          older_than: OlderThan = None, support: Support = None,
                           trade_rates: Annotated[dict[str, float | None] | None, Field(description=(
                               "set_resources: hourly rates by trade, e.g. {'Fitter': 95}; null clears "
                               "one."))] = None,
@@ -2074,6 +2087,8 @@ def register() -> None:
                     view = m.set_task_basis(task_id, basis)
                 if older_than is not None:
                     view = m.set_task_older_than(task_id, older_than)
+                if support is not None:
+                    view = m.set_task_support(task_id, support or None)
                 return view
             return run(update)
         if action == "link":

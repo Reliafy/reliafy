@@ -65,6 +65,8 @@ LEGACY: dict = {
 NEW_ACTIONS = {
     # One search for everything the user can open, by name (Nov 2026).
     ("list", "search"),
+    # The quick forecast as a sentence: work on a schedule and a part that fails (Nov 2026).
+    ("analyse", "forecast"),
     # Overhaul every X, replace after N overhauls (Nov 2026).
     ("analyse", "optimal_overhaul_replace"),
     # A how-often rule's dates, or an operating plan's hours by date, saved nowhere (Nov 2026).
@@ -187,7 +189,9 @@ def test_gating_and_slots_are_the_earlier_ones_renamed():
     assert mcp_server._LIBRARY_TOOLS == libraries
     # And fitting a degradation model (Nov 2026), Pro like every fit.
     fits = {"analyse.bayes_update", "change.model_fit_degradation"}
-    assert {_new_key(k) for k in OLD_PRO_ONLY} | fits | libraries == mcp_server.PRO_ONLY_TOOLS
+    # The quick forecast (Nov 2026) runs the fleet engine: Pro like analyse fleet_forecast.
+    forecasts = {"analyse.forecast"}
+    assert {_new_key(k) for k in OLD_PRO_ONLY} | fits | libraries | forecasts == mcp_server.PRO_ONLY_TOOLS
     assert {_new_key(k) for k in OLD_HEAVY} | NEW_HEAVY == mcp_server.HEAVY_TOOLS
     assert {_new_key(k) for k in OLD_UNGATED} == mcp_server.UNGATED_TOOLS
     assert {_new_key(k) for k in OLD_UNCOUNTED} == mcp_server.UNCOUNTED_TOOLS
@@ -258,7 +262,8 @@ def test_the_listed_tools_are_small(env):
     optimal_overhaul_replace, after shortening the change, report_problem and guide intros; 7,985 with
     list search, after shortening the get and list intros; 7,988 with change model_fit_degradation, import_rcm
     and optimal_replacement_save, after shortening the get, list, change and report_problem intros and three
-    required lines; 7,987 with change model_adjust) and
+    required lines; 7,987 with change model_adjust; 7,987 with analyse forecast, after shortening four one-of
+    lines to "model_id|params") and
     about 1,000 for the instructions (3,663 before)."""
     from backend import mcp_server
 

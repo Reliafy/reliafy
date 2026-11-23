@@ -425,7 +425,7 @@ DATA_NOTICE = ("Names, notes, descriptions, labels, column headers and values in
 # arriving through the Pro API. Reliafy Maintenance adds its own when on.
 _FIT_TOOLS = {"analyse.fit", "analyse.bayes_update", "change.model_fit", "change.model_fit_alt", "change.model_fit_recurrent",
               "analyse.fit_joint", "change.model_fit_joint", "change.model_fit_degradation"}
-_FLEET_TOOLS = {"list.fleets", "analyse.fleet_forecast", "list.fleet_alerts", "change.fleet_create_alert"}
+_FLEET_TOOLS = {"list.fleets", "analyse.fleet_forecast", "analyse.forecast", "list.fleet_alerts", "change.fleet_create_alert"}
 # Making, filling, editing, sharing and publishing libraries (Derryn, 15 Nov 2026); reading and using
 # public libraries stays on every plan, and deleting one's own library (change library_delete) too.
 _LIBRARY_TOOLS = {"change.library_create", "change.library_update", "change.library_add", "change.library_remove"}
@@ -870,10 +870,10 @@ ONE_OF = {
     ("analyse", "growth_projection"): "model_id or x", ("change", "model_fit_recurrent"): "times or dataset_id",
     ("change", "import_rbd"): "upload_id or content", ("change", "model_fit"): "name, data or dataset_id",
     ("change", "model_fit_alt"): "name, data + stresses or dataset_id",
-    ("analyse", "optimal_replacement"): "model_id or params, planned_cost, unplanned_cost",
-    ("analyse", "failure_finding_interval"): "model_id or params, target_availability",
-    ("analyse", "calendar_replacement"): "model_id or params, shuts, failure_cost",
-    ("analyse", "next_replacement"): "model_id or params, age, shuts, failure_cost",
+    ("analyse", "optimal_replacement"): "model_id|params, planned_cost, unplanned_cost",
+    ("analyse", "failure_finding_interval"): "model_id|params, target_availability",
+    ("analyse", "calendar_replacement"): "model_id|params, shuts, failure_cost",
+    ("analyse", "next_replacement"): "model_id|params, age, shuts, failure_cost",
     ("analyse", "prediction"): "lines or product_id", ("analyse", "schedule"): "rule or plan",
     ("change", "prediction_save"): "name, lines or product_id",
     ("change", "library_add"): "library_id, dataset_id or model_id",
@@ -7035,6 +7035,48 @@ def optimal_replacement(
     return _with_conversion(_maybe_curve(out, include_curve), converted)
 
 
+def quick_forecast(
+    ctx: Context,
+    work: Annotated[Optional[dict[str, Any]], Field(description=(
+        "Work on a schedule: {name, every, unit (hours|days|weeks|months|years), effect? (none: it doesn't change "
+        "the part's life; replaces: it replaces the part at that age), hours_each?, cost_each?, spares_each?, "
+        "spare_name?}. Its count is certain, assumed just done at the start."))] = None,
+    part: Annotated[Optional[dict[str, Any]], Field(description=(
+        "A part that fails: {age or ages (one per unit), hours_if_fails?, cost_if_fails?, spare_cost?, use_per_day? "
+        "(a life in cycles, km...)} with model_id or distribution_id + params below."))] = None,
+    model_id: _MODEL_ID = None,
+    distribution_id: _DIST_ID = None,
+    params: _PARAMS = None,
+    unit: _UNIT = None,
+    units: Annotated[Optional[int], Field(ge=1, description="How many units (default 1; a list of ages counts them).")] = None,
+    running: Annotated[Optional[dict[str, Any]], Field(description=(
+        "{hours, per: day|week} or {all_the_time: true}. Default all the time (24 h a day), said on the answer."))]
+    = None,
+    months: Annotated[int, Field(description="Horizon: 12, 24, 36 or 60.")] = 12,
+    start: Annotated[Optional[str], Field(description="First date (default today).")] = None,
+) -> dict[str, Any]:
+    """The quick forecast as a sentence (the app's Decisions > Forecasts): work on a schedule, a part that
+    fails, or both. Lines with one owner each (the work, the part's failures): times, hours, cost and spares,
+    the kind of number (certain, worked out, simulated) and what each leaves out; totals with 90% two-sided
+    ranges. Saves nothing. Pro."""
+    from backend.services import quick_forecast as qf
+
+    user, db = _caller(ctx), _db()
+    body: dict[str, Any] = {"work": work, "units": units, "running": running, "months": months, "start": start}
+    if part is not None or model_id or distribution_id:
+        inputs = _dist_inputs(db, user["uid"], model_id, distribution_id, params, unit)
+        inputs.pop("unit_conversion", None)
+        name = None
+        if model_id:
+            got = models_service.get_model(db, model_id, _owners(user["uid"]))
+            name = got.name if got else None
+        body["part"] = {**(part or {}), **inputs, "name": name or (part or {}).get("name") or "Typed parameters"}
+    try:
+        return qf.quick_forecast(body)
+    except fleet_service.FleetValidationError as exc:
+        raise ToolError(client_message(exc)) from None
+
+
 def save_optimal_replacement(
     ctx: Context,
     name: Annotated[str, Field(min_length=1, max_length=200, description="The analysis's name.")],
@@ -10605,6 +10647,7 @@ _A = {  # new tool -> {action: the function it runs}
         "next_failure": _act(next_failure),
         "growth_projection": _act(growth_projection),
         "optimal_replacement": _act(optimal_replacement),
+        "forecast": _act(quick_forecast),
         "calendar_replacement": _act(calendar_replacement),
         "next_replacement": _act(calendar_next_replacement),
         "failure_finding_interval": _act(failure_finding_interval),

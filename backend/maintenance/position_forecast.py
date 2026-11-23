@@ -428,6 +428,16 @@ def _task_effects(m: Maintenance, fetch, pos: dict, mode_ids, life_unit: str, us
         brief = {"id": task["id"], "name": task.get("name") or ""}
         if svc._on_event_only(task) or not task.get("interval"):
             continue
+        if task.get("support"):
+            # A supporting task keeps the item on its life (supporting.py): the life model already
+            # assumes it, so it changes no failure while done as planned (forecast-rules 4.1).
+            from backend.maintenance import supporting
+
+            not_credited.append({"task": brief, "support": True,
+                                 "reason": "it supports this life (keeps it on its life): the life model already "
+                                           "assumes it, so the failures are as the model gives ("
+                                           + supporting.impact_words(task["support"].get("impact")) + ")"})
+            continue
         if outcome == "fixed_interval":
             from backend.maintenance import restoration as rs
 
@@ -518,6 +528,8 @@ class _Credited:
     doesn't give for checks yet)."""
 
     def __init__(self, fc, miss: float):
+        self.base = fc  # the failures if nothing found them (forecast_lines splits found and missed)
+        self.miss = miss
         self.method = fc.method
         self.notes = fc.notes
         self.expected_failures = np.asarray(fc.expected_failures, dtype=float) * miss
@@ -641,7 +653,9 @@ def _model_forecast(m: Maintenance, fetch, pos: dict, hours_map, start: date, en
         part = NonRepairable(dist, unplanned_cost=cost if cost else 1.0, planned_cost=0.0)
         policy = {"every": effects["every"], "resets": False, "since_renewal": effects["since_renewal"]}
     else:
-        part = NonRepairable(dist, unplanned_cost=cost) if cost is not None else NonRepairable(dist)
+        # With no failure cost set, a nominal one, so the count still comes with its distribution and
+        # range (the costs are dropped after, _NoCost): a gap in the cost never loses the failures' range.
+        part = NonRepairable(dist, unplanned_cost=cost if cost is not None else 1.0)
     try:
         if windows is not None:
             ends = windows(lib_unit, usage)
@@ -652,7 +666,7 @@ def _model_forecast(m: Maintenance, fetch, pos: dict, hours_map, start: date, en
             fc = schedule.failures_by_period(part, usage, period, age=float(age), unit=lib_unit, **policy)
     except (ValueError, TypeError, NotImplementedError) as exc:
         return None, {**brief, "reason": f"couldn't be forecast: {exc}"}
-    if cost is None and policy:
+    if cost is None:
         fc = _NoCost(fc)
     if effects["miss"] < 1.0:
         fc = _Credited(fc, effects["miss"])
@@ -677,6 +691,7 @@ def _model_forecast(m: Maintenance, fetch, pos: dict, hours_map, start: date, en
                     + (f"; with the maintenance: {tasks_words}" if tasks_words else "; run to failure")
                     + "".join(f"; not counted: {x['task']['name']} ({x['reason']})" for x in effects["not_credited"]),
         "tasks_counted": effects["credited"], "tasks_not_counted": effects["not_credited"],
+        "found_share": _num(1.0 - effects["miss"], 6) if effects["miss"] < 1.0 else None,
         "method": fc.method, "notes": list(fc.notes) + (
             ["The checks' share of warnings missed is applied to the expected failures and cost; no range is "
              "given for them yet."] if effects["miss"] < 1.0 else []),
@@ -875,7 +890,7 @@ def _prompts(m: Maintenance, fetch, tree, tasks_out: list[dict], models: list[di
             lives_for.update(fm["id"] for fm in m._modes_on(r["position"]["id"]))
     no_effect, seen = [], set()
     for t in tasks_out:
-        if t["id"] in counted_ids or t["id"] in seen:
+        if t["id"] in counted_ids or t["id"] in seen or why.get(t["id"], {}).get("support"):
             continue
         seen.add(t["id"])
         serves = [fm for fm in m.s.out(m.org, t["id"], "MITIGATES") if not fm.get("retired")]
@@ -1179,7 +1194,7 @@ def position_forecast(m: Maintenance, position_id: str, root: str | None = None,
     if no_hours_tasks:
         notes.append(f"{len(no_hours_tasks)} task{'s have' if len(no_hours_tasks) != 1 else ' has'} no labour in "
                      "its LSA: the labour hours leave them out.")
-    return {
+    out = {
         "position": {"id": pos["id"], "name": pos.get("name", "")}, "root": root, "today": today,
         "period": period, "periods": periods, "start": start.isoformat(), "end": end.isoformat(),
         "covers": words, "answer": answer, "range": RANGE_WORDS, "range_level": RANGE_LEVEL,
@@ -1191,6 +1206,10 @@ def position_forecast(m: Maintenance, position_id: str, root: str | None = None,
         "states": states, "notes": notes, "prompts": prompts, "cost_basis": cost_basis,
         "truncated": len(tree) >= MAX_POSITIONS,
     }
+    from backend.maintenance import forecast_lines
+
+    out["lines"] = forecast_lines.build(m, out, model_rows, tree, root)
+    return out
 
 
 def _answer(end: date, t: dict, left_out: int = 0) -> str:

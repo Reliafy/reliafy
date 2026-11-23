@@ -89,6 +89,20 @@ def scratch_forecast(body: dict = Body(...), ctx: AccessCtx = Depends(get_access
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
 
 
+@router.post("/quick-forecast")
+def quick_forecast(body: dict = Body(...), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
+    """The quick forecast tool as a sentence (Decisions › Forecasts), not saved: units and how they run,
+    a horizon, and work on a schedule, a part that fails, or both. Lines by owner with the kind of
+    number and what each leaves out, totals with 90% two-sided ranges. Also over MCP and the CLI:
+    analyse forecast."""
+    from backend.services import quick_forecast as qf
+
+    try:
+        return JSONResponse(content=qf.quick_forecast(body))
+    except fleet_service.FleetValidationError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+
+
 @router.get("/fleets")
 def list_fleets(session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> dict:
     shared_by = shares_service.shared_by_map(session, ctx.uid, "fleets") if ctx.is_personal else {}
