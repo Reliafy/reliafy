@@ -13,7 +13,7 @@ import { modeAnswers } from "../decisionCheck.js";
 import { formatCost } from "../money.js";
 import { tabPlace } from "../explorerTabs.js";
 import {
-  ANALYSIS_KIND, TASK_COST_FIELD, TIME_UNITS, analysisName, taskCostWords, answerUnitWords, calculatorFor, isUseUnit, money, num, pct, pfUnits, rationale, roundDown, taskUnit, withUnit,
+  ANALYSIS_KIND, TASK_COST_FIELD, TIME_UNITS, analysisName, taskCostWords, answerUnitWords, calculatorFor, isUseUnit, money, num, pct, pfStartUnit, pfUnits, rationale, roundDown, taskUnit, withUnit,
 } from "../rcmIntervals.js";
 
 // "Calculate…" on an RCM task card (RcmModeTasks): how often to do the task, worked out
@@ -263,7 +263,7 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse, inli
               <InputGroup label="P-F interval">
                 <TextInput type="number" inputMode="decimal" min="0" step="any" value={form.pf_interval} onChange={set("pf_interval")} aria-label="P-F interval" placeholder="e.g. 10" />
                 <Select value={form.pf_unit} onChange={set("pf_unit")} aria-label="P-F interval unit">
-                  {pfUnits(task).map((u) => <option key={u} value={u}>{u}{isUseUnit(u) ? " (use)" : ""}</option>)}
+                  {pfUnits(task, form.pf_unit).map((u) => <option key={u} value={u}>{u}{isUseUnit(u) ? " (use)" : ""}</option>)}
                 </Select>
               </InputGroup>
             </Field>
@@ -398,7 +398,7 @@ const WHAT = {
 
 function startForm(key, task) {
   if (key === "pf") {
-    return { pf_interval: "", pf_unit: isUseUnit(task?.unit) ? taskUnit(task.unit) : "weeks", act_time: "", onset_rate: "", inspection_cost: "", found_cost: "", failure_cost: "", detection_probability: "100" };
+    return { pf_interval: "", pf_unit: pfStartUnit(task), act_time: "", onset_rate: "", inspection_cost: "", found_cost: "", failure_cost: "", detection_probability: "100" };
   }
   if (key === "ff") {
     return { device: "rate", model: null, failure_rate: "", target: "1", targetAssumed: true, test_cost: "", repair_cost: "", demand_rate: "", consequence_cost: "" };

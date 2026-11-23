@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cells, headline, metaLine, tableRows } from "./forecastLines.js";
+import { cells, countText, headline, metaLine, tableRows } from "./forecastLines.js";
 
 // The mower deck of the forecast plan (3.4), as the server answers it before a follow-on is recorded.
 const OUT = {
@@ -62,4 +62,19 @@ test("the headline: known costs with the 90% two-sided range, and the split by k
   assert.equal(headline(OUT, "hours", money).lead, "4.2 h known hours expected in the next 12 months.");
   assert.match(headline(OUT, "spares", money).lead, /^1\.65 like items to replace failures \(0 to 3, 90% two-sided\)/);
   assert.equal(metaLine(OUT), "3 lives (each 900 h) · Hours from the operating plan (About 12 hours a week)");
+});
+
+test("counts: three figures, a very small count reads \"≈ 0.002\", never a long float", () => {
+  assert.equal(countText(0.00213456789012), "≈ 0.002");
+  assert.equal(countText(0.0004), "< 0.001");
+  assert.equal(countText(0), "0");
+  assert.equal(countText(1.78214309), "1.78");
+  assert.equal(countText(1234.5678), "1,230");
+  assert.equal(countText(null), "—");
+  const line = { id: "x", kind: "corrective", number: "worked out", times: { expected: 0.00213456789012, interval: [0, 0.00987654321098] },
+    spares: [{ name: "a like item", expected: 0.00213456789012 }], gaps: [] };
+  const c = cells(line, money);
+  assert.equal(c.times, "≈ 0.002 (0 to ≈ 0.01)");
+  assert.equal(c.spares, "≈ 0.002 × a like item");
+  for (const text of [c.times, c.spares]) assert.doesNotMatch(text, /\d\.\d{4,}/);
 });
