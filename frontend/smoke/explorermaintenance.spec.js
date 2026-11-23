@@ -127,6 +127,8 @@ test("Maintenance at 400 px: the tree of tasks, a task opened, an old forecast a
   await shot(page, "maintenance-tree-phone");
   await nameRow(page, `Check the seal ${tag}`).locator(".tp-nm").click();
   await expect(side(page).getByRole("form", { name: `Task: Check the seal ${tag}` })).toContainText("$45 each time");
+  // When the item is replaced: restart or keep, the default said with why (a task on its own restarts).
+  await expect(side(page).getByRole("combobox", { name: "When the item is replaced" })).toContainText("Restart the schedule");
   expect(await sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "maintenance-task-phone");
   // Open in from a task's ⋯ on a phone: Select keeps its place, so the tools are under More › (in place).

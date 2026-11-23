@@ -122,7 +122,9 @@ def test_the_25_h_and_50_h_plans_breakdowns_match_the_hand_check(setting):
 
 
 def test_a_replacement_takes_the_failures_off_by_the_library(setting):
-    """The 50 h plan's spark plugs against RePyability called directly: block replacement every 100 h."""
+    """The 50 h plan's spark plugs against RePyability called directly, every 100 h: age replacement by
+    default (a task on its own restarts when the plug is replaced, Nov 2026), block replacement when the
+    task keeps its schedule."""
     import surpyval as surv
     from repyability import NonRepairable
     from repyability.schedule import DutyPlan, Rate, failures_by_period
@@ -132,8 +134,15 @@ def test_a_replacement_takes_the_failures_off_by_the_library(setting):
     fc = pf.position_forecast(m, b, root=b, period="year", periods=2, fetch=fetch)
     row = next(r for r in fc["models"] if r["name"] == "Spark plug life")
     usage = DutyPlan(Rate(12, per="week")).forecast(fc["start"], "2029-01-01", readings={"hours": 0})
-    direct = failures_by_period(NonRepairable(surv.Weibull.from_params(list(PLUG)), unplanned_cost=1.0,
-                                              planned_cost=0.0), usage, "year", age=0.0, unit="hours", every=100.0,
+    part = NonRepairable(surv.Weibull.from_params(list(PLUG)), unplanned_cost=1.0, planned_cost=0.0)
+    age_repl = failures_by_period(part, usage, "year", age=0.0, unit="hours", every=100.0, resets=True)
+    assert row["replacing_task"]["resets"] is True
+    assert row["expected_failures"] == pytest.approx(age_repl.total["expected_failures"], rel=1e-3)
+    plugs = next(t for t in m._tasks_on(b) if t["name"] == "Replace spark plugs")
+    m.set_task_on_replace(plugs["id"], "keep")
+    fc = pf.position_forecast(m, b, root=b, period="year", periods=2, fetch=fetch)
+    row = next(r for r in fc["models"] if r["name"] == "Spark plug life")
+    direct = failures_by_period(part, usage, "year", age=0.0, unit="hours", every=100.0,
                                 resets=False, since_renewal=0.0)
     assert row["expected_failures"] == pytest.approx(direct.total["expected_failures"], rel=1e-3)
     run_to_failure = failures_by_period(NonRepairable(surv.Weibull.from_params(list(PLUG))), usage, "year", age=0.0,

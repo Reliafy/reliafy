@@ -18,7 +18,7 @@ export function tableRows(lines) {
   const groups = all.filter((l) => l.kind === "failures");
   const rows = planned.map((l) => ({
     id: l.id, depth: 0, owner: l.owner, link: l.link || null,
-    meta: [l.how_often, l.position?.name, l.does?.text].filter(Boolean).join(" · "),
+    meta: [l.how_often, l.position?.name, l.does?.text, l.note].filter(Boolean).join(" · "),
     marker: l.does?.marker || null, line: l,
   }));
   for (const g of groups) {

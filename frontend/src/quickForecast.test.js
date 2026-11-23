@@ -11,7 +11,7 @@ test("schedule only needs no model; the running and horizon are one sentence", (
   assert.deepEqual(body.running, { hours: 12, per: "week" });
   assert.equal(body.months, 12);
   assert.equal(body.start, "2026-11-24");
-  assert.deepEqual(body.work, { name: "Grease", every: 50, unit: "hours", effect: "none", hours_each: 0.2, cost_each: null,
+  assert.deepEqual(body.work, { name: "Grease", every: 50, unit: "hours", effect: "none", on_replace: "restart", hours_each: 0.2, cost_each: null,
     spares_each: null, spare_name: null });
   assert.equal(body.part, undefined);
 });

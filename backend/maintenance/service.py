@@ -80,6 +80,7 @@ from backend.maintenance import restoration as _restoration
 from backend.maintenance import supporting as _supporting
 from backend.maintenance import failure_costs as _failure_costs
 from backend.maintenance import responses as _responses
+from backend.maintenance import restart as _restart
 from backend.maintenance import visit_costs as _visit_costs
 from backend.maintenance import shutdowns as _shutdowns
 from backend.maintenance import operations as _operations
@@ -3250,7 +3251,8 @@ def _walk_down(top: str, kids: dict) -> set[str]:
 
 class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDeleteOps, PositionModelOps,
                   CaptureOps, AssetSearchOps, _restoration.RestorationOps, _supporting.SupportOps, _shutdowns.ShutdownOps, _operations.OperationsOps,
-                  _failure_costs.FailureCostOps, _visit_costs.VisitCostOps, _responses.ResponseOps):
+                  _failure_costs.FailureCostOps, _visit_costs.VisitCostOps, _responses.ResponseOps,
+                  _restart.RestartOps):
     """One organisation's maintenance graph, acted on by one person."""
 
     def __init__(self, store: GraphStore, org: str, actor: str | None = None, limited: bool = True,
@@ -3987,6 +3989,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                           "then fit the new one.")
         day, precision = dated(on, from_precision, "fitted date", today=self.today())
         iid = self._item_from(item_id, new_item)
+        self.note_done_before_fit(position_id, day)  # keep tasks read it back (restart.py)
         self._emit("item.fitted", {"fitment_id": new_id(), "item_id": iid, "position_id": position_id, "on": day,
                                    "task_readings": self._renewal_readings(position_id, day)}
                    | ({"from_precision": precision} if precision != "exact" else {}))
@@ -6779,6 +6782,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         counter of its own goes by the use it has had wherever it was fitted; an item's
         calendar task set to pause while stored doesn't count the days it spent out of
         a position."""
+        # Restart on a replacement (restart.py): counted from the item fitted since it was last done.
+        task = self.restarted(task)
         base = task.get("last_done") or task["start"]
         limit = f"{interval:g} {unit}"
         subject = _subject(self.s, self.org, task) or {}
@@ -7042,6 +7047,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                               if p["label"] == "Proposal" and p.get("status") == "pending"), None),
             # What raises it besides (or instead of) the interval: null when only the interval does.
             "trigger": self._trigger_view(task.get("trigger")), "on_event": on_event,
+            "on_replace": {**self.task_on_replace(task), "restarted_on": self.restarted(task).get("restarted_on")},
             # What doing it needs (its LSA record: labour, tools, spares, consumables, access, method).
             "resources": self._resources_view(task),
         }
@@ -9017,6 +9023,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 if a.get("item_id") or (a.get("new_item") or {}).get("name"):
                     iid = self._item_from(a.get("item_id"), a.get("new_item"))
                     starts = new_id()
+                    self.note_done_before_fit(at, day)  # keep tasks read it back (restart.py)
                     self._emit("item.fitted", {"fitment_id": starts, "item_id": iid,
                                                "position_id": at, "on": day,
                                                "task_readings": self._renewal_readings(at, day)})
@@ -9342,6 +9349,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 raise Invalid("It can't move before it was fitted where it is.")
             self._emit("item.removed", {"fitment_id": current["id"], "on": day, "reason": "planned",
                                         "failure_mode_id": None})
+        self.note_done_before_fit(to_position_id, day)  # keep tasks read it back (restart.py)
         self._emit("item.fitted", {"fitment_id": new_id(), "item_id": item_id,
                                    "position_id": to_position_id, "on": day,
                                    "task_readings": self._renewal_readings(to_position_id, day)})
@@ -16969,6 +16977,7 @@ PROJECTORS.update(_restoration.PROJECTORS)
 # A supporting task: it keeps the item on its life (Nov 2026, supporting.py).
 PROJECTORS.update(_supporting.PROJECTORS)
 PROJECTORS.update(_failure_costs.PROJECTORS)
+PROJECTORS.update(_restart.PROJECTORS)
 PROJECTORS.update(_visit_costs.PROJECTORS)
 PROJECTORS.update(_shutdowns.PROJECTORS)
 

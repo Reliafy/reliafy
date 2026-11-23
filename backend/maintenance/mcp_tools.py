@@ -526,14 +526,15 @@ TASKS: Table = {
     "update": ("task_id", "name interval unit also_interval also_unit point_id last_done_reading instructions "
                "checklist failure_mode_id unlink_failure_mode source reference outcome clear_outcome trade "
                "while_stored include_positions trigger clear_trigger start cost clear_cost restoration basis older_than "
-               "rule visit_cost support", """Rename it or change its interval, second limit (also_interval 0
+               "rule visit_cost support on_replace", """Rename it or change its interval, second limit (also_interval 0
         removes it), measurement (point_id, last_done_reading), instructions, checklist, trade ('' clears), failure mode link (unlink_failure_mode
         true removes it), source / reference / outcome (clear_outcome true) of a hand-made task, while_stored
         or include_positions, or its trigger (clear_trigger true: the interval alone again), or when it next
         falls due (start, a date; then every interval; '' goes back to one interval from last done). cost: what it costs
         each time, typed (in place of its LSA's labour at trade rates, spares and consumables; clear_cost true
         goes back to that); the RCM's calculators read it. visit_cost: a task in no package, its call-out and setup each
-        time (-1 clears it). Its subject can't change: move it, or retire it and
+        time (-1 clears it). on_replace: when the item is replaced, restart the schedule or keep it ('' the
+        default: restart on its own, keep for a calendar pattern or in a package). Its subject can't change: move it, or retire it and
         create another."""),
     "link": ("task_id failure_mode_id", "", "The task also prevents that mode (on its position or one inside it); "
              "its other links stay."),
@@ -2049,6 +2050,9 @@ def register() -> None:
                               "update: operating counts its interval in running hours (an RBD puts it on "
                               "the calendar through the block's duty); calendar (default)."))] = None,
                           older_than: OlderThan = None, support: Support = None,
+                          on_replace: Annotated[Literal["restart", "keep", ""] | None, Field(description=(
+                              "update: when the item is replaced, restart the schedule (from the fitting) or "
+                              "keep it; '' goes back to the default."))] = None,
                           trade_rates: Annotated[dict[str, float | None] | None, Field(description=(
                               "set_resources: hourly rates by trade, e.g. {'Fitter': 95}; null clears "
                               "one."))] = None,
@@ -2092,6 +2096,8 @@ def register() -> None:
                     view = m.set_task_older_than(task_id, older_than)
                 if support is not None:
                     view = m.set_task_support(task_id, support or None)
+                if on_replace is not None:
+                    view = m.set_task_on_replace(task_id, on_replace or None)
                 return view
             return run(update)
         if action == "link":

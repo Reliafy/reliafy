@@ -22,7 +22,7 @@ import { unitInText } from "../components/unitText.js";
 import { strategyUnit } from "../strategyTools.js";
 import { VIEWS, fromParam, parseAges, viewOf, whenNext, whenText } from "../sparesForecast.js";
 import {
-  BLANK, BLANK_WORK, EFFECTS, HORIZON_OPTIONS, RUNNING, WORK_UNITS, answerOf, boundText, horizonWords,
+  BLANK, BLANK_WORK, EFFECTS, HORIZON_OPTIONS, ON_REPLACE, RUNNING, WORK_UNITS, answerOf, boundText, horizonWords,
   isCalendar, isHours, kindWords, lineCells, missing, requestOf, seriesOf, viewKey,
 } from "../quickForecast.js";
 import { cells, headline, metaLine, tableRows } from "../forecastLines.js";
@@ -106,6 +106,7 @@ function Lines({ out, view, money }) {
                 <span className="ft-owner-meta">{l.owner_kind === "failure" ? "If it fails (corrective)"
                   : l.replaces ? `Replaces the part every ${l.every.value.toLocaleString("en-GB")} ${l.every.unit}`
                     : `Every ${l.every.value.toLocaleString("en-GB")} ${l.every.unit}`}</span>
+                {l.note && <span className="ft-owner-meta">{l.note}</span>}
               </th>
               <td className="num">{c.times}</td>
               <td className="num">{c.amount ?? <span className="ft-gap" title={c.gap || ""}>{c.gap ? "not given" : "—"}</span>}</td>
@@ -451,6 +452,12 @@ function SentenceTool({ view }) {
             {otherUnit && (
               <Field label={`${partNow} a unit adds a day`}>
                 <TextInput inputMode="decimal" value={form.usePerDay} onChange={(e) => set({ usePerDay: e.target.value })} />
+              </Field>
+            )}
+            {form.work && form.part && form.work.effect === "replaces" && (
+              <Field label="When the part is replaced" help="Restart: a failure restarts its clock, so how many it takes is a chance. Keep: on its schedule, failures or not.">
+                <Select ariaLabel="When the part is replaced" value={form.work.onReplace || "restart"} options={ON_REPLACE}
+                        onChange={(v) => setWork({ onReplace: v })} />
               </Field>
             )}
             {form.work && view.value !== "hours" && (

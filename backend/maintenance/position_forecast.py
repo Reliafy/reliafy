@@ -223,6 +223,7 @@ def _lib_task(m: Maintenance, task: dict, hours_map, end: date, name: str | None
     from backend.maintenance import schedule
 
     view = m._task_view(task)
+    task = m.restarted(task)  # restart on a replacement (restart.py): counted from the item fitted
     every, why = _limit(m, task, task["interval"], task["unit"], task.get("rule"), hours_map)
     also = None
     if hours_only and task.get("also_unit") and svc._is_calendar(task["also_unit"]):
@@ -492,8 +493,12 @@ def _task_effects(m: Maintenance, fetch, pos: dict, mode_ids, life_unit: str, us
             not_credited.append({"task": brief, "reason": "it has no modelled effect on failures (not a replacement "
                                                           "or a check in its RCM decision)", "fix": "effect"})
     every = since = None
+    resets, renew_task = False, None
     if renew:
         every, task = min(renew, key=lambda r: r[0])
+        renew_task = task
+        # Restart (the default for a task on its own): age replacement; keep: block replacement (restart.py).
+        resets = m.task_on_replace(task)["value"] == "restart"
         for other_every, other in renew:
             if other is not task:
                 not_credited.append({"task": {"id": other["id"], "name": other.get("name") or ""},
@@ -519,9 +524,11 @@ def _task_effects(m: Maintenance, fetch, pos: dict, mode_ids, life_unit: str, us
             to_first = float(np.atleast_1d(usage.model_time([first_at], unit=_LIB_UNITS[life_unit]))[0])
             since = min(max(0.0, every - max(0.0, to_first)), every * (1 - 1e-9))
             credited.insert(0, {"task": {"id": task["id"], "name": task.get("name") or ""},
-                                "effect": f"a planned replacement every {_num(every, 4):g} {life_unit}"})
+                                "effect": f"a planned replacement every {_num(every, 4):g} {life_unit} of "
+                                          + ("age, restarting after a failure (age replacement)" if resets else
+                                             "the schedule, kept after a failure (block replacement)")})
     return {"every": every, "since_renewal": since, "miss": miss, "credited": credited,
-            "not_credited": not_credited}
+            "not_credited": not_credited, "resets": resets, "renew_task": renew_task if every is not None else None}
 
 
 class _Credited:
@@ -653,7 +660,8 @@ def _model_forecast(m: Maintenance, fetch, pos: dict, hours_map, start: date, en
         # A planned replacement's own cost is the task's, counted with the tasks: none here.
         # With no failure cost set, a nominal one (the library needs it; the costs are dropped after).
         part = NonRepairable(dist, unplanned_cost=cost if cost else 1.0, planned_cost=0.0)
-        policy = {"every": effects["every"], "resets": False, "since_renewal": effects["since_renewal"]}
+        policy = ({"every": effects["every"], "resets": True} if effects["resets"] else
+                  {"every": effects["every"], "resets": False, "since_renewal": effects["since_renewal"]})
     else:
         # With no failure cost set, a nominal one, so the count still comes with its distribution and
         # range (the costs are dropped after, _NoCost): a gap in the cost never loses the failures' range.
@@ -672,6 +680,22 @@ def _model_forecast(m: Maintenance, fetch, pos: dict, hours_map, start: date, en
         fc = _NoCost(fc)
     if effects["miss"] < 1.0:
         fc = _Credited(fc, effects["miss"])
+    joint = None
+    if effects["resets"] and effects.get("renew_task") is not None and windows is None:
+        # Age replacement: the planned replacements are a chance too. Their joint distribution with the
+        # failures over the horizon (worked_part.py) gives the task's line and the totals' range.
+        from backend.services import worked_part
+
+        try:
+            span = float(np.atleast_1d(usage.model_time([datetime.combine(end_excl, datetime.min.time())],
+                                                         unit=lib_unit))[0])
+            joint = worked_part.forecast(dist, [(float(age), 1)], [max(span, 1e-9)], effects["every"], True)["total"]
+        except (ValueError, TypeError, NotImplementedError):
+            joint = None
+    try:
+        mean_life = float(np.atleast_1d(dist.mean())[0])
+    except Exception:  # noqa: BLE001 - a life with no finite mean says nothing here
+        mean_life = None
     quality = "typed in, not fitted from data" if placeholder else "fitted from data"
     total = fc.total
     tasks_words = "; ".join(f"{c['task']['name']}: {c['effect']}" for c in effects["credited"])
@@ -695,11 +719,14 @@ def _model_forecast(m: Maintenance, fetch, pos: dict, hours_map, start: date, en
                     + "".join(f"; not counted: {x['task']['name']} ({x['reason']})" for x in effects["not_credited"]),
         "tasks_counted": effects["credited"], "tasks_not_counted": effects["not_credited"],
         "found_share": _num(1.0 - effects["miss"], 6) if effects["miss"] < 1.0 else None,
+        "mean_life": _num(mean_life) if mean_life and np.isfinite(mean_life) else None,
+        "replacing_task": ({"id": effects["renew_task"]["id"], "resets": effects["resets"]}
+                           if effects.get("renew_task") is not None else None),
         "method": fc.method, "notes": list(fc.notes) + (
             ["The checks' share of warnings missed is applied to the expected failures and cost; no range is "
              "given for them yet."] if effects["miss"] < 1.0 else []),
     }
-    return {"row": row, "fc": fc}, None
+    return {"row": row, "fc": fc, "joint": joint}, None
 
 
 def _count_at(counts, probabilities, q: float) -> float:

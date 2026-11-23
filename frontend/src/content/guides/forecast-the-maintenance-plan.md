@@ -28,3 +28,22 @@ that's known: from when it was last done, a start date set on it, or a calendar
 rule. A task by running hours shows the reading it falls due at ("at 1,250 h"),
 with a date only when the position has a duty or measured readings. A task with
 no record of when it was last done shows a dash, and its tooltip says why.
+
+**When the item is replaced** (in a task's details, under **How often**) says
+whether a new item restarts the task's schedule or not:
+
+- **Restart the schedule** (the default for a task on its own): a new item
+  fitted at the task's position, or at a position above it, counts the
+  interval again from the day it went in, so **Next due** moves. Replacing one
+  spindle doesn't restart the deck's greasing: only a new item at the task's
+  position or above it does.
+- **Keep the schedule** (the default for a calendar pattern, such as the first
+  Tuesday, and for a task in a package, whose visits set its dates): it runs on
+  from when it was last done, whatever is fitted.
+
+In forecasts, a task that replaces the part follows the same setting: restart
+is age replacement (a failure restarts its clock, so how many planned changes
+it takes is a chance, worked out), keep is block replacement (on its dates,
+failures or not). A servicing task that restarts shows its scheduled count with
+a note on how many fewer replacements may make it: about the interval ÷ (2 ×
+the part's mean life), half a task for each replacement.

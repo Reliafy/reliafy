@@ -150,7 +150,11 @@ def _work(raw: dict | None) -> dict | None:
     if effect not in ("none", "replaces"):
         raise FleetValidationError("The work either doesn't change the part's life (none) or replaces the part.")
     name = str(raw.get("name") or "").strip()[:120] or "The work"
-    return {"name": name, "every": every, "unit": unit, "effect": effect,
+    on_replace = raw.get("on_replace") or "restart"
+    if on_replace not in ("restart", "keep"):
+        raise FleetValidationError("When the part is replaced, the work restarts (restart) or keeps its schedule (keep).")
+    return {"name": name, "every": every, "unit": unit, "effect": effect, "on_replace": on_replace,
+            "resets": on_replace == "restart",
             "hours_each": _num(raw.get("hours_each"), "The hours each time"),
             "cost_each": _num(raw.get("cost_each"), "The cost each time"),
             "spares_each": _num(raw.get("spares_each"), "The spares each time"),
@@ -224,6 +228,30 @@ def _rate(part: dict, run: dict, hz: dict) -> float:
         return part["use_per_day"] * hz["period_days"]
     raise FleetValidationError(f"This life is in {part['unit']}: say how many {part['unit']} a unit adds a day "
                                "(More options).")
+
+
+def _restart_note(lines: list, work: dict, part: dict, run: dict) -> None:
+    """Work that restarts when the part is replaced (forecast-rules 1.8): each replacement drops half an
+    interval, so about interval ÷ (2 × the mean life) fewer. Said on the work's line; the count stays
+    the scheduled one."""
+    from backend.maintenance import restart as rs
+    from backend.services.strategy import StrategyError, _model_from_params
+
+    try:
+        dist, _ = _model_from_params(part["distribution_id"], part["params"], part["extras"])
+        mean = float(np.atleast_1d(dist.mean())[0])
+    except (StrategyError, ValueError, TypeError):
+        return
+    every = _in_life_unit(work, part["unit"], run, part["use_per_day"])
+    share = rs.shortfall(every, mean) if every is not None and math.isfinite(mean) else None
+    line = next((x for x in lines if x["id"] == "work"), None)
+    if share is None or line is None:
+        return
+    line["restart_share"] = _sig(share, 3)
+    line["note"] = (f"Restarts when the part is replaced: about one fewer for each replacement, half the time "
+                    f"(about {share:.1%} fewer); shown as scheduled." if share < rs.NOTE_BELOW else
+                    f"Restarts when the part is replaced: about {share:.0%} fewer than scheduled; shown as "
+                    "scheduled, as its exact range isn't worked out yet.")
 
 
 def _life_bound(part: dict, ages: list[float], counts: list[int], rate_per_day: float) -> dict | None:
@@ -485,7 +513,10 @@ def quick_forecast(body: dict) -> dict:
                     gaps[view].append(f"{work['name']} ({word})")
             lines.append(plan_line)
             notes.append(f"{work['name']} replaces the part at {_sig(replace_at):g} {part['unit']} of age, and its "
-                         "clock starts again after a failure (age replacement): how many times it's done is a chance.")
+                         "clock starts again after a failure (age replacement): how many times it's done is a chance."
+                         if work["resets"] else
+                         f"{work['name']} replaces the part every {_sig(replace_at):g} {part['unit']} on its schedule, "
+                         "failures or not (block replacement).")
         lines.append(fail_line)
         parts_total = _block((st.get("total") or {}).get("parts"))
         spares.append({"name": f"replacement part ({part['name']})", "owner": part["name"], **parts_total,
@@ -500,6 +531,8 @@ def quick_forecast(body: dict) -> dict:
         if replace_at is None:
             per_day = rate / hz["period_days"]
             bound = _life_bound(part, ages, counts, per_day)
+            if work is not None and work["resets"]:
+                _restart_note(lines, work, part, run)
         notes.append("A failed unit is replaced at once with a like one, which can fail again inside the horizon.")
     else:
         chance = {"hours": None, "cost": None}

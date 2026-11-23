@@ -61,6 +61,8 @@ def test_the_oil_change_and_the_engine():
     oil, engine = _line(out, "task"), _line(out, "failure")
     assert oil["number"] == "certain" and oil["times"]["expected"] == 29
     assert oil["cost"]["expected"] == pytest.approx(16312.5) and oil["hours"]["expected"] == pytest.approx(43.5)
+    # It restarts when the engine is replaced: 250 ÷ (2 × 12,399 h mean life) ≈ 1%, so the count stands with a note.
+    assert oil["restart_share"] == pytest.approx(0.0101, abs=0.0005) and "half the time" in oil["note"]
     assert engine["number"] == "worked out" and engine["kind"] == "corrective"
     assert engine["times"]["expected"] == pytest.approx(0.688, abs=0.001)
     assert engine["cost"]["expected"] == pytest.approx(123840, rel=0.001)
@@ -149,3 +151,16 @@ def test_the_app_route(api):  # noqa: F811
     assert r.status_code == 200, r.text
     assert _line(r.json(), "task")["times"]["expected"] == 29 and r.json()["saved"] is False
     assert api.post("/api/fleet/quick-forecast", json={}).status_code == 422
+
+
+def test_work_that_keeps_its_schedule_is_block_replacement():
+    """3.3, keep: plugs every 100 h on the schedule, failures or not: 6 planned changes, 0.241 failures, $511."""
+    out = quick_forecast({"start": START, "running": {"hours": 12, "per": "week"},
+                          "work": {"name": "Replace spark plug", "every": 100, "effect": "replaces", "cost_each": 49,
+                                   "on_replace": "keep"},
+                          "part": {**PLUG, "age": 0, "cost_if_fails": 900}})
+    plan, fail = _line(out, "task"), _line(out, "failure")
+    assert plan["times"]["expected"] == pytest.approx(6.0, abs=0.001) and plan["times"]["interval"] == [6, 6]
+    assert fail["times"]["expected"] == pytest.approx(0.241, abs=0.001)
+    assert out["totals"]["cost"]["expected"] == pytest.approx(511, abs=1)
+    assert any("block replacement" in n for n in out["notes"])
