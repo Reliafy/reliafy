@@ -135,6 +135,8 @@ function Answer({ out, view, money }) {
   const fail = out.lines.find((l) => l.owner_kind === "failure");
   const work = out.lines.find((l) => l.owner_kind === "task");
   const notes = [];
+  // The part's name on the line below, only when the user gave it (a saved model's name; typed: "The part").
+  if (fail && fail.owner && fail.owner !== "The part") notes.push(`${fail.owner}.`);
   if (work?.number === "certain" && !fail) notes.push("Certain: a schedule, no chance involved.");
   if (work?.number === "certain") notes.push("Assumes it was just done.");
   const bound = boundText(out);
@@ -188,15 +190,23 @@ function NotCounted({ out, view }) {
   );
 }
 
+// When the spares are likely used, folded like "By month". More than about 10 in all: said per period
+// ("about 8 a month") rather than numbering every spare.
 function WhenNext({ fc }) {
   const w = whenNext(fc);
   if (!w.items.length) return null;
+  const period = String(fc.period_label || "periods").replace(/s$/, "");
+  const rate = fc.periods ? w.total / fc.periods : 0;
+  const perPeriod = w.total > 10 ? Math.max(rate, 10.0001) : 0; // the per-period wording past 10 in all
   return (
-    <section className="ft-next" aria-label="When next">
-      <h3 className="ft-h">When next</h3>
-      <ol className="ft-next-list">{w.items.map((x) => <li key={x.n}>{whenText(fc, x)}</li>)}</ol>
-      <p className="rs-note">From the expected counts: the {String(fc.period_label).replace(/s$/, "")} by which each spare is likely used.{w.more ? ` ${w.more.toLocaleString("en-GB")} more after these.` : ""}</p>
-    </section>
+    <ResultDetails summary="When next">
+      {perPeriod > 10 ? (
+        <p className="ft-next-rate">About {rate >= 2 ? Math.round(rate).toLocaleString("en-GB") : Number(rate.toPrecision(2)).toLocaleString("en-GB")} a {period}, the first in {period} {w.items[0].period}.</p>
+      ) : (
+        <ol className="ft-next-list">{w.items.map((x) => <li key={x.n}>{whenText(fc, x)}</li>)}</ol>
+      )}
+      <p className="rs-note">From the expected counts{perPeriod > 10 ? "" : `: the ${period} by which each spare is likely used`}.{w.more && perPeriod <= 10 ? ` ${w.more.toLocaleString("en-GB")} more after these.` : ""}</p>
+    </ResultDetails>
   );
 }
 

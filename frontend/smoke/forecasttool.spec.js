@@ -37,7 +37,14 @@ for (const width of [1440, 400]) {
     await expect(page.getByRole("combobox", { name: "Unit" })).toHaveAttribute("data-value", "hours");
     await calc.click();
     const answer = page.locator(".ft-result .rs-sentence");
-    await expect(answer).toContainText("replacement part", { timeout: 30_000 });
+    // Plain: "About 99 spares in the next 12 months (90% range: 91–107).", no auto-name in brackets.
+    await expect(answer).toHaveText(/^About 99 spares in the next 12 months \(90% range: \d+–\d+\)\.$/, { timeout: 30_000 });
+    await expect(page.locator(".ft-lines")).toContainText("The part: failures");
+    // When next is folded like By month; at about 8 a month it's said per month, not spare by spare.
+    const next = page.locator("details", { hasText: "When next" });
+    await expect(next).not.toHaveAttribute("open", "");
+    await next.locator("summary").click();
+    await expect(next).toContainText(/About \d+ a month/);
     await shot(page, `after-typed-${width}`);
     if (width <= 400) expect(await sideways(page)).toBeLessThanOrEqual(0);
     // An input changes: the answer stays, marked stale, until Calculate again (Enter in a field calculates).

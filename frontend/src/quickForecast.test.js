@@ -34,8 +34,9 @@ test("every problem names its field, so Calculate can say it there and go to it"
   // The owner's case: typed Weibull, 23 old, unit not picked.
   assert.deepEqual(problems({ ...BLANK, part: true, ages: "23" }, WEIBULL, "").map((p) => p.field), ["unit"]);
   assert.deepEqual(problems({ ...BLANK, part: true }, null, "").map((p) => p.field), ["life", "age"]);
-  const { typedName } = await import("./quickForecast.js");
-  assert.equal(typedName({ distribution_id: "weibull", params: [{ name: "alpha", value: 100 }, { name: "beta", value: 2.2 }] }), "Part (Weibull 100, 2.2)");
+  // A typed life has no name of its own: "The part", never an auto-name.
+  const typed = requestOf({ ...BLANK, part: true, ages: "23" }, { distribution_id: "weibull", params: [] }, "hours");
+  assert.equal(typed.part.name, "The part");
   assert.deepEqual(problems({ ...BLANK, runPer: "week", work: { ...BLANK_WORK } }, null, "").map((p) => p.field), ["runHours", "every"]);
   assert.deepEqual(problems({ ...BLANK, part: true, ages: "23" }, WEIBULL, "hours"), []);
 });
@@ -77,7 +78,9 @@ test("the answer leads with the view's total; gaps make it the known total", () 
   const h = answerOf(OUT, "hours", money);
   assert.match(h.lead, /known hours/);
   assert.deepEqual(h.leavesOut, ["Engine failures (no hours if it fails)"]);
-  assert.match(answerOf(OUT, "spares", money).lead, /0\.69 × replacement part \(Engine\) \(0 to 1, 90% two-sided\)/);
+  assert.equal(answerOf(OUT, "spares", money).lead, "About 0.69 spares in the next 12 months (90% range: 0–1).");
+  const many = { ...OUT, totals: { ...OUT.totals, spares: { ...OUT.totals.spares, items: [{ name: "replacement part (The part)", expected: 98.8, interval: [91, 107], number: "worked out" }] } } };
+  assert.equal(answerOf(many, "spares", money).lead, "About 99 spares in the next 12 months (90% range: 91–107).");
   // One unit, a part only, under one failure expected: the chance leads.
   const only = { ...OUT, lines: [OUT.lines[1]] };
   assert.match(answerOf(only, "costs", money).lead, /^64% chance it fails in the next 12 months/);
