@@ -147,13 +147,25 @@ def _work(raw: dict | None) -> dict | None:
     if unit not in WORK_UNITS:
         raise FleetValidationError("The work is done every so many hours, days, weeks, months or years.")
     effect = raw.get("effect") or "none"
-    if effect not in ("none", "replaces"):
-        raise FleetValidationError("The work either doesn't change the part's life (none) or replaces the part.")
+    if effect not in ("none", "replaces", "supports"):
+        raise FleetValidationError("The work doesn't change the part's life (none), replaces the part, or keeps it on "
+                                   "its life (supports).")
+    k = _num(raw.get("impact_k"), "The impact (failure rate × k if it isn't done)")
+    if k is not None and not 1 <= k <= 100:
+        raise FleetValidationError("The impact is from × 1 (no change) to × 100: the failure rate while it isn't done.")
+    grace = _num(raw.get("grace"), "The grace (% of its interval)")
+    if grace is not None and grace > 100:
+        raise FleetValidationError("The grace is 0% to 100% of its interval.")
     name = str(raw.get("name") or "").strip()[:120] or "The work"
     on_replace = raw.get("on_replace") or "restart"
     if on_replace not in ("restart", "keep"):
         raise FleetValidationError("When the part is replaced, the work restarts (restart) or keeps its schedule (keep).")
+    whatif = raw.get("whatif") or None
+    if whatif is not None and not (whatif.get("drop") or _num(whatif.get("interval"), "The what-if interval",
+                                                                  positive=True)):
+        raise FleetValidationError("A what-if drops the work, or stretches it to another interval.")
     return {"name": name, "every": every, "unit": unit, "effect": effect, "on_replace": on_replace,
+            "impact_k": k, "grace": grace or 0.0, "whatif": whatif,
             "resets": on_replace == "restart",
             "hours_each": _num(raw.get("hours_each"), "The hours each time"),
             "cost_each": _num(raw.get("cost_each"), "The cost each time"),
@@ -363,6 +375,80 @@ def _worked_out(part: dict, ages, counts, rate: float, hz: dict, replace_at, wor
 
 
 def quick_forecast(body: dict) -> dict:
+    """See ``_one``. Work that keeps the part on its life (effect supports) with an impact also gets its
+    worth (the part's failures with the work dropped, against as planned) and, with a what-if (dropped
+    or stretched), the answer with that change beside it (support_whatif.py: the averaged hazard ratio,
+    "approximate" past 20% of the mean life). Nothing is saved."""
+    from backend.maintenance import support_whatif
+
+    out = _one(body)
+    raw = (body or {}).get("work") or {}
+    if out.get("status") != "ok" or raw.get("effect") != "supports" or not (body or {}).get("part"):
+        return out
+    k = _num(raw.get("impact_k"), "The impact")
+    support = {"impact": {"k": k} if k else None, "reference": {"value": raw.get("every")},
+               "grace": raw.get("grace") or 0}
+
+    def scenario(plan):
+        got = support_whatif.multiplier(support, float(raw["every"]), plan)
+        part = dict(body["part"])
+        part["extras"] = {**(part.get("extras") or {}), "hr": float((part.get("extras") or {}).get("hr") or 1.0)
+                          * got["mult"]}
+        work = None if plan.get("drop") else {**raw, "every": plan.get("interval") or raw["every"], "whatif": None}
+        alt = _one({**body, "part": part, "work": work})
+        approx = False
+        if got["interval"] is not None and got["overdue_share"] < 1.0:
+            mean = _part_mean(part)
+            every = _in_life_unit({"every": got["interval"], "unit": _norm(raw.get("unit") or "hours")},
+                                  part.get("unit"), _running(body.get("running")), part.get("use_per_day"))
+            approx = bool(mean and every is not None and every / mean > support_whatif.APPROX_SHARE)
+        return alt, {**got, "approximate": approx}
+
+    if k:
+        dropped, _ = scenario({"drop": True})
+        out["worth"] = _quick_worth(out, dropped)
+    plan = support_whatif.plan_of({"w": raw.get("whatif")}, "w") if raw.get("whatif") else None
+    if plan:
+        alt, ratio = scenario(plan)
+        out["whatif"] = {"plan": plan, "lines": alt.get("lines"), "totals": alt.get("totals"), "rows": alt.get("rows"),
+                         "ratio": ratio, "approximate": ratio["approximate"]}
+    return out
+
+
+def _part_mean(part: dict) -> float | None:
+    from backend.services.strategy import StrategyError, _model_from_params
+
+    try:
+        dist, _ = _model_from_params(part["distribution_id"], part["params"], part.get("extras"))
+        mean = float(np.atleast_1d(dist.mean())[0])
+    except (StrategyError, ValueError, TypeError, KeyError):
+        return None
+    return mean if math.isfinite(mean) and mean > 0 else None
+
+
+def _quick_worth(base: dict, dropped: dict) -> dict:
+    """The work's worth: the part's failures (and their cost) it avoids for its own cost. A comparison."""
+    def side(out):
+        line = next((x for x in out.get("lines") or [] if x["owner_kind"] == "failure"), None) or {}
+        return (float((line.get("times") or {}).get("expected") or 0.0),
+                (line.get("cost") or {}).get("expected"))
+
+    n0, c0 = side(base)
+    n1, c1 = side(dropped)
+    work = next((x for x in base.get("lines") or [] if x["owner_kind"] == "task"), None) or {}
+    own = (work.get("cost") or {}).get("expected")
+    out = {"avoids_failures": _sig(n1 - n0, 4), "avoids_cost": _sig(c1 - c0) if c0 is not None and c1 is not None else None,
+           "costs": own}
+    if out["avoids_cost"] is not None and own is not None:
+        out["words"] = f"Worth: avoids about ${c1 - c0:,.0f} of failures for ${own:,.0f}"
+    elif out["avoids_cost"] is not None:
+        out["words"] = f"Worth: avoids about ${c1 - c0:,.0f} of failures"
+    else:
+        out["words"] = f"Worth: avoids about {n1 - n0:.2g} failures (no cost if it fails, so not in money)"
+    return out
+
+
+def _one(body: dict) -> dict:
     """See the module docstring. {units?, running? {hours, per: day | week} | {all_the_time}, months
     (12, 24, 36 or 60), start? (a date; default today), work? {name, every, unit, effect (none |
     replaces), hours_each?, cost_each?, spares_each?, spare_name?}, part? {distribution_id, params,

@@ -22,7 +22,7 @@ import { unitInText } from "../components/unitText.js";
 import { strategyUnit } from "../strategyTools.js";
 import { VIEWS, fromParam, parseAges, viewOf, whenNext, whenText } from "../sparesForecast.js";
 import {
-  BLANK, BLANK_WORK, EFFECTS, HORIZON_OPTIONS, ON_REPLACE, RUNNING, WORK_UNITS, answerOf, boundText, horizonWords,
+  BLANK, BLANK_WORK, EFFECTS, HORIZON_OPTIONS, ON_REPLACE, RUNNING, WHATIFS, WORK_UNITS, answerOf, boundText, changeText, horizonWords,
   isCalendar, isHours, kindWords, lineCells, missing, requestOf, seriesOf, viewKey,
 } from "../quickForecast.js";
 import { cells, headline, metaLine, tableRows } from "../forecastLines.js";
@@ -192,6 +192,32 @@ function Answer({ out, view, money }) {
   );
 }
 
+// Supporting work (forecast plan step 7): its worth, and the answer with it dropped or stretched beside the
+// plan as recorded. A comparison: nothing is saved, and the worth is added to no total.
+function WhatIf({ out, view, money }) {
+  if (!out.worth && !out.whatif) return null;
+  const key = viewKey(view);
+  const alt = out.whatif;
+  const change = alt && key !== "spares" ? changeText(out.totals[key], alt.totals?.[key], view, money) : null;
+  const fails = (lines) => (lines || []).find((l) => l.owner_kind === "failure")?.times?.expected;
+  return (
+    <section className="ft-whatif" aria-label="What if">
+      {out.worth && <p className="ft-worth">{out.worth.words}{out.worth.costs != null ? " a year" : ""}.</p>}
+      {alt && (
+        <p className="ft-whatif-line">
+          <b>{alt.plan.drop ? "Not done" : `Every ${alt.plan.interval.toLocaleString("en-GB")}`}:</b>{" "}
+          {change ? <>{change.changed} against {change.planned} as planned ({change.diff}). </> : null}
+          {fails(alt.lines) != null && fails(out.lines) != null
+            ? <>Failures {sig3(fails(alt.lines))} against {sig3(fails(out.lines))}. </> : null}
+          The failure rate × {Number(alt.ratio.mult).toLocaleString("en-GB", { maximumSignificantDigits: 3 })} on average
+          {alt.ratio.overdue_share > 0 && alt.ratio.overdue_share < 1 ? ` (overdue ${Math.round(alt.ratio.overdue_share * 100)}% of the time)` : ""}.
+          {alt.approximate && <> <Chip tone="warning" title="The interval is more than a fifth of the part's mean life: the averaged ratio is a rough guide here">Approximate</Chip></>}
+        </p>
+      )}
+    </section>
+  );
+}
+
 function NotCounted({ out, view }) {
   const key = viewKey(view);
   const t = key === "spares" ? out.totals.spares : out.totals[key];
@@ -245,19 +271,34 @@ function FromRecords({ view, from, root }) {
   const money = useMoney();
   const [months, setMonths] = useState("12");
   const [got, setGot] = useState({ key: "", out: null, error: null });
-  const key = `${from.kind}:${from.id}:${root || ""}:${months}`;
+  // Supporting tasks changed for a what-if (step 7): {task_id: {mode: "" | "stretch" | "drop", every}}.
+  const [changes, setChanges] = useState({});
+  const whatif = whatifOf(changes);
+  const key = `${from.kind}:${from.id}:${root || ""}:${months}:${JSON.stringify(whatif)}`;
   useEffect(() => {
     let live = true;
-    getForecastLines({ kind: from.kind, id: from.id, root, months })
-      .then((out) => live && setGot({ key, out, error: null }))
-      .catch((e) => live && setGot({ key, out: null, error: e.message }));
-    return () => { live = false; };
+    const t = setTimeout(() => {
+      getForecastLines({ kind: from.kind, id: from.id, root, months, whatif })
+        .then((out) => live && setGot({ key, out, error: null }))
+        .catch((e) => live && setGot({ key, out: null, error: e.message }));
+    }, Object.keys(whatif).length ? 350 : 0);
+    return () => { live = false; clearTimeout(t); };
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
   const out = got.out;
   const busy = got.key !== key;
   const h = out ? headline(out, view.value, money) : null;
   const rows = out ? tableRows(out.lines) : [];
   const total = out?.lines?.totals;
+  const alt = out?.whatif || null;
+  const altKey = view.value === "hours" ? "hours" : view.value === "costs" ? "cost" : "times";
+  const altFmt = altKey === "hours" ? (v) => `${sig3(v)} h` : altKey === "cost" ? money : sig3;
+  const altOf = (id) => {
+    const x = (alt?.lines?.lines || []).find((l) => l.id === id);
+    const v = x?.[altKey]?.expected;
+    if (x == null) return id.startsWith("task:") && whatif[id.slice(5)]?.drop ? "not done" : "—";
+    return v == null ? "—" : altFmt(v);
+  };
+  const altTotal = alt ? (altKey === "times" ? null : alt.lines.totals[altKey]?.expected) : null;
   return (
     <div className="app ft">
       <ToolHeader view={view} />
@@ -277,11 +318,15 @@ function FromRecords({ view, from, root }) {
             Ranges are 90% two-sided. Each task is counted from its schedule (certain); failures are worked out
             from each life model, as the plan leaves them. Nothing here is written back.
           </ResultSummary>
+          {(out.lines.worth || []).length > 0 && (
+            <SupportWhatIf worth={out.lines.worth} changes={changes} setChanges={setChanges} alt={alt} busy={busy} />
+          )}
           <div className="maint-scroll">
             <table className="lib-table ft-table ft-lines">
               <caption className="sr-only">The forecast by owner</caption>
               <thead><tr><th scope="col">Owner</th><th scope="col" className="num">Times</th><th scope="col" className="num">Hours</th>
-                <th scope="col" className="num">Cost</th><th scope="col">Spares</th><th scope="col">Kind of number</th></tr></thead>
+                <th scope="col" className="num">Cost</th>{alt && <th scope="col" className="num">With your changes</th>}
+                <th scope="col">Spares</th><th scope="col">Kind of number</th></tr></thead>
               <tbody>{rows.map((r) => {
                 const c = cells(r.line, money);
                 const amount = (a) => (a.text != null ? a.text : <span className="ft-gap" title={a.gap || ""}>{a.gap ? "not known" : "—"}</span>);
@@ -293,12 +338,14 @@ function FromRecords({ view, from, root }) {
                       {r.marker?.assumed && <Chip tone="warning" className="ft-assumed" title={r.marker.title}>Assumed</Chip>}
                     </th>
                     <td className="num">{c.times}</td><td className="num">{amount(c.hours)}</td><td className="num">{amount(c.cost)}</td>
+                    {alt && <td className="num ft-alt">{r.group ? "" : altOf(r.id)}</td>}
                     <td className="ft-spares">{c.spares}</td><td><span className="ft-kind">{c.number}</span></td>
                   </tr>
                 );
               })}</tbody>
               <tfoot><tr><th scope="row">{total.cost.known && total.hours.known ? "Total" : "Total (known)"}</th><td />
-                <td className="num">{`${sig3(total.hours.expected || 0)} h`}</td><td className="num">{money(total.cost.expected || 0)}</td><td /><td /></tr></tfoot>
+                <td className="num">{`${sig3(total.hours.expected || 0)} h`}</td><td className="num">{money(total.cost.expected || 0)}</td>
+                {alt && <td className="num ft-alt">{altTotal == null ? "" : altFmt(altTotal)}</td>}<td /><td /></tr></tfoot>
             </table>
           </div>
           {(out.lines.not_counted || []).length > 0 && (
@@ -327,6 +374,52 @@ function FromRecords({ view, from, root }) {
         </Card>
       )}
     </div>
+  );
+}
+
+// {task_id: {mode, every}} → the what-if the server takes ({task_id: {drop} | {interval}}), changed tasks only.
+function whatifOf(changes) {
+  const out = {};
+  for (const [id, c] of Object.entries(changes)) {
+    if (c.mode === "drop") out[id] = { drop: true };
+    else if (c.mode === "stretch" && Number(c.every) > 0) out[id] = { interval: Number(c.every) };
+  }
+  return out;
+}
+
+// The supporting tasks here (forecast plan step 7): each one's worth (a comparison, on no line), and a
+// what-if: stretch it or drop it to see the forecast beside the plan as recorded. Nothing is written.
+function SupportWhatIf({ worth, changes, setChanges, alt, busy }) {
+  const set = (id, patch) => setChanges((c) => ({ ...c, [id]: { mode: "", every: "", ...(c[id] || {}), ...patch } }));
+  return (
+    <section className="ft-whatif" aria-label="Supporting tasks: what if">
+      <h3 className="ft-h">Supporting tasks: what if</h3>
+      <ul className="ft-whatif-list">
+        {worth.map((w) => {
+          const c = changes[w.task_id] || { mode: "", every: "" };
+          const ratio = (alt?.ratios || []).flatMap((r) => r.tasks).find((t) => t.id === w.task_id);
+          return (
+            <li key={w.task_id}>
+              <span className="ft-owner">{w.name}</span>
+              <span className="ft-owner-meta">Every {w.interval} {w.unit} (its life assumes every {w.reference} {w.unit}) · {w.words}{w.avoids_cost != null ? " in the horizon" : ""} (failure rate × {w.k} if it isn&apos;t done).</span>
+              <div className="ft-clause">
+                <Select ariaLabel={`What if: ${w.name}`} value={c.mode} options={WHATIFS} onChange={(v) => set(w.task_id, { mode: v })} />
+                {c.mode === "stretch" && (
+                  <InputGroup label={`${w.name}: stretched interval`}>
+                    <TextInput inputMode="decimal" className="ft-n" aria-label={`${w.name}: stretched to every`} value={c.every}
+                               onChange={(e) => set(w.task_id, { every: e.target.value })} />
+                    <Addon>{w.unit}</Addon>
+                  </InputGroup>
+                )}
+                {ratio && <span className="ft-words">failure rate × {Number(ratio.mult).toLocaleString("en-GB", { maximumSignificantDigits: 3 })} on average</span>}
+                {ratio?.approximate && <Chip tone="warning" title="The interval is more than a fifth of the part's mean life: the averaged ratio is a rough guide">Approximate</Chip>}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      {alt && <p className="rs-note">{busy ? "Working it out… " : ""}The column &quot;With your changes&quot; is the forecast with these changes; the plan as recorded is unchanged and nothing is written.</p>}
+    </section>
   );
 }
 
@@ -412,6 +505,25 @@ function SentenceTool({ view }) {
                 <Select ariaLabel="What the work does to the part" value={form.work.effect} options={EFFECTS} onChange={(v) => setWork({ effect: v })} />
               </div>
             )}
+            {form.part && form.work.effect === "supports" && (
+              <div className="ft-clause">
+                <span className="ft-words">If it isn't done: failure rate</span>
+                <InputGroup label="Impact">
+                  <Addon>×</Addon>
+                  <TextInput inputMode="decimal" className="ft-n" aria-label="Failure rate times if it isn't done" placeholder="2"
+                             value={form.work.impactK} onChange={(e) => setWork({ impactK: e.target.value })} />
+                </InputGroup>
+                <span className="ft-words">· What if it's</span>
+                <Select ariaLabel="What if" value={form.work.whatif} options={WHATIFS} onChange={(v) => setWork({ whatif: v })} />
+                {form.work.whatif === "stretch" && (
+                  <InputGroup label="Stretched interval">
+                    <TextInput inputMode="decimal" className="ft-n" aria-label="Stretched to every" value={form.work.whatifEvery}
+                               onChange={(e) => setWork({ whatifEvery: e.target.value })} />
+                    <Addon>{form.work.unit}</Addon>
+                  </InputGroup>
+                )}
+              </div>
+            )}
           </Section>
         ) : <AddRow onClick={() => set({ work: { ...BLANK_WORK } })}>Work on a schedule</AddRow>}
 
@@ -454,6 +566,11 @@ function SentenceTool({ view }) {
                 <TextInput inputMode="decimal" value={form.usePerDay} onChange={(e) => set({ usePerDay: e.target.value })} />
               </Field>
             )}
+            {form.work && form.part && form.work.effect === "supports" && (
+              <Field label="Grace (% of its interval)" optional help="How far overdue it can run before the impact starts. 0% by default.">
+                <TextInput inputMode="decimal" value={form.work.grace} onChange={(e) => setWork({ grace: e.target.value })} />
+              </Field>
+            )}
             {form.work && form.part && form.work.effect === "replaces" && (
               <Field label="When the part is replaced" help="Restart: a failure restarts its clock, so how many it takes is a chance. Keep: on its schedule, failures or not.">
                 <Select ariaLabel="When the part is replaced" value={form.work.onReplace || "restart"} options={ON_REPLACE}
@@ -484,6 +601,7 @@ function SentenceTool({ view }) {
                       subtitle={`${out.units.toLocaleString("en-GB")} ${out.units === 1 ? "unit" : "units"} · ${horizonWords(out.months)}${run.busy ? " · working it out…" : ""}`}
                       actions={<button type="button" className="secondary sm" onClick={() => downloadCsv(csvOf(out, view.value), `${view.title.toLowerCase().replace(/ /g, "-")}.csv`)}>Export CSV</button>} />
           <Answer out={out} view={view.value} money={money} />
+          <WhatIf out={out} view={view.value} money={money} />
           <Lines out={out} view={view.value} money={money} />
           <NotCounted out={out} view={view.value} />
           <Chart out={out} view={view.value} money={money} />

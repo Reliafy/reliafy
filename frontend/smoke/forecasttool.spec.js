@@ -49,6 +49,15 @@ for (const width of [1440, 400]) {
     await expect(page.getByText("Likely range (90% two-sided)").first()).toBeVisible();
     await expect(page.locator(".ft-lines")).toContainText("failures");
     await shot(page, `forecast-tool-costs-${width}`);
+    // The greasing keeps the bearings on their life (× 2 if not done): its worth, and the what-if "not done".
+    await choose(page.getByRole("combobox", { name: "What the work does to the part" }), "supports");
+    await page.getByLabel("Failure rate times if it isn't done", { exact: true }).fill("2");
+    await expect(page.locator(".ft-worth")).toContainText("Worth: avoids about", { timeout: 30_000 });
+    await choose(page.getByRole("combobox", { name: "What if" }), "drop");
+    await expect(page.locator(".ft-whatif-line")).toContainText("Not done:", { timeout: 30_000 });
+    await expect(page.locator(".ft-whatif-line")).toContainText("failure rate × 2");
+    await shot(page, `forecast-tool-whatif-${width}`);
+    await choose(page.getByRole("combobox", { name: "What if" }), "");
     if (width <= 400) expect(await sideways(page)).toBeLessThanOrEqual(0);
 
     // Spares: the replacement parts with their range, and when each is likely used.

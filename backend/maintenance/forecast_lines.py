@@ -512,7 +512,50 @@ def build(m, fc: dict, model_rows: list[dict], tree, root) -> dict:
 MONTHS = (12, 24, 36, 60)
 
 
-def node_forecast(m, fetch, kind: str, node_id: str, root: str | None = None, months=12) -> dict:
+MAX_WORTH = 8  # supporting tasks valued one by one in a forecast
+
+
+def _failure_side(lines: dict) -> tuple[float, float, bool]:
+    """(failures, their cost, cost known) over the corrective and follow-on lines."""
+    n = c = 0.0
+    known = True
+    for x in lines.get("lines") or []:
+        if x.get("kind") not in ("corrective", "follow_on"):
+            continue
+        n += float((x.get("times") or {}).get("expected") or 0.0)
+        if x.get("cost") is None:
+            known = False
+        else:
+            c += float(x["cost"].get("expected") or 0.0)
+    return n, c, known
+
+
+def worth(base: dict, dropped: dict, task: dict) -> dict:
+    """A supporting task's worth (forecast-rules 4.3): the failures and their cost it avoids (the
+    forecast with it dropped against the plan as recorded) for its own cost. A comparison: added to no
+    total; the task's cost stays on the task, the failures on the failure mode."""
+    n0, c0, k0 = _failure_side(base["lines"])
+    n1, c1, k1 = _failure_side(dropped["lines"])
+    line = next((x for x in base["lines"]["lines"] if x.get("task_id") == task["id"]), None) or {}
+    own = (line.get("cost") or {}).get("expected")
+    known = k0 and k1
+    out = {"task_id": task["id"], "name": task.get("name") or "", "avoids_failures": _r(n1 - n0, 4),
+           "avoids_cost": _r(c1 - c0) if known else None, "costs": own, "known": known,
+           "k": ((task.get("support") or {}).get("impact") or {}).get("k"),
+           "interval": task.get("interval"), "unit": task.get("unit"),
+           "reference": ((task.get("support") or {}).get("reference") or {}).get("value")}
+    if known and own is not None:
+        out["net"] = _r((c1 - c0) - own)
+        out["words"] = (f"Worth: avoids about ${c1 - c0:,.0f} of failures for ${own:,.0f}" if c1 - c0 >= own else
+                        f"Worth: avoids about ${c1 - c0:,.0f} of failures for ${own:,.0f}: it costs more than it saves "
+                        "here")
+    else:
+        out["words"] = (f"Worth: avoids about {n1 - n0:.2g} failures; their cost is unknown, so not in money"
+                        if not known else f"Worth: avoids about ${c1 - c0:,.0f} of failures; its own cost isn't known")
+    return out
+
+
+def node_forecast(m, fetch, kind: str, node_id: str, root: str | None = None, months=12, whatif=None) -> dict:
     """The forecast with its lines for an Explorer node (Open in ›): a position and everything
     below it, one task (the position it's on, that task and the failures of the modes it serves),
     or a work package (its tasks, from where they meet). From today for ``months`` whole months."""
@@ -564,9 +607,36 @@ def node_forecast(m, fetch, kind: str, node_id: str, root: str | None = None, mo
         raise Invalid("Forecast a position, a task or a package.")
     start = date.fromisoformat(m.today())
     end = start + relativedelta(months=months) - relativedelta(days=1)
-    out = pf.position_forecast(m, position_id, root, "month", None, fetch=fetch, end=end.isoformat(),
-                               task_ids=task_ids)
+    def run(plan=None):
+        return pf.position_forecast(m, position_id, root, "month", None, fetch=fetch, end=end.isoformat(),
+                                    task_ids=task_ids, whatif=plan)
+
+    out = run()
     out["of"] = {"kind": kind, "id": str(node_id), "name": name, "months": months}
+    # Supporting tasks: each one's worth (dropped against as planned), and the what-if asked for.
+    from backend.maintenance import support_whatif
+
+    scope = [x["position"]["id"] for x in out.get("by_position") or []]
+    in_scope = {x.get("task_id") for x in out["lines"]["lines"] if x.get("task_id")}
+    tasks = [t for t in support_whatif.supporting_tasks(m, scope)
+             if t["id"] in in_scope and ((t.get("support") or {}).get("impact") or {}).get("k")][:MAX_WORTH]
+    worths = [worth(out, run({t["id"]: {"drop": True}}), t) for t in tasks]
+    out["lines"]["worth"] = worths
+    for x in out["lines"]["lines"]:
+        got = next((w for w in worths if w["task_id"] == x.get("task_id")), None)
+        if got:
+            x["worth"] = got
+    if whatif:
+        if not isinstance(whatif, dict):
+            raise Invalid("whatif is {task_id: {drop: true} or {interval: N}} for supporting tasks.")
+        known = {t["id"] for t in support_whatif.supporting_tasks(m, scope)}
+        wrong = [t for t in whatif if t not in known]
+        if wrong:
+            raise Invalid("A what-if changes a supporting task here (drop it, or stretch its interval).")
+        changed = run(whatif)
+        ratios = [r["support_hr"] for r in changed.get("models") or [] if r.get("support_hr")]
+        out["whatif"] = {"plan": whatif, "lines": changed["lines"], "rows": changed["rows"],
+                         "ratios": ratios, "approximate": any(r["approximate"] for r in ratios)}
     from backend.maintenance.forecast_start import _explorer_link as link_to
     from backend.maintenance.forecast_start import _path
 

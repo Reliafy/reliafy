@@ -86,6 +86,25 @@ month** gives the same numbers in a table. **Export CSV** saves them. On
 likely used, and **Spares: how many to hold** takes the part's lead time and
 your service level.
 
+## Supporting work: what if it isn't done?
+
+Choose **keeps the part on its life (supporting)** for work like greasing or
+an oil change, and say what not doing it does: **If it isn't done: failure
+rate × 2** (twice as likely to fail in any hour while it isn't done). The
+answer then gives its **Worth**: the failures (and their cost) it avoids in the
+horizon, for its own cost. That's a comparison of two forecasts, so it's
+added to no total; the work's cost stays on the work, the failures on the part.
+
+**What if it's** stretched to a longer interval, or not done, shows the answer
+with that change beside the plan: not done, the failure rate × 2 the whole
+time; stretched from every 250 h to every 500 h, it's overdue half the time,
+so the failure rate is × 1.5 on average. A shorter interval than the one the
+life assumes has no modelled benefit, and says so. When the interval is more
+than a fifth of the part's mean life, the averaged rate is a rough guide and
+the answer says **Approximate**. **Grace** (under More options) is how far
+overdue it may run before the impact starts. Several supporting tasks on one
+part multiply. Nothing is saved.
+
 ## Start from the Explorer
 
 On the Explorer's **Maintenance** tab, a position, a task or a work package has
@@ -107,6 +126,12 @@ records are the inputs, and the answer is set out **by owner**:
   some in time, the **follow-on** line (found at an inspection: its hours,
   spares and cost from the failure mode's **If an inspection finds it**). The same
   failure mode on several positions at the same cost is one owner.
+- **Supporting tasks: what if** lists each supporting task with an impact, its
+  **Worth** (the failures it avoids in the horizon, for its cost), and a
+  what-if: stretch it or mark it not done to see the forecast **With your
+  changes** in a column beside the plan as recorded. Nothing is written. A
+  supporting task whose own interval is already longer than the one its life
+  assumes counts its impact in the plan as recorded too.
 - **A supporting task** (greasing, an oil change) reads *Keeps it on its life*:
   the life model already assumes it, so it changes no failure while it's done
   as planned. An assumed impact carries an **Assumed** chip.
