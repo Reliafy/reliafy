@@ -168,6 +168,9 @@ def _limit(m: Maintenance, task: dict, interval, unit, rule, hours_map) -> tuple
 
     norm = svc._norm_unit(unit) or "days"
     if norm in svc.CALENDAR_UNITS:
+        if rule and rule["kind"] == "shutdowns":
+            # Due its interval after it was last done; done at the next shutdown (visits, _lib_task).
+            return schedule.Recurrence.every(int(rule["every"]), rule["unit"], task["start"]), None
         if rule:
             return how_often.recurrence(rule, task["start"]), None
         if float(interval).is_integer() and interval >= 1:
@@ -195,6 +198,15 @@ def _lib_task(m: Maintenance, task: dict, hours_map, end: date, name: str | None
         also, why = _limit(m, task, task["also_interval"], task["also_unit"], None, hours_map)
     if why:
         return None, why
+    visits = None
+    if (task.get("rule") or {}).get("kind") == "shutdowns":
+        from backend.maintenance.shutdowns import shutdown_dates
+
+        subject = svc._subject(m.s, m.org, task)
+        shuts = shutdown_dates(m, subject["id"], m.today(), end.isoformat()) if subject else []
+        if not shuts:
+            return None, "at shutdowns: no planned shutdown here in the forecast"
+        visits = schedule.Recurrence.on([x["on"] for x in shuts])
     by_use = not svc._is_calendar(task["unit"]) or bool(task.get("also_unit")
                                                        and not svc._is_calendar(task["also_unit"]))
     last_reading = None
@@ -208,13 +220,14 @@ def _lib_task(m: Maintenance, task: dict, hours_map, end: date, name: str | None
     # As the task view counts it: an interval from when it was last done, else from when it was made;
     # a date it was set to fall due (its start, or rescheduled) comes first, then its limits from there.
     first = svc._first_due(task)
-    last_done = first or task.get("last_done") or (None if task.get("rule") else task["start"])
+    on_pattern = bool(task.get("rule")) and task["rule"]["kind"] != "shutdowns"
+    last_done = first or task.get("last_done") or (None if on_pattern else task["start"])
     if last_done and last_done > end.isoformat():
         last_done = None
     cost = (view.get("cost") or {}).get("amount")
     lib = schedule.LibraryTask(name or task["name"], every=every, also=also, last_done=last_done, cost=cost,
-                               duration=_labour_hours(view), last_done_reading=last_reading)
-    basis = hours_map["basis"]["text"] if by_use else "On the calendar"
+                               duration=_labour_hours(view), last_done_reading=last_reading, visits=visits)
+    basis = hours_map["basis"]["text"] if by_use else "At planned shutdowns" if visits else "On the calendar"
     return (lib, view, basis, first if first and first <= end.isoformat() else None, by_use), None
 
 

@@ -21,6 +21,7 @@ const SIGNED_IN = [
   // The asset tree in a spreadsheet, both ways (the Explorer's Import from Excel and Export).
   ["GET", "/api/maintenance/hierarchy/export"],
   ["POST", "/api/maintenance/hierarchy/import"],
+  ["POST", "/api/maintenance/schedule/dates"], // How often's next dates, from the server
   // RCM studies (the standalone worksheets under Maintenance).
   ["GET", "/api/rcm/studies"],
   // The interval calculators on an RCM task card.

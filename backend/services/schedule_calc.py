@@ -40,6 +40,9 @@ def _rule_dates(rule: dict, start: date, end: date) -> dict:
         checked = how_often.check_rule(rule) if rule.get("kind") != "recurrence" else how_often.from_library(rule)
     except ValueError as err:
         raise ScheduleError(str(err)) from None
+    if checked["kind"] == "shutdowns":
+        raise ScheduleError("A rule at shutdowns falls on a position's planned shutdowns, not dates of its own: set "
+                            "it on the task (maintenance tasks.update rule) and read the task's next due.")
     anchor = checked.get("anchor") or start.isoformat()
     cad = how_often.cadence(checked, anchor)
     dates = cad.dates(start, end, limit=MAX_DATES)

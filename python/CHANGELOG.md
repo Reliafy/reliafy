@@ -4,6 +4,11 @@
 
 Needs a server on the same release.
 
+- **Calendar schedules on tasks** (Reliafy Maintenance): a task's `rule` takes `{kind: 'shutdowns', every:
+  12, unit: 'months'}`, done at the first planned shutdown of its position that long after it was last
+  done; a monthly rule every 2, 3, 4 or 6 months with an `anchor` falls in the same months each year (1
+  March and 1 September), and `day: 31` is the month's last day. `maintenance rcm.optimise` with `use`
+  and `as_rule` keeps a task's calendar rule at the step nearest the answer.
 - **Type a few lives in**: `change dataset_upload` takes `notation`, small data typed as text in
   SurPyval's notation, instead of `csv` or `upload_id`: `120, 310, [400, 450], 1000+` (plain numbers
   failed, `1000+` still running at 1000, `[a, b]` failed in that window, `<50` failed before 50,
