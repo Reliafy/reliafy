@@ -3,7 +3,8 @@
 // part failing shows that section's error, with Try again, and the rest draws.
 import { test, expect, open, expectHealthy } from "./health.js";
 
-// What Home used to read itself, each on its own.
+// What Home used to read itself, each on its own (and the first-run check read
+// the lists again for a workspace with nothing of its own).
 const OLD_READS = [
   "/api/models", "/api/alt/models", "/api/recurrent/models", "/api/degradation/models", "/api/joint/models",
   "/api/datasets", "/api/rbds", "/api/fleet/fleets", "/api/fleet/tracked", "/api/strategy/analyses",

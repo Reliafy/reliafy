@@ -63,5 +63,11 @@ export function homeFromSummary(summary) {
     maintenance: access ? part("maintenance_overview") : undefined,
     rcm: access ? part("rcm_rollup") : undefined,
     failedParts: Object.keys(errors),
+    // The lists the first-run starts are worked out from (firstRun.js firstRunFrom).
+    firstRunLists: {
+      models: list("models", "models"), datasets: list("datasets", "datasets"), rbds: list("rbds", "rbds"),
+      alt: list("alt_models", "models"), recurrent: list("recurrent_models", "models"),
+      degradation: list("degradation_models", "models"),
+    },
   };
 }

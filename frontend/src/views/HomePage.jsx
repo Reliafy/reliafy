@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { getHomeSummary } from "../api.js";
 import { cardFailed, homeFromSummary } from "../homeSummary.js";
@@ -242,7 +242,7 @@ export default function HomePage() {
     };
   }, [attempt]);
 
-  const home = summary === undefined ? null : homeFromSummary(summary);
+  const home = useMemo(() => (summary === undefined ? null : homeFromSummary(summary)), [summary]);
   const lists = home ? home.lists : null;
   const changes = home ? home.changes : undefined;
   const access = home ? home.access : undefined;
@@ -257,7 +257,7 @@ export default function HomePage() {
     : [];
   const ownCount = recent.length;
   // A list that failed makes the count a guess: no new-account welcome then.
-  const firstRun = useFirstRun(lists && !lists.failed ? ownCount > 0 : undefined);
+  const firstRun = useFirstRun(lists && !lists.failed ? ownCount > 0 : undefined, home?.firstRunLists || null);
   // Where the ways to start go, once the lists say how much work there is.
   const place = lists && !lists.failed ? startersPlace(ownCount) : null;
   const lifeSamples = (lists?.models || []).filter((r) => r.is_sample && r.type === "life");

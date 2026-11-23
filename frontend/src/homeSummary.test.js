@@ -38,6 +38,10 @@ test("Home draws from the summary what it used to read from each list", () => {
   assert.equal(attentionReady({ ...home, tracked: home.lists.tracked }), true);
   assert.equal(attentionFailed({ ...home, tracked: home.lists.tracked }), false);
   assert.equal(recentRows(home.lists).length, 4);
+  // The first-run starts are worked out from the same lists, not read again.
+  assert.deepEqual(home.firstRunLists.models, life.models);
+  assert.deepEqual(home.firstRunLists.alt, alt.models);
+  assert.deepEqual(home.firstRunLists.datasets, summary.sections.datasets.datasets);
 });
 
 test("a part that failed spoils only the lists drawn from it", () => {
