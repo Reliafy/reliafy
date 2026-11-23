@@ -2985,6 +2985,23 @@ def out_of_service(kind: str, target_id: str, body: dict = Body(...),
     return _run(m.take_out_of_service, target_id, body.get("reason"), body.get("until"), body.get("start"))
 
 
+@router.get("/operations")
+def operations(root: str | None = None, position_id: str | None = None,
+               m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The Explorer's Operations tab in one read: each position's duty (its own, or the one it
+    takes from above it), other use, shutdown and outage windows (own and inherited) and time
+    zone, inside root (the asset opened). Also over MCP and the CLI: maintenance get.operations."""
+    return _run(m.operations, root or None, position_id or None)
+
+
+@router.get("/positions/{position_id}/shutdown-windows")
+def shutdown_windows(position_id: str, start: str | None = None, end: str | None = None, root: str | None = None,
+                     m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The windows that take a position off-line (shutdowns and outages, its own and inherited)
+    from start to end (default the year from today)."""
+    return _run(m.shutdown_windows, position_id, start, end, root or None)
+
+
 @router.get("/{kind}/{target_id}/operating-plan")
 def get_operating_plan(kind: str, target_id: str, root: str | None = None,
                        m: Maintenance = Depends(maintenance)) -> JSONResponse:

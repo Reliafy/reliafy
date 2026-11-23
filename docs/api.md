@@ -572,6 +572,14 @@ also gives `against_actual`: over the last 90 days, the hours the position's hou
 share of the plan, with a `proposal` of that share as the plan's `utilisation` (`plan.utilisation`,
 0.01 to 1) when they differ. It is only offered; nothing changes until it is saved.
 
+`get operations` (`root` the asset opened, or `id` one position) is the Explorer's Operations tab in
+one read: each position's duty (`duty.source` `own`, `inherited` with `duty.from`, or `none`: it
+runs all the time), `parent_duty` (what ending its own plan leaves it on), `other_use` (km or cycles
+a day), `windows` (the shutdowns and outages that take it off-line over the next year: shutdown
+packages on it or above it whose scope covers it, and out-of-service spans on it or above it, each
+with `source` and `own`) and `time_zone`. The app's routes: `GET /api/maintenance/operations?root=`
+and `GET /api/maintenance/positions/{id}/shutdown-windows?start=&end=`.
+
 Tasks by use in operating hours fall due through the position's operating plan (its own, or the
 nearest above): the moment the hours counter, counted on from its latest reading, crosses the
 task's next reading (`limits[].due_moment`) and the stop after it (`stop_after`). With no plan,

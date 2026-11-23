@@ -79,6 +79,7 @@ from backend.maintenance import restoration as _restoration
 from backend.maintenance import failure_costs as _failure_costs
 from backend.maintenance import visit_costs as _visit_costs
 from backend.maintenance import shutdowns as _shutdowns
+from backend.maintenance import operations as _operations
 from backend.maintenance import purge as _purge
 
 logger = logging.getLogger(__name__)
@@ -3181,7 +3182,7 @@ def _walk_down(top: str, kids: dict) -> set[str]:
 
 
 class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDeleteOps, PositionModelOps,
-                  CaptureOps, AssetSearchOps, _restoration.RestorationOps, _shutdowns.ShutdownOps,
+                  CaptureOps, AssetSearchOps, _restoration.RestorationOps, _shutdowns.ShutdownOps, _operations.OperationsOps,
                   _failure_costs.FailureCostOps, _visit_costs.VisitCostOps):
     """One organisation's maintenance graph, acted on by one person."""
 

@@ -130,6 +130,8 @@ GET_KINDS: Table = {
     "operating_plan": ("id", "root", """How a position (or the item fitted to one) runs: its own plan, or
         the nearest above it inside root (the asset opened), with inherited_from; hours a week and the next 14
         days."""),
+    "operations": ("", "id root", """Each position's duty (own or from the one above), other use, shutdown and
+        outage windows and time zone, inside root; id = one position. Set with positions.update."""),
     "forecast": ("id", "root period periods", """id = a position. It and everything inside it: tasks on
         dates, work, failures and cost per period with a 90% range (guide topic forecast)."""),
     "position": ("id", "", """Its path, positions inside it, the item fitted now, every past fitment (with
@@ -1352,7 +1354,7 @@ def register() -> None:
                             "item_class: true for the class's fleet (its positions, with risk now) in place of "
                             "the class record."))] = None,
                         root: Annotated[str | None, Field(description=(
-                            "operating_plan, forecast, spares_year: the asset opened; nothing above it is used."))]
+                            "operating_plan, operations, forecast, spares_year: the asset opened; nothing above it is used."))]
                         = None,
                         months: int | None = None, fleet_size: int | None = None,
                         hours_per_day: float | None = None,
@@ -1397,6 +1399,8 @@ def register() -> None:
             return run(m.task_measurement, rid, position_id)
         if kind == "operating_plan":
             return run(m.operating_plan, rid, root)
+        if kind == "operations":
+            return run(m.operations, root, rid)
         if kind in ("spares_year", "package_parts"):
             from backend.maintenance import position_models as pm
             from backend.maintenance import spares_year

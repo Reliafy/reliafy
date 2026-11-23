@@ -179,6 +179,7 @@ ordinary week), days: the next 14 days' runs and hours (real hours in the plan's
 over to a rate, the rate fills only the time they leave), and against_actual: over the last 90 days, the hours \
 the position's hours counter ran as a share of the plan, with a proposal {utilisation} when they differ. Offer \
 it to the user; never save it unasked. An item has no plan of its own: it runs as the position it's fitted to.
+- maintenance get.operations (root: the asset opened; id: one position) reads every position's operations at once: duty.source own / inherited (duty.from: the position above it whose plan it runs to) / none (it runs all the time), parent_duty (what end_operating_plan would leave it on), other_use, windows (shutdowns and outages that take it off-line over the next year, own and inherited, each with source) and time_zone.
 - Tasks by use in operating hours fall due through the plan: the moment the hours counter (from its latest \
 reading) crosses the task's next reading, and the stop after it (limits[].due_moment, stop_after, basis). With \
 no plan here or above, from the counter's recent rate (basis kind rate), as before.

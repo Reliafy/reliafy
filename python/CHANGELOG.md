@@ -4,6 +4,13 @@
 
 Needs a server on the same release.
 
+- **Operations** (Maintenance, operators): `maintenance get.operations` reads every position's duty in
+  one call (`root` the asset opened, or `id` one position): its own operating plan or the one it takes
+  from the nearest position above it (`duty.source` own / inherited / none, `duty.from`), what clearing
+  its own would leave it on (`parent_duty`), other use (km or cycles a day), the shutdown and outage
+  windows that take it off-line over the next year, its own and inherited, and its time zone.
+  `reliafy maintenance get.operations --root …`. Duties are still set with `positions.update`
+  (`operating_plan`, `end_operating_plan`).
 - **Type a few lives in**: `change dataset_upload` takes `notation`, small data typed as text in
   SurPyval's notation, instead of `csv` or `upload_id`: `120, 310, [400, 450], 1000+` (plain numbers
   failed, `1000+` still running at 1000, `[a, b]` failed in that window, `<50` failed before 50,
