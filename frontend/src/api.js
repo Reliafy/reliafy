@@ -2587,6 +2587,13 @@ export function claimWalkthroughAutoStart(id) {
 
 // What changed in the active workspace over a period (#41): ``days`` (default
 // 30) or ``since`` ("last_visit" or a date). Computed by the server.
+// Everything Home shows, in one request: { maintenance, sections, errors }. Each
+// section is what its own list endpoint answers; `errors` names the parts that
+// failed (homeSummary.js turns it into Home's pieces).
+export function getHomeSummary() {
+  return request("/api/home/summary");
+}
+
 export function getWorkspaceChanges({ days = null, since = null } = {}) {
   const q = new URLSearchParams();
   if (since) q.set("since", since);

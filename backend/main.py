@@ -110,6 +110,7 @@ from backend.routers import compare_groups as compare_groups_router
 from backend.routers import regression_diagnostics as regression_diagnostics_router
 from backend.routers import tvc as tvc_router
 from backend.routers import workspace_changes as workspace_changes_router
+from backend.routers import home as home_router
 from backend.services import content_gate
 from backend.services import access as access_service
 from backend.services import datasets as datasets_service
@@ -307,6 +308,8 @@ app.include_router(content_jobs_router.router)
 app.include_router(outage_logs_router.router)
 # What changed in the workspace over a period (#41).
 app.include_router(workspace_changes_router.router)
+# Everything Home shows, in one request.
+app.include_router(home_router.router)
 # MCP file uploads: PUT /api/uploads/{id}?t=… (token-authed, see services/uploads.py).
 app.include_router(uploads_router.router)
 # RSS: served (date-filtered) before the SPA catch-all below.
