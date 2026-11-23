@@ -89,7 +89,7 @@ test("Modelling and Decisions are groups: their entries, each with its children"
   assert.deepEqual(kids(live, "systems"), ["RBDs", "Fault trees", "Simulation runs"]);
   assert.deepEqual(kids(live, "strategy"), ["Optimal replacement", "Compare two models", "Failure finding",
     "Overhaul and replace", "Test planning"]);
-  assert.deepEqual(kids(live, "forecasts"), []);
+  assert.deepEqual(kids(live, "forecasts"), ["Fleet forecasts", "Spares forecast", "Hours forecast", "Cost forecast"]);
   assert.deepEqual(kids(live, "risk"), ["Condition monitoring"]);
   // Assets is one entry with no children; Maintenance opens on Orders and lists it,
   // then Packages and the RCM studies.
@@ -284,7 +284,9 @@ test("a page lights its place in the menu at every level", () => {
   assert.deepEqual(at("/systems/runs/x"), ["modelling", "systems", "Simulation runs"]);
   assert.deepEqual(at("/strategy/test-planning/life"), ["decisions", "strategy", "Test planning"]);
   assert.deepEqual(at("/strategy/analyses/x"), ["decisions", "strategy", null]);
-  assert.deepEqual(at("/forecasts/f"), ["decisions", "forecasts", null]);
+  assert.deepEqual(at("/forecasts/f"), ["decisions", "forecasts", "Fleet forecasts"]);
+  assert.deepEqual(at("/forecasts"), ["decisions", "forecasts", "Fleet forecasts"]);
+  assert.deepEqual(at("/forecasts/hours"), ["decisions", "forecasts", "Hours forecast"]);
   assert.deepEqual(at("/risk"), ["decisions", "risk", "Condition monitoring"]);
   assert.deepEqual(at("/risk/f1"), ["decisions", "risk", "Condition monitoring"]);
   // Assets is current on every page of the register, and on Product structure

@@ -26,7 +26,7 @@ follows the link.
   of its own. Write it in the part's **Notes** (*Maker's end-of-life notice, last
   time buy 31 Mar 2027*). The
   last-time-buy quantity and the cost of the two routes aren't worked out for
-  you: the **Spares** view (spares for the year) gives the
+  you: the [Spares forecast](/forecasts/spares) gives the
   failures to cover and the stock to hold, which are the inputs.
 
 ## Record that a part is superseded

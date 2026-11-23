@@ -6,10 +6,7 @@ import {
 } from "../api.js";
 import { Field, FormModal, fmtDate, today as workspaceToday, useSendOnce } from "./MaintenanceParts.jsx";
 import HowOften from "./HowOften.jsx";
-import ForecastDetails from "./ForecastDetails.jsx";
-import SparesYear from "./SparesYear.jsx";
 import PackageParts from "./PackageParts.jsx";
-import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { CALENDAR, HOURS_PACKAGE_NOTE, cadenceOf, formFromPackage, howOftenProblem, packageBody, previewFor, stepChoices } from "../howOften.js";
 import Chip from "./ui/Chip.jsx";
 import MoreMenu from "./ui/MoreMenu.jsx";
@@ -712,12 +709,9 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
   const taskOpen = useOpenParam(maint ? "mtask" : "task");
   const adding = useOpenParam("addtask");
   const ratesOpen = useOpenParam("rates");
-  // Tasks / Forecast (?mview=forecast): the forecast for a position and everything inside it
-  // (ForecastDetails.jsx), inside the asset opened (?root=). The Maintenance tab is operators' only.
+  // No forecast or spares views here (Derryn, 23 Nov 2026): an old ?mview=forecast or spares opens
+  // the left menu's Spares forecast (explorerTabs.js forecastRedirect).
   const viewParam = useOpenParam("mview");
-  const [search] = useSearchParams();
-  const forecastable = maint && row.type === "pos";
-  const forecastOn = forecastable && viewParam.open === "forecast";
   // Held here as well as in the address, so the box answers at once.
   const belowParam = useOpenParam("below");
   const [belowOn, setBelowOn] = useState(belowParam.open === "1");
@@ -832,32 +826,10 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
       </div>
     );
   }
-  // Spares for the year (?mview=spares): every part a failure or a task uses here and inside it
-  // (SparesYear.jsx), inside the asset opened (?root=); on a design, the items built from it.
-  if (!maint && EXPLORER_PANEL_TABS && viewParam.open === "spares") {
-    return (
-      <div className="td-tab-page pk-panel rw">
-        <SparesYear id={row.key} root={design ? null : search.get("root") || null} name={row.ref?.name || ""} design={design} />
-      </div>
-    );
-  }
   // With the panel tabs the panel's header switches the views (Tasks · What it needs · Packages ·
   // Forecast · Spares), so the body draws no switch of its own.
   if (!maint && !design && EXPLORER_PANEL_TABS && viewParam.open === "packages") {
     return <PackagesHere scope={scope} where={where} onOpen={open.setOpen} version={version} />;
-  }
-  const viewSwitch = forecastable && !EXPLORER_PANEL_TABS ? (
-    <SegmentedControl size="sm" className="mt-view" label="Show" value={forecastOn ? "forecast" : "tasks"}
-                      onChange={(v) => viewParam.setOpen(v === "forecast" ? "forecast" : null)}
-                      options={[{ value: "tasks", label: "Tasks" }, { value: "forecast", label: "Forecast", title: "The work, failures and costs to come here and inside it, by month" }]} />
-  ) : null;
-  if (forecastOn) {
-    return (
-      <div className="td-tab-page pk-panel rw">
-        <ForecastDetails positionId={row.key} name={row.ref.name || "this position"} root={search.get("root") || null}
-                         bar={viewSwitch} />
-      </div>
-    );
   }
   const tick = shown ? tickState(shown.filter((t) => !t.why_not), picked) : "none";
   const flip = (id) => setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });

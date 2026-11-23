@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  DEFAULT_TAB, EXPLORER_LSA_TAB, EXPLORER_PARTS_CLASSES_TABS, EXPLORER_SIGNALS_TAB, TABS, maintenanceRedirect, branchOf, classesInBranch, isDesignRow, isProductRow, partsInBranch, rowKind, shownTab, tabParam, tabsFor,
+  DEFAULT_TAB, EXPLORER_LSA_TAB, EXPLORER_PARTS_CLASSES_TABS, EXPLORER_SIGNALS_TAB, TABS, forecastRedirect, maintenanceRedirect, sparesForecastLink, branchOf, classesInBranch, isDesignRow, isProductRow, partsInBranch, rowKind, shownTab, tabParam, tabsFor,
   addressTab, hasTabBar, tabCarried, tabForArrangement,
 } from "./explorerTabs.js";
 
@@ -390,15 +390,25 @@ test("an old Maintenance sub-tab address becomes the one table's own", () => {
   assert.equal(go("tab=lsa&mview=packages&package=k1&sel=mw"), "tab=maintenance&sel=mw&mpkg=k1");
   // A task's LSA in What it needs: the task, with What it needs.
   assert.equal(go("tab=lsa&task=t1&sel=en"), "tab=maintenance&sel=en&mtask=t1&needs=1");
-  // The Forecast and the Spares views: the row's Forecast… in the table area.
-  assert.equal(go("tab=maintenance&mview=forecast&sel=mw"), "tab=maintenance&sel=mw&forecast=mw");
-  assert.equal(go("tab=lsa&mview=spares&sel=en&packaging=en"), "tab=maintenance&sel=en&forecast=en");
+  // The Forecast and the Spares views: the one table (forecastRedirect sends them to the spares forecast).
+  assert.equal(go("tab=maintenance&mview=forecast&sel=mw"), "tab=maintenance&sel=mw");
+  assert.equal(go("tab=lsa&mview=spares&sel=en&packaging=en"), "tab=maintenance&sel=en");
   assert.equal(go("tab=packages&sel=mw"), "tab=maintenance&sel=mw");
   // A product's page names the tab ?view=.
   assert.equal(go("view=lsa&sel=d", { tabKey: "view" }), "view=maintenance&sel=d");
   // Not an old address: nothing to do.
   assert.equal(go("tab=maintenance&sel=mw"), null);
   assert.equal(go("tab=models&mview=x"), null);
+});
+
+test("an old Explorer forecast address opens the spares forecast, filled in from where it was", () => {
+  const go = (q) => forecastRedirect(new URLSearchParams(q));
+  assert.equal(go("tab=maintenance&forecast=p1&root=a1"), "/forecasts/spares?from=position%3Ap1&root=a1");
+  assert.equal(go("tab=maintenance&mview=spares&sel=p2"), "/forecasts/spares?from=position%3Ap2");
+  assert.equal(go("tab=maintenance&sel=MF:MT:t9&root=a1"), "/forecasts/spares?from=task%3At9&root=a1");
+  assert.equal(go("tab=maintenance&sel=MF:MP:k1"), "/forecasts/spares");
+  assert.equal(go("tab=maintenance&sel=p2"), null);
+  assert.equal(sparesForecastLink({ position: "p", task: "t" }), "/forecasts/spares?from=task%3At");
 });
 
 test("a tab or view picked names the address tab and mview to open", () => {

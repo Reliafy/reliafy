@@ -3089,6 +3089,39 @@ def get_operating_plan(kind: str, target_id: str, root: str | None = None,
     return _run(m.operating_plan, target_id, root or None)
 
 
+@router.get("/positions/{position_id}/forecast-start")
+def position_forecast_start(position_id: str, root: str | None = None, session=Depends(get_session),
+                            ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """What the quick forecast tool (Decisions › Forecasts) and Optimal replacement take from a
+    position and everything below it (the Explorer's Open in ›): its model in use, the units with
+    their ages from fitments, hours a day from its duty, a task's interval, hours and cost, and a
+    failure's cost, only where recorded. Nothing is written."""
+    from backend.maintenance import position_models as pm
+    from backend.maintenance.forecast_start import position_start
+
+    return _run(position_start, m, pm.fetcher(session, ctx.read_owners, ctx.hidden), position_id, root or None)
+
+
+@router.get("/tasks/{task_id}/forecast-start")
+def task_forecast_start(task_id: str, root: str | None = None, session=Depends(get_session),
+                        ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The same from one task: the position it's on, with the task's interval, hours and cost."""
+    from backend.maintenance import position_models as pm
+    from backend.maintenance.forecast_start import task_start
+
+    return _run(task_start, m, pm.fetcher(session, ctx.read_owners, ctx.hidden), task_id, root or None)
+
+
+@router.get("/packages/{package_id}/forecast-start")
+def package_forecast_start(package_id: str, root: str | None = None, session=Depends(get_session),
+                           ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The same from a work package: the positions its tasks are on, and its tasks."""
+    from backend.maintenance import position_models as pm
+    from backend.maintenance.forecast_start import package_start
+
+    return _run(package_start, m, pm.fetcher(session, ctx.read_owners, ctx.hidden), package_id, root or None)
+
+
 @router.get("/positions/{position_id}/forecast")
 def position_forecast(position_id: str, root: str | None = None, period: str = "month", periods: int = 12,
                       end: str | None = None, strict: bool = False,

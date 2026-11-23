@@ -76,6 +76,19 @@ def create_fleet(
     return JSONResponse(content=_summary(fleet, ctx))
 
 
+@router.post("/scratch-forecast")
+def scratch_forecast(body: dict = Body(...), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
+    """A quick spares forecast, not saved (Decisions › Forecasts › Spares forecast): a model
+    (distribution_id and params, as a saved model or typed), units at one age or a list of ages, the
+    use per period, a horizon and a replacement policy (run to failure, or planned replacement at an
+    age). The same numbers a saved fleet with those items would show: failures and replacements by
+    period with 90% two-sided ranges, costs, and spares to hold when a lead time is given."""
+    try:
+        return JSONResponse(content=fleet_service.scratch_forecast(body))
+    except fleet_service.FleetValidationError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+
+
 @router.get("/fleets")
 def list_fleets(session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> dict:
     shared_by = shares_service.shared_by_map(session, ctx.uid, "fleets") if ctx.is_personal else {}

@@ -8,7 +8,10 @@ The tree pane and a tab's table are the same tree, not two: what's open, the row
 
 - Each position (or place) has the tab's own rows under it: its functions and failure modes, its tasks, its measuring points, its models, its missions. Each level rolls up what's at and below it.
 - A click picks a row and opens its details beside the table; a double-click (or Enter) opens them across the table, with "Back to table" and Esc to return (`expanded`, `onExpand`, `onCollapse`).
-- A row of numbers about another row (the Maintenance tab's Forecast row under a task or package) is one line: a summary run across the columns (`rollupOf`), never a list of dates or periods under it. It opens like any row: a click shows its details beside the table, a double-click or Enter across it (`ForecastSide`, with the shared `ForecastDetails`).
+- No forecasts in the tree (Derryn, 23 Nov 2026): quick one-off work lives in the left menu's tools, the saved work in the Explorer. A row's **Open in ›** opens a tool filled in from it (see `ContextMenu`).
+- A parent row's roll-up runs across the columns (`rollupOf`). `rollupLead` names columns it keeps as cells before the roll-up, drawn by `renderLead`: the Maintenance tab's **Next due** comes first, and a level shows the soonest next due at and below it.
+- A column with `sort` sorts from its header: a button, with ▲ or ▼ and `aria-sort`. `sortWords` names its two orders (Next due: "soonest first", "latest first"); a third click goes back to the tree's order. Each level's rows sort among themselves (tasks, then packages, then positions), blanks last either way.
+- A cell that can't be known is a dash with why in its tooltip, never a value made up to fill it (Next due: no record of when a task was last done).
 - Columns filter from their headers (`ColumnFilter`); a table that acts on several rows lets you pick them with no row checkboxes: click, Shift-click a range, Ctrl/⌘-click to toggle, Space and Shift+arrows, **Select** on a phone (`table.multi`, see `ColumnFilter`).
 
 ## Focus and Pin
@@ -38,7 +41,7 @@ While a focus is on (`focused`: `{name, onClear}`):
 - **Column filters:** a focus decides what's open; the filters apply inside it. A filter on keeps the way down to its matches as usual, and the filter's values come from the rows open, so focusing a branch narrows the values offered to it.
 - **Multi-select:** focusing closes branches, so picks in them leave (picks off screen are dropped, as for any close).
 - **Details:** a focus doesn't close the details beside or across the table; the focused row is picked and brought into view.
-- **Forecast… and the tab's own actions** stay in the same menu, in its middle section, after Focus › and Pin (the general section) and before the one destructive item.
+- **Open in › and the tab's own actions** stay in the same menu, in its middle section, after Focus › and Pin (the general section) and before the one destructive item.
 
 ## Look
 

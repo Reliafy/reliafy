@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { noDutyBasis, dutyHref } from "../explorerOperations.js";
+import { dueCell, nextOf, readingWords } from "../explorerTasks.js";
 import {
   createSubjectTask, getMaintenancePosition, getTaskIntervalBasis, getTaskLsa, linkTaskFailureMode, listTradeRates, retireMaintenanceTask,
   setTradeRate, unlinkTaskFailureMode, updateMaintenanceTask,
 } from "../api.js";
-import { fmtDate, today as workspaceToday, useSendOnce } from "./MaintenanceParts.jsx";
+import { today as workspaceToday, useSendOnce } from "./MaintenanceParts.jsx";
 import Field from "./ui/Field.jsx";
 import { Checkbox, Select as NativeSelect, TextInput } from "./ui/Controls.jsx";
 import Section from "./ui/Section.jsx";
@@ -79,25 +80,24 @@ function RateBoxes({ trades, rates, onRates, disabled }) {
   );
 }
 
-// When a saved task by use is next due and where that date comes from: the moment the meter reaches
-// its next reading through the position's operating plan (and the stop after it), or the meter's
-// recent rate. Calendar limits need no words (the dates show under How often).
+// When a saved task is next due, the same as its Next due cell in the table (Derryn, 23 Nov 2026:
+// blank when we don't know, never a date from today or from running 24 h a day): the date and what
+// it rests on, the reading alone and why there's no date, or why it isn't known.
 function DueBasis({ task, positionId = null, root = null }) {
-  const lines = (task.limits || []).filter((l) => l.basis && (l.next_due || l.note));
-  if (!lines.length) return null;
+  const n = nextOf(task);
+  const c = dueCell(n);
+  const byUse = (task.limits || []).find((l) => l.basis);
+  const noDuty = byUse && noDutyBasis(byUse.basis) && positionId;
   return (
     <div className="mt-due-basis" role="note">
-      {lines.map((l, i) => (
-        <p key={i} className="field-help">
-          {l.next_due ? (
-            <>Due by use {l.due_moment ? `at ${l.due_moment.slice(11)} on ${fmtDate(l.next_due)}` : `on ${fmtDate(l.next_due)}`}
-              {l.due_at_reading != null ? ` (at ${l.due_at_reading.toLocaleString("en-GB")} ${l.counter?.unit || ""})` : ""}
-              {l.stop_after && l.stop_after !== l.due_moment ? `; it stops at ${l.stop_after.slice(11)}${l.stop_after.slice(0, 10) !== l.next_due ? ` on ${fmtDate(l.stop_after.slice(0, 10))}` : ""}` : ""}. </>
-          ) : <>{l.note[0].toUpperCase() + l.note.slice(1)}. </>}
-          {l.basis.text}.
-          {noDutyBasis(l.basis) && positionId ? <> <Link to={dutyHref(positionId, root)}>Set a duty in Operations</Link>.</> : null}
-        </p>
-      ))}
+      <p className="field-help">
+        <strong>Next due:</strong>{" "}
+        {n.on ? <span className={n.overdue ? "pk-overdue" : undefined}>{c.words}{n.overdue ? " · overdue" : ""}</span>
+          : n.at_reading != null ? c.words : "not known"}
+        {n.on && n.at_reading != null ? ` (${readingWords(n)})` : ""}.
+        {" "}{n.on ? (n.basis ? `${n.basis}.` : "") : n.why ? `${n.why}.` : ""}
+        {noDuty ? <> <Link to={dutyHref(positionId, root)}>Set a duty in Operations</Link>.</> : null}
+      </p>
     </div>
   );
 }

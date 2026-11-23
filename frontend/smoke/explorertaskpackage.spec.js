@@ -85,7 +85,9 @@ test("Maintenance tasks: filter a column, select two, Package…, they show as P
 
   // Add to package… on the three-monthly task: the package fits, on every 3rd visit.
   await nameRow(page, `Megger the windings ${tag}`).locator(".tp-nm").click({ button: "right" });
-  await page.getByRole("menu").getByRole("menuitem", { name: "Add to package…" }).click();
+  // Open in › keeps its place in the menu; Add to package… is under More ›.
+  await page.getByRole("menu").getByRole("menuitem", { name: /^More/ }).click();
+  await page.getByRole("menuitem", { name: "Add to package…" }).click();
   await expect(pane.getByRole("radio", { name: /Monthly service/ })).toBeChecked();
   await expectChosen(pane.getByRole("combobox", { name: /on which visits/ }), "3");
   await pane.getByRole("button", { name: "Add", exact: true }).click();

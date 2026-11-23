@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { forecastItem, graftTasks, isTaskRow, openForTasks, rollupText, taskCell, taskKey } from "./explorerTasks.js";
+import { graftTasks, isTaskRow, openForTasks, rollupText, taskCell, taskKey } from "./explorerTasks.js";
 
 // A small tree: Station › Pump 1 › Motor, Station › Pump 2 (by positions), and a place.
 const row = (key, type, parent, kids, depth, name) => [key, { key, type, parent, kids, depth, ref: { name } }];
@@ -13,9 +13,12 @@ const display = {
   ]),
 };
 const task = (id, on, extra = {}) => ({ id, name: `Task ${id}`, subject: { id: on, name: on }, interval: 1, unit: "months", ...extra });
+// What the server says of a task's next due (backend/maintenance/next_due.py).
+const known = (on, extra = {}) => ({ next: { on, at_reading: null, unit: null, basis: "1 months after it was last done", why: null, overdue: false, ...extra } });
+const late = (on) => known(on, { overdue: true });
 
 test("each position's tasks hang under it, and every level counts the tasks at and below it", () => {
-  const out = graftTasks(display, [task("a", "st"), task("b", "m1", { overdue: true }), task("c", "m1"), task("x", "elsewhere")]);
+  const out = graftTasks(display, [task("a", "st"), task("b", "m1", late("2026-11-01")), task("c", "m1"), task("x", "elsewhere")]);
   // Tasks first under their position, then the positions inside it.
   assert.deepEqual(out.rows.get("st").kids, [taskKey("a"), "p1", "p2"]);
   assert.deepEqual(out.rows.get("m1").kids, [taskKey("b"), taskKey("c")]);
@@ -26,15 +29,15 @@ test("each position's tasks hang under it, and every level counts the tasks at a
   assert.equal(b.ref.position_id, "m1");
   // A task on a position not in the tree (another asset) isn't shown.
   assert.equal(out.rows.has(taskKey("x")), false);
-  assert.deepEqual(out.rows.get("st").tall, { tasks: 3, overdue: 1 });
-  assert.deepEqual(out.rows.get("p1").tall, { tasks: 2, overdue: 1 });
+  assert.deepEqual(out.rows.get("st").tall, { tasks: 3, overdue: 1, next: { on: "2026-11-01", overdue: true, name: "Task b" } });
+  assert.deepEqual(out.rows.get("p1").tall, { tasks: 2, overdue: 1, next: { on: "2026-11-01", overdue: true, name: "Task b" } });
   assert.deepEqual(out.rows.get("p1").tsum, { tasks: 0, overdue: 0 });
   // The display given is left as it is.
   assert.deepEqual(display.rows.get("st").kids, ["p1", "p2"]);
 });
 
 test("a level's roll-up says what's at and below it, its own first when open", () => {
-  const out = graftTasks(display, [task("a", "st"), task("b", "m1", { overdue: true }), task("c", "m1")]);
+  const out = graftTasks(display, [task("a", "st"), task("b", "m1", late("2026-11-01")), task("c", "m1")]);
   assert.equal(rollupText(out.rows.get("st")), "3 tasks at and below · 1 overdue");
   assert.equal(rollupText(out.rows.get("st"), true), "1 here · 3 tasks at and below · 1 overdue");
   // A level with no tasks of its own still counts the ones below.
@@ -43,17 +46,12 @@ test("a level's roll-up says what's at and below it, its own first when open", (
   assert.equal(rollupText(out.rows.get("p2")), "No tasks here or below");
 });
 
-test("cells, the way down, and Forecast… on a position only (never a design's)", () => {
+test("cells and the way down", () => {
   assert.equal(taskCell({ cost: { amount: 45, source: "typed" } }, "cost").text, "$45");
   assert.equal(taskCell({ cost: { amount: null } }, "cost").blank, "Not set");
-  assert.deepEqual(taskCell({ next_due: "2026-12-01", overdue: true }, "due").overdue, true);
+  assert.deepEqual(taskCell(late("2026-12-01"), "due").overdue, true);
   assert.equal(taskCell({ package: { id: "k", name: "Weekly" } }, "package").text, "Weekly");
   assert.deepEqual(openForTasks(display, "m1"), ["m1", "p1", "st"]);
-  assert.equal(forecastItem({ type: "pos" })[0].label, "Forecast…");
-  // A place, and a design's rows: the spares for the year alone (work and failures go by position).
-  assert.equal(forecastItem({ type: "loc" })[0].label, "Forecast…");
-  assert.equal(forecastItem({ type: "pos" }, { design: true })[0].label, "Forecast…");
-  assert.equal(forecastItem({ type: "mtask" }).length, 0);
 });
 
 test("a position shown above a place's positions (a via row) counts the tasks under it", () => {
@@ -78,7 +76,7 @@ const mower = [
   task("oil", "st", { unit: "hours", interval: 100, trade: "Fitter", kind: "fixed_interval" }),
   task("blade", "p1", { unit: "hours", interval: 50, trade: "Fitter", kind: "fixed_interval" }),
   task("belt", "m1", { unit: "hours", interval: 50, trade: "Electrician", package: { id: "k1", name: "50 h service" }, kind: "on_condition" }),
-  task("guard", "p2", { unit: "months", interval: 12, cost: { amount: 60 }, source: "statutory", overdue: true, next_due: "2026-01-01" }),
+  task("guard", "p2", { unit: "months", interval: 12, cost: { amount: 60 }, source: "statutory", ...late("2026-01-01") }),
 ];
 
 test("a column filter keeps the matching tasks, the way down to them, and the roll-ups follow it", () => {
@@ -115,7 +113,7 @@ test("a filter's values come from the tasks on show in the open tree, counted ag
   assert.deepEqual(pk.map((v) => [v.label, v.count]), [["50 h service", 0], ["In no package", 2]]);
   const units = facetValues("unit", all, {});
   assert.deepEqual(units.map((v) => v.label), ["Operating hours", "Months"]);
-  assert.deepEqual(facetValues("due", all, {}).map((v) => v.label), ["Overdue", "No date"]);
+  assert.deepEqual(facetValues("due", all, {}).map((v) => v.label), ["Overdue", "Not known"]);
   assert.deepEqual(facetValues("from", all, {}).map((v) => v.label), ["RCM", "Added directly: law, regulation or standard"]);
 });
 
@@ -190,10 +188,10 @@ test("a new package goes on the lowest position over all its tasks", () => {
   assert.equal(TASK_COLUMNS.find((c) => c.id === "package").label, "Packaged");
 });
 
-// ---- where a package lives, and forecasts under tasks and packages (Derryn, 22 Nov 2026) ----
+// ---- where a package lives (Derryn, 22 Nov 2026) ----
 
 import {
-  FC_TYPE, PKG_REF_TYPE, PKG_TYPE, forecastWanted, packageCell,
+  PKG_REF_TYPE, PKG_TYPE, dueCell, dueOrder, levelDueCell, nextDueSort, packageCell,
   packageHomes, packageKey, packageWhere,
 } from "./explorerTasks.js";
 
@@ -207,7 +205,8 @@ const mowerTree = {
     row("dk", "pos", "mw", [], 1, "Deck"),
   ]),
 };
-const svc = { id: "s50", name: "50 h service", status: "active", cadence: { every: 50, unit: "hours", text: "every 50 h" }, subject: { id: "mw" }, task_count: 3, next_visit: "2026-12-10" };
+const svc = { id: "s50", name: "50 h service", status: "active", cadence: { every: 50, unit: "hours", text: "every 50 h" }, subject: { id: "mw" }, task_count: 3, next_visit: "2026-12-10",
+  next: { on: "2026-12-10", at_reading: 1250, unit: "hours", basis: "Its next visit", why: null, overdue: false } };
 const eng = { id: "e", name: "Engine checks", status: "active", cadence: { every: 1, unit: "months", text: "every month" }, subject: { id: "mw" }, task_count: 2 };
 const inPkg = (pkg) => ({ package: { id: pkg.id, name: pkg.name } });
 
@@ -249,7 +248,8 @@ test("a package's row sits at the meeting point with its tasks under it; they st
   assert.equal(rollupText(out.rows.get("mw")), "3 tasks at and below · 2 packages");
   assert.equal(packageCell(p, "package").text, "2 tasks");
   assert.equal(packageCell(p, "interval").text, "Every 50 h");
-  assert.equal(packageCell(p, "due").text, "2026-12-10");
+  assert.equal(packageCell(p, "due").words, "10 Dec 2026");
+  assert.match(packageCell(p, "due").title, /Due at 1,250 h/);
   assert.equal(packageWhere(p, out), "Shown at Mower, where its 2 tasks meet.");
   assert.equal(packageWhere(out.rows.get(packageKey("e")), out), "Shown at Engine, where its task is.");
 });
@@ -265,50 +265,74 @@ test("a filter never moves a package, and keeps only its tasks that match", () =
   assert.equal(none.rows.get("mw").kids.includes(packageKey("s50")), false);
 });
 
-// The level's forecast for the next year, as the server's forecast details give it.
-const fc = {
-  basis: "calendar", period: "month", start: "2026-12-01", end: "2027-11-30",
-  tasks: [
-    { id: "oil", dates: ["2026-12-05", "2027-01-05", "2027-01-25"], count: 3, cost_each: 80, overdue: false },
-    { id: "blade", dates: ["2026-11-30"], count: 1, cost_each: null, overdue: true },
-  ],
-  not_placed: [{ task: { id: "plug" }, reason: "every 250 h, not dated: set a duty in Operations" }],
-  occurrences: [
-    { kind: "visit", package: { id: "s50" }, date: "2026-11-30" },
-    { kind: "visit", package: { id: "s50" }, date: "2026-12-05" },
-  ],
-};
+// ---- Next due (Derryn, 23 Nov 2026: a column, blank when we don't know; no forecast rows) ----
 
-test("a task's Forecast row is one line: next, how many a year and the cost a year; no dates under it", () => {
-  const out = graftTasks(mowerTree, [task("oil", "en"), task("plug", "en")], { forecasts: true, forecast: { fc } });
-  const f = out.rows.get(out.rows.get(taskKey("oil")).kids[0]);
-  assert.equal(f.type, FC_TYPE);
-  assert.deepEqual(f.kids, []);
-  assert.equal(f.ref.summary, "next 5 Dec 2026 · 3 times a year · $240 a year");
-  assert.equal(f.ref.task_id, "oil");
-  // By use with no duty: not dated, and why.
-  const plug = out.rows.get(out.rows.get(taskKey("plug")).kids[0]);
-  assert.equal(plug.ref.summary, "every 250 h, not dated: set a duty in Operations");
-  // Overdue first; no cost set says so.
-  const blade = graftTasks(mowerTree, [task("blade", "dk")], { forecasts: true, forecast: { fc } });
-  assert.equal(blade.rows.get(blade.rows.get(taskKey("blade")).kids[0]).ref.summary, "overdue, done first 30 Nov 2026 · 1 time a year · cost not set");
+test("no Forecast rows under tasks or packages", () => {
+  const tasks = [task("oil", "en", inPkg(svc)), task("blade", "dk", inPkg(svc))];
+  const out = graftTasks(mowerTree, tasks, { packages: [svc] });
+  assert.deepEqual(out.rows.get(taskKey("oil")).kids, []);
+  const p = out.rows.get(packageKey("s50"));
+  assert.ok(p.kids.every((k) => out.rows.get(k).type === PKG_REF_TYPE));
+  assert.ok(![...out.rows.values()].some((r) => r.type === "mfc" || r.type === "mfcl"));
 });
 
-test("a package's Forecast row counts its visits; the read starts once a task or package is open", () => {
-  const tasks = [task("oil", "en", inPkg(svc)), task("blade", "dk", inPkg(svc))];
-  const out = graftTasks(mowerTree, tasks, { packages: [svc], forecasts: true, forecast: { fc } });
+test("a Next due cell: a date, the reading alone, or blank saying why; never a date from today", () => {
+  assert.deepEqual(dueCell(known("2026-12-05").next).words, "5 Dec 2026");
+  const hours = { on: null, at_reading: 1250, unit: "hours", basis: null, why: "No duty or measured readings on the position to put a date on it", overdue: false };
+  assert.deepEqual([dueCell(hours).words, dueCell(hours).title], ["at 1,250 h", hours.why]);
+  const dated = { ...hours, on: "2026-12-24", basis: "Hours from the operating plan", why: null };
+  assert.equal(dueCell(dated).words, "24 Dec 2026");
+  assert.equal(dueCell(dated).title, "Due at 1,250 h. Hours from the operating plan");
+  const none = { on: null, at_reading: null, unit: null, basis: null, why: "No record of when this was last done", overdue: false };
+  assert.deepEqual([dueCell(none).blank, dueCell(none).words, dueCell(none).title], [true, "", "No record of when this was last done"]);
+  // A task row from before the server said: blank, never its old next_due counted from today.
+  assert.equal(taskCell({ next_due: "2027-11-23", overdue: false }, "due").blank, true);
+  // A paused package listed without one.
+  assert.equal(packageCell({ ref: { pkg: { status: "paused", cadence: {} }, tasks: [] } }, "due").title, "Paused");
+});
+
+test("a level shows the soonest next due beneath it, or blank", () => {
+  const tasks = [task("oil", "en", known("2027-01-05")), task("plug", "ac", known("2026-12-20")), task("blade", "dk")];
+  const out = graftTasks(mowerTree, tasks);
+  assert.equal(levelDueCell(out.rows.get("mw")).words, "20 Dec 2026");
+  assert.match(levelDueCell(out.rows.get("mw")).title, /Task plug/);
+  assert.equal(levelDueCell(out.rows.get("en")).words, "20 Dec 2026");
+  assert.equal(levelDueCell(out.rows.get("dk")).blank, true);
+  // A package's next visit counts too.
+  const withPkg = graftTasks(mowerTree, [task("oil", "en", { ...known("2027-01-05"), ...inPkg(svc) })], { packages: [svc] });
+  assert.equal(levelDueCell(withPkg.rows.get("mw")).words, "10 Dec 2026");
+});
+
+test("Next due sorts soonest first, then latest, then back; blanks last both ways", () => {
+  const tasks = [task("a", "en", known("2027-03-01")), task("b", "en"), task("c", "en", known("2026-12-01")),
+    task("d", "en", { next: { on: null, at_reading: 900, unit: "hours", why: "x", overdue: false } })];
+  const out = graftTasks(mowerTree, tasks);
+  const kids = out.rows.get("en").kids;
+  const ids = (keys) => keys.map((k) => out.rows.get(k)?.ref?.task?.id || k);
+  let s = nextDueSort(null, "due");
+  assert.deepEqual(s, { col: "due", dir: 1 });
+  assert.deepEqual(ids(dueOrder(out, s)(kids)), ["c", "a", "d", "b", "ac"]);
+  s = nextDueSort(s, "due");
+  assert.deepEqual(ids(dueOrder(out, s)(kids)), ["a", "c", "d", "b", "ac"]);
+  assert.equal(nextDueSort(s, "due"), null);
+  // Positions by their soonest: the deck (nothing known) after the engine.
+  assert.deepEqual(dueOrder(out, { col: "due", dir: 1 })(["dk", "en"]), ["en", "dk"]);
+});
+
+// ---- Open in › (Derryn, 23 Nov 2026) ----
+import { openInItem, openInLink, openInSource } from "./explorerTasks.js";
+
+test("Open in › on a position, a task and a package opens the left-menu tools filled in from it", () => {
+  const out = graftTasks(mowerTree, [task("oil", "en", inPkg(svc))], { packages: [svc] });
+  const pos = out.rows.get("en");
+  const t = out.rows.get(taskKey("oil"));
   const p = out.rows.get(packageKey("s50"));
-  const pf = out.rows.get(p.kids.at(-1));
-  assert.equal(pf.type, FC_TYPE);
-  assert.equal(pf.ref.package_id, "s50");
-  assert.equal(pf.ref.summary, "overdue, done first 30 Nov 2026 · 2 visits a year · $240 a year");
-  // Not read yet: it says it's being worked out.
-  const wait = graftTasks(mowerTree, tasks, { forecasts: true });
-  const w = wait.rows.get(wait.rows.get(taskKey("oil")).kids[0]);
-  assert.equal(w.ref.summary, "Working out…");
-  assert.equal(forecastWanted(new Set(["mw", taskKey("oil")])), true);
-  assert.equal(forecastWanted(new Set(["mw"])), false);
-  // A filter on keeps a task's Forecast with it.
-  const pr = graftTasks(mowerTree, tasks, { forecasts: true, prune: true });
-  assert.equal(pr.rows.get(taskKey("oil")).kids.length, 1);
+  assert.deepEqual(openInItem(pos)[0].items.map((x) => x.label), ["Optimise", "Spares forecast", "Hours forecast", "Cost forecast"]);
+  assert.equal(openInLink(pos, "open-in-spares", "mw"), "/forecasts/spares?from=position%3Aen&root=mw");
+  assert.equal(openInLink(t, "open-in-optimise"), "/strategy/replacement?from=task%3Aoil");
+  assert.equal(openInLink(p, "open-in-costs"), "/forecasts/costs?from=package%3As50");
+  // Not on a place, a reference or a product's design.
+  assert.deepEqual(openInItem({ type: "loc", key: "l" }), []);
+  assert.equal(openInSource(pos, { design: true }), null);
+  assert.deepEqual(openInItem(out.rows.get(p.kids[0])), []);
 });

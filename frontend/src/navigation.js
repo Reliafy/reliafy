@@ -173,7 +173,17 @@ export const ENTRIES = [
           { to: "/strategy/test-planning", label: "Test planning" },
         ],
       },
-      { id: "forecasts", label: "Forecasts", to: "/forecasts" },
+      // Forecasts (Derryn, 23 Nov 2026): the saved fleet forecasts, then the quick forecast tool's
+      // three views (one page, the same inputs; nothing saved).
+      {
+        id: "forecasts", label: "Forecasts", to: "/forecasts", opensOnFirstChild: true,
+        children: [
+          { to: "/forecasts", label: "Fleet forecasts", not: ["/forecasts/spares", "/forecasts/hours", "/forecasts/costs"] },
+          { to: "/forecasts/spares", label: "Spares forecast" },
+          { to: "/forecasts/hours", label: "Hours forecast" },
+          { to: "/forecasts/costs", label: "Cost forecast" },
+        ],
+      },
       // Risk: models in use on the items in service. It has no landing page of
       // its own: it opens on Condition monitoring (the tracked items' latest
       // condition, remaining life and alarms) and lists it.

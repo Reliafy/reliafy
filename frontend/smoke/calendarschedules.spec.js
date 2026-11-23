@@ -1,8 +1,8 @@
 // Calendar schedules on a task (Nov 2026): the task panel's How often picks a type (Running hours,
 // Days, weeks or months, Calendar rule, At shutdowns), then a short sentence; the rule in words and
 // its next five dates show under it as you choose, worked out on the server. Set "the first
-// Saturday of every month", save, and the task's Forecast row on the Maintenance tab counts those
-// dates. At 400 px the control wraps and nothing scrolls sideways.
+// Saturday of every month", save, and the task's Next due on the Maintenance tab is the first of
+// those dates (a rule gives a definite next date, even with no record of it being done). At 400 px the control wraps and nothing scrolls sideways.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { choose } from "./select.js";
 
@@ -21,7 +21,7 @@ async function pump(request, tag) {
 }
 
 for (const width of [1440, 400]) {
-  test(`the first Saturday of every month on a task: the dates show, and its Forecast row counts them (${width} px)`, async ({ page, request, problems }) => {
+  test(`the first Saturday of every month on a task: the dates show, and its Next due is the first (${width} px)`, async ({ page, request, problems }) => {
     const tag = `c${width}${Date.now()}`;
     const p = await pump(request, tag);
     await page.setViewportSize({ width, height: 900 });
@@ -50,15 +50,18 @@ for (const width of [1440, 400]) {
     expect(due.getUTCDay()).toBe(6);
     expect(due.getUTCDate()).toBeLessThanOrEqual(7);
 
-    // The Maintenance tab: the interval column says the rule; the Forecast row counts 12 in the year.
+    // The Maintenance tab: the interval column says the rule; Next due is its first date.
     await open(page, `/asset-register/explorer?arrange=positions&root=${p.top.id}&sel=${p.pos.id}&tab=maintenance`);
     const row = page.locator(`[id="tp-MT:${p.task.id}"]`);
     await expect(row).toBeVisible();
-    if (width > 720) await expect(row).toContainText("The first Saturday of every month");
-    await row.locator(".tp-chev").click();
-    const fc = page.locator(`[id="tp-MF:MT:${p.task.id}"]`);
-    await expect(fc).toContainText(/next \d+ \w+ \d{4} · 12 times a year/);
-    await shot(page, `calendar-rule-forecast-${width}`);
+    const words = due.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+    if (width > 720) {
+      await expect(row).toContainText("The first Saturday of every month");
+      await expect(row.locator(".mt-c-due")).toHaveText(words);
+    } else {
+      await expect(row).toContainText(`Due ${words}`);
+    }
+    await shot(page, `calendar-rule-next-due-${width}`);
     expect(await sideways(page)).toBeLessThanOrEqual(0);
     await expectHealthy(page, problems, { label: `calendar schedules ${width}` });
   });

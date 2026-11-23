@@ -7,13 +7,14 @@ The right-click menu: a thing's own actions at the pointer — a row in the Expl
 "A general delete button at the bottom with a line separator, a general section at the top, and then a middle section, which is the contextual options." Every menu has three sections with a line between them:
 
 1. **Top: general.** The same names in the same order on every row and every tab: **Open · Rename… · Move to… · Focus › · Pin this branch · Copy link**. A slot that doesn't apply to a row stays, greyed, with its reason. Focus › is one entry: its submenu holds Focus <what the tab shows> (Focus here, Focus tasks, Focus failure modes…), the depths (1, 2, 3 levels; 4 and 5 on the RCM tab), Focus on incomplete rows (RCM), then a line and Clear focus. Pin this branch reads Show whole tree on the row pinned.
-2. **Middle: contextual.** The tab's adds first (Add task…, New position inside, Life model ›), then the row's own actions (Optimise…, Forecast…, Decide…). A line between the two only when there are more than four.
+2. **Middle: contextual.** The tab's adds first (Add task…, New position inside, Life model ›), then the row's own actions (Optimise…, Open in ›, Decide…). A line between the two only when there are more than four.
+   - **Open in ›** (the Explorer's Maintenance tab: a position, a task, a work package): a submenu of left-menu tools opened filled in from the row and everything below it: Optimise, Spares forecast, Hours forecast, Cost forecast. Nothing in the Explorer changes; the tool names where it came from, with a link back. Put it early in the middle (right after the row's first action) so the overflow into More › never takes it.
 3. **Bottom: one destructive item**, always last, always after a line, always red, greyed with a reason rather than hidden:
    - **Delete…** for structure (positions, locations, functions, standards, functional failures, failure modes, missions, phases, rules, product structure): a counted dialog, then Undo.
    - **Retire…** for records with history (items, tasks, packages, measuring points, consumables).
    - **Unlink…** for a model on a position (the model stays in Models).
    - **Remove from…** for a link (Remove from this failure mode…, Remove from package…).
-   - None on a row with nothing to remove (a group row, a forecast row): the line and the item are left out.
+   - None on a row with nothing to remove (a group row): the line and the item are left out.
 
 Rules the builder keeps (and `menuProblems` checks in the tests):
 

@@ -89,20 +89,21 @@ new meeting point. A package with none of its tasks on this asset yet sits
 where it was made. Only the asset you opened is shown: a package that also
 holds tasks on another asset says how many, and never shows them.
 
-## Forecasts under a task and a package
+## Next due, and forecasts
 
-Each task and each package has a **Forecast** row under it. Open it: its lines
-say when it's next due (a package: its next visit), how many times it comes in
-each month, the labour, the **Parts and spares** it uses (from what its LSA
-names) and what it costs, with the total over the next year. **Open the full
-forecast…** on that row opens the forecast for the level it sits at.
+The **Next due** column comes first and says when each task is next due, only
+when that's known: from when it was last done, a start date set on it, or a
+calendar rule. A task by running hours shows the reading it falls due at ("at
+1,250 h"), with a date only when the position has a duty or measured readings;
+the tooltip says what the date rests on. A task with no record shows a dash,
+and its tooltip says why. A position shows the soonest next due at and below
+it. Click the column's heading to sort by it: soonest first, then latest first;
+blanks always come last.
 
-**Forecast…** on a position's **…** runs the forecast for that level and
-everything inside it (the work, the expected failures and the costs to come,
-by month, quarter or year) in the table area, with the tree still beside it,
-and the **spares for the year** under it: what failures and tasks there will
-use, against stock and lead time. On a location, and on a product's design,
-it's the spares for the year alone, under **Forecast…**.
+There are no forecasts in the table. **Open in ›** in a position's, task's or
+package's menu opens the quick **Spares**, **Hours** or **Cost forecast** in
+**Decisions › Forecasts**, filled in from that row and everything below it
+([Quick forecasts](/guides/forecast-tools)).
 
 ## Say what a task needs
 
@@ -184,6 +185,4 @@ A task's own **⋯** has **Remove from package…**.
 - A position's **Summary** shows **Next visit** under Work when its tasks are
   in a package.
 - A package's own page and its view here list **Parts for the visit**: each part
-  against the stock usable now, and when an order placed today lands. The
-  spares each task uses also count in the **spares for the year** under a
-  level's **Forecast…**, against stock and lead time.
+  against the stock usable now, and when an order placed today lands. 

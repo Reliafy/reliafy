@@ -162,6 +162,7 @@ test("a product's design: What it needs on its tasks, no packaging or forecasts;
   await task.locator(".tp-nm").click({ button: "right" });
   const menu = page.getByRole("menu");
   await expect(menu.getByRole("menuitem", { name: "Package…" })).toHaveCount(0);
+  await expect(menu.getByRole("menuitem", { name: /^Open in/ })).toHaveCount(0);
   await menu.getByRole("menuitem", { name: "Open", exact: true }).click();
   await expect.poll(() => query(page).get("mtask")).toBe(taskId);
   await side(page).getByRole("region", { name: "What it needs" }).getByRole("button", { name: /^Show what/ }).click();

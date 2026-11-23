@@ -188,8 +188,34 @@ export function maintenanceRedirect(params, { tabKey = "tab" } = {}) {
     q.delete("task");
   }
   q.delete("packaging");
-  if ((mview === "forecast" || mview === "spares") && q.get("sel") && !q.get("forecast") && !q.get("mpkg") && !q.get("mtask")) q.set("forecast", q.get("sel"));
   return q;
+}
+
+// The quick spares forecast in the left menu (Decisions › Forecasts › Spares forecast), started
+// from a position (and one of its tasks) in the asset opened (`root`): it fills in what's recorded.
+export function sparesForecastLink({ position = null, task = null, root = null } = {}) {
+  const q = new URLSearchParams();
+  if (task) q.set("from", `task:${task}`);
+  else if (position) q.set("from", `position:${position}`);
+  if (root) q.set("root", root);
+  const text = q.toString();
+  return `/forecasts/spares${text ? `?${text}` : ""}`;
+}
+
+// An old address of an Explorer forecast (Derryn, 23 Nov 2026: no forecasts in the Explorer):
+// ?forecast=<position> (a level's Forecast…), ?mview=forecast or spares with a row picked, or a
+// task's or package's Forecast row picked (?sel=MF:MT:<task>): the spares forecast, filled in
+// from that position (or task) where it can be. Null: not one.
+export function forecastRedirect(params, { tabKey = "tab" } = {}) {
+  const mview = params.get("mview");
+  const sel = params.get("sel") || "";
+  const old = params.get("forecast") || ((mview === "forecast" || mview === "spares") && params.get(tabKey) === "maintenance" ? sel || "-" : null)
+    || (sel.startsWith("MF:") ? sel : null);
+  if (!old) return null;
+  const root = params.get("root");
+  if (old.startsWith("MF:MT:")) return sparesForecastLink({ task: old.slice(6), root });
+  if (old.startsWith("MF:") || old === "-") return sparesForecastLink({ root });
+  return sparesForecastLink({ position: old, root });
 }
 
 // The tab the address asks for, if it's one (else Summary).
