@@ -10,14 +10,18 @@ import { AGE_NOTE, TASK_HINT, tooLong } from "../maintenanceText.js";
 import { TaskMeasurementField } from "./TaskMeasurement.jsx";
 import HowOften from "./HowOften.jsx";
 import { LAST_DONE_NOTE, planWords } from "../workManagement.js";
-import { formFromTask, howOftenPreview, howOftenProblem, taskAnchor, taskBody } from "../howOften.js";
+import { formFromTask, howOftenProblem, previewFor, taskAnchor, taskBody } from "../howOften.js";
 import { Checkbox, Select } from "./ui/Controls.jsx";
 
-// What a task's "how often" shows under it: the next dates, from when it was last done (else today).
-function preview(how, task) {
+// What a task's "how often" shows under it: the next dates, from when it was last done (else today);
+// a task at shutdowns, its position's shutdowns.
+function preview(how, task, subject) {
   const day = today();
-  const p = howOftenPreview(how, { from: task?.last_done || day, after: !!task?.last_done, anchor: taskAnchor(task, day) });
-  return { dates: p.dates, datesLead: p.lead, datesAfter: p.after, datesNote: p.note };
+  const positionId = subject?.kind === "position" ? subject.id : null;
+  return {
+    preview: previewFor(how, { from: task?.last_done || day, after: !!task?.last_done, anchor: taskAnchor(task, day), positionId }),
+    shutdowns: !!positionId,
+  };
 }
 
 import { useWorkManagementOn } from "../ConfigProvider.jsx";
@@ -122,7 +126,7 @@ function AddTaskModal({ subject, modes, counters, onClose, onDone }) {
     <FormModal title={`Add a task to ${subject.name}`} submitLabel="Add task" canSubmit={!!f.name.trim() && !tooLong(f.name) && !howOftenProblem(how)}
                onClose={onClose} onSubmit={async () => onDone(await createSubjectTask(subject, {
                  name: f.name, ...taskBody(how, today()), outcome: f.outcome || null,
-                 also_interval: how.also ? Number(how.also) : null,
+                 also_interval: taskBody(how, today()).also_interval || null,
                  source: f.source, reference: f.reference, point_id: f.point_id || null, trade: f.trade,
                  failure_mode_id: f.failure_mode_id || null, instructions: f.instructions,
                  checklist: f.checklist.split("\n").map((x) => x.trim()).filter(Boolean), last_done: f.last_done || null,
@@ -133,7 +137,7 @@ function AddTaskModal({ subject, modes, counters, onClose, onDone }) {
              placeholder={kind === "item" ? "e.g. Calibrate, Statutory inspection, Overhaul"
                : kind === "location" ? "e.g. Area walkdown, Ex inspection" : "e.g. Replace sacrificial anode"} /></Field>
       <HowOften value={how} onChange={setHow} units={units} withAlso problem={how.every !== "" ? howOftenProblem(how) : null}
-                {...preview(how, null)} />
+                {...preview(how, null, subject)} />
       {counters.length > 0 && (
         <Field label="Measurement (for a task by use, optional)">
           <Select value={f.point_id} onChange={set("point_id")}>
@@ -220,7 +224,7 @@ function TaskModal({ task, modes = [], onClose, onDone }) {
         <p className="lib-date">On the {kind} <Link to={subjectPath(task.subject)}>{task.subject.name}</Link>.</p>
       )}
       <Field label="Task" text={name} hint={TASK_HINT}><input value={name} onChange={(e) => setName(e.target.value)} /></Field>
-      <HowOften value={how} onChange={setHow} units={units} withAlso problem={howOftenProblem(how)} {...preview(how, task)} />
+      <HowOften value={how} onChange={setHow} units={units} withAlso problem={howOftenProblem(how)} {...preview(how, task, task.subject)} />
       {kind !== "location" && (
         <TaskMeasurementField taskId={task.id} unit={unit} disabled={busy} onChange={(body, error) => setMeas({ body, error })} />
       )}

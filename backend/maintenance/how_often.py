@@ -15,7 +15,17 @@ reader take it unchanged)::
     {"kind": "weekly",  "every": 1, "weekdays": ["Saturday"]}
     {"kind": "monthly", "every": 1, "weekday": "Saturday", "nth": 1}     # or "day": 15
     {"kind": "yearly",  "every": 1, "month": 11, "weekday": "Tuesday", "nth": 1}   # or "day": 1
+    {"kind": "shutdowns", "every": 12, "unit": "months"}     # at the first planned shutdown 12 months on
     (each may carry "anchor": "2026-11-14", the date it counts from, and "version": 1)
+
+A monthly rule every 2, 3, 4 or 6 months from an anchor falls in the same months each year: "the 1st
+of March and September" is ``{kind: monthly, every: 6, day: 1, anchor: "2027-03-01"}``, and "the last
+day of each quarter" ``{kind: monthly, every: 3, day: 31, anchor: "2027-03-01"}`` (a day past a short
+month's end is its last day).
+
+``shutdowns`` (Nov 2026) isn't a recurrence: it falls due ``every`` ``unit`` after it was last done
+and waits for the position's next planned shutdown, the library's ``Task(visits=...)``. The shutdown
+dates come from ``shutdowns.shutdown_dates``.
 
 The dates come from RePyability's ``Recurrence`` (through ``schedule.Cadence``):
 ``to_library`` writes a rule as the library saves one and ``from_library`` reads
@@ -29,7 +39,9 @@ from datetime import date
 from backend.maintenance.schedule import Cadence, Recurrence
 
 RULE_VERSION = 1
-RULE_KINDS = ("every", "weekly", "monthly", "yearly")
+RULE_KINDS = ("every", "weekly", "monthly", "yearly", "shutdowns")
+#: The kinds whose dates are a Recurrence (shutdowns' come from the position's shutdowns).
+RECURRENCE_KINDS = ("every", "weekly", "monthly", "yearly")
 WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
           "November", "December")
@@ -71,14 +83,14 @@ def check_rule(rule) -> dict:
     if extra:
         raise ValueError(f"A rule doesn't take {', '.join(extra)}.")
     out: dict = {"kind": kind, "every": _whole(rule.get("every", 1), "every", 1, 1000)}
-    if kind == "every":
+    if kind in ("every", "shutdowns"):
         unit = rule.get("unit")
         if unit not in ("days", "weeks", "months", "years"):
-            raise ValueError("A rule of kind every has a unit: days, weeks, months or years.")
+            raise ValueError(f"A rule of kind {kind} has a unit: days, weeks, months or years.")
         out["unit"] = unit
         bad = [k for k in ("weekdays", "weekday", "nth", "day", "month") if rule.get(k) is not None]
         if bad:
-            raise ValueError(f"A rule of kind every takes no {', '.join(bad)}: use weekly, monthly or yearly.")
+            raise ValueError(f"A rule of kind {kind} takes no {', '.join(bad)}: use weekly, monthly or yearly.")
     elif kind == "weekly":
         days = rule.get("weekdays")
         if days is None and rule.get("weekday") is not None:
@@ -114,7 +126,8 @@ def check_rule(rule) -> dict:
         except ValueError:
             raise ValueError(f"A rule's anchor is a date like 2026-11-14; got {rule['anchor']!r}.") from None
     out["version"] = RULE_VERSION
-    cadence(out, out.get("anchor") or "2000-01-01")  # the dates themselves must work out
+    if kind in RECURRENCE_KINDS:
+        cadence(out, out.get("anchor") or "2000-01-01")  # the dates themselves must work out
     return out
 
 
@@ -124,7 +137,10 @@ def interval_of(rule: dict) -> tuple[int, str]:
 
 
 def cadence(rule: dict, anchor) -> Cadence:
-    """The rule's dates, counted from ``anchor`` (the rule's own anchor wins)."""
+    """The rule's dates, counted from ``anchor`` (the rule's own anchor wins). Not for a
+    shutdowns rule: its dates are the position's shutdowns (ValueError)."""
+    if rule["kind"] not in RECURRENCE_KINDS:
+        raise ValueError("A rule at shutdowns has no dates of its own: they are the position's planned shutdowns.")
     every, unit = interval_of(rule)
     start = rule.get("anchor") or anchor
     weekday = (rule.get("weekdays") or [None])[0] if rule["kind"] == "weekly" else rule.get("weekday")
@@ -162,19 +178,56 @@ def describe(rule: dict) -> str:
     if kind == "every":
         unit = rule["unit"]
         return f"every {unit[:-1]}" if n == 1 else f"every {n} {unit}"
+    if kind == "shutdowns":
+        unit = rule["unit"]
+        gap = f"1 {unit[:-1]}" if n == 1 else f"{n} {unit}"
+        return f"at the first planned shutdown {gap} after it was last done"
     if kind == "weekly":
         day = rule["weekdays"][0]
         return f"every {day}" if n == 1 else f"every {n} weeks on {day}"
     which = (f"the {_ORDINALS[rule['nth']]} {rule['weekday']}" if rule.get("weekday")
-             else f"the {_ordinal_day(rule['day'])}")
+             else "the last day" if rule.get("day") == 31 else f"the {_ordinal_day(rule['day'])}")
     if kind == "monthly":
-        return f"{which} of every month" if n == 1 else f"{which} of every {n} months"
+        if n == 1:
+            return f"{which} of every month"
+        months = months_of(rule)
+        if months:
+            # Every 2, 3, 4 or 6 months from an anchor: the same months each year, named.
+            return f"{which} of {_listed([MONTHS[m - 1] for m in months])}"
+        return f"{which} of every {n} months"
     month = MONTHS[rule["month"] - 1]
     if rule.get("day"):
-        which = f"{rule['day']} {month}"
+        which = f"the last day of {month}" if rule["day"] >= 31 or (rule["month"] == 2 and rule["day"] >= 29) \
+            else f"{rule['day']} {month}"
     else:
         which = f"{which} of {month}"
     return f"{which}, every year" if n == 1 else f"{which}, every {n} years"
+
+
+def _listed(words: list) -> str:
+    return words[0] if len(words) == 1 else f"{', '.join(words[:-1])} and {words[-1]}"
+
+
+def months_of(rule: dict) -> list[int] | None:
+    """The months a monthly rule every 2, 3, 4 or 6 months falls in each year (from its anchor's
+    month), or None (every month, an uneven step, or no anchor)."""
+    n = rule.get("every", 1)
+    if rule.get("kind") != "monthly" or n not in (2, 3, 4, 6) or not rule.get("anchor"):
+        return None
+    first = date.fromisoformat(str(rule["anchor"])[:10]).month
+    return sorted(((first - 1 + k * n) % 12) + 1 for k in range(12 // n))
+
+
+def nearest_rule(rule: dict, value: float, unit: str) -> dict | None:
+    """The rule like ``rule`` (its weekday, day or month kept) whose step is nearest an interval of
+    ``value`` ``unit`` (days, weeks, months or years): what Optimise's answer becomes as a rule. None
+    for a plain interval (kind every)."""
+    days_per = {"days": 1.0, "weeks": 7.0, "months": 365.25 / 12, "years": 365.25}
+    if rule["kind"] == "every" or unit not in days_per:
+        return None
+    step_unit = rule.get("unit") or UNIT_OF_KIND[rule["kind"]]
+    steps = max(1, round(float(value) * days_per[unit] / days_per[step_unit]))
+    return check_rule({**rule, "every": min(steps, 1000)})
 
 
 def recurrence(rule: dict, anchor) -> Recurrence:

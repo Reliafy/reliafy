@@ -381,6 +381,8 @@ export function packageMisfit(pkg, t, display) {
   const hours = pkg.cadence?.unit === "hours";
   if (hours && t.unit !== "hours") return `${pkg.name} goes by operating hours, and ${t.name} by the calendar: a package by hours holds tasks by hours.`;
   if (!hours && t.unit === "hours") return `${pkg.name} goes by the calendar, and ${t.name} by operating hours: put it in a package by hours on its position.`;
+  // A task done at planned shutdowns: only a shutdown's visits are those.
+  if (t.rule_kind === "shutdowns" && !pkg.shutdown) return `${t.name} is done at planned shutdowns, and ${pkg.name} isn't a shutdown: it joins a shutdown package only.`;
   // A package on a position takes any task on the same asset (it then lives where its tasks meet,
   // which moves up); one on a location, the tasks at it.
   const on = pkg.subject?.id;

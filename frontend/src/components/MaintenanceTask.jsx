@@ -12,7 +12,7 @@ import Select from "./Select.jsx";
 import LoadFailed from "./LoadFailed.jsx";
 import Loading from "./ui/Loading.jsx";
 import HowOften from "./HowOften.jsx";
-import { formFromTask, howOftenPreview, howOftenProblem, taskAnchor, taskBody } from "../howOften.js";
+import { formFromTask, howOftenProblem, previewFor, taskAnchor, taskBody } from "../howOften.js";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { costWhere, fromRcm, fromText, money, SOURCE_WORDS } from "../lsaTab.js";
 import { taskUnits } from "../maintenanceSubjects.js";
@@ -249,7 +249,9 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
   const modes = loaded.modes;
   // The next three dates it gives: from when it was last done, else from today.
   const today = workspaceToday();
-  const shown = howOftenPreview(f.how, { from: task?.last_done || today, after: !!task?.last_done, anchor: taskAnchor(task, today) });
+  const onPosition = subject.kind === "position";
+  const preview = previewFor(f.how, { from: task?.last_done || today, after: !!task?.last_done, anchor: taskAnchor(task, today),
+    positionId: onPosition ? subject.id : null });
   const showNeeds = () => {
     setNeedsShown(true);
     setTimeout(() => needsRef.current?.scrollIntoView({ block: "start", behavior: "smooth" }), 0);
@@ -268,8 +270,8 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
         </Field>
         <Section title="How often" className="ruled mt-sec"
                  action={onOptimise ? { label: "Optimise…", onClick: onOptimise, ariaLabel: `Optimise how often to do ${task.name}`, disabled: send.busy } : null}>
-          <HowOften value={f.how} onChange={setHow} units={units} withAlso disabled={send.busy} problem={howProblem}
-                    dates={shown.dates} datesLead={shown.lead} datesAfter={shown.after} datesNote={shown.note} />
+          <HowOften value={f.how} onChange={setHow} units={units} withAlso shutdowns={onPosition} disabled={send.busy}
+                    problem={howProblem} preview={preview} />
           {task && <DueBasis task={task} />}
           {task && <RestsOn taskId={task.id} onOptimise={onOptimise} />}
         </Section>

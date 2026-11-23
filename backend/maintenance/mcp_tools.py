@@ -91,7 +91,9 @@ Trigger = Annotated[dict[str, Any] | None, Field(description=(
 Rule = Annotated[dict[str, Any] | None, Field(description=(
     "create/update: a calendar pattern, e.g. {kind: 'monthly', every: 1, weekday: 'Saturday', nth: 1} (the "
     "first Saturday), {kind: 'yearly', month: 11, weekday: 'Tuesday', nth: 1}, {kind: 'weekly', weekdays: "
-    "['Monday']}; monthly/yearly take day in place of weekday+nth. The interval follows it. update: {} clears."))]
+    "['Monday']}; monthly/yearly take day in place of weekday+nth (day 31: the last day); monthly every 3 with "
+    "anchor 2027-03-01: March, June, September, December. {kind: 'shutdowns', every: 12, unit: 'months'}: at "
+    "the first planned shutdown that long after it was last done. The interval follows it. update: {} clears."))]
 
 
 # A task's LSA record: what doing it needs (Maintenance.set_task_resources).
@@ -3048,7 +3050,10 @@ def register() -> None:
                         task_id: str | None = None, save_evidence: bool | None = None,
                         model_type: Literal["model", "degradation_model"] | None = None,
                         planned_cost: float | None = None, unplanned_cost: float | None = None,
-                        use: bool | None = None) -> dict[str, Any]:
+                        use: bool | None = None,
+                        as_rule: Annotated[bool | None, Field(description=(
+                            "optimise with use: a task on a calendar rule keeps it, at the step nearest the "
+                            "answer (its use_rule)."))] = None) -> dict[str, Any]:
         """The interval calculators on an RCM task card: on condition (the P-F calculator) and failure finding.
         save_evidence (with failure_mode_id; task_id: which of its tasks, else its first of the kind): use the
         answer as the app's "Use" does (rcm_apply_interval). optimise: the app's Optimise… on a task
@@ -3071,7 +3076,8 @@ def register() -> None:
             if not use:
                 return run(task_optimise.optimise, m, _db(), owners, frozenset(), task_id, **args)
             _require_scope(ctx, "write")  # the call writes: a read-only token can't
-            return run(task_optimise.use, m, _db(), owners, frozenset(), _caller(ctx)["uid"], task_id, **args)
+            return run(task_optimise.use, m, _db(), owners, frozenset(), _caller(ctx)["uid"], task_id,
+                       as_rule=bool(as_rule), **args)
         if save_evidence and not failure_mode_id:
             raise ToolError("save_evidence needs failure_mode_id: the failure mode whose task takes the interval.")
         # The task's own cost (its position's figure, task_costs.py) where a priced call leaves it out:

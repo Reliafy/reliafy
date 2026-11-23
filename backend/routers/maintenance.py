@@ -1158,11 +1158,24 @@ def optimise_task_use(task_id: str, body: dict = Body(default={}), session=Depen
                       ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """Optimise's "Use every N": the task takes the interval worked out for failure_mode_id (left out when
     it prevents one), the calculation is saved as a strategy analysis and linked as the mode's evidence,
-    and a line on it goes in the mode's notes. Takes the same inputs as /optimise."""
+    and a line on it goes in the mode's notes. Takes the same inputs as /optimise, and as_rule (a task on
+    a calendar rule keeps it, at the step nearest the answer: its use_rule)."""
     from backend.maintenance import task_optimise as to
 
+    body = dict(body or {})
+    as_rule = bool(body.pop("as_rule", False))
     return _run(lambda: to.use(m, session, ctx.read_owners, ctx.hidden, ctx.write_owner, task_id,
-                               **_optimise_args(body or {})))
+                               as_rule=as_rule, **_optimise_args(body)))
+
+
+@router.post("/schedule/dates")
+def schedule_dates(body: dict = Body(default={}), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The next dates a "how often" gives (the task panel's and a package's preview; nothing saved): rule
+    (a how-often rule; {kind: every, every, unit} for a plain interval, {kind: shutdowns, every, unit}
+    with position_id), start (default today), after (done that day: only later dates), also ({every,
+    unit}: whichever comes first) and count (default 5). The dates are RePyability's."""
+    return _run(m.schedule_dates, body.get("rule"), start=body.get("start"), count=body.get("count") or 5,
+                after=bool(body.get("after")), position_id=body.get("position_id"), also=body.get("also"))
 
 
 @router.get("/tasks/{task_id}/interval-basis")

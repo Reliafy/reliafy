@@ -44,17 +44,23 @@ test("the form starts from the package and sends only what changed", () => {
 
 test("timing goes as a whole, its pattern replaced or cleared", () => {
   const form = initialForm(PKG);
+  assert.equal(form.how.type, "rule");
   const how = (patch) => ({ ...form, how: { ...form.how, ...patch } });
   assert.deepEqual(editBody(PKG, how({ weekday: "Monday" })),
     { timing: "fixed", every: 1, unit: "weeks", weekday: "monday" });
-  assert.deepEqual(editBody(PKG, how({ unit: "months", pattern: "nth", nth: "-1" })),
+  assert.deepEqual(editBody(PKG, how({ step: "months:1", pattern: "nth", nth: "-1" })),
     { timing: "fixed", every: 1, unit: "months", weekday: "saturday", nth: -1 });
-  assert.deepEqual(editBody(PKG, how({ unit: "months", pattern: "day", day: "15" })),
+  assert.deepEqual(editBody(PKG, how({ step: "months:1", pattern: "day", day: "15" })),
     { timing: "fixed", every: 1, unit: "months", day: 15 });
-  assert.deepEqual(editBody(PKG, how({ unit: "years", pattern: "nth", nth: "1", weekday: "Tuesday", month: "11" })),
+  assert.deepEqual(editBody(PKG, how({ step: "years:1", pattern: "nth", nth: "1", weekday: "Tuesday", month: "11" })),
     { timing: "fixed", every: 1, unit: "years", weekday: "tuesday", nth: 1, month: 11 });
-  assert.deepEqual(editBody(PKG, { ...how({ every: "2" }), timing: "from_last_visit" }),
+  // The last day of each quarter, from March: its anchor says which months.
+  const quarter = editBody(PKG, how({ step: "months:3", pattern: "lastday", startMonth: "3" }));
+  assert.deepEqual({ ...quarter, anchor: quarter.anchor.slice(4) }, { timing: "fixed", every: 3, unit: "months", day: 31, anchor: "-03-01" });
+  assert.deepEqual(editBody(PKG, { ...how({ step: "weeks:2" }), timing: "from_last_visit" }),
     { timing: "from_last_visit", every: 2, unit: "weeks", clear_pattern: true });
+  assert.deepEqual(editBody(PKG, how({ type: "interval", every: "3", unit: "weeks" })),
+    { timing: "fixed", every: 3, unit: "weeks", clear_pattern: true });
 });
 
 test("visit rules: each changed task, its covers kept", () => {
@@ -70,7 +76,7 @@ test("visit rules: each changed task, its covers kept", () => {
 test("a layer keeps fixed dates and has no tolerance of its own", () => {
   const layer = { ...PKG, parent: { id: "p0", name: "Weekly" } };
   const form = initialForm(layer);
-  assert.deepEqual(editBody(layer, { ...form, how: { ...form.how, every: "4" }, tolerance: "3" }),
+  assert.deepEqual(editBody(layer, { ...form, how: { ...form.how, step: "weeks:4" }, tolerance: "3" }),
     { timing: "fixed", every: 4, unit: "weeks", weekday: "saturday" });
 });
 
@@ -78,7 +84,7 @@ test("formProblem says what to fix", () => {
   const form = initialForm(PKG);
   assert.equal(formProblem(form, PKG), null);
   assert.match(formProblem({ ...form, name: " " }, PKG), /name/);
-  assert.match(formProblem({ ...form, how: { ...form.how, every: "1.5" } }, PKG), /whole number/);
+  assert.match(formProblem({ ...form, how: { ...form.how, type: "interval", every: "1.5" } }, PKG), /whole number/);
   assert.match(formProblem({ ...form, tolerance: "-1" }, PKG), /On time within/);
   assert.match(formProblem({ ...form, rules: { ...form.rules, t2: { rule: "nth", nth: "1" } } }, PKG), /^Grease:/);
 });
@@ -124,10 +130,11 @@ test("a package becomes a shutdown, and back", () => {
 
 test("a package by operating hours stays on hours in its edit", async () => {
   const { unitsFor, PACKAGE_UNITS } = await import("./packagePage.js");
-  const { packageDates } = await import("./howOften.js");
+  const { previewFor, formFromPackage } = await import("./howOften.js");
   assert.deepEqual(unitsFor({ cadence: { unit: "hours" } }), ["hours"]);
   assert.deepEqual(unitsFor({ cadence: { unit: "weeks" } }), PACKAGE_UNITS);
-  assert.equal(packageDates({ every: "50", unit: "hours", pattern: "none" }, { anchor: "2026-11-22", today: "2026-11-22" }), null);
+  // By hours: nothing to ask the server for (the meter dates it), said in words.
+  assert.equal(previewFor(formFromPackage({ cadence: { every: 50, unit: "hours" } }), { from: "2026-11-22" }).request, null);
 });
 
 test("a visit's call-out and setup: sent when changed, cleared when emptied", () => {
