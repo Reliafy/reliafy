@@ -76,14 +76,46 @@ def running_length(length: dict, unit: str, clock) -> float:
     if running_clock._key(u) == running_clock._key(unit or "hours") or (
             u == "hours" and running_clock.is_running_hours(unit or "hours")):
         return v
-    if u == "hours":
-        conv = running_clock.conversion("hours", unit or "hours", None)
-    else:
-        conv = running_clock.conversion(u[:-1], unit or "hours", clock)
+    calendar = u in ("days", "weeks", "months", "years")
+    src = u[:-1] if calendar else u
+    conv = running_clock.conversion(src, unit or "hours", clock if (calendar or u != "hours") else None)
     if conv is None:
-        raise AnalysisError(f"A length in {u} doesn't convert to this RBD's unit ({unit or 'none'}): "
-                            "give the length in the RBD's own unit through its phases.")
+        why = running_clock.refusal(src, unit or "hours", clock, "RBD") if calendar else None
+        raise AnalysisError(why or (f"A length in {u} doesn't convert to this RBD's unit ({unit or 'none'}): its models "
+                                    f"count in {unit or 'no unit'}. Give the length in {unit or 'its unit'}, or give "
+                                    "the models a rate per operating hour."))
     return v * float(conv["factor"])
+
+
+def per_day(unit: str, clock) -> Optional[float]:
+    """The RBD's units in one calendar day at ``clock`` (operating hours a day, for a diagram in
+    hours), or None where its unit doesn't meet the calendar (cycles with no rate)."""
+    from backend.services import running_clock
+
+    days = running_clock.days_in(unit or "hours", clock)
+    return (1.0 / days) if days else None
+
+
+def clock_words(kind: str, total: float, unit: str, label: Optional[str], setup: dict, clock) -> dict:
+    """The mission's clock for the answers: {kind, label, length, unit, words, per_day}. Calendar time
+    states its conversion ("12 months ≈ 2,087 operating hours at its own duty: 8 h a day, 5 days a
+    week"); operating time its length ("10 flight hours")."""
+    from backend.units import unit_in_text
+
+    word = label or ("operating hours" if (unit or "hours").lower().startswith("hour") else unit_in_text(unit) or unit)
+    ops = f"{_fmt(total)} {word}"
+    pd = per_day(unit, clock)
+    out = {"kind": kind, "label": word, "length": total, "unit": unit, "per_day": pd, "words": ops}
+    if kind == "calendar" and pd:
+        days = total / pd
+        entered = (setup.get("length") or {}).get("unit")
+        size = {"days": 1.0, "weeks": 7.0, "months": 365.25 / 12, "years": 365.25}
+        u = entered if entered in size else "days"
+        own = clock.plan.startswith("its own duty: ")
+        how = f" at {clock.plan[len('its own duty: '):]}" if own else clock.where()
+        out["calendar_length"] = {"value": days / size[u], "unit": u}
+        out["words"] = f"{_fmt(days / size[u])} {u} ≈ {ops}{how}"
+    return out
 
 
 def calendar_span(total: float, unit: str, clock, start: str, today: str) -> dict:
@@ -273,8 +305,11 @@ def answers(db, owner_id, graph: dict, mission: dict, *, m=None, position_id: Op
     unit = graph.get("unit") or ""
     blocked = blocked_by(graph, phases)
     if blocked:
-        return {"mission": {"id": mission["id"], "name": mission["name"]}, "unit": unit, "setup": setup,
-                "blocked": blocked, "length": rbd_missions.duration(phases), "phases": len(phases)}
+        length = rbd_missions.duration(phases)
+        kind = rbd_missions.clock_of(setup)
+        return {"mission": {"id": mission["id"], "name": mission["name"]}, "unit": unit, "setup": {**setup, "clock": kind},
+                "blocked": blocked, "length": length, "phases": len(phases),
+                "clock": clock_words(kind, length, unit, setup.get("label"), setup, clock_for(m, position_id, setup))}
     notes: list[str] = []
     state = None
     simple = rbd_missions.is_simple(graph, mission)
@@ -315,12 +350,21 @@ def answers(db, owner_id, graph: dict, mission: dict, *, m=None, position_id: Op
             start_state = {node["id"]: {"age": float(chance["start"]["age"])}}
         fails = expected_failures(_twin(merged, merged_covs), resolve_model, total, start_state, simulate)
     clock = clock_for(m, position_id, setup)
-    span = calendar_span(total, unit, clock, setup["start"], today or date.today().isoformat())
-    if not (setup.get("calendar") or {}).get("linked"):
+    kind = rbd_missions.clock_of(setup)
+    # Operating time needs no calendar: its dates are given only where it has a start date.
+    span = calendar_span(total, unit, clock, setup["start"], today or date.today().isoformat()) \
+        if kind == "calendar" or setup.get("start", "now") != "now" else None
+    if span is not None and not (setup.get("calendar") or {}).get("linked"):
         span["clock"]["text"] = clock.plan  # "its own duty: 8 h a day, 5 days a week"
+    words = clock_words(kind, total, unit, setup.get("label"), setup, clock)
     return {
         "mission": {"id": mission["id"], "name": mission["name"]},
-        "unit": unit, "length": total, "phases": len(got["phases"]), "setup": setup, "calendar": span,
+        "unit": unit, "length": total, "phases": len(got["phases"]), "setup": {**setup, "clock": kind}, "calendar": span,
+        "clock": words,
+        # The one number, with its clock and length, for anything that later counts missions (a year of
+        # sorties' expected aborts): the chance of completing a mission this long on this clock.
+        "summary": {"chance": chance.get("reliability"), "clock": kind, "length": total, "unit": unit,
+                    "label": words["label"], "calendar_length": words.get("calendar_length")},
         "chance": {"value": chance.get("reliability"), "lower_bound": bound, "bound_note": bound_note,
                    "method": chance.get("method"), "start": chance.get("start")},
         "failures": fails,

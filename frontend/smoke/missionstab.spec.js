@@ -4,6 +4,7 @@
 // mission opens with its setup, its phases and its two answers as cards. Nothing scrolls sideways
 // at 400 px.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
+import { choose } from "./select.js";
 
 const M = "/api/maintenance";
 const SAMPLE = "sample-model-bearings-weibull";
@@ -38,7 +39,11 @@ test("missions tab: empty, New mission…, its setup and two answers, at desktop
   await expect(page.getByRole("heading", { name: /New mission/ })).toBeVisible();
   await page.getByLabel("Mission name").fill(`Year of use ${tag}`);
   await expect(page.getByText("Its positions, in series")).toBeVisible();
+  // Its clock first: Calendar time, a length in months.
+  await expect(page.getByRole("radiogroup", { name: "Clock" }).getByRole("radio", { checked: true })).toHaveText("Operating time");
+  await page.getByRole("radio", { name: "Calendar time" }).click();
   await page.getByRole("textbox", { name: "Length", exact: true }).or(page.getByRole("spinbutton", { name: "Length", exact: true })).fill("12");
+  await choose(page.getByRole("combobox", { name: "Length unit" }), "months");
   await page.getByRole("radio", { name: "Its own duty" }).click();
   // Exactly one calendar is chosen (a segmented control).
   await expect(page.getByRole("radiogroup", { name: "Calendar" }).getByRole("radio", { checked: true })).toHaveText("Its own duty");
@@ -53,13 +58,15 @@ test("missions tab: empty, New mission…, its setup and two answers, at desktop
   const cards = page.locator(".mission-cards");
   await expect(cards.getByRole("heading", { name: "Chance of completing" })).toBeVisible();
   await expect(cards.getByRole("heading", { name: "Failures to expect" })).toBeVisible();
-  await expect(cards).toContainText(/missions like this finish without a system failure/);
+  await expect(cards).toContainText(/missions like this (\(.*\) )?finish without a system failure/);
   await expect(cards).toContainText(/Expect about .* part failures? over the/);
   await expect(page.locator(".mission-assumed")).toContainText("Planned maintenance isn't counted yet");
-  await expect(page.locator(".mission-assumed")).toContainText("its own duty: 8 h a day, 5 days a week");
+  await expect(page.locator(".mission-assumed")).toContainText("Calendar time: 12 months ≈ 2,087 operating hours at 8 h a day, 5 days a week");
+  await expect(page.locator(".mission-cards")).toContainText("chance of completing a 12-month mission");
   // Its one phase, the whole length, in running hours (12 months at 40 h a week), in the phase table.
   await expect(page.locator(".mission-phase-table tbody tr")).toHaveCount(1);
-  await expect(page.locator(".mission-phase-table tbody tr").first()).toContainText("2,087 hours");
+  // On calendar time its phase shows in months.
+  await expect(page.locator(".mission-phase-table tbody tr").first()).toContainText("12 months");
   await expectHealthy(page, problems, { root: ".tx" });
   await shot(page, "missions-answers-desktop");
 
@@ -159,4 +166,49 @@ test("missions tab: phases, their covariates and a schedule within a phase, as b
   await expect(page.getByRole("heading", { name: /Phase 2 of 2/ })).toBeVisible();
   await expect.poll(() => sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "phase-details-phone");
+});
+
+test("missions tab: a 10-flight-hour sortie on operating time, its phases in flight hours", async ({ page, request, problems }) => {
+  const tag = `ms${Date.now()}`;
+  const jet = await postOk(request, `${M}/positions`, { name: `Survey aircraft ${tag}` });
+  for (const name of ["Engine 1", "Engine 2"]) {
+    const p = await postOk(request, `${M}/positions`, { name: `${name} ${tag}`, parent_id: jet.id });
+    await postOk(request, `${M}/positions/${p.id}/models`, { model_id: SAMPLE });
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, `/asset-register/explorer?arrange=positions&root=${jet.id}&sel=${jet.id}&tab=missions`);
+  await page.locator(".missions-landing").getByRole("button", { name: "New mission…" }).click();
+  await page.getByLabel("Mission name").fill(`Sortie ${tag}`);
+  // Operating time: called flight hours, 10 of them; no calendar needed (folded, optional).
+  await page.getByRole("textbox", { name: "Its operating hours are called" }).fill("flight hours");
+  await page.getByRole("textbox", { name: "Length", exact: true }).or(page.getByRole("spinbutton", { name: "Length", exact: true })).fill("10");
+  await expect(page.getByText("On the calendar (optional)")).toBeVisible();
+  await expect(page.getByRole("radiogroup", { name: "Calendar" })).toBeHidden();
+  await page.getByRole("button", { name: "Add the mission" }).click();
+  await expect(page.getByRole("heading", { name: "Phases" })).toBeVisible();
+  // Its phases: taxi 0.2, climb 0.5, cruise 8.8, descent 0.5 flight hours.
+  const listed = await (await request.get(`${M}/position-missions?position_ids=${jet.id}`)).json();
+  const rbd = listed.links.find((l) => l.rbd?.mission_rbd).rbd.id;
+  const put = await request.put(`/api/rbds/${rbd}/missions/mission`, { data: { phases: [
+    { name: "Taxi", duration: 0.2 }, { name: "Climb", duration: 0.5 }, { name: "Cruise", duration: 8.8 }, { name: "Descent", duration: 0.5 }] } });
+  expect(put.ok(), await put.text()).toBeTruthy();
+  await open(page, `/asset-register/explorer?arrange=positions&root=${jet.id}&sel=${jet.id}&tab=missions&mission=${rbd}:mission&on=${jet.id}`);
+  const rows = page.locator(".mission-phase-table tbody tr");
+  await expect(rows).toHaveCount(4);
+  await expect(rows.nth(2)).toContainText("8.8 flight hours");
+  const cards = page.locator(".mission-cards");
+  await expect(cards).toContainText("(10 flight hours) finish without a system failure");
+  await expect(cards).toContainText("chance of completing a 10-flight-hour mission");
+  await expect(page.locator(".mission-assumed")).toContainText("Operating time: 10 flight hours, no calendar needed");
+  await expectHealthy(page, problems, { root: ".tx" });
+  await shot(page, "sortie-operating-desktop");
+  await rows.nth(2).getByRole("button", { name: "Cruise", exact: true }).click();
+  await expect(page.getByRole("heading", { name: /Phase 3 of 4 · Cruise/ })).toBeVisible();
+  await expect(page.getByRole("spinbutton", { name: "Duration (flight hours)" })).toHaveValue("8.8");
+  await shot(page, "sortie-phase-desktop");
+  await page.setViewportSize({ width: 400, height: 860 });
+  await open(page, `/asset-register/explorer?arrange=positions&root=${jet.id}&sel=${jet.id}&tab=missions&mission=${rbd}:mission&on=${jet.id}`);
+  await expect(page.locator(".mission-cards")).toContainText("10 flight hours");
+  await expect.poll(() => sideways(page)).toBeLessThanOrEqual(0);
+  await shot(page, "sortie-operating-phone");
 });

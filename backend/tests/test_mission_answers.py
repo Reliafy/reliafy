@@ -231,3 +231,51 @@ def test_runs_on_an_rbd_below_or_the_tree_in_series(m, sdb):
     lone = m.create_position("Lone")["id"]
     with pytest.raises(Invalid, match="no positions inside"):
         pm.build_mission_rbd(m, sdb, owners, set(), lone, OWNER, "x", tree=True)
+
+
+# ---- a mission's clock: operating time or calendar time (Derryn, 23 Nov 2026) ---------------------
+
+SORTIE = [{"name": "Taxi", "duration": 0.2}, {"name": "Climb", "duration": 0.5},
+          {"name": "Cruise", "duration": 8.8}, {"name": "Descent", "duration": 0.5}]
+
+
+def test_a_ten_flight_hour_sortie_is_on_operating_time_with_no_calendar(db):
+    graph = {**_series(), rm.SETUP_KEY: {"clock": "operating", "label": "flight hours", "start": "now",
+                                         "calendar": {"linked": True}, "from": "new"}}
+    g, mission = _mission(graph, SORTIE)
+    got = ma.answers(db, [OWNER], g, mission, today="2026-11-23")
+    assert got["length"] == pytest.approx(10.0)
+    assert got["chance"]["value"] == pytest.approx(math.exp(-2 * RATE * 10), rel=1e-9)
+    assert got["clock"]["kind"] == "operating" and got["clock"]["words"] == "10 flight hours"
+    assert got["calendar"] is None  # no start date: it needs no calendar
+    assert got["summary"] == {"chance": got["chance"]["value"], "clock": "operating", "length": pytest.approx(10.0),
+                              "unit": "hours", "label": "flight hours", "calendar_length": None}
+
+
+def test_a_calendar_mission_states_its_conversion(db):
+    setup = {"clock": "calendar", "start": "2026-12-01", "calendar": {"hours_per_day": 8, "days_per_week": 5},
+             "from": "new", "length": {"value": 12, "unit": "months"}}
+    hours = 365.25 * 40 / 7
+    g, mission = _mission({**_series(), rm.SETUP_KEY: setup}, [{"name": "Whole mission", "duration": hours}])
+    got = ma.answers(db, [OWNER], g, mission, today="2026-11-23")
+    c = got["clock"]
+    assert c["kind"] == "calendar" and c["per_day"] == pytest.approx(40 / 7)
+    assert c["calendar_length"] == {"value": pytest.approx(12.0), "unit": "months"}
+    assert c["words"] == "12 months ≈ 2,087 operating hours at 8 h a day, 5 days a week"
+    assert got["calendar"]["start"] == "2026-12-01" and got["summary"]["clock"] == "calendar"
+
+
+def test_the_clock_saved_before_the_choice_and_its_checks():
+    assert rm.clock_of(None) == "operating"
+    assert rm.clock_of({"start": "now", "calendar": {"linked": True}}) == "operating"
+    assert rm.clock_of({"start": "2026-12-01", "calendar": {"linked": True}}) == "calendar"
+    assert rm.clock_of({"start": "now", "calendar": {"linked": True}, "length": {"value": 12, "unit": "months"}}) == "calendar"
+    assert rm.parse_setup({"clock": "operating", "label": " flight  hours ", "length": {"value": 10, "unit": "hours"}})["label"] == "flight hours"
+    with pytest.raises(rm.MissionError, match="operating-time mission's length"):
+        rm.parse_setup({"clock": "operating", "length": {"value": 12, "unit": "months"}})
+    with pytest.raises(rm.MissionError, match="clock is"):
+        rm.parse_setup({"clock": "sideways"})
+    # Cycles against a diagram in hours: refused, saying what's needed.
+    with pytest.raises(ma.AnalysisError, match="rate per operating hour"):
+        ma.running_length({"value": 100, "unit": "cycles"}, "hours", running_clock.CONTINUOUS)
+    assert ma.running_length({"value": 1, "unit": "weeks"}, "hours", running_clock.CONTINUOUS) == pytest.approx(168)

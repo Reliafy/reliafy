@@ -5638,7 +5638,7 @@ def analyse_rbd_mission(
         "block starts it at its age, and a failed block stays failed. "
         "Omit to fly it from new."))] = None,
     answers: Annotated[bool, Field(description=(
-        "With mission_id: add the Missions tab's two answers (chance of completing with its 90% one-sided "
+        "With mission_id: add the Missions tab's two answers and summary {chance, clock, length} (chance of completing with its 90% one-sided "
         "lower bound; part failures to expect, failed blocks replaced like new, with a 90% two-sided range: "
         "simulated, Pro), its calendar, starting state and plan, from its saved setup."))] = False,
 ) -> dict[str, Any]:
@@ -5722,7 +5722,8 @@ def save_rbd_mission(
         "Replaces its phases, in order ([] on the diagram's own mission removes it)."))] = None,
     delete: Annotated[bool, Field(description="Delete the mission (only when the user asks).")] = False,
     setup: Annotated[Optional[dict[str, Any]], Field(description=(
-        "A mission with an RBD of its own: {start: 'now' | 'YYYY-MM-DD', calendar: {linked: true} (its "
+        "A mission with an RBD of its own: {clock: 'operating' (phases in operating units, no calendar needed) | "
+        "'calendar', label?: e.g. 'flight hours', start: 'now' | 'YYYY-MM-DD', calendar: {linked: true} (its "
         "position's duty) | {hours_per_day, days_per_week}, from: 'new' | 'today' (blocks at today's ages)}."))] = None,
 ) -> dict[str, Any]:
     """Add, change or delete a named phased mission on a non-repairable diagram: phases with durations, blocks

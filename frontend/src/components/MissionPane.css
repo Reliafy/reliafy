@@ -115,3 +115,7 @@
 .missions-landing-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
 .mission-cov-list { display: flex; flex-direction: column; gap: var(--space-4); }
 .mission-cov-item { display: flex; flex-direction: column; gap: var(--space-2); padding-bottom: var(--space-3); border-bottom: 1px solid var(--border-subtle); }
+/* Operating time: its calendar, folded (only needed to put it on the calendar). */
+.mission-setup-cal { display: flex; flex-direction: column; gap: var(--space-3); }
+.mission-setup-cal > summary { cursor: pointer; font-size: var(--fs-13); line-height: var(--lh-13); color: var(--text-secondary); }
+.mission-setup-cal[open] > summary { margin-bottom: var(--space-3); }

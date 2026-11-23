@@ -188,13 +188,34 @@ def parse_start(raw) -> Optional[dict]:
 # mission's length is always their sum.
 
 SETUP_KEY = "mission_setup"
-LENGTH_UNITS = ("hours", "days", "months", "years")
+#: Operating units (the models' own clock: hours of operation, cycles, km) and calendar units.
+OPERATING_UNITS = ("hours", "cycles", "km")
+CALENDAR_UNITS = ("days", "weeks", "months", "years")
+LENGTH_UNITS = OPERATING_UNITS + CALENDAR_UNITS
+CLOCKS = ("operating", "calendar")
+MAX_LABEL = 40
+
+
+def clock_of(setup: Optional[dict]) -> str:
+    """A mission's clock: "operating" (its length and phases in operating units: flight hours, running
+    hours, cycles; no calendar needed) or "calendar" (a start date and a length on the calendar,
+    turned into operating time through its duty). Saved before the choice existed: calendar where it
+    has a start date, its own duty or a calendar length; else operating (Derryn, 23 Nov 2026)."""
+    setup = setup or {}
+    if setup.get("clock") in CLOCKS:
+        return setup["clock"]
+    length = setup.get("length") or {}
+    if setup.get("start", "now") != "now" or not (setup.get("calendar") or {"linked": True}).get("linked") \
+            or length.get("unit") in CALENDAR_UNITS:
+        return "calendar"
+    return "operating"
 
 
 def parse_setup(raw) -> Optional[dict]:
     """A mission's setup in its stored shape, or None for none: {start: "now" | "YYYY-MM-DD",
-    calendar: {linked: true} | {hours_per_day, days_per_week}, from: "new" | "today", length?:
-    {value, unit}}. Raises :class:`MissionError`."""
+    calendar: {linked: true} | {hours_per_day, days_per_week}, from: "new" | "today", clock?:
+    "operating" | "calendar", label?: what its operating hours are called, length?: {value, unit}}.
+    Raises :class:`MissionError`."""
     from datetime import date
 
     if raw is None or raw == {}:
@@ -224,6 +245,14 @@ def parse_setup(raw) -> Optional[dict]:
     if frm not in ("new", "today"):
         raise MissionError("The starting state is “new” or “today” (each block at its item's age now).")
     out = {"start": start, "calendar": cal, "from": frm}
+    if raw.get("clock") is not None:
+        if raw["clock"] not in CLOCKS:
+            raise MissionError("A mission's clock is “operating” (operating time) or “calendar” (calendar time).")
+        out["clock"] = raw["clock"]
+    # What its operating hours are called ("flight hours", "running hours"); shown, never converted.
+    label = " ".join(str(raw.get("label") or "").split())[:MAX_LABEL]
+    if label:
+        out["label"] = label
     length = raw.get("length")
     if isinstance(length, dict) and length.get("value") not in (None, ""):
         try:
@@ -231,7 +260,12 @@ def parse_setup(raw) -> Optional[dict]:
         except (TypeError, ValueError):
             v = float("nan")
         if not (v > 0 and v != float("inf")) or length.get("unit") not in LENGTH_UNITS:
-            raise MissionError("The length is a number more than 0 in hours, days, months or years.")
+            raise MissionError("The length is a number more than 0: in operating hours, cycles or km, or in days, "
+                               "weeks, months or years.")
+        clock = out.get("clock") or ("calendar" if length["unit"] in CALENDAR_UNITS else "operating")
+        if (clock == "operating") != (length["unit"] in OPERATING_UNITS):
+            raise MissionError("An operating-time mission's length is in operating hours, cycles or km; a calendar-time "
+                               "one's in days, weeks, months or years.")
         out["length"] = {"value": v, "unit": length["unit"]}
     return out
 

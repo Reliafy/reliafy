@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  DEFAULT_SETUP, boundText, rangeSentence, rangeShort, calendarText, chanceSentence, failuresSentence, runsOnBody, runsOnOptions, sameSetup, setupBody,
+  DEFAULT_SETUP, boundText, rangeSentence, rangeShort, clockOf, withClock, phaseShown, phaseStored, chanceOf, missionLength, calendarText, chanceSentence, failuresSentence, runsOnBody, runsOnOptions, sameSetup, setupBody,
   setupErrors, setupForm,
 } from "./missionSetup.js";
 
@@ -9,18 +9,40 @@ test("a setup is checked field by field and sent with numbers as numbers", () =>
   assert.deepEqual(setupErrors(DEFAULT_SETUP), {});
   assert.ok(setupErrors({ ...DEFAULT_SETUP, start: "" }).start);
   assert.ok(setupErrors({ ...DEFAULT_SETUP, length: { value: "", unit: "months" } }, { withLength: true }).length);
-  assert.deepEqual(setupErrors({ ...DEFAULT_SETUP, length: { value: "12", unit: "months" } }, { withLength: true }), {});
-  const own = { start: "2026-12-01", calendar: { linked: false, hours_per_day: "8", days_per_week: "5" }, from: "today" };
+  assert.deepEqual(setupErrors({ ...DEFAULT_SETUP, length: { value: "10", unit: "hours" } }, { withLength: true }), {});
+  // A length in the other clock's units: refused, saying which units this clock takes.
+  assert.match(setupErrors({ ...DEFAULT_SETUP, length: { value: "12", unit: "months" } }, { withLength: true }).length, /operating hours/);
+  assert.deepEqual(setupErrors({ ...DEFAULT_SETUP, clock: "calendar", length: { value: "12", unit: "months" } }, { withLength: true }), {});
+  const own = { clock: "calendar", start: "2026-12-01", calendar: { linked: false, hours_per_day: "8", days_per_week: "5" }, from: "today" };
   assert.deepEqual(setupErrors(own), {});
   assert.ok(setupErrors({ ...own, calendar: { linked: false, hours_per_day: "30", days_per_week: "5" } }).calendar);
   assert.ok(setupErrors({ ...own, calendar: { linked: false, hours_per_day: "8", days_per_week: "5.5" } }).calendar);
-  assert.deepEqual(setupBody(own), { start: "2026-12-01", calendar: { hours_per_day: 8, days_per_week: 5 }, from: "today" });
-  assert.deepEqual(setupBody(DEFAULT_SETUP), { start: "now", calendar: { linked: true }, from: "new" });
+  assert.deepEqual(setupBody(own), { clock: "calendar", start: "2026-12-01", calendar: { hours_per_day: 8, days_per_week: 5 }, from: "today" });
+  assert.deepEqual(setupBody({ ...DEFAULT_SETUP, label: " flight  hours " }), { clock: "operating", label: "flight hours", start: "now", calendar: { linked: true }, from: "new" });
   // As saved, back into the form, and compared.
   const back = setupForm({ start: "2026-12-01", calendar: { hours_per_day: 8, days_per_week: 5 }, from: "today" });
   assert.ok(sameSetup(back, own));
   assert.ok(!sameSetup(back, DEFAULT_SETUP));
   assert.deepEqual(setupForm(null), DEFAULT_SETUP);
+});
+
+test("a mission's clock: saved before the choice, switched, and its phases on it", () => {
+  assert.equal(clockOf(null), "operating");
+  assert.equal(clockOf({ start: "now", calendar: { linked: true } }), "operating");
+  assert.equal(clockOf({ start: "2026-12-01", calendar: { linked: true } }), "calendar");
+  assert.equal(clockOf({ start: "now", calendar: { hours_per_day: 8, days_per_week: 5 } }), "calendar");
+  assert.deepEqual(withClock({ ...DEFAULT_SETUP, length: { value: "10", unit: "hours" } }, "calendar").length, { value: "10", unit: "months" });
+  assert.deepEqual(withClock({ ...DEFAULT_SETUP, clock: "calendar", length: { value: "2", unit: "weeks" } }, "calendar").length.unit, "weeks");
+  // A 2,087-hour phase at 40/7 h a day, shown in months, and typed back.
+  const conv = { clock: "calendar", perDay: 40 / 7, calUnit: "months", unit: "hours", label: "operating hours" };
+  assert.equal(Number(phaseShown(365.25 * 40 / 7, conv).value.toFixed(6)), 12);
+  assert.equal(Number(phaseStored("12", conv)), Number((365.25 * 40 / 7).toPrecision(10)));
+  assert.deepEqual(phaseShown(8.8, { clock: "operating", label: "flight hours" }), { value: 8.8, unit: "flight hours" });
+  assert.equal(phaseStored("8.8", { clock: "operating" }), "8.8");
+  const sortie = { kind: "operating", length: 10, label: "flight hours" };
+  assert.equal(chanceSentence({ value: 0.978 }, sortie), "About 98 in 100 missions like this (10 flight hours) finish without a system failure.");
+  assert.equal(chanceOf(sortie), "chance of completing a 10-flight-hour mission");
+  assert.equal(missionLength({ kind: "calendar", length: 2087, label: "operating hours", calendar_length: { value: 12, unit: "months" } }), "12 months");
 });
 
 test("runs on: every saved non-repairable RBD here and below, then the tree (or a leaf's model)", () => {
