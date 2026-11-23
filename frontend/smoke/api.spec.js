@@ -152,6 +152,7 @@ const SIGNED_IN = [
   ["GET", "/api/maintenance/rcm/options"], // the decision dialog's vocabulary
   ["GET", "/api/fleet/fleets"],
   ["POST", "/api/fleet/scratch-forecast"], // the quick forecast tool (Decisions › Forecasts)
+  ["POST", "/api/fleet/quick-forecast"], // the quick forecast as a sentence
   ["GET", "/api/maintenance/positions/smoke/forecast-start"], // Open in ›: what a node fills in
   ["GET", "/api/strategy/analyses"],
   ["GET", "/api/models"],

@@ -2420,6 +2420,11 @@ export function createFleet(name, modelId, modelKind = "life") {
 export function sparesScratchForecast(body) {
   return postJson("/api/fleet/scratch-forecast", body);
 }
+// The quick forecast as a sentence (Decisions › Forecasts): {units, running, months, start?, work?,
+// part?, spares?}: lines by owner, totals with 90% two-sided ranges, rows by period. Nothing is saved.
+export function quickForecast(body) {
+  return postJson("/api/fleet/quick-forecast", body);
+}
 // What the quick forecast tool and Optimal replacement take from an Explorer node (Open in ›):
 // `kind` position (and everything below it), task or package; `root` the asset opened.
 export function getForecastStart({ kind, id, root = null }) {
