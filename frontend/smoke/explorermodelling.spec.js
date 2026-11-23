@@ -1063,7 +1063,8 @@ test("the prediction's lines: add a part on a child, leave one out and put it ba
   // 400 px: nothing sideways.
   await page.setViewportSize({ width: 400, height: 860 });
   await expect(rows).toHaveCount(2);
-  expect(await sideways(page)).toBeLessThanOrEqual(400);
+  // Polled: the table lays out again for the phone width a frame or two after the resize.
+  await expect.poll(() => sideways(page)).toBeLessThanOrEqual(400);
   await shot(page, "400-prediction-lines");
   await optoRow.getByRole("button", { name: `Actions for Opto-isolator ${tag}` }).click();
   await shot(page, "400-prediction-line-menu");

@@ -11,7 +11,7 @@
 //
 // With SMOKE_SHOTS_DIR set, it also saves screenshots there (for the pull request).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
-import { headMenu, phoneTree } from "./explorer.js";
+import { headMenu, phoneTree, pickTab } from "./explorer.js";
 import { choose } from "./select.js";
 
 const M = "/api/maintenance";
@@ -47,7 +47,8 @@ test("Failure reports: file one from the row menu, see it under the parent, and 
   await expect(row(page, `Report pump ${tag}`)).toHaveAttribute("aria-selected", "true");
 
   // The tab is there for a position; empty, it says how to add one and links the guide.
-  await page.getByRole("tab", { name: "History", exact: true }).click();
+  // History may sit under "more tabs" (the tab bar has grown: Operations, Missions).
+  await pickTab(page, "History");
   await expect.poll(() => query(page).get("tab")).toBe("reports");
   await expect(panel(page)).toContainText("No failure reports here yet");
   await expect(panel(page).getByRole("button", { name: "How failure reports work" })).toBeVisible();

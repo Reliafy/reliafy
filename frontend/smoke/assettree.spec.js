@@ -22,8 +22,10 @@ async function plant(request, tag) {
   const seal = await post(`${M}/positions`, { name: `Tree seal ${tag}`, parent_id: motor.id, position_class: "Mechanical seal" });
   await post(`${M}/positions/${motor.id}/tasks`, { name: "Grease", interval: 1, unit: "months", last_done: "2020-01-01" });
   await post(`${M}/work-orders`, { position_id: seal.id, title: `Tree leak ${tag}` });
-  // A unit fitted to the line (it has no tasks to restart), and a spare kept at the site.
-  await post(`${M}/positions/${line.id}/fit`, { new_item: { name: `Tree unit ${tag}`, serial: `TU-${tag}` } });
+  // A unit fitted to the line, and a spare kept at the site. A fitting above a task restarts its
+  // schedule (restart.py), so the unit went in back in 2019, before the motor was last greased:
+  // the grease stays overdue.
+  await post(`${M}/positions/${line.id}/fit`, { new_item: { name: `Tree unit ${tag}`, serial: `TU-${tag}` }, on: "2019-06-01" });
   const fitted = (await (await request.get(`${M}/positions/${line.id}`)).json()).fitted.item;
   const spare = await post(`${M}/items`, { name: `Tree spare ${tag}`, serial: `SP-${tag}` });
   await post(`${M}/items/${spare.id}/place`, { location_id: site.id });
