@@ -145,8 +145,8 @@ shortest interval, and a task at a whole multiple of it goes on every Nth
 visit, so a 100 h oil change comes on every second 50 h service. The package
 counts from the position's hour meter reading now, and its page shows each
 visit's hours and the date it's expected, from the operating plan (else the
-meter's recent rate; with neither, the reading it's due at, such as "due at
-150 h"). It needs an hour meter on its position.
+meter's recent rate; with neither, running all the time, 24 hours a day, and
+it says so, with a link to set a duty). It needs an hour meter on its position.
 
 ## Let Reliafy draft the packages
 

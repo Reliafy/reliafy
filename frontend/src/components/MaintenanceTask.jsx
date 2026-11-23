@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { assumesContinuous, dutyHref } from "../explorerOperations.js";
 import {
   createSubjectTask, getMaintenancePosition, getTaskIntervalBasis, getTaskLsa, linkTaskFailureMode, listTradeRates, retireMaintenanceTask,
   setTradeRate, unlinkTaskFailureMode, updateMaintenanceTask,
@@ -81,7 +82,7 @@ function RateBoxes({ trades, rates, onRates, disabled }) {
 // When a saved task by use is next due and where that date comes from: the moment the meter reaches
 // its next reading through the position's operating plan (and the stop after it), or the meter's
 // recent rate. Calendar limits need no words (the dates show under How often).
-function DueBasis({ task }) {
+function DueBasis({ task, positionId = null, root = null }) {
   const lines = (task.limits || []).filter((l) => l.basis && (l.next_due || l.note));
   if (!lines.length) return null;
   return (
@@ -94,6 +95,7 @@ function DueBasis({ task }) {
               {l.stop_after && l.stop_after !== l.due_moment ? `; it stops at ${l.stop_after.slice(11)}${l.stop_after.slice(0, 10) !== l.next_due ? ` on ${fmtDate(l.stop_after.slice(0, 10))}` : ""}` : ""}. </>
           ) : <>{l.note[0].toUpperCase() + l.note.slice(1)}. </>}
           {l.basis.text}.
+          {assumesContinuous(l.basis) && positionId ? <> <Link to={dutyHref(positionId, root)}>Set a duty in Operations</Link>.</> : null}
         </p>
       ))}
     </div>
@@ -272,7 +274,8 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
                  action={onOptimise ? { label: "Optimise…", onClick: onOptimise, ariaLabel: `Optimise how often to do ${task.name}`, disabled: send.busy } : null}>
           <HowOften value={f.how} onChange={setHow} units={units} withAlso shutdowns={onPosition} disabled={send.busy}
                     problem={howProblem} preview={preview} />
-          {task && <DueBasis task={task} />}
+          {task && <DueBasis task={task} positionId={task.subject?.kind === "position" ? task.subject.id : null}
+                             root={new URLSearchParams(location.search).get("root")} />}
           {task && <RestsOn taskId={task.id} onOptimise={onOptimise} />}
         </Section>
         <Section title="What kind of task" className="ruled mt-sec">

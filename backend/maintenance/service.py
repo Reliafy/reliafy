@@ -707,6 +707,31 @@ def _url(value) -> str:
     return text
 
 
+#: What a date by running hours rests on where the position has no duty (running_clock's rule).
+CONTINUOUS_TEXT = "No duty set: assuming it runs all the time (24 h a day)"
+
+
+def _continuous_map(last: dict, target: float) -> dict | None:
+    """An hours counter with no operating plan, running all the time from its latest reading
+    (RePyability's ``DutyPlan(Continuous())``): the ``mapped`` shape ``_due_from`` reads. None
+    when the reading is too far behind or ahead to map (over 10 years)."""
+    from backend.maintenance import schedule
+
+    read_at = datetime.fromisoformat(last["at"][:16]) if last.get("at") else datetime.fromisoformat(last["on"][:10])
+    days = max(0.0, (float(target) - float(last["value"])) / 24.0)
+    if days > 3653:
+        return None
+    end = read_at + timedelta(days=days + 2)
+    try:
+        usage = schedule.DutyPlan(schedule.Continuous()).forecast(read_at, end, readings={"hours": float(last["value"])},
+                                                                  read_at=read_at)
+    except (ValueError, TypeError, OverflowError):
+        return None
+    return {"usage": usage, "meter": "hours",
+            "basis": {"kind": "continuous", "text": CONTINUOUS_TEXT, "ended": None, "exact": False,
+                      "reading": {"value": last["value"], "on": last["on"][:10]}}}
+
+
 class HourCadence:
     """A work package's visits by operating hours (Nov 2026): every ``every`` hours on its
     position's hours counter, counted from ``anchor_reading``. Visit 1 is the anchor itself, so
@@ -6812,8 +6837,11 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         """A limit by use from a counter's readings: the reading it falls due at, and the
         day it was crossed or will be: through the position's operating plan where it has
         one (``mapped``: the moment the meter crosses it and the stop after), else from the
-        recent rate (not while ``accruing`` is False: an item out of service adds no use).
-        ``basis`` says which."""
+        recent rate the readings give; an hours counter with neither (one reading, or no rise)
+        runs all the time, 24 h a day from its latest reading (Derryn, 21 Nov 2026: "assume
+        continuous use unless there is a duty against that position"; basis kind
+        "continuous", the screens link it to Operations), rather than having no date. Not
+        while ``accruing`` is False: an item out of service adds no use. ``basis`` says which."""
         start = task.get("last_done_reading")
         if start is None:
             start = _reading_at(readings, base)
@@ -6829,6 +6857,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             return {**out, "next_due": crossed, "basis": {"kind": "readings", "text": "Already reached by the readings"}}
         if not accruing:
             return {**out, "next_due": None, "note": "not fitted anywhere: it adds no use until it's fitted again"}
+        if mapped is None and _norm_unit(counter.get("unit")) == "hours" and not (rate and rate > 0):
+            # No duty and no rate the readings give: running all the time, never "no date".
+            mapped = _continuous_map(last, target)
         if mapped is not None:
             crossing = mapped["usage"].when(**{mapped["meter"]: target})
             out["basis"] = mapped["basis"]

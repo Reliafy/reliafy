@@ -225,9 +225,9 @@ def test_over_mcp_a_package_by_operating_hours(env):
 
     made, planned = _session(env["token"], flow)
     assert made["cadence"]["unit"] == "hours" and made["cadence"]["by_hours"]["anchor_reading"] == 0
-    # One reading and no operating plan: no dates, so each visit is due at a reading, and it says why.
-    assert [v["due_at"] for v in made["next_visits"][:2]] == ["due at 50 h", "due at 100 h"]
-    assert all(v["on"] is None for v in made["next_visits"]) and "readings" in made["cadence"]["by_hours"]["note"]
+    # One reading and no operating plan: dated running all the time, 24 h a day, and it says so.
+    assert [v["hours"] for v in made["next_visits"][:2]] == [50, 100]
+    assert all(v["on"] for v in made["next_visits"]) and made["cadence"]["by_hours"]["basis"]["kind"] == "continuous"
     assert planned["cadence"]["by_hours"]["basis"]["kind"] == "plan"
     assert [v["hours"] for v in planned["next_visits"][:2]] == [50, 100]
     assert [v["tasks"] for v in planned["next_visits"][:2]] == [1, 2]
