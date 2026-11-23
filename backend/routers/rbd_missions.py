@@ -16,6 +16,7 @@ from backend.services import rbd_network, rbd_phases
 from backend.services.access import AccessCtx, get_access
 from backend.services.rbd_analysis import AnalysisError
 from backend.errors import client_message
+from backend.services import rbd_live_models
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -62,6 +63,7 @@ def phased_mission(
     the blocks' states now (as the diagram's calculation takes them), so the
     mission flies from their ages. A mission only a simulation can work out (blocks on standby
     without constant failure rates) needs Pro: 402 with code ``pro_required`` otherwise."""
+    graph = rbd_live_models.refresh(session, graph, ctx.read_owners)  # linked blocks on their model's fit
     from backend.services import rbd_standby
 
     try:
@@ -85,6 +87,7 @@ def phase_covariates(graph: dict = Body(..., embed=True), session=Depends(get_se
     """Every covariate a phase of this (unsaved) diagram can set: one row per covariate a block's
     life model leaves open (bound NSWC-11, ALT and PH blocks, and saved regression models), with the
     blocks each feeds. The same list the Explorer's tree hangs under each phase (rbd_missions.gather)."""
+    graph = rbd_live_models.refresh(session, graph, ctx.read_owners)  # linked blocks on their model's fit
     from backend.services import covariate_binding as cb
     from backend.services import rbd_missions
 
@@ -106,6 +109,7 @@ def network_reliability(
     90%), the mean time until they part, and each block's Birnbaum
     importance. Exact by decision diagram, or simulated where that is too
     large. Quick, so not plan-gated."""
+    graph = rbd_live_models.refresh(session, graph, ctx.read_owners)  # linked blocks on their model's fit
     try:
         return JSONResponse(content=rbd_network.analyze_for_owner(
             session, graph, ctx.read_owners, t=_time(t), t_max=_time(t_max) or None,

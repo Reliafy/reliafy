@@ -301,9 +301,9 @@ def test_saved_model_parameters_are_inlined_via_resolver(tmp_path):
         assert r == pytest.approx(float(surv.LogNormal.from_params([8.0, 0.5]).sf(float(t))), rel=1e-12)
 
 
-def test_block_parameters_win_over_resolver():
-    """The app analyses the parameters stored on the block, so those are what
-    the script uses even when the saved model could be read."""
+def test_the_saved_models_current_fit_wins_over_the_blocks_copy():
+    """A block linked to a saved model takes the model's current fit, as the analysis does
+    (rbd_live_models): the copy stored on the block can be out of date."""
     graph = _saved_graph()
     graph["nodes"][2]["data"]["model"].update(
         name="Stored", distribution_id="weibull",
@@ -312,8 +312,17 @@ def test_block_parameters_win_over_resolver():
         graph, "Stored", exported_at=WHEN,
         resolve_model=lambda mid: {"kind": "distribution", "distribution_id": "exponential",
                                    "params": [{"name": "failure_rate", "value": 1.0}]})
+    assert "surv.Exponential.from_params([1.0])" in code
+    assert "Weibull.from_params([1000.0, 1.5])" not in code
+
+
+def test_the_blocks_copy_is_used_when_the_model_cant_be_read():
+    graph = _saved_graph()
+    graph["nodes"][2]["data"]["model"].update(
+        name="Stored", distribution_id="weibull",
+        params=[{"name": "beta", "value": 1.5}, {"name": "alpha", "value": 1000}])
+    code = rbd_export.to_python(graph, "Stored", exported_at=WHEN, resolve_model=lambda mid: None)
     assert "bearing = surv.Weibull.from_params([1000.0, 1.5])" in code
-    assert "Exponential" not in code
 
 
 def test_ph_block_raises_with_helpful_message(tmp_path):

@@ -474,6 +474,9 @@ def availability_payload(
     this process (see :func:`rbd_jobs.cancel_token`).
     Raises :class:`AnalysisError` for an invalid current state.
     """
+    from backend.services import rbd_live_models
+
+    graph = rbd_live_models.refresh(session, graph, resolve_owners)  # linked blocks on the model's fit
     from backend.maintenance import rbd_tree_plan
     from backend.services import rbd_analysis
 
