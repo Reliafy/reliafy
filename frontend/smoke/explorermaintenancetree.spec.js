@@ -2,7 +2,7 @@
 // package is a row at the lowest point all its tasks meet (worked out from its tasks, so a package
 // made on the asset's top holding only the engine's tasks sits at the engine), with its tasks
 // listed under it; each task and each package has a Forecast row whose lines say when it's next
-// due, each month's count, labour, parts and cost. Open the full forecast… opens the level's
+// due, each month's count, labour, parts and cost. Open in its menu opens the level's
 // Forecast… in the table area, with the spares for the year under it. At 400 px nothing scrolls
 // sideways. Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
@@ -72,9 +72,9 @@ test("packages sit where their tasks meet; Forecast rows under a task and a pack
   await expect(pfc).toContainText(/tasks to \d+ \w+ \d{4}/);
   await shot(page, "maintenance-tree-forecasts-1440");
 
-  // Open the full forecast…: the level's Forecast… in the table area, with the spares for the year.
+  // Open (the full forecast): the level's Forecast… in the table area, with the spares for the year.
   await fc.locator(".tp-nm").click({ button: "right" });
-  await page.getByRole("menu").getByRole("menuitem", { name: "Open the full forecast…" }).click();
+  await page.getByRole("menu").getByRole("menuitem", { name: "Open", exact: true }).click();
   await expect.poll(() => new URL(page.url()).searchParams.get("forecast")).toBe(p.engine.id);
   await expect(page.locator("section.fc-view").first()).toBeVisible();
   await expect(page.getByRole("region", { name: "Spares for the year" }).first()).toBeVisible();

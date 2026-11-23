@@ -273,7 +273,7 @@ function GroupedHeaderMenu({ items }) {
   // No line at either end (a group with nothing after it on a phone).
   const trim = (list) => list.filter((it, i) => !(it.separator && (i === 0 || i === list.length - 1)));
   const strip = (list) => trim(list).map((it) => (it.separator ? it : {
-    id: it.id, label: it.label, disabled: !!it.disabled, reason: it.disabled ? it.reason || it.title : undefined, danger: it.danger || undefined,
+    id: it.id, label: it.label, disabled: !!it.disabled, reason: it.disabled ? it.reason || it.title : undefined, danger: it.danger || undefined, to: it.to,
     ...(it.items ? { items: strip(it.items) } : {}),
   }));
   return (

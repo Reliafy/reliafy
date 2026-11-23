@@ -83,7 +83,7 @@ test("What it needs is a section of the task's details: add a labour line and a 
   await nameRow(page, `Test water ${tag}`).first().locator(".tp-nm").click({ button: "right" });
   const menu = page.getByRole("menu");
   await expect(menu.getByRole("menuitem", { name: "What it needs…" })).toHaveCount(0); // no entry of its own
-  await menu.getByRole("menuitem", { name: "Open…" }).click();
+  await menu.getByRole("menuitem", { name: "Open", exact: true }).click();
   const needs = side(page).getByRole("region", { name: "What it needs" });
   await expect(needs).toBeVisible();
   await expect(side(page).getByRole("region", { name: "Labour" })).toHaveCount(0); // folded until asked for
@@ -162,7 +162,7 @@ test("a product's design: What it needs on its tasks, no packaging or forecasts;
   await task.locator(".tp-nm").click({ button: "right" });
   const menu = page.getByRole("menu");
   await expect(menu.getByRole("menuitem", { name: "Package…" })).toHaveCount(0);
-  await menu.getByRole("menuitem", { name: "Open…" }).click();
+  await menu.getByRole("menuitem", { name: "Open", exact: true }).click();
   await expect.poll(() => query(page).get("mtask")).toBe(taskId);
   await side(page).getByRole("region", { name: "What it needs" }).getByRole("button", { name: /^Show what/ }).click();
   const labour = side(page).getByRole("region", { name: "Labour" });

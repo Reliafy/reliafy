@@ -212,17 +212,27 @@ export async function reveal(page, row, { timeout = 10_000 } = {}) {
 // heading, so an item is pressed with
 // `(await headMenu(page)).getByRole("button", { name: "Export CSV" })`, or a
 // link with getByRole("link") (Open the full page).
+// The heading's "…": the row's own menu (the menu standard), drawn in the page's portal. Returns the
+// menu.
 export async function headMenu(page, { root = ".tt-headslot" } = {}) {
   const head = page.locator(root).first();
   await head.getByRole("button", { name: "More actions" }).click();
-  return head;
+  const menu = page.getByRole("menu", { name: "More actions", exact: true });
+  await expect(menu).toBeVisible();
+  return menu;
+}
+// One of the heading menu's items, at the top or under More › (what didn't fit in ten).
+export async function headItem(page, name, { root = ".tt-headslot", exact = true } = {}) {
+  const menu = await headMenu(page, { root });
+  const direct = menu.locator(":scope > [role='menuitem']").filter({ hasText: name });
+  if (await direct.count()) return menu.getByRole("menuitem", { name, exact }).first();
+  return subItem(page, menu, "More", name, { exact });
 }
 
 // The RCM or FME(C)A table's column chooser, opened from the heading's "…" ›
 // Columns…; returns its list of boxes.
 export async function openColumns(page) {
-  const head = await headMenu(page);
-  await head.getByRole("button", { name: "Columns…" }).click();
+  await (await headItem(page, "Columns…")).click();
   const pop = page.getByRole("group", { name: "Columns to show" });
   await expect(pop).toBeVisible();
   return pop;
@@ -258,3 +268,20 @@ export async function phoneTree(page) {
     await expect(back).toHaveCount(0);
   }
 }
+
+// A row menu's submenu item (the menu standard, menuStandard.js): Focus › holds Focus here / Focus
+// tasks / the depths / Clear focus; More › holds what didn't fit in ten; Add › the Monitoring adds.
+// Opens `group` in `menu` (hover on a wide screen, a tap opens it in place on a phone), then
+// clicks `label` in it.
+export async function subItem(page, menu, group, label, { exact = true } = {}) {
+  const parent = menu.getByRole("menuitem", { name: group, exact: true });
+  await expect(parent).toBeVisible();
+  const phone = (page.viewportSize()?.width || 1000) <= 720;
+  if (phone) await parent.click();
+  else await parent.hover();
+  const sub = phone ? menu.getByRole("group", { name: group, exact: true }) : page.getByRole("menu", { name: group, exact: true });
+  await expect(sub).toBeVisible();
+  const item = sub.getByRole("menuitem", { name: label, exact });
+  return item;
+}
+export const focusItem = (page, menu, label, o) => subItem(page, menu, "Focus", label, o);

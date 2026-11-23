@@ -4,7 +4,7 @@
 // Items and Locations addresses, and the phone's slide to the panel and back.
 // Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy } from "./health.js";
-import { details, headMenu, phoneTree } from "./explorer.js";
+import { details, headItem, phoneTree } from "./explorer.js";
 import { expectChosen } from "./select.js";
 
 const M = "/api/maintenance";
@@ -66,7 +66,7 @@ test("the tree pane: open, close, levels, filter, and the panel for the row pick
   // The heading's two controls, the "…" and Full screen; Open the full page is in the "…".
   await expect(page.locator(".tt-headslot .tt-actions > *")).toHaveCount(2);
   await expect(page.locator(".tt-headslot .tt-actions").getByRole("button", { name: "Full screen", exact: true })).toBeVisible();
-  await expect((await headMenu(page)).getByRole("link", { name: "Open the full page" })).toHaveAttribute("href", `/asset-register/positions/${p.top.id}`);
+  await expect((await headItem(page, "Open the full page"))).toHaveAttribute("href", `/asset-register/positions/${p.top.id}`);
   await page.keyboard.press("Escape");
 
   // Open and close with the arrow keys, and the levels.
@@ -172,7 +172,7 @@ test("arranged by locations with the switch, and back by positions from the keyb
   await row(page, `Tree site ${tag}`).click();
   const panel = details(page);
   await expect(panel.getByRole("heading", { name: `Tree site ${tag}` })).toBeVisible();
-  await expect((await headMenu(page)).getByRole("link", { name: "Open the full page" })).toHaveAttribute("href", `/asset-register/locations/${p.site.id}`);
+  await expect((await headItem(page, "Open the full page"))).toHaveAttribute("href", `/asset-register/locations/${p.site.id}`);
   await page.keyboard.press("Escape");
   await expectHealthy(page, problems, { label: "arranged by locations" });
 
@@ -182,7 +182,7 @@ test("arranged by locations with the switch, and back by positions from the keyb
   await expect(page.getByText("1 match, shown with what they're inside")).toBeVisible();
   await row(page, `Tree spare ${tag}`).click();
   await expect(panel.getByText("Placed at")).toBeVisible();
-  const full = (await headMenu(page)).getByRole("link", { name: "Open the full page" });
+  const full = (await headItem(page, "Open the full page"));
   await expect(full).toHaveAttribute("href", `/asset-register/items/${p.spare.id}`);
   await full.click();
   await expect(page.getByRole("heading", { name: `Tree spare ${tag}` })).toBeVisible();

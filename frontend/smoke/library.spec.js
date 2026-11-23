@@ -3,7 +3,7 @@
 // each record usable as a model or a prior; the Explorer's "From the data library…" and the Fit
 // dialog's "A library record" prior, both through "Pick a library record" (a modal search).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
-import { headMenu } from "./explorer.js";
+import { headMenu, subItem } from "./explorer.js";
 import { choose, expectChosen } from "./select.js";
 
 const M = "/api/maintenance";
@@ -11,9 +11,16 @@ const NRC = "NRC / INL industry-average parameter estimates (2020 update)";
 const SOP = "Motor-operated valve: spurious operation";
 
 async function headPick(page, group, item) {
-  await headMenu(page);
-  await page.getByRole("menuitem", { name: group, exact: true }).click();
-  await page.getByRole("menu", { name: group }).getByRole("menuitem", { name: item }).click();
+  // A group (Life model ›, RBD ›) at the top of the heading's menu, or folded into More › with its
+  // items in place (the menu standard keeps ten a level).
+  const menu = await headMenu(page);
+  const g = menu.getByRole("menuitem", { name: group, exact: true });
+  if (await g.count()) {
+    await g.click();
+    await page.getByRole("menu", { name: group }).getByRole("menuitem", { name: item }).click();
+    return;
+  }
+  await (await subItem(page, menu, "More", item, { exact: false })).click();
 }
 
 test("the library's three levels, then a record used as a model", async ({ page, problems }) => {

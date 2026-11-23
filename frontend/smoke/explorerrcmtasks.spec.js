@@ -237,11 +237,11 @@ test("a failure mode's tasks are rows of the tree; add one, use an existing one,
   await choose(add.getByRole("combobox", { name: "Interval unit" }), "months");
   await add.getByRole("spinbutton", { name: "Interval" }).press("Enter");
   await expect(titleOf(page)).toHaveText(`Deep clean ${tag}`);
-  // Its row menu: Open… and Retire the task… (it serves only this mode).
+  // Its row menu: Open, and Retire… last (it serves only this mode).
   await trow(page, `^Task: Deep clean ${tag}`).locator(".tp-nm").click();
   await page.keyboard.press("Shift+F10");
-  await expect(page.getByRole("menu").getByRole("menuitem").filter({ hasText: /Open…|Retire the task…/ })).toHaveCount(2);
-  await page.getByRole("menu").getByRole("menuitem", { name: "Retire the task…" }).click();
+  await expect(page.getByRole("menu").getByRole("menuitem", { name: "Open", exact: true })).toBeVisible();
+  await page.getByRole("menu").getByRole("menuitem", { name: "Retire…", exact: true }).click();
   await page.getByRole("alertdialog", { name: "Remove this task?" }).getByRole("button", { name: "Retire the task" }).click();
   await expect(trow(page, `^Task: Deep clean ${tag}`)).toHaveCount(0);
   await panel(page).getByRole("button", { name: "Back to table" }).click();
@@ -528,7 +528,7 @@ test("screenshots of a failure mode with several tasks and the table rows (SMOKE
     if (w > 600) await row.locator(".tp-nm").dblclick();
     else {
       await row.getByRole("button", { name: /^Actions for / }).click();
-      await page.getByRole("menuitem", { name: "Open…" }).click();
+      await page.getByRole("menuitem", { name: "Open", exact: true }).click();
     }
     await expect(panel(page)).toBeVisible();
     await tasksOf(page).scrollIntoViewIfNeeded();

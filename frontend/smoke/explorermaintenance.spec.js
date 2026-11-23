@@ -77,7 +77,9 @@ test("Maintenance: the tasks in the tree with a roll-up at each level; open one,
   // Add task… on the motor (its row menu): a form beside the table, never a dialog.
   await motor.locator(".tp-nm").click({ button: "right" });
   const menu = page.getByRole("menu", { name: new RegExp(`^Actions for Maint motor ${tag}`) });
-  await expect(menu.getByRole("menuitem").first()).toHaveText("Add task…");
+  // The general section first (Open … Copy link), then the tab's add leads the middle.
+  await expect(menu.getByRole("menuitem").first()).toHaveText("Open");
+  await expect(menu.getByRole("menuitem").nth(6)).toHaveText("Add task…");
   await expect(menu.getByRole("menuitem", { name: "Forecast…" })).toBeVisible();
   await menu.getByRole("menuitem", { name: "Add task…" }).click();
   await expect.poll(() => query(page).get("addtask")).toBe(p.motor.id);
