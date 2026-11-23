@@ -61,14 +61,14 @@ BODIES: dict = {}
 _ORIGINAL: dict = {}
 # Calls (tool.action) that fit a non-repairable model on the server: Pro only, like the MCP
 # server's other fitting tools (added to its plan gating when registered).
-PRO_FIT_CALLS = ("maintenance_reliability.fit_class_model",)
+PRO_FIT_CALLS = ("maintenance_reliability.fit_class_model", "maintenance_get.support_fit")
 # Calls that can take a while: they share the MCP server's heavy-call slots.
 HEAVY_CALLS = ("maintenance_reliability.fit_class_model", "maintenance_models.link", "maintenance_workspace.import_history",
                "maintenance_list.tree",
                "maintenance_parts.import_bom", "maintenance_parts.build_positions",
                "maintenance_get.plan_economics", "maintenance_get.class_forecast", "maintenance_get.spares_plan",
                "maintenance_get.spares_year", "maintenance_get.package_parts",
-               "maintenance_get.forecast",
+               "maintenance_get.forecast", "maintenance_get.support_fit",
                "maintenance_topology.generate_rbd", "maintenance_graph_query", "maintenance_graph_schema",
                "maintenance_apply")
 
@@ -142,6 +142,9 @@ GET_KINDS: Table = {
         days."""),
     "operations": ("", "id root", """Each position's duty (own or from the one above), other use, shutdown and
         outage windows and time zone, inside root; id = one position. Set with positions.update."""),
+    "support_fit": ("id", "", """id = a supporting task. Its impact (failure rate × k while overdue) fitted from the
+        history where it holds the life up: k with its 90% two-sided range, "not shown to matter" when the range
+        includes 1, or why it can't be estimated; use: what to send as tasks.update support."""),
     "forecast": ("id", "root period periods months whatif", """id = a position (it and everything inside it), a task or
         a work package. Tasks on dates, work, failures and cost per period with a 90% range, and lines by owner
         (each task; each failure mode's corrective and follow-on) with what's not counted; months (12, 24, 36,
@@ -1457,7 +1460,7 @@ def register() -> None:
                 "impact": m.impact, "conditions": m.conditions_of, "part_structure": m.part_structure,
                 "where_used": m.where_used, "function": m.function, "package": m.package,
                 "failure_report": m.failure_report, "product": m.product,
-                "design_rollup": m.design_rollup}[kind]
+                "design_rollup": m.design_rollup, "support_fit": m.fit_support}[kind]
         return run(read, rid)
 
     @tool("maintenance_list", _READ, "List maintenance records", LIST_KINDS, "kind")

@@ -3192,6 +3192,11 @@ export function getFailureModeIntervalInputs(id, taskId = null) {
 // Optimise… on a task (backend/maintenance/task_optimise.py): how often to do it, for each failure
 // mode it prevents, from that mode's life model. body: failure_mode_id, model_type + model_id, the
 // costs, pf_interval (+ pf_unit, act_time), target_unavailability. Reads only.
+// A supporting task's impact fitted from its history (support_fit.py): k with its 90% two-sided range, or
+// why it can't be estimated; `use` is what to save as its support. Reads only.
+export function getSupportFit(taskId) {
+  return request(`/api/maintenance/tasks/${encodeURIComponent(taskId)}/support-fit`);
+}
 export function optimiseTask(taskId, body = {}) {
   return postJson(`/api/maintenance/tasks/${encodeURIComponent(taskId)}/optimise`, body);
 }

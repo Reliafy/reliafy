@@ -3,7 +3,8 @@
 // what it supports (failure modes the task serves, or its whole life), the reference interval
 // the life model assumes, an optional impact if it isn't done ({form: "hazard_ratio", k}: the
 // failure rate × k), grace (% of its interval overdue before the impact applies) and where the
-// impact comes from. It's recorded only: the forecast is unchanged. Pure functions, tested alone.
+// impact comes from (fitted from history: support_fit.py). Its impact counts in what-ifs and when its interval
+// runs past the reference (support_whatif.py). Pure functions, tested alone.
 
 export const SUPPORT_SOURCES = [
   ["assumed", "Assumed"],
@@ -31,6 +32,22 @@ export function supportForm(task) {
     grace: s && s.grace ? text(s.grace) : "",
     supportSource: s?.source || "assumed",
     supportNote: s?.note || "",
+    // A fitted impact's evidence (support_fit.py), kept while the source stays "fitted".
+    supportEvidence: s?.evidence || null,
+  };
+}
+
+// The form after "Use this" on a fit from history (GET …/support-fit `use`): its impact (or none, when the
+// fit didn't show it matters), source "fitted" and the fit as evidence.
+export function withFit(f, use) {
+  if (!use) return f;
+  const ev = use.evidence || {};
+  const range = ev.low != null && ev.high != null ? `, 90% two-sided ${sig(ev.low)} to ${sig(ev.high)}` : "";
+  return {
+    ...f, supporting: true, k: use.impact?.k != null ? String(use.impact.k) : "", supportSource: "fitted",
+    supportEvidence: ev,
+    supportNote: ev.not_shown ? `Fitted ${ev.fitted_on || ""}: not shown to matter (${ev.failures} failures${range}).`.trim()
+      : `Fitted ${ev.fitted_on || ""}: ${ev.method || "from history"}, ${ev.failures} failures${range}.`.trim(),
   };
 }
 
@@ -57,12 +74,14 @@ export function supportOf(f, { modes = null, unit = null } = {}) {
   const out = { failure_mode_ids: ids, impact: f.k === "" ? null : { form: "hazard_ratio", k: Number(f.k) },
     grace: f.grace === "" ? 0 : Number(f.grace), source: f.supportSource || "assumed", note: (f.supportNote || "").trim() };
   if (f.reference !== "") out.reference = { value: Number(f.reference), unit };
+  if (out.source === "fitted" && f.supportEvidence) out.evidence = f.supportEvidence;
   return out;
 }
 
 const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 const stored = (s) => (s ? { failure_mode_ids: [...(s.failure_mode_ids || [])].sort(), impact: s.impact || null, grace: s.grace || 0,
-  source: s.source || "assumed", note: s.note || "", reference: s.reference } : null);
+  source: s.source || "assumed", note: s.note || "", reference: s.reference,
+  ...(s.source === "fitted" && s.evidence ? { evidence: s.evidence } : {}) } : null);
 
 // The PATCH body for what changed ({} when nothing did).
 export function supportBody(task, f, opts = {}) {

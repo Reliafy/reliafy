@@ -445,8 +445,24 @@ the data was collected with the servicing done. Mark such a task as
 
 Only routine work and replace-at-age tasks can be supporting; a check finds a
 failure on its way rather than holding it off. A replace-at-age task marked
-supporting restores none of the item's age. The forecast is unchanged: while
-the task is done as planned, it changes nothing but its own cost and hours.
+supporting restores none of the item's age. While the task is done as
+planned, it changes nothing in the forecast but its own cost and hours. Its
+impact counts when it isn't: in a forecast's **Supporting tasks: what if**
+(stretched or not done), and in the forecast itself when the task's own
+interval is longer than the reference interval its life assumes.
+
+**Fit the impact from history…** (in the task's details, under **Keeps it on
+its life**) estimates the impact from the records where the task holds the
+life up: each item's time since it went in, cut into on time and overdue by
+when the task was done (its closed work orders), and its failures. It gives
+the failure rate × k while overdue with its **90% two-sided** range, from a
+covariate fit (a Weibull with overdue as a time-varying covariate) and a plain
+comparison of failures per hour beside it. A range that includes 1 is **not
+shown to matter in this data**, offered as *supports, no modelled impact*. If
+service timing barely varies (almost always on time, or never), or there are
+fewer than five failures, it says the effect can't be estimated rather than
+give a number. **Use** fills the fields with the source **Fitted** and keeps
+the fit as the record's evidence; Save keeps it.
 
 ### If it fails anyway: what's done after a failure
 

@@ -110,10 +110,10 @@ def clean(value, task: dict, modes: list[dict]) -> dict | None:
         value = {}
     if not isinstance(value, dict):
         raise SupportError("support is {failure_mode_ids?, reference?, impact?, grace?, source?, note?}.")
-    unknown = set(value) - {"failure_mode_ids", "reference", "impact", "grace", "source", "note"}
+    unknown = set(value) - {"failure_mode_ids", "reference", "impact", "grace", "source", "note", "evidence"}
     if unknown:
         raise SupportError(f"support doesn't take {', '.join(sorted(unknown))}: it takes failure_mode_ids, "
-                           "reference, impact, grace, source and note.")
+                           "reference, impact, grace, source, note and evidence.")
     served = {m["id"] for m in modes}
     ids = value.get("failure_mode_ids") or []
     if isinstance(ids, str):
@@ -146,9 +146,38 @@ def clean(value, task: dict, modes: list[dict]) -> dict | None:
     note = str(value.get("note") or "").strip()
     if len(note) > MAX_NOTE:
         raise SupportError(f"The note is up to {MAX_NOTE} characters.")
-    return {"failure_mode_ids": sorted(set(ids)), "reference": {"value": float(f"{every:.6g}"), "unit": unit},
-            "impact": clean_impact(value.get("impact")), "grace": float(f"{grace:.6g}"), "source": source,
-            "note": note}
+    out = {"failure_mode_ids": sorted(set(ids)), "reference": {"value": float(f"{every:.6g}"), "unit": unit},
+           "impact": clean_impact(value.get("impact")), "grace": float(f"{grace:.6g}"), "source": source,
+           "note": note}
+    evidence = clean_evidence(value.get("evidence"))
+    if evidence:
+        out["evidence"] = evidence
+    return out
+
+
+#: A fitted impact's evidence (support_fit.py): what the history gave, kept on the record.
+EVIDENCE_NUMBERS = ("k", "low", "high", "failures", "overdue_share")
+
+
+def clean_evidence(value) -> dict | None:
+    """{method, k, low, high, failures, overdue_share, fitted_on, not_shown?} from a fit; None for none."""
+    if value in (None, "", {}):
+        return None
+    if not isinstance(value, dict):
+        raise SupportError("evidence is the fit's answer: {method, k, low, high, failures, overdue_share, fitted_on}.")
+    out = {"method": str(value.get("method") or "")[:200], "fitted_on": str(value.get("fitted_on") or "")[:10],
+           "not_shown": bool(value.get("not_shown"))}
+    for key in EVIDENCE_NUMBERS:
+        v = value.get(key)
+        if v is None:
+            out[key] = None
+            continue
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            raise SupportError(f"evidence {key} is a number.") from None
+        out[key] = float(f"{v:.4g}") if math.isfinite(v) else None
+    return out
 
 
 # ---- reading it ------------------------------------------------------------------------------
@@ -173,6 +202,11 @@ def words(support: dict | None, mode_text: dict | None = None) -> str:
     out = f"Keeps it on its life: {what} · {impact_words(support.get('impact'))}"
     if support.get("impact"):
         out += f" ({SOURCE_WORDS.get(support.get('source'), 'Assumed')})"
+    ev = support.get("evidence") or {}
+    if ev.get("low") is not None and ev.get("high") is not None:
+        out += f", 90% two-sided {ev['low']:.2g} to {ev['high']:.2g}"
+    elif ev.get("not_shown"):
+        out += " (fitted: not shown to matter in this data)"
     return out
 
 

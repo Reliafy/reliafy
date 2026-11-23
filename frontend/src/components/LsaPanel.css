@@ -183,3 +183,7 @@
 .mt-needs .lsa-duration { margin-top: var(--space-2); }
 /* Keeps it on its life (MaintenanceTask.jsx SupportFields): the Assumed chip by the heading. */
 .mt-support .mt-modes { margin-top: var(--space-2); }
+/* Fit the impact from history (SupportFit): the answer in words, then Use. */
+.mt-support .mt-fit { margin: var(--space-3) 0; display: grid; gap: var(--space-2); justify-items: start; }
+.mt-support .mt-fit-out p { margin: 0 0 var(--space-1); }
+.mt-support .mt-fit-gap { color: var(--warning-text); }
