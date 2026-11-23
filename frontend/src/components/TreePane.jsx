@@ -7,7 +7,7 @@ import { NotesMark, Cell, CellEditor, LevelIcon, PhoneStatus, cellHint, cellTip,
 import useOutlineNav from "./useOutlineNav.js";
 import { pinsSkip, tailFor } from "../outlineTree.js";
 import { ARRANGEMENTS, CHIP_MARK, PANE, chipsFor, TREE_ROW_MARKERS, clampWidth, markersOf, nextGutter } from "../assetTree.js";
-import { TASK_WITH_INTERVAL, cellRow, fitWidths, isRcmRow, opensPanel, phonePositionLine } from "../explorerRcm.js";
+import { TASK_WITH_INTERVAL, cellRow, fitWidths, isRcmRow, opensWide, phonePositionLine } from "../explorerRcm.js";
 import { isFullScreenKey } from "../fullScreen.js";
 import { LEVEL_OF, NAME_COLUMN, ROLE } from "../rcmWorksheet.js";
 import { isDeleteKey } from "../treeDelete.js";
@@ -477,7 +477,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
     // details across the table; not on a data cell (an editable one's own
     // double-click edits it in place), a control or the chevron.
     // A measurement row (the Measurements tab) spreads its details the same way.
-    onDoubleClick: table && !phone && table.onOpen && (opensPanel(r) || r.type === "meas" || r.type === "pmodel" || r.type === "mission" || r.type === "phase" || r.type === "mcov" || r.type === "mrule" || r.type === "mtask" || r.type === "mpkg" || r.type === "mfc") ? (e) => {
+    onDoubleClick: table && !phone && table.onOpen && opensWide(r) ? (e) => {
       if (e.target.closest("input, select, .sel-trigger, .sel-menu, textarea, a, button, .tp-chev, .rw-c, [contenteditable='true']")) return;
       e.preventDefault();
       window.getSelection?.()?.removeAllRanges?.();

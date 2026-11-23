@@ -7774,6 +7774,8 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
    not text (no alt text: the item's name stays "Focus"). */
 .row-menu .ovm-item.row-menu-parent { display: flex; align-items: center; gap: var(--space-3); }
 .row-menu-sep { height: 1px; margin: var(--space-1) var(--space-2); background: var(--border); }
+/* A section's small label in a menu ("What", "Depth" in Focus ›): not an item. */
+.row-menu-heading { padding: var(--space-1) 10px var(--space-0-5); font-size: var(--fs-12); line-height: var(--lh-12); font-weight: 500; color: var(--text-secondary); user-select: none; }
 .row-menu-parent::after { content: "›" / ""; margin-left: auto; color: var(--text-secondary); }
 .row-menu-parent.inline::after { content: "▸" / ""; }
 .row-menu-parent.inline.open::after { content: "▾" / ""; }

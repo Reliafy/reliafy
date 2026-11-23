@@ -121,7 +121,7 @@ import { ASSETS_LIST_PATH, explorerCarry } from "../maintenanceAssets.js";
 import { explorerRowMenu } from "../explorerMenu.js";
 import { COPY_LINK, OPEN, copyLink, rowLink } from "../menuStandard.js";
 import { addsFirst, focusNoun, isolateItems, liveKids, lsaLead, maintenanceLead, moveTargets, showsAddRow, summaryActions, tabMenu as menuOnTab, viewOnlyReason, withAssetMoves, withPin } from "../treeRowMenu.js";
-import { canIsolate, depthWords, focusFrom, focusShown, isolateIncompleteItem, isolateIncompleteOpen, isolateOpen, levelsBelow } from "../treeIsolate.js";
+import { canIsolate, depthWords, focusFrom, focusKind, focusKinds, focusShown, isolateIncompleteItem, isolateIncompleteOpen, isolateKindOpen, isolateOpen, levelsBelow } from "../treeIsolate.js";
 import { removeTaskFromMode } from "../components/RcmModeTasks.jsx";
 import { MoveModal, RenameModal } from "../components/TreeRowModals.jsx";
 import { DeleteRcmModal, DeleteTreeModal } from "../components/DeleteTree.jsx";
@@ -1433,9 +1433,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     ? [r.key === pinKey ? { id: "unpin", label: "Show whole tree" } : { id: "pin", label: "Pin this branch" }] : []);
   // On the RCM tab a row can go five levels deep (down to the tasks): its menu offers them.
   const focusOn = focusShown(focusBy[mode], display);
+  // Focus ›: What (the kinds of row the tab's table has inside this row) and Depth (as deep as it goes).
   const isolateItem = (r) => isolateItems(display.rows.get(r.key) || r, {
-    can: canIsolate(display.rows.get(r.key) || r, mode, canPin), levels: tableOn && !fmeaOn ? levelsBelow(display, r.key) : 0,
-    focused: !!focusOn, noun: focusNoun(tab, { tasks: tasksOn }),
+    can: canIsolate(display.rows.get(r.key) || r, mode, canPin), levels: levelsBelow(display, r.key),
+    focused: !!focusOn, noun: focusNoun(tab, { tasks: tasksOn }), kinds: tableOn ? focusKinds(tab, display, r.key) : [],
   });
   const dropFocus = () => setFocusBy((f) => (f[mode] ? { ...f, [mode]: null } : f));
   // Clear focus: what was open before the first Focus, back again (the rows picked stay picked).
@@ -1469,6 +1470,20 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setSelected((x) => ({ ...x, [mode]: positionOf(first) }));
     setScrollTo({ key: first.key, at: Date.now() });
     announce(`Collapsed the rest of the tree: ${found.length} incomplete row${found.length === 1 ? "" : "s"} under ${name}.`);
+  };
+  // Focus <a kind>: the way down to those rows opened (they stay closed), the rest of the tree closed.
+  const isolateKindAt = (r, id) => {
+    const row = display.rows.get(r.key);
+    const kind = focusKind(tab, id);
+    if (!row || !kind) return;
+    setLevelBy((l) => ({ ...l, [mode]: null }));
+    const name = row.ref.name || row.ref.text || "(no name)";
+    setFocusBy((f) => ({ ...f, [mode]: focusFrom(f[mode], row.key, name, open) }));
+    setOpenSet(isolateKindOpen(display, open, r.key, kind.types));
+    setRcmFocus(null);
+    setSelected((x) => ({ ...x, [mode]: isRcmRow(row) || isModelRow(row) || isMissionRow(row) ? positionOf(row) : row.key }));
+    setScrollTo({ key: row.key, at: Date.now() });
+    announce(`Collapsed the rest of the tree; the ${kind.label} under ${name} shown.`);
   };
   const isolateAt = (r, depth) => {
     const row = display.rows.get(r.key);
@@ -1954,7 +1969,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // The Maintenance tab: a task row opened (its details beside the table).
   const openTaskRow = (r) => {
     // A package's row opens the package; a task listed under it goes to the task itself.
-    if (isPackageRow(r)) return openPackageView(r.ref.pkg);
+    if (isPackageRow(r)) return openPackageView(r.ref.pkg, { wide: true });
     if (isPackageRef(r)) return reveal(r.ref.task_key);
     if (!isTaskRow(r)) return;
     setQuery_((q) => { q.set("mtask", r.ref.task.id); for (const k of ["addtask", "rates", "needs", "mpkg"]) q.delete(k); });
@@ -1991,7 +2006,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   };
   // A package opened (its row, or a task's Packaged cell): its details beside the table (?mpkg=),
   // its row (at the meeting point of its tasks) picked and shown.
-  const openPackageView = (pkg) => {
+  // `wide` (a double-click, Enter or Open on its row): the details across the table, as a task's.
+  const openPackageView = (pkg, { wide = false } = {}) => {
     const key = packageKey(pkg.id);
     setPkgPane(null);
     setDraftAt(null);
@@ -2001,6 +2017,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     });
     if (display.rows.has(key)) reveal(key);
     setPanel(true);
+    if (wide && !phone) setExpanded(true);
     setTimeout(() => detailsHeading.current?.focus({ preventScroll: true }), 0);
   };
   // Package the tasks… on a level: the drafts in the table area (the tree kept beside it).
@@ -2019,7 +2036,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // to…, Focus ›, Pin this branch, Copy link; the tab's adds and the row's own; one red item last.
   const treeChangesOf = (r) => (r.type === "pos" || r.type === "loc"
     ? designActions(summaryActions(r, { mode, viewOnly }), designScope, { row: r, viewOnly }) : []);
-  const standardOf = (r, items) => explorerRowMenu(r, items, { tree: treeChangesOf(r) });
+  const standardOf = (r, items) => explorerRowMenu(r, items, { tree: treeChangesOf(panelRow(r)) });
   // Open: what Enter on the row does (its details beside or across the table; on the Summary tab its page).
   const openRow = (key) => {
     const r = display.rows.get(key);
@@ -2078,9 +2095,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       ptasks.load();
     }
   };
+  // A position shown above a place's positions (a via row) is a position at every depth: the
+  // same menu, and the same actions, as every other position (Derryn, 23 Nov 2026).
   const rowMenu = {
-    actions: (r, opts = {}) => standardOf(r, tabActions(r, opts)),
-    onAction: (r, id) => rowAction(r, id),
+    actions: (r, opts = {}) => standardOf(r, tabActions(panelRow(r), opts)),
+    onAction: (r, id) => rowAction(panelRow(r), id),
   };
   const tabRowMenu = {
     // The moves a drag does: on a phone, or from the keyboard (no dragging there).
@@ -2216,6 +2235,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       else if (id === "asset-merge") openMerge();
       else if (id === "asset-separate") separateRow(r);
       else if (id === "pin") pinTo(r.key, { select: true });
+      else if (id.startsWith("isolate-kind:")) isolateKindAt(r, id.slice(13));
       else if (id.startsWith("isolate:")) isolateAt(r, id === "isolate:all" ? "all" : Number(id.slice(8)));
       else if (id === "isolate-incomplete") isolateIncomplete(r);
       else if (id === "focus-clear") clearFocus();
@@ -2323,7 +2343,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // The "No performance standard" and "Not under a functional failure" rows
   // open only to add inside them.
   const openItem = (key, start = null) => {
-    const r = whole.rows.get(key);
+    const r = panelRow(whole.rows.get(key));
     // A position (a double-click on its row): its own panel, picked as a click does, then expanded.
     if (r?.type === "pos" && !start) {
       setEditing(null);
@@ -3262,10 +3282,18 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     <div className="rw tt-side">
       {phone && <div className="rw-scrim" onClick={closeTaskSide} aria-hidden="true" />}
       <PackageSide id={mpkgId} name={whole.rows.get(packageKey(mpkgId))?.ref?.name || ""} today={data?.today} phone={phone}
+                   expanded={wideDetails} onExpand={expandDetails} onCollapse={collapseDetails}
                    at={whole.rows.get(whole.rows.get(packageKey(mpkgId))?.ref?.position_id)?.ref?.name || null}
                    where={whole.rows.has(packageKey(mpkgId)) ? packageWhere(whole.rows.get(packageKey(mpkgId)), whole) : ""}
                    headingRef={detailsHeading} onClose={closeTaskSide}
-                   onOpen={(id) => openPackageView({ id })} onChanged={() => ptasks.load()} />
+                   onOpen={(id) => openPackageView({ id })} onChanged={() => ptasks.load()}
+                   onTask={(taskId) => {
+                     // A member's name: the task picked in the tree (under its own position), its details open.
+                     const tr = display.rows.get(taskKey(taskId));
+                     if (!tr) return;
+                     reveal(tr.key);
+                     openTaskRow(tr);
+                   }} />
     </div>
   ) : null;
   // The fit or the prediction in the table area (a wide screen), or the whole screen with Back (a

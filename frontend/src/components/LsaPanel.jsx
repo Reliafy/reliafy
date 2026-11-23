@@ -503,7 +503,9 @@ function PackagesHere({ scope, where, onOpen, version }) {
 
 // `at`: where it's shown (the Maintenance tab: the meeting point of its tasks), in place of the
 // position it was made on; `where`: a line saying why it's there.
-export function PackageView({ id, today, onBack = null, onOpen, onChanged, headingRef = null, at = null, where = "" }) {
+// `onTask(taskId)`: a member's name is a link that picks the task in the tree (the Explorer's
+// Maintenance tab, where the package's row has nothing under it); without it, a plain name.
+export function PackageView({ id, today, onBack = null, onOpen, onChanged, onTask = null, headingRef = null, at = null, where = "" }) {
   const confirm = useConfirm();
   const [state, setState] = useState({ id: null, pkg: null, error: null });
   const [modal, setModal] = useState(null);
@@ -573,7 +575,9 @@ export function PackageView({ id, today, onBack = null, onOpen, onChanged, headi
           {pkg.tasks.map((t) => (
             <li key={t.task_id} className="pk-member">
               <div className="pk-member-main">
-                <span className="pk-member-name">{t.name}</span>
+                {onTask
+                  ? <button type="button" className="link pk-member-name" onClick={() => onTask(t.task_id)} title={`Show ${t.name} in the tree, under ${t.subject?.name || "its position"}`}>{t.name}</button>
+                  : <span className="pk-member-name">{t.name}</span>}
                 <span className="lib-date pk-sub">
                   {[t.subject?.name, visitRuleText(t), t.suppresses?.length ? `covers ${t.suppresses.map((s) => s.name).join(", ")}` : null,
                     t.next_due ? `next ${fmtDate(t.next_due)}` : null].filter(Boolean).join(" · ")}

@@ -1,7 +1,8 @@
 // The Explorer's Maintenance tab is one tree-table (Derryn, 22 Nov 2026: no sub-tabs). A work
 // package is a row at the lowest point all its tasks meet (worked out from its tasks, so a package
-// made on the asset's top holding only the engine's tasks sits at the engine), with its tasks
-// listed under it. No forecast rows (Derryn, 23 Nov 2026): Next due is a column, a package's next
+// made on the asset's top holding only the engine's tasks sits at the engine): one row with nothing
+// under it, its tasks listed in its details (they show under their own positions only). A
+// double-click opens its details across the table. No forecast rows (Derryn, 23 Nov 2026): Next due is a column, a package's next
 // visit in it and a level's soonest beneath it, sorted from its header; Open in › on a package opens
 // the left menu's forecast tool filled in from it. At 400 px nothing scrolls sideways. Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
@@ -48,10 +49,27 @@ test("packages sit where their tasks meet; Next due by row and by level, sorted;
   await nameRow(page, `Engine ${tag}`).locator(".tp-chev").click();
   await expect(eng).toBeVisible();
   await expect(eng).toHaveAttribute("aria-level", "3");
-  // Its tasks are listed under it, and stay under their own positions, marked Packaged.
-  await svc.locator(".tp-chev").click();
-  await expect(page.locator(`[id^="tp-mpref:${p.service.id}:"]`)).toHaveCount(2);
+  // Nothing under it (no double up): its tasks show under their own positions only, marked Packaged.
+  await expect(svc.locator(".tp-chev")).toHaveCount(0);
+  await expect(page.locator(`[id^="tp-mpref:"]`)).toHaveCount(0);
   await expect(page.locator(`[id="tp-MT:${p.oil.id}"]`).locator(".mt-pkg-link")).toHaveText(`Monthly service ${tag}`);
+  await expect(page.locator(`[id="tp-MT:${p.oil.id}"]`)).toHaveCount(1);
+
+  // A double-click opens its details across the table (the columns give way), its tasks listed
+  // there; a task's name picks it in the tree. Back to table (or Esc) puts the table back.
+  await svc.locator(".tp-nm").dblclick();
+  const side = page.getByRole("complementary", { name: `Monthly service ${tag}` });
+  await expect(side).toHaveClass(/is-expanded/);
+  await expect(page.getByRole("columnheader", { name: "Interval" })).toHaveCount(0);
+  await shot(page, "package-details-wide-1440");
+  await side.getByRole("button", { name: "Back to table" }).click();
+  await expect(page.getByRole("columnheader", { name: "Interval" })).toBeVisible();
+  await expect(side).not.toHaveClass(/is-expanded/);
+  await shot(page, "package-row-and-details-1440");
+  await side.getByRole("button", { name: `Change the oil ${tag}`, exact: true }).click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("mtask")).toBe(p.oil.id);
+  await expect(page.locator(`[id="tp-MT:${p.oil.id}"]`)).toBeVisible();
+  await page.keyboard.press("Escape");
 
   // A package opens beside the table, saying where it sits.
   await eng.locator(".tp-nm").click();

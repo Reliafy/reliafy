@@ -28,7 +28,7 @@ test("a position on the Summary tab: general, the tree's adds and its own (the r
   const m = check("summary", explorerRowMenu(POS, items, { tree }));
   assert.deepEqual(labels(m), [...GENERAL, "———", "New position inside", "Add failure report…", "More", "———", "Delete…"]);
   assert.deepEqual(labels(m.find((it) => it.id === "more").items), ["Log an event…", "Make this its own asset…", "Export this branch…"]);
-  assert.deepEqual(labels(m.find((it) => it.id === "focus").items), ["Focus tasks", "1 level", "2 levels", "3 levels"]);
+  assert.deepEqual(labels(m.find((it) => it.id === "focus").items), ["What", "Focus tasks", "———", "Depth", "1 level", "2 levels", "3 levels"]);
 });
 
 test("a position on the Maintenance and Models tabs gets Move to… and Delete… too", () => {
@@ -90,11 +90,13 @@ test("model, mission and phase rows: Unlink… and Delete… are red and last", 
   assert.equal(check("mission", explorerRowMenu(mission, missionRowActions(mission))).at(-1).label, "Delete…");
 });
 
-test("a group row and the tree's areas never fall through to the browser: they have a menu", () => {
-  const g = explorerRowMenu({ key: "g", type: "group", ref: { name: "No class" }, kids: ["a"] }, [...isolateItems({ key: "g", type: "group", kids: ["a"] }, { can: true }), ...pin]);
-  assert.deepEqual(menuProblems(g), []);
-  assert.ok(g.length >= 6);
-  assert.ok(!g.some((it) => it.danger));
+test("a heading row has no menu of greyed items: none at all, or only what it can do", () => {
+  const g = explorerRowMenu({ key: "g", type: "group", ref: { name: "No class" }, kids: ["a"] }, [...isolateItems({ key: "g", type: "group", kids: ["a"] }, { can: false }), ...pin]);
+  assert.deepEqual(g, []);
+  // An RCM placeholder keeps its add, and nothing greyed.
+  const nofail = explorerRowMenu({ key: "nf", type: "nofail", ref: {}, kids: [] }, [{ id: "add-fail", label: "Add functional failure…" }]);
+  assert.deepEqual(labels(nofail), ["Add functional failure…"]);
+  assert.ok(!nofail.some((it) => it.disabled));
   const area = areaMenu({ add: { label: "New position" }, focused: true, pinned: true });
   assert.deepEqual(labels(area), ["New position", "Open to a level", "Clear focus", "Show whole tree"]);
   assert.deepEqual(menuProblems(area), []);
