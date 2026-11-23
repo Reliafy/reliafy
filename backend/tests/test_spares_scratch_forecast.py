@@ -67,12 +67,78 @@ def test_the_start_from_a_position_takes_only_what_is_recorded(api):  # noqa: F8
     task = api.post(f"/api/maintenance/positions/{pump['id']}/tasks",
                     json={"name": "Replace the seal", "interval": 6, "unit": "months"})
     assert task.status_code == 200, task.text
-    r = api.get(f"/api/maintenance/positions/{pump['id']}/spares-forecast-start", params={"task_id": task.json()["id"]})
+    r = api.get(f"/api/maintenance/positions/{pump['id']}/forecast-start")
     assert r.status_code == 200, r.text
     out = r.json()
     # No model, no duty: nothing made up; the notes say what to enter.
-    assert out["model"] is None and out["hours_per_day"] is None and out["replace_at"] is None
-    assert out["task"]["name"] == "Replace the seal"
+    assert out["model"] is None and out["hours_per_day"] is None and out["replace_at"] is None and out["ages"] == []
+    assert out["from"]["path"] == "Pump P-1" and "/asset-register/explorer?" in out["from"]["link"]
     assert any("hours a unit runs a day" in n for n in out["notes"])
-    missing = api.get("/api/maintenance/positions/nope/spares-forecast-start")
-    assert missing.status_code == 404
+    alone = api.get(f"/api/maintenance/tasks/{task.json()['id']}/forecast-start").json()
+    assert alone["from"]["kind"] == "task" and alone["task"]["name"] == "Replace the seal"
+    assert api.get("/api/maintenance/positions/nope/forecast-start").status_code == 404
+
+
+class _Doc:
+    def __init__(self, id, name, unit):
+        self.id, self.name, self.results = id, name, {"unit": unit}
+
+
+def test_the_start_reads_the_model_ages_duty_and_task_below_a_position(monkeypatch):
+    """A crusher with two liners: both on one saved model, each fitted with an item whose age comes
+    from the calendar since it was fitted; a duty of 8 h a day; a 6-monthly liner change."""
+    from datetime import datetime, timezone
+
+    from backend.maintenance import forecast_start as fs
+    from backend.maintenance.service import PROJECTORS, Maintenance
+    from backend.maintenance.store import GraphStore
+    from backend.services import time_zones
+
+    monkeypatch.setattr(time_zones, "_now", lambda: datetime(2026, 12, 1, 8, tzinfo=timezone.utc))
+    m = Maintenance(GraphStore(":memory:", PROJECTORS), "org-start", "tester")
+    m.today = lambda: "2026-12-01"
+    crusher = m.create_position("Crusher C-1")["id"]
+    m.set_operating_plan(crusher, {"background": {"kind": "rate", "amount": 8, "per": "day"}})
+    a = m.create_position("Liner A", parent_id=crusher)["id"]
+    b = m.create_position("Liner B", parent_id=crusher)["id"]
+    m.fit(a, new_item={"name": "LN-1"}, on="2026-11-01")
+    m.fit(b, new_item={"name": "LN-2"}, on="2026-11-21")
+    for pid in (a, b):
+        m.link_position_model(pid, "model", "mdl-1")
+    m.create_task(a, "Change the liner", 6, "months", last_done="2026-11-01")
+    docs = {"mdl-1": _Doc("mdl-1", "Liner life", "months")}
+    out = fs.position_start(m, lambda kind, i: docs.get(i), crusher)
+    assert out["model"] == {"id": "mdl-1", "name": "Liner life", "unit": "months"}
+    assert out["units"] == 2 and len(out["ages"]) == 2
+    assert sorted(round(x, 2) for x in out["ages"]) == [0.33, 0.99]
+    assert out["hours_per_day"] == 8
+    assert out["replace_at"] == 6 and out["task"]["name"] == "Change the liner"
+    assert out["from"]["path"] == "Crusher C-1"
+
+
+def test_one_call_gives_spares_hours_and_costs_from_the_same_runs():
+    """Twenty units replaced at 800 h: each failure takes 6 h and costs $5,000; each planned
+    replacement 2 h and $800; each spare $150. The hours and costs are those counts times the
+    figures, period by period, with their own 90% ranges."""
+    out = fleet_service.scratch_forecast({**WEIBULL, "units": 20, "ages": 400, "rate": 150, "periods": 12,
+                                          "strategy": "age", "replace_at": 800, "failure_cost": 5000,
+                                          "planned_cost": 800, "planned_hours": 2, "corrective_hours": 6,
+                                          "spare_cost": 150})
+    st = out["strategy"]
+    hours, costs = out["views"]["hours"], out["views"]["costs"]
+    fails, planned = st["total"]["failures"]["expected"], st["total"]["planned"]["expected"]
+    assert hours["total"]["expected"] == pytest.approx(6 * fails + 2 * planned)
+    lo, hi = hours["total"]["interval"]
+    assert lo <= hours["total"]["expected"] <= hi
+    assert costs["total"]["expected"] == pytest.approx(5150 * fails + 950 * planned)
+    first = costs["per_period"][0]
+    assert first["cost"]["expected"] == pytest.approx(first["planned"] + first["corrective"] + first["spares"])
+    assert sum(r["hours"]["expected"] for r in hours["per_period"]) == pytest.approx(hours["total"]["expected"])
+
+
+def test_no_figures_no_hours_or_costs():
+    out = fleet_service.scratch_forecast({**EXP, "units": 3, "ages": 10, "rate": 100, "periods": 6})
+    assert out["views"]["hours"] is None and out["views"]["costs"] is None
+    # Run to failure: a planned replacement's hours don't count.
+    rtf = fleet_service.scratch_forecast({**EXP, "units": 3, "ages": 10, "rate": 100, "periods": 6, "planned_hours": 3})
+    assert rtf["views"]["hours"] is None

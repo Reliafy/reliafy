@@ -1515,11 +1515,19 @@ def headline(fleet: Fleet, forecast: dict) -> str:
 MAX_SCRATCH_UNITS = 2000
 
 
+def _scratch_number(body: dict, key: str, label: str) -> float | None:
+    value = _optional_number(body.get(key), label)
+    return value
+
+
 def scratch_forecast(body: dict) -> dict:
     """{distribution_id, params, extras?, unit?, name?, units?, ages (one or a list), rate (use per
     period, in the model's unit), periods, period_label, strategy (run_to_failure | age),
-    replace_at?, failure_cost?, planned_cost?, spares?}: the forecast a fleet with those items and
-    settings would show, worked out once and not saved."""
+    replace_at?, failure_cost?, planned_cost?, planned_hours?, corrective_hours?, spare_cost?,
+    spares?}: the forecast a fleet with those items and settings would show, worked out once and
+    not saved, with its three answers: spares (the parts, and how many to hold), labour hours
+    (planned task hours plus corrective hours) and costs (planned plus corrective plus spares),
+    each by period with its 90% two-sided range from the same simulated runs."""
     body = body or {}
     distribution_id = body.get("distribution_id")
     if not distribution_id or not body.get("params"):
@@ -1549,17 +1557,62 @@ def scratch_forecast(body: dict) -> dict:
     items = _clean_items(items)
     if unit_count(items) > MAX_SCRATCH_UNITS:
         raise FleetValidationError(f"A quick forecast takes up to {MAX_SCRATCH_UNITS:,} units: save a fleet for more.")
-    settings = _clean_settings({
-        "periods": body.get("periods", 12), "period_label": body.get("period_label") or "months",
-        "default_rate": body.get("rate", 0), "method": "renewals",
-        "strategy": body.get("strategy") or "run_to_failure", "replace_at": body.get("replace_at"),
-        "failure_cost": body.get("failure_cost"), "planned_cost": body.get("planned_cost"),
-        "spares": body.get("spares")})
+    failure_cost = _scratch_number(body, "failure_cost", "The cost of a failure")
+    planned_cost = _scratch_number(body, "planned_cost", "The cost of a planned replacement")
+    planned_hours = _scratch_number(body, "planned_hours", "The hours a planned replacement takes")
+    corrective_hours = _scratch_number(body, "corrective_hours", "The hours a failure takes to put right")
+    spare_cost = _scratch_number(body, "spare_cost", "The cost of a spare")
+    base = {"periods": body.get("periods", 12), "period_label": body.get("period_label") or "months",
+            "default_rate": body.get("rate", 0), "method": "renewals",
+            "strategy": body.get("strategy") or "run_to_failure", "replace_at": body.get("replace_at"),
+            "spares": body.get("spares")}
     results = {"params": body.get("params"), "distribution_id": distribution_id,
                "extras": body.get("extras") or None, "unit": body.get("unit") or ""}
     units_list = [it for it in items for _ in range(item_count(it))]
-    inputs = _LifeInputs(None, str(body.get("name") or "Typed parameters")[:120], results, settings, units_list,
-                         False, settings.get("spares"))
-    out = _LIFE_MEMO.get_or_compute(inputs.key(), lambda: _compute_life(inputs))
-    out = _collapse_units(out, items)
-    return {**out, "settings": settings, "items": items, "saved": False}
+    name = str(body.get("name") or "Typed parameters")[:120]
+
+    def run(per_failure, per_planned, spares=True):
+        # The same seeded runs every time, so each answer counts the same failures and replacements.
+        settings = _clean_settings({**base, "failure_cost": per_failure, "planned_cost": per_planned,
+                                    **({} if spares else {"spares": None})})
+        inputs = _LifeInputs(None, name, results, settings, units_list, False, settings.get("spares"))
+        return settings, _collapse_units(_LIFE_MEMO.get_or_compute(inputs.key(), lambda: _compute_life(inputs)), items)
+
+    settings, out = run(failure_cost, planned_cost)
+    out = {**out, "settings": settings, "items": items, "saved": False}
+    st = out.get("strategy")
+    if out.get("status") != "ok" or not st:
+        return out
+    age = st.get("kind") == "age"
+    views = {"spares": {"spare_cost": spare_cost}}
+    # Labour hours: each failure's corrective hours, each planned replacement's task hours.
+    if corrective_hours is not None or (age and planned_hours is not None):
+        _s, h = run(corrective_hours if corrective_hours is not None else 0.0, planned_hours if age else None, spares=False)
+        hs = h.get("strategy") or {}
+        views["hours"] = {"planned_hours": planned_hours if age else None, "corrective_hours": corrective_hours,
+                          "total": (hs.get("total") or {}).get("cost"),
+                          "per_period": [{"period": r["period"], "hours": r.get("cost"),
+                                          "planned": r["planned"]["expected"] * (planned_hours or 0.0) if age else 0.0,
+                                          "corrective": r["failures"]["expected"] * (corrective_hours or 0.0)}
+                                         for r in hs.get("per_period") or []],
+                          "yearly": [{**{k: y[k] for k in ("year", "from_period", "to_period", "complete")}, "hours": y.get("cost")}
+                                     for y in hs.get("yearly") or []] or None}
+    else:
+        views["hours"] = None
+    # Costs: planned work, corrective work and the spares each uses.
+    if any(v is not None for v in (failure_cost, spare_cost)) or (age and planned_cost is not None):
+        fc, pc, sc = failure_cost or 0.0, planned_cost or 0.0, spare_cost or 0.0
+        _s, c = run(fc + sc, (pc + sc) if age else None, spares=False)
+        cs = c.get("strategy") or {}
+        views["costs"] = {"failure_cost": failure_cost, "planned_cost": planned_cost if age else None, "spare_cost": spare_cost,
+                          "total": (cs.get("total") or {}).get("cost"),
+                          "per_period": [{"period": r["period"], "cost": r.get("cost"),
+                                          "planned": r["planned"]["expected"] * pc if age else 0.0,
+                                          "corrective": r["failures"]["expected"] * fc,
+                                          "spares": r["parts"]["expected"] * sc}
+                                         for r in cs.get("per_period") or []],
+                          "yearly": [{**{k: y[k] for k in ("year", "from_period", "to_period", "complete")}, "cost": y.get("cost")}
+                                     for y in cs.get("yearly") or []] or None}
+    else:
+        views["costs"] = None
+    return {**out, "views": views}
