@@ -58,9 +58,13 @@ covers the rest of that month, not a whole one.
 
 A task counts when it can be put on dates:
 
-- A calendar task (*every 6 months*, or a pattern such as *the first Saturday*)
-  falls due on its dates. A task in a work package falls due at the package's
-  visits.
+- A calendar task (*every 6 months*, or a rule such as *the first Saturday of
+  every month* or *the last day of each quarter*) falls due on its dates: the
+  first Saturday of every month counts 12 times in a year. A task in a work
+  package falls due at the package's visits.
+- A task **at shutdowns** falls due at the first planned shutdown once its time
+  has passed since it was last done, so it counts once for each shutdown it is
+  done at. With no shutdown planned in the year, it's under **Left out**.
 - A task counted in operating hours falls due through the position's operating
   plan, or its hours counter's recent rate.
 - A task left out says why under **Left out**: for example a task by hours on a

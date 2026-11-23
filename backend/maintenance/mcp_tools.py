@@ -91,7 +91,9 @@ Trigger = Annotated[dict[str, Any] | None, Field(description=(
 Rule = Annotated[dict[str, Any] | None, Field(description=(
     "create/update: a calendar pattern, e.g. {kind: 'monthly', every: 1, weekday: 'Saturday', nth: 1} (the "
     "first Saturday), {kind: 'yearly', month: 11, weekday: 'Tuesday', nth: 1}, {kind: 'weekly', weekdays: "
-    "['Monday']}; monthly/yearly take day in place of weekday+nth. The interval follows it. update: {} clears."))]
+    "['Monday']}; monthly/yearly take day in place of weekday+nth (day 31: the last day); monthly every 3 with "
+    "anchor 2027-03-01: March, June, September, December. {kind: 'shutdowns', every: 12, unit: 'months'}: at "
+    "the first planned shutdown that long after it was last done. The interval follows it. update: {} clears."))]
 
 
 # A task's LSA record: what doing it needs (Maintenance.set_task_resources).
@@ -130,6 +132,8 @@ GET_KINDS: Table = {
     "operating_plan": ("id", "root", """How a position (or the item fitted to one) runs: its own plan, or
         the nearest above it inside root (the asset opened), with inherited_from; hours a week and the next 14
         days."""),
+    "operations": ("", "id root", """Each position's duty (own or from the one above), other use, shutdown and
+        outage windows and time zone, inside root; id = one position. Set with positions.update."""),
     "forecast": ("id", "root period periods", """id = a position. It and everything inside it: tasks on
         dates, work, failures and cost per period with a 90% range (guide topic forecast)."""),
     "position": ("id", "", """Its path, positions inside it, the item fitted now, every past fitment (with
@@ -902,7 +906,7 @@ RCM: Table = {
         save_evidence true, with failure_mode_id (task_id optional): as pf_interval's. With task_id and demand_rate
         but no test_cost, the task's own cost is used (task_cost_used)."""),
     "optimise": ("task_id", "failure_mode_id model_type model_id planned_cost unplanned_cost pf_interval pf_unit "
-                                 "act_time target_unavailability use", """The app's Optimise… on a task: how
+                                 "act_time target_unavailability use as_rule", """The app's Optimise… on a task: how
         often to do it, for each failure mode it prevents, from that mode's life model (the one an earlier
         Optimise used, the decision's evidence or the position's model; model_type model or degradation_model
         + model_id to choose). Replace or restore: the cost-optimal age with its range across the model's 90%
@@ -1352,7 +1356,7 @@ def register() -> None:
                             "item_class: true for the class's fleet (its positions, with risk now) in place of "
                             "the class record."))] = None,
                         root: Annotated[str | None, Field(description=(
-                            "operating_plan, forecast, spares_year: the asset opened; nothing above it is used."))]
+                            "operating_plan, operations, forecast, spares_year: the asset opened; nothing above it is used."))]
                         = None,
                         months: int | None = None, fleet_size: int | None = None,
                         hours_per_day: float | None = None,
@@ -1397,6 +1401,8 @@ def register() -> None:
             return run(m.task_measurement, rid, position_id)
         if kind == "operating_plan":
             return run(m.operating_plan, rid, root)
+        if kind == "operations":
+            return run(m.operations, root, rid)
         if kind in ("spares_year", "package_parts"):
             from backend.maintenance import position_models as pm
             from backend.maintenance import spares_year
@@ -3048,7 +3054,10 @@ def register() -> None:
                         task_id: str | None = None, save_evidence: bool | None = None,
                         model_type: Literal["model", "degradation_model"] | None = None,
                         planned_cost: float | None = None, unplanned_cost: float | None = None,
-                        use: bool | None = None) -> dict[str, Any]:
+                        use: bool | None = None,
+                        as_rule: Annotated[bool | None, Field(description=(
+                            "optimise with use: a task on a calendar rule keeps it, at the step nearest the "
+                            "answer (its use_rule)."))] = None) -> dict[str, Any]:
         """The interval calculators on an RCM task card: on condition (the P-F calculator) and failure finding.
         save_evidence (with failure_mode_id; task_id: which of its tasks, else its first of the kind): use the
         answer as the app's "Use" does (rcm_apply_interval). optimise: the app's Optimise… on a task
@@ -3071,7 +3080,8 @@ def register() -> None:
             if not use:
                 return run(task_optimise.optimise, m, _db(), owners, frozenset(), task_id, **args)
             _require_scope(ctx, "write")  # the call writes: a read-only token can't
-            return run(task_optimise.use, m, _db(), owners, frozenset(), _caller(ctx)["uid"], task_id, **args)
+            return run(task_optimise.use, m, _db(), owners, frozenset(), _caller(ctx)["uid"], task_id,
+                       as_rule=bool(as_rule), **args)
         if save_evidence and not failure_mode_id:
             raise ToolError("save_evidence needs failure_mode_id: the failure mode whose task takes the interval.")
         # The task's own cost (its position's figure, task_costs.py) where a priced call leaves it out:

@@ -8159,7 +8159,7 @@ def fleet_forecast(
             fleet = fleet.model_copy(update={"items": fleet_service._clean_items(units["items"])})
         except (fleet_items.NoModelData, fleet_service.FleetValidationError) as exc:
             raise ToolError(str(exc)) from None
-        source = {"items": "model_data", "n_items": len(fleet.items),
+        source = {"items": "model_data", "n_items": fleet_service.unit_count(fleet.items),
                   **({"note": units["reason"]} if units.get("reason") else {}),
                   **({"skipped": units["skipped"][:10]} if units.get("skipped") else {})}
     forecast = fleet_service.compute(db, fleet, [*owners, fleet.owner_id], item_periods=item_probabilities,

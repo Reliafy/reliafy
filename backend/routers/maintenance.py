@@ -1158,11 +1158,24 @@ def optimise_task_use(task_id: str, body: dict = Body(default={}), session=Depen
                       ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """Optimise's "Use every N": the task takes the interval worked out for failure_mode_id (left out when
     it prevents one), the calculation is saved as a strategy analysis and linked as the mode's evidence,
-    and a line on it goes in the mode's notes. Takes the same inputs as /optimise."""
+    and a line on it goes in the mode's notes. Takes the same inputs as /optimise, and as_rule (a task on
+    a calendar rule keeps it, at the step nearest the answer: its use_rule)."""
     from backend.maintenance import task_optimise as to
 
+    body = dict(body or {})
+    as_rule = bool(body.pop("as_rule", False))
     return _run(lambda: to.use(m, session, ctx.read_owners, ctx.hidden, ctx.write_owner, task_id,
-                               **_optimise_args(body or {})))
+                               as_rule=as_rule, **_optimise_args(body)))
+
+
+@router.post("/schedule/dates")
+def schedule_dates(body: dict = Body(default={}), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The next dates a "how often" gives (the task panel's and a package's preview; nothing saved): rule
+    (a how-often rule; {kind: every, every, unit} for a plain interval, {kind: shutdowns, every, unit}
+    with position_id), start (default today), after (done that day: only later dates), also ({every,
+    unit}: whichever comes first) and count (default 5). The dates are RePyability's."""
+    return _run(m.schedule_dates, body.get("rule"), start=body.get("start"), count=body.get("count") or 5,
+                after=bool(body.get("after")), position_id=body.get("position_id"), also=body.get("also"))
 
 
 @router.get("/tasks/{task_id}/interval-basis")
@@ -2983,6 +2996,23 @@ def out_of_service(kind: str, target_id: str, body: dict = Body(...),
     if kind not in ("positions", "items"):
         raise HTTPException(status_code=404, detail="Not found.")
     return _run(m.take_out_of_service, target_id, body.get("reason"), body.get("until"), body.get("start"))
+
+
+@router.get("/operations")
+def operations(root: str | None = None, position_id: str | None = None,
+               m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The Explorer's Operations tab in one read: each position's duty (its own, or the one it
+    takes from above it), other use, shutdown and outage windows (own and inherited) and time
+    zone, inside root (the asset opened). Also over MCP and the CLI: maintenance get.operations."""
+    return _run(m.operations, root or None, position_id or None)
+
+
+@router.get("/positions/{position_id}/shutdown-windows")
+def shutdown_windows(position_id: str, start: str | None = None, end: str | None = None, root: str | None = None,
+                     m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The windows that take a position off-line (shutdowns and outages, its own and inherited)
+    from start to end (default the year from today)."""
+    return _run(m.operation_windows, position_id, start, end, root or None)
 
 
 @router.get("/{kind}/{target_id}/operating-plan")
