@@ -37,6 +37,17 @@ async function saveFit(page, dialog, positionId) {
 // else under More › (what didn't fit in the menu standard's ten), where a group's items sit inline.
 async function pickIn(page, menu, group, item) {
   const phone = (page.viewportSize()?.width || 1000) <= 720;
+  // The menu can still be filling in from the row's data when it opens (an item arriving folds
+  // a group under More ›), so wait until its top level holds still before choosing where to look.
+  const top = menu.locator(":scope > [role='menuitem']");
+  await expect(top.first()).toBeVisible();
+  let before = "";
+  for (let i = 0; i < 20; i += 1) {
+    const now = (await top.allInnerTexts()).join("|");
+    if (now === before) break;
+    before = now;
+    await page.waitForTimeout(250);
+  }
   const g = menu.locator(":scope > [role='menuitem']", { hasText: new RegExp(`^${group}$`) });
   if (group && await g.count()) {
     await g.first().click();
