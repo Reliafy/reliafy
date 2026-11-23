@@ -6607,7 +6607,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return {"functions": functions, "unassigned": unassigned, "analysed": self._analysed(index, pid),
                 "fmea": fmea.position_summary(views)}
 
-    def rcm_all(self, within: str | None = None) -> dict:
+    def rcm_all(self, within: str | None = None, evidence_ids=None) -> dict:
         """The RCM of every live position that has any (functions or failure
         modes), for the asset tree's RCM tab: each position's functions ›
         functional failures › failure modes and its unassigned modes, read in
@@ -6619,7 +6619,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         ``within`` (one asset, as positions_inside reads it): that asset's
         positions alone, the parents stopping at its edge. names: {position id: its
         name} for every position in parents, so a list can say where each one is
-        (the RCM studies page's "Pumping station › Pump 1")."""
+        (the RCM studies page's "Pumping station › Pump 1").
+        evidence_ids (a set of model ids): only the positions with a failure mode whose decision
+        links one of them, each read exactly as without it (what
+        "What changed" needs); the parents and names then cover just those."""
         keep = self.positions_inside(within) if within is not None else None
         index = self._rcm_index()
         out = []
@@ -6630,6 +6633,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 continue
             live[pid] = p
             if not (index["functions"].get(pid) or index["modes"].get(pid)):
+                continue
+            if evidence_ids is not None and not self._links_evidence(index["modes"].get(pid, []), evidence_ids):
                 continue
             # Lean: a working's preview, never its full text (that's per position, or function()).
             out.append({"id": pid, "name": p["name"], "depth": 0, **self._position_rcm(index, pid, full=False)})
@@ -6646,6 +6651,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 pid = parents[pid]
         names = {pid: live[pid]["name"] for pid in parents if pid in live}
         return {"positions": out, "parents": parents, "names": names}
+
+    @staticmethod
+    def _links_evidence(modes: list, evidence_ids) -> bool:
+        """Whether any of these failure modes is decided with the evidence of one of ``evidence_ids``
+        (the decision's own evidence, as _decision_of reads it from the mode)."""
+        for fm in modes:
+            ev = fm.get("evidence")
+            if fm.get("outcome") and isinstance(ev, dict) and ev.get("id") in evidence_ids:
+                return True
+        return False
 
     def rcm_worksheet(self, position_id: str, scope: str = "below", limit: int = 2000) -> dict:
         """A position's RCM, read from the graph: for the position (scope "this")
