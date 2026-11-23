@@ -40,3 +40,11 @@ test("cells, the time zone and the phone line", () => {
   assert.equal(zoneText(none), "Australia/Brisbane (workspace)");
   assert.match(opsPhoneLine(below), /^From Site A · Monday to Friday/);
 });
+
+test("a date by hours with no duty links to where the duty is set", async () => {
+  const { dutyHref, assumesContinuous } = await import("./explorerOperations.js");
+  assert.equal(dutyHref("p1", "top"), "/asset-register/explorer?arrange=positions&root=top&sel=p1&tab=operations&plan=p1");
+  assert.equal(dutyHref("p1"), "/asset-register/explorer?arrange=positions&root=p1&sel=p1&tab=operations&plan=p1");
+  assert.equal(assumesContinuous({ kind: "continuous" }), true);
+  assert.equal(assumesContinuous({ kind: "plan" }), false);
+});

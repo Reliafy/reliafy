@@ -583,8 +583,9 @@ and `GET /api/maintenance/positions/{id}/shutdown-windows?start=&end=`.
 Tasks by use in operating hours fall due through the position's operating plan (its own, or the
 nearest above): the moment the hours counter, counted on from its latest reading, crosses the
 task's next reading (`limits[].due_moment`) and the stop after it (`stop_after`). With no plan,
-the date comes from the counter's recent rate, as before. `limits[].basis` says which (`kind`
-`plan`, `rate` or `readings`, with `text`).
+the date comes from the counter's recent rate, as before; with no rate either (one reading, or
+none rising), it runs all the time, 24 h a day from the latest reading. `limits[].basis` says
+which (`kind` `plan`, `rate`, `continuous` or `readings`, with `text`).
 
 `get forecast` (`id` a position; `root` the asset opened; `period` `month`, `quarter` or `year`;
 `periods`, default 12) is the forecast for the position and everything inside it, from today to

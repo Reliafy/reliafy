@@ -448,7 +448,7 @@ still on time (Saturday with Sunday fine: 1); tolerance_unit hours is kept but n
   - By operating hours: unit hours, every 50 (a 50 h service) on a position with an hours counter; it holds \
 tasks by operating hours (calendar tasks stay in calendar packages). Its visits come each time the counter passes \
 anchor_reading (default its reading on the anchor date) plus a multiple of every, dated through the position's \
-operating plan, else the counter's recent rate; with neither, each is due at a reading, with no date (get.package: cadence.by_hours.basis; each next visit with its \
+operating plan, else the counter's recent rate; with neither, running all the time, 24 h a day (basis kind continuous) (get.package: cadence.by_hours.basis; each next visit with its \
 hours). The anchor is visit 1, so a 100 h task with visit_rule nth, every_nth 2 comes at 100 h, 200 h... No \
 layers, pattern, season or shutdown; from_last_visit counts the hours from the close.
   - Layers: a package on another (parent_id, no position or location of its own) visits on some of its parent's \

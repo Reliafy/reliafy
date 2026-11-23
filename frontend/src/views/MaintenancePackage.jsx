@@ -22,6 +22,7 @@ import {
 } from "../packagePage.js";
 import { ORDERS_PATH, PACKAGES_LABEL } from "../navigation.js";
 import { subjectPath } from "../maintenanceSubjects.js";
+import { assumesContinuous, dutyHref } from "../explorerOperations.js";
 import { tabPlace } from "../explorerTabs.js";
 import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { planWords } from "../workManagement.js";
@@ -152,7 +153,11 @@ function Details({ pkg }) {
             {pkg.cadence.by_hours.counter?.name || "None"}
             {pkg.cadence.by_hours.reading ? `: ${Number(pkg.cadence.by_hours.reading.value).toLocaleString("en-GB")} h on ${fmtDate(pkg.cadence.by_hours.reading.on)}` : ""}
             {` · counted from ${Number(pkg.cadence.by_hours.anchor_reading).toLocaleString("en-GB")} h`}
-            {pkg.cadence.by_hours.basis?.text ? <div className="lib-date">Dates: {pkg.cadence.by_hours.basis.text}</div> : null}
+            {pkg.cadence.by_hours.basis?.text ? (
+              <div className="lib-date">Dates: {pkg.cadence.by_hours.basis.text}
+                {assumesContinuous(pkg.cadence.by_hours.basis) && pkg.subject?.kind === "position"
+                  ? <>. <Link to={dutyHref(pkg.subject.id)}>Set a duty in Operations</Link>.</> : null}</div>
+            ) : null}
             {pkg.cadence.by_hours.note ? <div className="lib-date">No dates yet: {pkg.cadence.by_hours.note}.</div> : null}
           </dd></>
         )}

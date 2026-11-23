@@ -7,6 +7,7 @@
 
 import { formatDate } from "./dates.js";
 import { hoursWords, planWords } from "./operatingPlan.js";
+import { EXPLORER_PATH } from "./navigation.js";
 
 export const OPS_TREE_HEAD = "Position";
 
@@ -98,3 +99,13 @@ export function opsPhoneLine(op) {
   if (ws) parts.push(ws);
   return parts.join(" · ");
 }
+
+// Where a position's duty is set: its operating plan on the Operations tab (?plan=), inside the
+// asset opened (`root`, else the position itself). A date by running hours with no duty says it
+// assumes 24 h a day and links here (basis kind "continuous").
+export function dutyHref(positionId, root = null) {
+  const q = new URLSearchParams({ arrange: "positions", root: root || positionId, sel: positionId, tab: "operations", plan: positionId });
+  return `${EXPLORER_PATH}?${q}`;
+}
+
+export const assumesContinuous = (basis) => basis?.kind === "continuous";

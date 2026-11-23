@@ -161,15 +161,32 @@ def test_without_an_operating_plan_the_counter_rate_dates_the_visits(m, today):
     assert pkg["next_visits"][0]["hours"] == 60 and pkg["next_visits"][0]["on"] == "2026-12-22"
 
 
-def test_with_no_duty_and_no_rate_it_stays_in_hours(m):
-    """No operating plan and one reading: nothing puts its hours on dates, so its visits are
-    due at readings ("due at 50 h"), never a made-up date."""
+def test_with_no_duty_and_no_rate_it_runs_all_the_time(m):
+    """No operating plan and one reading (no rate): running all the time, 24 h a day from that
+    reading (Derryn, 21 Nov 2026: continuous unless there's a duty), said so, never "no date"."""
     x = _mower(m, plan=False)
     pkg = _service(m, x)
     visits = pkg["next_visits"]
-    assert [v["on"] for v in visits] == [None] * 6
-    assert [v["due_at"] for v in visits[:2]] == ["due at 50 h", "due at 100 h"]
+    # 0 h on 22 Nov: 50 h is 2 days 2 h on, then every 50 h.
+    assert [v["on"] for v in visits] == ["2026-11-24", "2026-11-26", "2026-11-28", "2026-11-30", "2026-12-02", "2026-12-04"]
+    assert [v["hours"] for v in visits[:2]] == [50, 100]
     assert [v["tasks"] for v in visits[:2]] == [1, 3]
+    basis = pkg["cadence"]["by_hours"]["basis"]
+    assert basis["kind"] == "continuous" and basis["text"] == "No duty set: assuming it runs all the time (24 h a day)"
     view = m._task_view(m.s.node(m.org, x["oil"]))
-    assert view["next_due"] is None and view["due_at_reading"] == 100 and view["due_at"] == "due at 100 h"
-    assert "readings" in pkg["cadence"]["by_hours"]["note"]
+    assert view["next_due"] == "2026-11-26" and view["due_at_reading"] == 100
+    # A task by hours on the counter's position, in no package: the same 24 h a day.
+    alone = m.create_task(x["top"], "Grease the deck", 30, "hours")["id"]
+    lim = m._task_view(m.s.node(m.org, alone))["limits"][0]
+    assert lim["basis"]["kind"] == "continuous" and lim["due_moment"] == "2026-11-23T06:00"
+
+
+def test_a_duty_still_dates_the_visits_as_before(m):
+    """With an operating plan nothing changes: 12 h a week, 50 h on 21 Dec."""
+    x = _mower(m, plan=True)
+    pkg = _service(m, x)
+    assert pkg["cadence"]["by_hours"]["basis"]["kind"] == "plan"
+    assert [v["on"] for v in pkg["next_visits"][:3]] == ["2026-12-21", "2027-01-19", "2027-02-17"]
+    assert m._task_view(m.s.node(m.org, x["oil"]))["next_due"] == "2027-01-19"
+    alone = m.create_task(x["top"], "Grease the deck", 30, "hours")["id"]
+    assert m._task_view(m.s.node(m.org, alone))["limits"][0]["basis"]["kind"] == "plan"
