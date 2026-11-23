@@ -2247,7 +2247,9 @@ select.ctl { padding-right: var(--space-8); }
 .ctl-group > .ctl {
   flex: 1 1 4rem; min-height: calc(var(--control-md) - 2px); height: calc(var(--control-md) - 2px); border: 0; border-radius: 0; box-shadow: none; background-color: transparent;
 }
-.ctl-group > .ctl:focus { box-shadow: none; }
+/* One ring, the group's: its controls never draw their own, even inside a panel whose own
+   input rule would (.rw-panel :is(input, …):focus, the same weight, later in the file). */
+.ctl-group > .ctl:focus, .rw-panel .ctl-group > .ctl:focus { box-shadow: none; }
 .ctl-group > .ctl[aria-invalid="true"] { background-color: var(--danger-bg); }
 .ctl-group > .ctl:first-child { border-radius: var(--radius-md) 0 0 var(--radius-md); }
 .ctl-group > .ctl:last-child { border-radius: 0 var(--radius-md) var(--radius-md) 0; }
@@ -4316,6 +4318,9 @@ h1 .chip,
 .seg-btn:last-child {
   border-right: none;
 }
+/* Narrower than its options (a side panel, a phone): the segments shrink and their words wrap,
+   never clipped by the outline. */
+.seg > .seg-btn { flex: 0 1 auto; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 
 .seg .seg-btn:not(.active):hover:not(:disabled) {
   background: var(--bg-subtle);

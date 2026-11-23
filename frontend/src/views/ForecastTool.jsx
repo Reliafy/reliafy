@@ -9,6 +9,7 @@ import Section from "../components/ui/Section.jsx";
 import Button from "../components/ui/Button.jsx";
 import Field from "../components/ui/Field.jsx";
 import InputGroup, { Addon } from "../components/ui/InputGroup.jsx";
+import QuantityInput from "../components/ui/QuantityInput.jsx";
 import { TextInput, TextArea } from "../components/ui/Controls.jsx";
 import Select from "../components/Select.jsx";
 import ResultSummary, { ResultDetails } from "../components/ui/ResultSummary.jsx";
@@ -371,11 +372,8 @@ function SupportWhatIf({ worth, changes, setChanges, alt, busy }) {
               <div className="ft-clause">
                 <Select ariaLabel={`What if: ${w.name}`} value={c.mode} options={WHATIFS} onChange={(v) => set(w.task_id, { mode: v })} />
                 {c.mode === "stretch" && (
-                  <InputGroup label={`${w.name}: stretched interval`}>
-                    <TextInput inputMode="decimal" className="ft-n" aria-label={`${w.name}: stretched to every`} value={c.every}
-                               onChange={(e) => set(w.task_id, { every: e.target.value })} />
-                    <Addon>{w.unit}</Addon>
-                  </InputGroup>
+                  <QuantityInput type="text" label={`${w.name}: stretched to every`} suffix={w.unit} value={c.every}
+                                 onChange={(x) => set(w.task_id, { every: x })} />
                 )}
                 {ratio && <span className="ft-words">failure rate × {Number(ratio.mult).toLocaleString("en-GB", { maximumSignificantDigits: 3 })} on average</span>}
                 {ratio?.approximate && <Chip tone="warning" title="The interval is more than a fifth of the part's mean life: the averaged ratio is a rough guide">Approximate</Chip>}
@@ -457,10 +455,8 @@ function SentenceTool({ view }) {
             </Field>
             {form.runPer !== "all" && (
               <Field label={form.runPer === "day" ? "Hours a day" : "Hours a week"} id="ft-runHours" error={errorOf("runHours")}>
-                <InputGroup label="Hours it runs">
-                  <TextInput inputMode="decimal" value={form.runHours} placeholder="12" onChange={(e) => set({ runHours: e.target.value })} />
-                  <Addon>h</Addon>
-                </InputGroup>
+                <QuantityInput type="text" label={form.runPer === "day" ? "Hours a day" : "Hours a week"} suffix="h" chars={5} value={form.runHours} placeholder="12"
+                               onChange={(x) => set({ runHours: x })} />
               </Field>
             )}
             <Field label="Horizon">
@@ -477,14 +473,12 @@ function SentenceTool({ view }) {
                   <TextInput placeholder="e.g. Grease deck spindles" value={form.work.name} onChange={(e) => setWork({ name: e.target.value })} />
                 </Field>
                 <Field label="Every" id="ft-every" error={errorOf("every")}>
-                  <InputGroup label="How often">
-                    <TextInput inputMode="decimal" value={form.work.every} onChange={(e) => setWork({ every: e.target.value })} />
-                    <Select ariaLabel="Unit of the interval" value={form.work.unit} options={WORK_UNITS} onChange={(v) => setWork({ unit: v })} />
-                  </InputGroup>
+                  <QuantityInput type="text" label="Every" value={form.work.every} onChange={(x) => setWork({ every: x })}
+                                 units={WORK_UNITS} unit={form.work.unit} unitLabel="Unit of the interval" onUnitChange={(v) => setWork({ unit: v })} />
                 </Field>
                 {view.value === "hours" && (
                   <Field label="Hours each time" optional>
-                    <InputGroup label="Hours each time, in hours"><TextInput inputMode="decimal" value={form.work.hoursEach} onChange={(e) => setWork({ hoursEach: e.target.value })} /><Addon>h</Addon></InputGroup>
+                    <QuantityInput type="text" label="Hours each time" suffix="h" chars={5} value={form.work.hoursEach} onChange={(x) => setWork({ hoursEach: x })} />
                   </Field>
                 )}
                 {view.value === "costs" && (
@@ -520,10 +514,8 @@ function SentenceTool({ view }) {
                 )}
                 {form.part && form.work.effect === "supports" && form.work.whatif === "stretch" && (
                   <Field label="Stretched to every" id="ft-whatifEvery" error={errorOf("whatifEvery")}>
-                    <InputGroup label="Stretched interval, with its unit">
-                      <TextInput inputMode="decimal" value={form.work.whatifEvery} onChange={(e) => setWork({ whatifEvery: e.target.value })} />
-                      <Addon>{form.work.unit}</Addon>
-                    </InputGroup>
+                    <QuantityInput type="text" label="Stretched to every" suffix={form.work.unit}
+                                   value={form.work.whatifEvery} onChange={(x) => setWork({ whatifEvery: x })} />
                   </Field>
                 )}
               </div>
@@ -553,15 +545,12 @@ function SentenceTool({ view }) {
                 <div className="ft-fields">
                   <Field label="Age now" id="ft-age" error={errorOf("age")}
                          help={ages.ages?.length > 1 ? `${ages.ages.length} ages under More options.` : "How old it is today."}>
-                    <InputGroup label="Age now, with its unit">
-                      <TextInput inputMode="decimal" value={ages.ages?.length > 1 ? "" : form.ages} disabled={ages.ages?.length > 1}
-                                 placeholder="e.g. 9,000" onChange={(e) => set({ ages: e.target.value })} />
-                      {partNow && <Addon>{partNow}</Addon>}
-                    </InputGroup>
+                    <QuantityInput type="text" label="Age now" suffix={partNow} chars={8} value={ages.ages?.length > 1 ? "" : form.ages}
+                                   disabled={ages.ages?.length > 1} placeholder="e.g. 9,000" onChange={(x) => set({ ages: x })} />
                   </Field>
                   {view.value === "hours" && (
                     <Field label="Hours if it fails" optional>
-                      <InputGroup label="Hours if it fails, in hours"><TextInput inputMode="decimal" value={form.hoursIfFails} onChange={(e) => set({ hoursIfFails: e.target.value })} /><Addon>h</Addon></InputGroup>
+                      <QuantityInput type="text" label="Hours if it fails" suffix="h" chars={5} value={form.hoursIfFails} onChange={(x) => set({ hoursIfFails: x })} />
                     </Field>
                   )}
                   {view.value === "costs" && (
