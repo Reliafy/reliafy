@@ -17,8 +17,10 @@ The rule, stated with every answer (:data:`RULE`):
   the lead time (plus the review period); reorder at = the same over the lead time alone;
 * order now = hold - usable now (not below 0); each planned job past the lead time that the stock
   left over doesn't cover is ordered by its date less the lead time;
-* buy for the year = expected demand over the horizon, rounded up, + hold - usable now (not below 0);
-  the high case puts the demand's 90th percentile in place of the expected.
+* buy for the year = expected demand over the horizon + the hold's buffer - usable now, rounded up
+  (not below 0). The buffer is the hold less the planned replacements in its window: those are in
+  the demand already, so adding the whole hold bought each of them twice. The high case puts the
+  demand's 90th percentile in place of the expected.
 
 The simulation follows ``services.fleet._renewal_events`` draw for draw (each unit its own seeded
 stream, one draw a round), so a unit with no planned jobs fails at the same times there and here:
@@ -46,7 +48,8 @@ _TINY = 1e-9
 RULE = ("Demand = planned replacements falling due + failures (a renewal simulation from each part's age: "
         "a failed part is replaced and can fail again; a planned replacement renews it). Hold = the smallest "
         "stock with at least the service level's chance of covering the demand over the lead time. Order now = "
-        "hold - usable now. Buy for the year = expected demand rounded up + hold - usable now.")
+        "hold - usable now. Buy for the year = expected demand + the hold's buffer (the hold less the planned "
+        "replacements it already covers, which are in the demand) - usable now, rounded up.")
 
 
 class SparesYearError(ValueError):
@@ -216,6 +219,14 @@ def order_plan(jobs: list[dict], usable: float, hold: float, order_now: float, w
     return out
 
 
+def buy(demand: float, hold: float, planned_in_hold: float, usable: float) -> float:
+    """What to buy over the horizon: its demand, plus the stock to have at its end, less what's usable now.
+    The stock at the end is the hold's buffer: the hold less the planned replacements falling in its window,
+    which the demand already counts (counting them in both bought each planned replacement twice)."""
+    buffer = max(0.0, hold - max(0.0, planned_in_hold))
+    return max(0.0, float(math.ceil(demand + buffer - usable - 1e-9)))
+
+
 def answer_part(events: dict, units: list[dict], key, *, horizon_days: float, lead_days: float, level: float,
                 usable: float, review_days: float = 0.0, today: date, months: int | None = None) -> dict:
     """One part's answer: its demand over the horizon (failures and planned), the stock to hold over
@@ -247,8 +258,8 @@ def answer_part(events: dict, units: list[dict], key, *, horizon_days: float, le
         "risk_curve": ans.get("risk_curve"),
         "order_now": order_now, "arrives": _day(today, lead_days) if order_now > 0 else None,
         "order_by": by,
-        "buy_for_year": max(0.0, math.ceil(mean - 1e-9) + hold - usable),
-        "buy_high_case": max(0.0, p90 + hold - usable),
+        "buy_for_year": buy(mean, hold, in_window, usable),
+        "buy_high_case": buy(p90, hold, in_window, usable),
         "jobs": [{**j, "date": _day(today, j["day"])} for j in jobs],
     }
     if months:

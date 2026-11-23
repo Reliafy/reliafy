@@ -208,17 +208,32 @@ def test_the_shutdowns_seal_changes_are_in_the_demand_and_the_hold(m):
         assert row["chance_short_before_arrival"] == pytest.approx(want, abs=0.03), leave
 
 
+def test_the_class_budget_skips_a_shutdown_change_on_a_seal_too_young_for_it(m):
+    ids = _plant(m, raw_water_on_list=True, lead=112)
+    _count(m, ids)
+    _shutdown(m, ids)
+    m.set_class_costs("Mechanical seal", planned_cost=1800, failure_cost=4000)
+    m.as_of = TODAY
+    budget = forecast.class_forecast(m, "Mechanical seal")["budget"]
+    # 12 Dec: HLP-01, -02 and -04 are over 200 days; HLP-03 (118 d) isn't, so three changes, not four
+    # ($5,400, not $7,200), as the spares count them.
+    assert budget["planned_count"] == 3 and budget["planned"] == 5400
+    assert [r["planned_count"] for r in budget["per_period"]][:2] == [3, 0]
+
+
 def test_the_seal_kit_answer_with_one_change_at_the_shut(m):
     ids = _plant(m, raw_water_on_list=True, lead=112)
     _count(m, ids)
     _pkg, _tasks = _shutdown(m, ids, seals=("HLP-04",))
     m.as_of = TODAY
     r = _row(sy.spares_year(m, {}, fetch=fetch), "SK-75")
-    # 4.483 failures + 0.914 planned = 5.397 (4-7); hold 3 + 1 planned = 4; order 4 - 2 = 2; buy 6 + 4 - 2 = 8.
+    # 4.483 failures + 0.914 planned = 5.397 (4-7); hold 3 + 1 planned = 4; order 4 - 2 = 2. Buy: the demand
+    # 5.397 already holds the planned change, so the stock to end on is the hold less it (4 - 0.914):
+    # 5.397 + 3.086 - 2 = 6.48, so 7 (adding the whole hold, 6 + 4 - 2 = 8, bought the planned kit twice).
     assert r["demand"]["mean"] == pytest.approx(5.397, abs=0.15)
     assert r["demand"]["planned"] == pytest.approx(0.914, abs=0.05)
     assert (r["demand"]["p10"], r["demand"]["p90"]) == (4, 7)
-    assert (r["hold"], r["order_now"], r["buy_for_year"]) == (4, 2, 8)
+    assert (r["hold"], r["order_now"], r["buy_for_year"]) == (4, 2, 7)
     assert r["counted_on"] == "2026-11-13"
 
 
@@ -275,7 +290,7 @@ def test_one_table_across_parts_with_its_csv(m):
     out = sy.spares_year(m, {}, fetch=fetch)
     got = {r["part"]["part_number"]: (round(r["demand"]["mean"], 1), r["demand"]["p90"], r["hold"], r["usable_now"],
                                       r["order_now"], r["buy_for_year"]) for r in out["parts"]}
-    assert got["SK-75"][2:] == (4, 2, 2, 8) and got["SK-75"][1] == 7
+    assert got["SK-75"][2:] == (4, 2, 2, 7) and got["SK-75"][1] == 7
     assert got["DK-40"][1:] == (4, 0, 2, 0, 2)
     assert got["6316-C3"][1:] == (4, 0, 2, 0, 1)
     assert out["rule"] == engine.RULE and out["months"] == 12

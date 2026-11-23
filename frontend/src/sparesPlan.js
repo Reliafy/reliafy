@@ -156,7 +156,7 @@ export function yearText(y) {
   if (!y || y.mean == null) return "";
   const span = `${y.periods} ${String(y.period_label || "periods").replace(/s$/i, "")}${y.periods === 1 ? "" : "s"}`;
   let text = `${useText(y.mean).replace("≈", "about")} over ${span} (likely ${formatNumber(y.p10)}–${formatNumber(y.p90)})`;
-  if (y.planned > 0) text += `: ${formatNumber(y.failures, { sig: 2 })} failures + ${formatNumber(y.planned, { sig: 2 })} planned`;
+  if (y.planned > 0) text += `: ${formatNumber(y.failures, { sig: 3 })} failures + ${formatNumber(y.planned, { sig: 3 })} planned`;
   return text;
 }
 
