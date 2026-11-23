@@ -245,28 +245,35 @@ for (const [role, heading] of Object.entries(LEADS)) {
   });
 }
 
-// Every list Home reads, empty: a workspace with nothing in it.
+// Every list Home reads (the parts of its one summary), empty: a workspace with nothing in it.
 const EMPTY = {
-  "/api/models": { models: [] },
-  "/api/joint/models": { models: [] },
-  "/api/fleet/fleets": { fleets: [] },
-  "/api/fleet/tracked": { fleets: [] },
-  "/api/degradation/models": { models: [] },
-  "/api/alt/models": { models: [] },
-  "/api/recurrent/models": { models: [] },
-  "/api/datasets": { datasets: [] },
-  "/api/rbds": { rbds: [] },
-  "/api/strategy/analyses": { analyses: [] },
-  "/api/maintenance/overview": {
-    summary: { positions: 0, items: 0, tasks: 0 }, time_zone: null, today: "2026-10-16", tree: [], due: [],
+  models: { models: [] },
+  joint_models: { models: [] },
+  fleets: { fleets: [] },
+  tracked_fleets: { fleets: [] },
+  degradation_models: { models: [] },
+  alt_models: { models: [] },
+  recurrent_models: { models: [] },
+  datasets: { datasets: [] },
+  rbds: { rbds: [] },
+  strategy_analyses: { analyses: [] },
+  maintenance_overview: {
+    summary: { positions: 0, items: 0, tasks: 0 }, time_zone: null, today: "2026-10-16", due: [],
     open_work_orders: [], proposals: [], critical_spares: [],
   },
 };
 
 test("Home for a user with no data, every role's cards", async ({ page, request, problems }) => {
   await setRoles(request, Object.keys(LEADS));
-  await page.route((url) => url.pathname in EMPTY, (route) =>
-    route.request().method() === "GET" ? route.fulfill({ json: EMPTY[new URL(route.request().url()).pathname] }) : route.continue());
+  await page.route("**/api/home/summary", async (route) => {
+    const res = await route.fetch();
+    const body = await res.json();
+    for (const [part, empty] of Object.entries(EMPTY)) {
+      if (part in body.sections || part === "maintenance_overview") body.sections[part] = empty;
+    }
+    if (!body.maintenance) delete body.sections.maintenance_overview;
+    await route.fulfill({ response: res, json: body });
+  });
   await open(page, "/home");
   for (const text of [
     "No models of your own yet.", "No datasets of your own yet.", "No block diagrams of your own yet.",

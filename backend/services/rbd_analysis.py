@@ -730,6 +730,54 @@ def _repyability_message(exc: Exception) -> str:
     return text
 
 
+def _names_list(names: list[str]) -> str:
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def wiring_errors(nodes: list, edges: list, labels: dict) -> list[str]:
+    """Every block must sit on a path from the input to the output. The one check of it, for the
+    builder's badge and for Calculate alike: each block that doesn't is named, with what's
+    missing (no wires at all, nothing feeding it, or leading nowhere). Empty when the diagram has
+    no single input and output (:func:`_io_errors` says so)."""
+    ids = [n.get("id") for n in nodes if n.get("type") not in ("input", "output", None)]
+    if not ids or "input" not in {n.get("id") for n in nodes} or "output" not in {n.get("id") for n in nodes}:
+        return []
+    out_of: dict = {}
+    into: dict = {}
+    for src, tgt in edges:
+        out_of.setdefault(src, set()).add(tgt)
+        into.setdefault(tgt, set()).add(src)
+
+    def reach(start, step):
+        seen, todo = {start}, [start]
+        while todo:
+            for nxt in step.get(todo.pop(), ()):
+                if nxt not in seen:
+                    seen.add(nxt)
+                    todo.append(nxt)
+        return seen
+
+    fed, leads = reach("input", out_of), reach("output", into)
+    loose = [nid for nid in ids if nid not in fed or nid not in leads]
+    if not loose:
+        return []
+    groups: dict[str, list[str]] = {"no wires": [], "nothing feeds it": [], "leads nowhere": []}
+    for nid in loose:
+        name = str(labels.get(nid) or nid)
+        if nid not in out_of and nid not in into:
+            groups["no wires"].append(name)
+        elif nid not in fed:
+            groups["nothing feeds it"].append(name)
+        else:
+            groups["leads nowhere"].append(name)
+    words = {"no wires": "not wired in at all", "nothing feeds it": "nothing from the input reaches it",
+             "leads nowhere": "it doesn't lead on to the output"}
+    parts = [f"{_names_list(v)} ({words[k]})" for k, v in groups.items() if v]
+    n = len(loose)
+    return [f"{n} block{'s are' if n > 1 else ' is'} not wired between the input and the output, so the diagram "
+            f"can't be calculated: {'; '.join(parts)}. Wire each one in, or delete it."]
+
+
 def _io_errors(graph: dict) -> list[str]:
     """A diagram runs from exactly one input node to exactly one output node.
     Without them RePyability guesses the ends from the wiring, and a graph
@@ -902,6 +950,9 @@ def _build_rbd(
     input_node = "input" if "input" in node_ids else None
     output_node = "output" if "output" in node_ids else None
 
+    loose = wiring_errors(nodes, edges, labels)
+    if loose:
+        raise AnalysisError(loose[0])
     ccf_groups = _ccf_groups(graph, reliabilities)
     if repeats and not rbd_repeats.core_search_fits(
             edges, reliabilities, repeats, k, input_node, output_node):
@@ -1013,10 +1064,12 @@ def _ccf_warning(text: str, labels: dict) -> str:
                   "For lifetime figures, set the group's basis to rate (Reliafy's default).", text)
 
 
-def _structure_errors(sc: dict, labels: dict) -> tuple[list[str], list[str]]:
+def _structure_errors(sc: dict, labels: dict, wiring_checked: bool = False) -> tuple[list[str], list[str]]:
     """Turn a RePyability ``structure_check`` into user-facing messages.
 
-    Returns ``(errors, warnings)`` — errors block analysis, warnings don't.
+    Returns ``(errors, warnings)`` — errors block analysis, warnings don't. ``wiring_checked``:
+    :func:`wiring_errors` already named the blocks off the path, so the dangling and off-path
+    lists aren't said again.
     """
     errors: list[str] = []
     warnings: list[str] = []
@@ -1029,7 +1082,7 @@ def _structure_errors(sc: dict, labels: dict) -> tuple[list[str], list[str]]:
             "The diagram contains a loop. A reliability block diagram must "
             "flow from the input to the output without cycles."
         )
-    dangling_in = sc.get("nodes_with_no_predecessors") or []
+    dangling_in = [] if wiring_checked else sc.get("nodes_with_no_predecessors") or []
     if dangling_in:
         errors.append(
             "Nothing feeds into: "
@@ -1038,7 +1091,7 @@ def _structure_errors(sc: dict, labels: dict) -> tuple[list[str], list[str]]:
         )
     elif not sc.get("has_unique_input_node", True):
         errors.append("The diagram needs exactly one input node.")
-    dangling_out = sc.get("nodes_with_no_successors") or []
+    dangling_out = [] if wiring_checked else sc.get("nodes_with_no_successors") or []
     if dangling_out:
         errors.append(
             "These nodes don't lead anywhere: "
@@ -1055,7 +1108,9 @@ def _structure_errors(sc: dict, labels: dict) -> tuple[list[str], list[str]]:
         )
     # k-of-n problems are reported by :func:`_koon_checks` (with labels, and
     # without RePyability's unformatted / misspelt messages).
-    if sc.get("has_irrelevant_nodes"):
+    if sc.get("has_irrelevant_nodes") and not wiring_checked:
+        # Wired in, but never decisive (a repeated block absorbed by another path): :func:`wiring_errors`
+        # catches blocks that aren't wired in.
         warnings.append(
             "These nodes are not on any path and don't affect the result: "
             f"{names('irrelevant_nodes')}."
@@ -1188,6 +1243,8 @@ def _validate_graph(
     warnings.extend(koon_warnings)
 
     labels.update(rbd_repeats.copy_labels(nodes, repeats))
+    wiring = wiring_errors(nodes, edges, labels)
+    errors.extend(wiring)
     node_ids = {n.get("id") for n in nodes}
     too_tied = bool(edges and reliabilities and repeats) and not rbd_repeats.core_search_fits(
         edges, reliabilities, repeats, k,
@@ -1207,7 +1264,7 @@ def _validate_graph(
                 on_infeasible_rbd="ignore",
             )
             struct_errors, struct_warnings = _structure_errors(
-                rbd.structure_check, labels
+                rbd.structure_check, labels, wiring_checked=bool(wiring)
             )
             errors.extend(struct_errors)
             warnings.extend(struct_warnings)
@@ -1262,7 +1319,8 @@ def _validate_graph(
                 errors.append(
                     f"“{lbl}” has no repair-time distribution. Repairable diagrams "
                     "analyse availability, so every component needs one (double-click "
-                    "the block to set it), or mark it as repaired instantly.")
+                    "the block to set it), or mark it as repaired instantly. Structure that doesn't "
+                    "fail (a frame, a base): tick Never fails in its settings to leave it out of the model.")
         from backend.services import rbd_maintenance, rbd_policies, rbd_repairable_blocks
 
         errors.extend(rbd_repairable_blocks.validation_errors(graph))
@@ -2865,6 +2923,9 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
     groups = _ccf_groups(graph, components, repairable=True)
     input_node = "input" if "input" in node_ids else None
     output_node = "output" if "output" in node_ids else None
+    loose = wiring_errors(nodes, edges, labels)
+    if loose:
+        raise AnalysisError(loose[0])
 
     def build(ccf_groups):
         try:

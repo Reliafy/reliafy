@@ -110,7 +110,9 @@ from backend.routers import compare_groups as compare_groups_router
 from backend.routers import regression_diagnostics as regression_diagnostics_router
 from backend.routers import tvc as tvc_router
 from backend.routers import workspace_changes as workspace_changes_router
+from backend.routers import home as home_router
 from backend.services import content_gate
+from backend.services import access as access_service
 from backend.services import datasets as datasets_service
 from backend.errors import client_message
 
@@ -215,27 +217,6 @@ def _startup() -> None:
     # Operator crash alerts. A no-op unless Pushover is configured, so
     # self-hosted and dev instances are unaffected.
     push_service.install_error_alerts()
-    _warm_maintenance_graph()
-
-
-def _warm_maintenance_graph() -> None:
-    """Replay the maintenance log into the graph in the background, so the first request that
-    reads it (Home's counts) doesn't wait for the replay. Nothing waits on it: a request that
-    arrives meanwhile queues on the store's own lock, as it would have. A failure is only
-    logged; the first request then tries again."""
-    if not _config.MAINTENANCE_ENABLED:
-        return
-    import threading
-
-    def warm() -> None:
-        try:
-            from backend.routers.maintenance import get_store
-
-            get_store()
-        except Exception:  # noqa: BLE001 - warming is an optimisation
-            logger.warning("maintenance graph warm-up failed", exc_info=True)
-
-    threading.Thread(target=warm, name="maintenance-warm", daemon=True).start()
 
 
 @app.exception_handler(Exception)
@@ -327,6 +308,8 @@ app.include_router(content_jobs_router.router)
 app.include_router(outage_logs_router.router)
 # What changed in the workspace over a period (#41).
 app.include_router(workspace_changes_router.router)
+# Everything Home shows, in one request.
+app.include_router(home_router.router)
 # MCP file uploads: PUT /api/uploads/{id}?t=… (token-authed, see services/uploads.py).
 app.include_router(uploads_router.router)
 # RSS: served (date-filtered) before the SPA catch-all below.
@@ -507,6 +490,15 @@ def distributions_endpoint() -> dict:
             "fit_methods": FIT_METHODS}
 
 
+def _readable_dataset(session, dataset_id: str, ctx):
+    """A saved dataset the caller may read in the active workspace (their own, the team's, a
+    sample or one shared with them), else None: the same lookup as the dataset page's."""
+    from backend.schema import Dataset
+
+    dataset, _ = access_service.fetch_readable(session, "datasets", Dataset, dataset_id, ctx)
+    return None if dataset is None or dataset.id in ctx.hidden else dataset
+
+
 @app.post("/api/data-reading")
 def data_reading_endpoint(
     file: UploadFile | None = File(default=None),
@@ -522,6 +514,7 @@ def data_reading_endpoint(
     c_map: str | None = Form(default=None),
     session=Depends(get_session),
     user: dict = Depends(get_current_user),
+    ctx: access_service.AccessCtx = Depends(access_service.get_access),
 ) -> JSONResponse:
     """How a column mapping reads a file's rows, before any fit: units that
     failed at a known time, between two times (inspection data), at their
@@ -530,7 +523,7 @@ def data_reading_endpoint(
     mapping = {k: v for k, v in {"x": x, "c": c, "n": n, "xl": xl, "xr": xr, "tl": tl, "tr": tr}.items() if v}
     try:
         if dataset_id:
-            dataset = datasets_service.get_dataset(session, dataset_id, owner_id=user["uid"])
+            dataset = _readable_dataset(session, dataset_id, ctx)
             if dataset is None:
                 return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
             df = datasets_service.load_dataframe(dataset)
@@ -589,6 +582,7 @@ def fit_endpoint(
     cox: str | None = Form(default=None),
     session=Depends(get_session),
     user: dict = Depends(get_current_user),
+    ctx: access_service.AccessCtx = Depends(access_service.get_access),
 ) -> JSONResponse:
     """Fit ``distribution`` from a CSV (uploaded ``file`` or a saved
     ``dataset_id``) and a column mapping.
@@ -612,7 +606,7 @@ def fit_endpoint(
     }
     try:
         if dataset_id:
-            dataset = datasets_service.get_dataset(session, dataset_id, owner_id=user["uid"])
+            dataset = _readable_dataset(session, dataset_id, ctx)
             if dataset is None:
                 return JSONResponse(
                     status_code=404, content={"detail": "Dataset not found."}

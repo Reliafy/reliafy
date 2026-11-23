@@ -52,7 +52,18 @@ function serverPreview(up) {
   const cols = up?.cols;
   if (!cols?.columns?.length || !cols.preview?.length) return null;
   const types = Object.fromEntries(cols.columns.map((c) => [c, dtypeLabel(up.facts?.[c]?.dtype)]));
-  return <PreviewTable columns={cols.columns} rows={cols.preview.slice(0, 5)} types={types} />;
+  // Number columns written with thousands separators or decimal commas: read as numbers, and said.
+  const notes = cols.number_notes || [];
+  return (
+    <>
+      <PreviewTable columns={cols.columns} rows={cols.preview.slice(0, 5)} types={types} />
+      {notes.length > 0 && (
+        <ul className="hint ds-number-notes" aria-label="How the numbers were read">
+          {notes.map((n) => <li key={n}>{n}</li>)}
+        </ul>
+      )}
+    </>
+  );
 }
 
 function ListField({ f, v, onChange, disabled, placeholder, broadcast, bad }) {
@@ -446,6 +457,16 @@ export default function NewDatasetModal({
                   </span>
                 )}
                 {picked.excel?.sheet && <span className="muted">Sheet “{picked.excel.sheet}”</span>}
+                {picked.excel && (
+                  // Another sheet (or header row) of the same workbook: the picker again, the file kept.
+                  <button className="link" disabled={busy || split.saving}
+                          onClick={async () => {
+                            const excel = await chooseSheet(picked.file);
+                            if (excel) { setError(null); setPicked({ file: picked.file, excel }); }
+                          }}>
+                    Change sheet
+                  </button>
+                )}
                 <button className="link" onClick={() => { setPicked(null); setHeaderChoice(null); setError(null); }}
                         disabled={busy || split.saving}>
                   Choose another file

@@ -110,6 +110,8 @@ def test_one_tool_with_every_areas_actions(env):
     _, table = mcp_tools.TOOL_TABLES["maintenance"]
     assert t.input_schema["properties"]["action"]["enum"] == [a for a in table if not a.startswith("graph_")]
     assert set(t.input_schema["properties"]) == {"action", "args"}
+    assert t.input_schema["properties"]["args"] == {"type": "object"}
+    assert "Arguments go in args: guide(action='maintenance.<action>') lists them." in t.description
     # Actions needing the same arguments share one entry, "a/b(need)": close is listed with its id.
     close = re.search(r"(?:^|[ /])work_orders\.close(?:/[\w.]+)*\(([^)]*)\)", t.description)
     assert close and close.group(1) == "work_order_id"
@@ -119,6 +121,8 @@ def test_one_tool_with_every_areas_actions(env):
     # get.forecast (Nov 2026) took the enum to 5,812 (the maintenance tool is operators' only; the core
     # tools' 8,000 stays as it is); get.spares_year, get.package_parts and parts.count to 6,480 and 5,867.
     # rcm.optimise (Nov 2026) took the enum to 5,909: trimmed (the args help, the action's name), never raised.
+    # get.operations (Nov 2026) took it to 5,916: the args object's description left out of this one
+    # tool's schema (its intro says where arguments are), 5,861.
     assert len(t.description) < 7_800 and len(json.dumps(t.input_schema)) < 5_900
     for action, (required, optional, _) in table.items():
         own = mcp_server.ACTION_SCHEMAS[("maintenance", action)]

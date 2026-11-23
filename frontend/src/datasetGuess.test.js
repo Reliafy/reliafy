@@ -260,3 +260,20 @@ test("Compare never guesses the status or failure-mode column as the split", () 
   assert.equal(guessCompareColumns(cols, { distinct }).group, "Status");
   assert.equal(guessCompareColumns(cols, { distinct, exclude: ["Status", "Failure mode"] }).group, "Site");
 });
+
+// "Last checked OK" is when it was last seen working: the start of an interval, never x beside a
+// time; "How many" is the count, not a covariate.
+test("inspection and count headers people write are read as what they are", async () => {
+  const { guessIntervalPair } = await import("./datasetGuess.js");
+  const num = (name) => ({ name, dtype: "int64", values: null, whole: true });
+  assert.deepEqual(guessIntervalPair([num("Last checked OK (month)"), num("Found split (month)")]),
+    { xl: "Last checked OK (month)", xr: "Found split (month)" });
+  assert.equal(guessLifeColumns([num("Last inspected (h)"), num("Hours run")]).x, "Hours run");
+  assert.equal(guessLifeColumns([num("Inspection date (days)"), num("Days in service")]).x, "Days in service");
+  assert.equal(guessLifeColumns([num("Last inspected (h)")]).x, "Last inspected (h)"); // nothing else: still offered
+  for (const name of ["How many", "How many units", "Qty", "count", "n", "Number of units", "No. of pumps"]) {
+    const g = guessLifeColumns([num("Months in service"), num(name)]);
+    assert.equal(g.n, name, name);
+    assert.equal(g.x, "Months in service", name);
+  }
+});

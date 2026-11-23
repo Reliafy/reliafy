@@ -933,10 +933,12 @@ def _listed_description(name: str, selector: str, intro: str, table: Table, hide
     return text
 
 
-def _listed_schema(selector: str, values: list) -> dict:
+def _listed_schema(selector: str, values: list, args_help: str | None = ARGS_HELP) -> dict:
+    """``args_help`` None: the args object carries no description (the tool's own says where its
+    arguments are: the maintenance tool, whose action list is long)."""
+    args = {"type": "object", **({"description": args_help} if args_help else {})}
     return {"type": "object", "required": [selector],
-            "properties": {selector: {"type": "string", "enum": list(values)},
-                           "args": {"type": "object", "description": ARGS_HELP}}}
+            "properties": {selector: {"type": "string", "enum": list(values)}, "args": args}}
 
 
 def args_tool(name: str, annotations: ToolAnnotations, title: str, selector: str, intro: str, table: Table,

@@ -205,6 +205,18 @@ def for_position(m, position_id: Optional[str], root: Optional[str] = None) -> C
     key = (position_id, root)
     if key in memo:
         return memo[key]
+    # The duty plan is on the graph and the clock runs from today: kept, per process,
+    # until the graph changes or the day does (read_cache.py). A Clock is frozen.
+    from backend.maintenance.read_cache import cached
+
+    clock = cached(getattr(m, "s", None),
+                   ("running_clock", getattr(m, "org", None), position_id, root, m.today(), getattr(m, "time_zone", None)),
+                   lambda: _clock_of(m, position_id, root), frozen=True)
+    memo[key] = clock
+    return clock
+
+
+def _clock_of(m, position_id: str, root: Optional[str]) -> Clock:
     try:
         duty = m.duty_of(position_id, root)
     except Exception:  # noqa: BLE001 - a position that's gone, or no plan to read: runs all the time
@@ -217,7 +229,6 @@ def for_position(m, position_id: Optional[str], root: Optional[str] = None) -> C
                               (duty.get("inherited_from") or {}).get("name"))
         except (ValueError, TypeError):
             clock = CONTINUOUS
-    memo[key] = clock
     return clock
 
 

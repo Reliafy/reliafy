@@ -131,7 +131,11 @@ const PLAIN_STATUS = /\b(status|fail|failed|failure|failures|censor|censored|cen
 // An identifier: never the time, however numeric.
 const ID_WORDS = /\b(id|ids|no|number|serial|sn|s n|tag|asset|unit|item|equipment|code|row|index)\b/i;
 const CENSOR_WORDS = /\b(censor|censored|censoring|cens)\b/i;
-const COUNT_NAMES = /^(n|count|counts|qty|quantity|units|number of units)$/i;
+const COUNT_NAMES = /^(n|count|counts|qty|quantity|units|how many(?: \w+)?|(?:number|no|count) of \w+)$/i;
+// A check that it was still working ("Last checked OK", "Inspected"): the start of an interval at
+// most, never the time itself while a time or duration column is there.
+const CHECKED = /\b(last (?:checked|seen|inspected|tested)|inspected|inspection|checked)\b/i;
+const DATE_NAMES = /\b(date|dated|dates|timestamp|datetime|when|commissioned|installed on)\b/i;
 
 // A status value's meaning: 0 = failed, 1 = still running, null = can't tell.
 // "Failed / Running", "F / S", "yes / no" (read by the column's name: a
@@ -243,11 +247,14 @@ export function guessLifeColumns(columns) {
   const c = status?.name || "";
   // A count holds whole numbers (``whole`` false: it has decimals, #434).
   const count = columns.find((col) => col.name !== c && isNumeric(col.dtype) && col.whole !== false
-    && COUNT_NAMES.test(String(col.name).trim()));
+    && COUNT_NAMES.test(words(col.name).split(/\s+/).join(" ")));
   const n = count?.name || "";
   // A late-entry column ("Entered at (h)") is never the time, however numeric.
-  const numeric = columns.filter((col) => isNumeric(col.dtype) && col.name !== c && col.name !== n
+  let numeric = columns.filter((col) => isNumeric(col.dtype) && col.name !== c && col.name !== n
     && !LATE_ENTRY.test(words(col.name)));
+  // A "last checked" or date-named column is the time only when nothing else is.
+  const timed = numeric.filter((col) => !CHECKED.test(words(col.name)) && !DATE_NAMES.test(words(col.name)));
+  if (timed.some((col) => TIME_WORDS.test(words(col.name)))) numeric = timed;
   // A header that carries its unit ("Hours in service") beats a bare "Time in service".
   const x =
     numeric.find((col) => TIME_WORDS.test(words(col.name)) && guessUnit(col.name)) ||
@@ -269,7 +276,7 @@ export function guessLateEntry(columns, exclude = []) {
 // "last ok" and "found failed", earliest / latest, lower / upper, shortest /
 // longest, xl / xr. Null when no two numeric columns pair up (two usage
 // measures, or the start and stop of an item's rows, aren't an interval).
-const EARLIEST = /\b(xl|last ok|last good|passed|earliest|shortest|lower|left)\b/i;
+const EARLIEST = /\b(xl|last(?: (?:checked|seen|inspected|tested|known))? (?:ok|good|working|fine)|passed|earliest|shortest|lower|left)\b/i;
 const LATEST = /\b(xr|found failed|found|failed|latest|longest|upper|right)\b/i;
 export function guessIntervalPair(columns, exclude = []) {
   const numeric = columns.filter((c) => isNumeric(c.dtype) && !exclude.includes(c.name));
