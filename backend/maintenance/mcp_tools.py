@@ -904,7 +904,7 @@ RCM: Table = {
         save_evidence true, with failure_mode_id (task_id optional): as pf_interval's. With task_id and demand_rate
         but no test_cost, the task's own cost is used (task_cost_used)."""),
     "optimise": ("task_id", "failure_mode_id model_type model_id planned_cost unplanned_cost pf_interval pf_unit "
-                                 "act_time target_unavailability use", """The app's Optimise… on a task: how
+                                 "act_time target_unavailability use as_rule", """The app's Optimise… on a task: how
         often to do it, for each failure mode it prevents, from that mode's life model (the one an earlier
         Optimise used, the decision's evidence or the position's model; model_type model or degradation_model
         + model_id to choose). Replace or restore: the cost-optimal age with its range across the model's 90%

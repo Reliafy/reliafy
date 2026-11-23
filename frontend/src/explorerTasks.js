@@ -180,7 +180,11 @@ export function rollupText(r, open = false) {
 // What a cell says for a task (and its title); `due` and `cost` carry a tone of their own.
 export function taskCell(t, col) {
   switch (col) {
-    case "interval": return { text: cellText(t, "interval") || (t.on_event ? "On an event" : "") };
+    case "interval": {
+      // A calendar rule in words, as a cell starts: "The first Saturday of every month".
+      const text = cellText(t, "interval");
+      return { text: text ? text[0].toUpperCase() + text.slice(1) : (t.on_event ? "On an event" : "") };
+    }
     case "due": return { text: t.next_due || "", overdue: !!t.overdue, title: [t.overdue ? "Overdue" : null, t.due_basis].filter(Boolean).join(". ") };
     case "cost": return t.cost?.amount == null
       ? { text: "", blank: "Not set", title: costWhere(t.cost) }
