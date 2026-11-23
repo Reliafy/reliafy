@@ -82,6 +82,21 @@ export function basisText(row) {
   return `${row.use ? `Every ${every(row.use.value, row.use.unit)}` : "Its interval"} rests on ${name}`;
 }
 
+// A supporting task's break-even (forecast plan step 8): the tiles beside its sentence. One number (× k)
+// gives a break-even, never an interval.
+export function breakEvenTiles(b) {
+  if (!b || b.break_even == null) return [];
+  const whole = (v) => `$${Number(v).toLocaleString("en-GB", { maximumFractionDigits: v >= 100 ? 0 : 2 })}`;
+  const exact = Number.isInteger(Number(b.task_cost)) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 };
+  const cents = (v) => `$${Number(v).toLocaleString("en-GB", exact)}`;
+  return [
+    { label: "Break-even, one doing", value: whole(b.break_even) },
+    b.task_cost != null && { label: "It costs", value: cents(b.task_cost) },
+    { label: "If it isn't done", value: `Failure rate × ${b.k}` },
+    { label: "Its life assumes", value: `Every ${every(b.reference, b.unit)}` },
+  ].filter(Boolean);
+}
+
 // Where a task's Optimise opens: the Explorer's Maintenance tab, on its asset (?root=), the pane
 // beside the tree (?optimise=<task>&on=<position>). From inside the Explorer, `here` ({pathname,
 // search}) keeps the asset open (a product's design keeps its own page).

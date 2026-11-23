@@ -123,3 +123,87 @@ def life_ratio(m, tasks: list[dict], position_id: str, mode_ids, whatif: dict | 
     if not rows:
         return None
     return {"mult": math.prod(r["mult"] for r in rows), "tasks": rows, "approximate": any(r["approximate"] for r in rows)}
+
+
+# ---- Optimise for a supporting task (forecast plan step 8; forecast-rules 4.4, decision 6) ----------------
+
+CURVE_NEEDED = ("A best interval needs a curve: how the failure rate changes as the interval changes, fitted from "
+                "data that records the time since service (a covariate fit). One number, × k, gives a break-even, "
+                "not an interval.")
+
+
+def interval_from_curve(curve: dict | None) -> dict | None:
+    """The best interval from a fitted curve of the hazard against the interval (the future variable-speed
+    ageing model), inside the range the data covers; None until one is fitted. Kept here so Optimise reads
+    an interval from it the day it exists, without changing its screen."""
+    return None
+
+
+def break_even(m, fetch, task_id: str, root: str | None = None) -> dict | None:
+    """For a supporting task with a one-number impact (× k if it isn't done): the break-even cost of one
+    doing, which is the failures one interval of it holds off, in money. In words: it pays for itself if
+    it costs less than (cost of a problem) × (problems an hour) × (k − 1) × (the reference interval). With
+    an inspection finding some in time, a problem costs (found × the follow-on) + (missed × the corrective
+    response). {k, reference, unit, per_problem, rate, break_even, task_cost, ratio, words, lives, gaps,
+    interval: None, interval_needs}; None when the task isn't supporting with an impact."""
+    from backend.maintenance import forecast_lines, responses
+    from backend.maintenance import service as sv
+
+    task = m._get(str(task_id), "Task")
+    support = task.get("support") or {}
+    k = (support.get("impact") or {}).get("k")
+    if not k:
+        return None
+    subject = sv._subject(m.s, m.org, task)
+    if subject is None or subject.get("label") != "Position":
+        return None
+    ref = float((support.get("reference") or {}).get("value") or task.get("interval") or 0)
+    unit = sv._norm_unit(task.get("unit")) or "days"
+    fc = forecast_lines.node_forecast(m, fetch, "position", subject["id"], root, 12)
+    hours = sum(float(r.get("hours") or 0.0) for r in fc.get("rows") or [])
+    days = (sv.date.fromisoformat(fc["end"]) - sv.date.fromisoformat(fc["start"])).days + 1
+    span = hours if unit == "hours" else days / sv._DAYS_PER.get(unit, 1.0)
+    gaps, lives, total = [], [], 0.0
+    if not span:
+        gaps.append("no running hours in the horizon to count failures an hour by")
+    for row in fc.get("models") or []:
+        modes = [x["id"] for x in row.get("failure_modes") or []] or None
+        if not applies(m, task, row["position"]["id"], modes):
+            continue
+        found = float(row.get("found_share") or 0.0)
+        left = float(row.get("expected_failures") or 0.0)
+        problems = left / (1.0 - found) if found and found < 1.0 else left
+        fail_cost = row.get("cost_per_failure")
+        follow = responses.response_view(m, row["response_mode"], "found") if found and row.get("response_mode") else None
+        follow_cost = (follow or {}).get("cost_each")
+        what = f"{row['position']['name']}: {', '.join(x['text'] for x in row.get('failure_modes') or []) or row.get('name')}"
+        if fail_cost is None:
+            gaps.append(f"{what}: no cost of a failure, so its share isn't counted (add If it fails anyway)")
+            continue
+        if found and follow_cost is None:
+            gaps.append(f"{what}: nothing recorded for a find, so finds are costed as nothing")
+        per_problem = (1.0 - found) * float(fail_cost) + found * float(follow_cost or 0.0)
+        rate = problems / span if span else 0.0
+        share = per_problem * rate * (float(k) - 1.0) * ref
+        total += share
+        lives.append({"what": what, "problems": problems, "found_share": found or None, "per_problem": per_problem,
+                      "rate": rate, "break_even": share})
+    view = m._task_view(task)
+    own = (view.get("cost") or {}).get("amount")
+    unit_word = "h" if unit == "hours" else unit
+    out = {"kind": "break_even", "k": k, "reference": ref, "unit": unit, "task_cost": own, "lives": lives,
+           "gaps": gaps, "break_even": total if lives else None, "interval": interval_from_curve(None),
+           "interval_needs": CURVE_NEEDED, "source": support.get("source") or "assumed",
+           "assumed": (support.get("source") or "assumed") == "assumed"}
+    if not lives:
+        out["words"] = ("No break-even: none of the failures it holds up has a cost of a failure yet."
+                        if gaps else "No break-even: no life model here that this task holds up.")
+        return out
+    out["ratio"] = (float(own) / total) if own is not None and total > 0 else None
+    text = (f"It pays for itself if one doing costs less than ${total:,.0f}: the failures one {ref:g} {unit_word} "
+            f"interval of it holds off (failure rate × {k:g} while it isn't done).")
+    if own is not None:
+        cost = f"{float(own):,.2f}".replace(".00", "")
+        text += f" It costs ${cost} a time" + (f", {out['ratio']:.0%} of that." if out["ratio"] is not None else ".")
+    out["words"] = text
+    return out
