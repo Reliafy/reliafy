@@ -3324,7 +3324,7 @@ def register() -> None:
     graph_actions = frozenset(GRAPH_TOOL_NAMES)
     intro = ("Reliafy Maintenance (the CMMS): positions, locations, classes, items, RCM, tasks, work orders, failure "
              "reports, parts. Start with overview; guide (args {topic}) has the how-tos; apply runs many changes in "
-             "one checked call.")
+             "one checked call. Arguments go in args: guide(action='maintenance.<action>') lists them.")
     TOOL_NAMES.append("maintenance")
     args_tool("maintenance", _WRITE, "Reliafy Maintenance", "action", intro, table, run_action,
               call_key=lambda kwargs: keys.get(kwargs.get("action"), "maintenance"),
@@ -3335,11 +3335,12 @@ def register() -> None:
 
     def listing(graph: bool, work_orders: bool) -> tuple[dict, str]:
         hide = (frozenset() if graph else graph_actions) | (frozenset() if work_orders else wo_actions)
-        return (_listed_schema("action", [a for a in table if a not in hide]),
+        # No args description here: the intro says where they are (the action list is near its cap).
+        return (_listed_schema("action", [a for a in table if a not in hide], args_help=None),
                 _listed_description("maintenance", "action", intro if work_orders else intro_no_wo, table, hide=hide))
 
     listings = {(g, w): listing(g, w) for g in (True, False) for w in (True, False)}
-    listings[(True, True)] = (LISTED_SCHEMAS["maintenance"], listings[(True, True)][1])
+    LISTED_SCHEMAS["maintenance"] = listings[(True, True)][0]
 
     # The tool is listed only to people who may use it, and its graph actions
     # only to those who may run graph queries: wrap the server's tools/list.
