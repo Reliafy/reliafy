@@ -1,11 +1,11 @@
 ---
-title: "Say how equipment runs, so tasks by hours land on dates (Maintenance › Operating plan)"
+title: "Say how equipment runs, so tasks by hours land on dates (Explorer › Operations)"
 task: "How do I tell Reliafy when a pump or a vehicle runs, so a task every 2,000 running hours, or a pattern like the first Saturday of the month, falls due on the right date, in my time zone?"
 category: "Maintenance strategy"
 prerequisites: "A position in your asset tree with a task on it. An hours counter helps, but isn't needed."
 order: 29
 # Reliafy Maintenance is operators-only for now: this guide is linked from the
-# Operating plan pane itself and stays out of the index until Maintenance opens.
+# Operations pane itself and stays out of the index until Maintenance opens.
 hidden: true
 ---
 
@@ -15,19 +15,31 @@ duty pump that runs around the clock reaches 2,000 hours in about 12 weeks. A
 standby pump that runs two hours every Saturday takes about 19 years. The
 **operating plan** is where you say which of the two you have.
 
-## Open a position's plan
+## The Operations tab
 
-In the Explorer, open a position. Its **Summary** has an **Operating plan**
-line: it reads the plan in words (*Monday to Friday, 06:00 to 22:00 · about 80
-hours a week*), with **Open**, or **Set one** if there is none. You can also
-choose **Operating plan…** in the position's row menu. The plan opens in the
-table area, with the tree still beside it.
+In the Explorer, open an asset and pick the **Operations** tab. It shows the
+tree with each position's operations beside it, one row a position:
 
-A position with no plan of its own runs as the nearest position above it that
-has one, inside the asset you opened. The plan says so (*From Pump station 1:
-it has no plan of its own, so it runs as that does*) and offers **Give this its
-own plan**. An item runs as the position it's fitted to, so you set the plan on
-the position, never on the item.
+- **Duty**: how it runs, in words (*Monday to Friday, 06:00 to 22:00 · about
+  80 hours a week*), or *All the time (no duty set)*.
+- **From**: *Own* when the duty is set on the position, or *From Site A* when it
+  runs to the duty of a position above it.
+- **Other use**: distance or counts a day (*400 km a day*), if any.
+- **Shutdowns and outages**: the next window that takes it off-line, its own
+  or one set above it, and how many more in the year ahead.
+- **Time zone**: the zone the duty's clock times are in.
+
+A position with no duty of its own runs to the nearest position above it that
+has one, inside the asset you opened. So set the duty once, at the site or the
+line, and every position below it takes it. To run one differently, give it
+its own: that position, and the ones below it, use that instead. An item runs
+as the position it's fitted to, so you set the duty on the position, never on
+the item.
+
+Click a position to open its **Operations** beside the table: its operating
+plan, then its shutdowns and outages. A position's **Summary** keeps one line
+about how it runs, with **Open in Operations**. Older links to a position's
+operating plan open here too.
 
 ## Say how it runs
 
@@ -64,8 +76,24 @@ Two optional parts:
 Set **From** (the date the plan starts) and, if you like, a **Name** (*Day
 shifts*), then press **Save**. A new plan from a date ends the one before it
 from that date. Nothing earlier is rewritten, and **Its own plans** keeps the
-history. **Change it** edits the current plan; **End this plan…** stops it, and
-the position runs to the plan above it again.
+history. **Change it** edits the current plan. **Give this its own plan**
+starts one on a position that takes its duty from above. **Clear (use Site
+A's)** ends a position's own plan, and it runs to the duty above it again (with
+nothing above, **Clear (run all the time)**). Set the **Time zone** if the
+position isn't in the workspace's.
+
+## Shutdowns and outages
+
+Under the plan, **Shutdowns and outages** lists every window in the year ahead
+that takes the position off-line, each saying where it's set:
+
+- a **shutdown** is a work package made into a shutdown on the Maintenance tab
+  (*Annual shut · 1 Mar 2027, 72 h*, with its cost each time). It takes its
+  position, or the positions you chose inside it, off-line, so every position
+  below shows it too. **Open the package** goes to it.
+- an **outage** is a planned spell out of service: **Plan an outage…** takes a
+  start date, an optional return date and why. Its tasks, and those of
+  everything inside it, aren't due meanwhile. **Back in service…** ends it.
 
 ## Plan against actual
 
@@ -123,8 +151,9 @@ the sooner of the two.
 
 ## The time zone
 
-Plans are clock times at the site, and "today" is the site's today. Set the
-time zone in **Settings › Time zone** (a team's is on its **Team** page, set by
+Plans are clock times at the site, and "today" is the site's today. A plan can
+have its own **Time zone** (a site in another state); otherwise it uses the
+workspace's. Set the workspace's time zone in **Settings › Time zone** (a team's is on its **Team** page, set by
 the owner). Not set, dates follow UTC: a day ends at midnight UTC, not where
 you are. Maintenance shows a line with **Use** (your device's zone) while the
 zone isn't set and your device isn't on UTC.

@@ -59,7 +59,7 @@ export function opsHeadline(op) {
 // The details' shutdowns section: every window that takes the position off-line in the year ahead
 // (its own and inherited, each saying where it's set), a shutdown package opening in the
 // Maintenance tab, and a planned outage of its own (Plan an outage…, Back in service).
-export function OperationsShutdowns({ op, position, readOnly = null, onChanged }) {
+export function OperationsShutdowns({ op, position, readOnly = null, onChanged, today = null }) {
   const confirm = useConfirm();
   const { pathname, search } = useLocation();
   const [form, setForm] = useState(null);
@@ -67,6 +67,8 @@ export function OperationsShutdowns({ op, position, readOnly = null, onChanged }
   const [failed, setFailed] = useState(null);
   const windows = op?.windows || [];
   const ownOutage = windows.find((w) => w.kind === "outage" && w.own);
+  // Not started yet: it's cancelled rather than ended.
+  const planned = ownOutage && today && ownOutage.start > today;
   const pkgLink = (id) => {
     const q = new URLSearchParams(search);
     q.set("tab", "maintenance");
@@ -90,11 +92,13 @@ export function OperationsShutdowns({ op, position, readOnly = null, onChanged }
   };
   const back = async () => {
     const ok = await confirm({
-      title: "Back in service?", body: `${position.name}'s outage ends today, and its tasks fall due again from today.`,
-      confirmLabel: "Back in service", pendingLabel: "Saving…", failedWhat: "end it",
+      title: planned ? "Cancel the outage?" : "Back in service?",
+      body: planned ? `${position.name}'s planned outage is taken off; its tasks stay due as usual.`
+        : `${position.name}'s outage ends today, and its tasks fall due again from today.`,
+      confirmLabel: planned ? "Cancel the outage" : "Back in service", pendingLabel: "Saving…", failedWhat: "end it",
       run: () => backInService(position.id).then(() => true),
     });
-    if (ok) onChanged?.(`${position.name} is back in service.`);
+    if (ok) onChanged?.(planned ? `${position.name}'s planned outage is cancelled.` : `${position.name} is back in service.`);
   };
   return (
     <section className="op-history ops-shut" aria-label="Shutdowns and outages">
@@ -122,7 +126,7 @@ export function OperationsShutdowns({ op, position, readOnly = null, onChanged }
       {!readOnly && !form && (
         <div className="op-actions">
           {ownOutage
-            ? <button type="button" className="secondary" onClick={back}>Back in service…</button>
+            ? <button type="button" className="secondary" onClick={back}>{planned ? "Cancel the outage…" : "Back in service…"}</button>
             : <button type="button" className="secondary" onClick={() => { setFailed(null); setForm({ start: "", until: "", reason: "" }); }}>Plan an outage…</button>}
         </div>
       )}

@@ -3280,7 +3280,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                          onDirty={(d) => { paneDirty.current = d; }}
                          onChanged={(text) => { say(text); setVersion((v) => v + 1); pops.load(); }}>
         {opsOn && pops.byId.get(panePosition.id) && (
-          <OperationsShutdowns op={pops.byId.get(panePosition.id)} position={panePosition} readOnly={viewOnly || null}
+          <OperationsShutdowns op={pops.byId.get(panePosition.id)} position={panePosition} readOnly={viewOnly || null} today={pops.data?.today}
                                onChanged={(text) => { say(text); setVersion((v) => v + 1); pops.load(); }} />
         )}
       </OperatingPlanPane>

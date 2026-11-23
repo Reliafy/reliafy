@@ -11,9 +11,9 @@ import { hoursWords, planWords } from "./operatingPlan.js";
 export const OPS_TREE_HEAD = "Position";
 
 export const OPS_COLUMNS = [
-  { id: "duty", label: "Duty", width: 240 },
-  { id: "source", label: "From", width: 150 },
-  { id: "use", label: "Other use", width: 130 },
+  { id: "duty", label: "Duty", width: 300 },
+  { id: "source", label: "From", width: 160 },
+  { id: "use", label: "Other use", width: 120 },
   { id: "windows", label: "Shutdowns and outages", width: 230 },
   { id: "zone", label: "Time zone", width: 160 },
 ];

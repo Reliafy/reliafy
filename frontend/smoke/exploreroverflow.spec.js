@@ -17,7 +17,7 @@ const conveyor = async (request) => {
 };
 const at = (id, extra = "") => `/asset-register/explorer?arrange=positions&root=${id}&sel=${id}${extra}`;
 const bar = (page) => page.getByRole("tablist", { name: "What to show for this row" });
-const ALL = ["Summary", "Maintenance", "Monitoring", "RCM", "FME(C)A", "Models", "History"];
+const ALL = ["Summary", "Operations", "Maintenance", "Monitoring", "RCM", "FME(C)A", "Models", "History"];
 
 test.skip(!EXPLORER_PANEL_TABS, "the panel tabs are switched off");
 
