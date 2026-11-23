@@ -313,6 +313,36 @@ def test_rcm_evidence_whose_model_was_refitted_shows_its_status_before_and_now(c
     assert changes(client)["rcm_evidence"] == [] and changes(client)["counts"]["rcm_evidence"] == 0
 
 
+def test_reading_the_rcm_for_some_models_gives_the_same_rows_as_reading_it_all():
+    """What changed reads only the positions decided on a refitted model: each is read exactly
+    as in the full rollup, and the rows for those models are the same."""
+    from backend.maintenance.service import PROJECTORS, Maintenance
+    from backend.maintenance.store import GraphStore
+
+    m = Maintenance(GraphStore(":memory:", PROJECTORS), A, A)
+    for name, model_id in (("Pump", "seal-model"), ("Fan", "fan-model"), ("Valve", None)):
+        pid = m.create_position(name)["id"]
+        ff = m.add_functional_failure(m.add_function(pid, f"{name} works")["id"], "Fails")
+        mode = m.add_failure_mode(pid, f"{name} wears", functional_failure_id=ff["id"])
+        if model_id:
+            m.decide_failure_mode(mode["id"], "operational", {"outcome": "rtf", "rtf_basis": "random",
+                                                               "evidence": {"type": "model", "id": model_id}})
+    full = m.rcm_all()
+    some = m.rcm_all(evidence_ids={"seal-model"})
+    assert {p["name"] for p in full["positions"]} == {"Fan", "Pump", "Valve"}
+    assert [p["name"] for p in some["positions"]] == ["Pump"]
+    assert some["positions"][0] == next(p for p in full["positions"] if p["name"] == "Pump")
+
+    def rows(out, ids):
+        pairs = []
+        for p in out["positions"]:
+            modes = [x for fn in p["functions"] for ff in fn["failures"] for x in ff["modes"]] + p["unassigned"]
+            pairs += [(p["id"], p["name"], x) for x in modes
+                      if x.get("decision") and (x["decision"].get("evidence") or {}).get("id") in ids]
+        return pairs
+    assert rows(some, {"seal-model"}) == rows(full, {"seal-model"}) != []
+
+
 # ---- Simulation runs -------------------------------------------------------------------
 
 def _run(db, rid, rbd_id, finished, availability):
