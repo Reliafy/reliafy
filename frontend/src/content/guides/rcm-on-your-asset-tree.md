@@ -467,6 +467,17 @@ a date.
   opening this row.
 - **Remove** takes it off (the task is retired, kept in the history).
 
+On a failure mode an on-condition or failure-finding check serves, **If an
+inspection finds it** sits below it, with the same fields: what's done when the
+check catches the problem early (replace the bearing as planned work, an hour
+and an $85 bearing). The forecast's **follow-on** line takes its hours, spares
+and cost for each find: the failures that would have happened × the share the
+inspection finds in time, which comes from the check's P-F interval. With no
+P-F interval, the finds aren't counted (every failure goes to the corrective
+line) and the forecast says **Add the P-F interval**; with nothing recorded
+here, the finds are counted and what they need is listed under **Not
+counted**, with **Add** opening this row.
+
 ## Working out the interval
 
 Each scheduled task's details have **Calculate…** beside its *every N*, under

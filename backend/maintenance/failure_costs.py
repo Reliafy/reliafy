@@ -239,4 +239,13 @@ class FailureCostOps:
         used = self._mode_consequence(fm, cls, cls_name)
         return {"id": fm["id"], "own": {k: fm.get(k) for k in FIELDS},
                 "class_figures": {k: cls.get(k) for k in FIELDS} if cls_name else None,
-                "used": used, "class": cls_name, "responses": self.mode_responses(fm["id"])}
+                "used": used, "class": cls_name, "responses": self.mode_responses(fm["id"]),
+                "has_check": self._mode_has_check(fm)}
+
+    def _mode_has_check(self, fm: dict) -> bool:
+        """An on-condition or failure-finding check serves the mode: "If an inspection finds it" applies."""
+        checks = ("on_condition", "failure_finding")
+        if fm.get("outcome") in checks or any(o.get("outcome") in checks for o in fm.get("outcomes") or []):
+            return True
+        return any(t.get("label") == "Task" and not t.get("retired") and t.get("outcome") in checks
+                   for t in self.s.inn(self.org, fm["id"], "MITIGATES"))

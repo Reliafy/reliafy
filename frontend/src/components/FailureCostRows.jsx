@@ -13,8 +13,9 @@ import ModeResponseRows from "./ModeResponseRows.jsx";
 // figure came from. The forecast (Maintenance › Forecast…) and Optimise… charge each failure this.
 // Grid rows of the panel's step grid (`rw-sg`): a label cell, then the fields.
 // Above it, "If it fails anyway" (ModeResponseRows): what's done when it fails, whose cost each time is the
-// failure cost unless one is typed here (an override). `respond` ("failure"): opened from the forecast's
-// "Not counted · Add", so that row opens with its first field focused.
+// failure cost unless one is typed here (an override); and, on a mode a check serves, "If an inspection
+// finds it" (the follow-on), whose needs go on the forecast's follow-on line. `respond` ("failure"): opened from the forecast's
+// "Not counted · Add" (or "found"), so that row opens with its first field focused.
 export default function FailureCostRows({ modeId, readOnly = false, onSaid = null, respond = null }) {
   const [costs, setCosts] = useState(null);
   const [error, setError] = useState(null);
@@ -41,6 +42,10 @@ export default function FailureCostRows({ modeId, readOnly = false, onSaid = nul
       {costs && (
         <ModeResponseRows modeId={modeId} kind="failure" response={costs.responses?.failure || null} readOnly={readOnly}
                           focus={respond === "failure"} onChanged={reload} onSaid={onSaid} />
+      )}
+      {costs && (costs.has_check || costs.responses?.found) && (
+        <ModeResponseRows modeId={modeId} kind="found" response={costs.responses?.found || null} readOnly={readOnly}
+                          focus={respond === "found"} onChanged={reload} onSaid={onSaid} />
       )}
       <StepLabel>What a failure costs</StepLabel>
       <div className="rw-sc fcost">

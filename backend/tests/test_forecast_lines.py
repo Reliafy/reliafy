@@ -188,7 +188,8 @@ def test_3_4_the_mower_deck_by_owner(setting):
     assert found["times"]["expected"] == pytest.approx(1.52, abs=0.01) and found["times"]["interval"] == [0, 3]
     assert missed["times"]["expected"] == pytest.approx(0.14, abs=0.01) and missed["times"]["interval"] == [0, 1]
     assert missed["cost"]["expected"] == pytest.approx(122, abs=1)
-    assert found["cost"] is None and any("inspection finds it" in x["text"] for x in lines["not_counted"])
+    assert found["cost"] is None
+    assert any(x["kind"] == "no_follow_on" and "respond=found" in x["link"] for x in lines["not_counted"])
     cost = lines["totals"]["cost"]
     assert cost["by_kind"]["planned"] == pytest.approx(351) and cost["by_kind"]["corrective"] == pytest.approx(122, abs=1)
     assert not cost["known"] and cost["interval"][0] == pytest.approx(351)
@@ -196,6 +197,37 @@ def test_3_4_the_mower_deck_by_owner(setting):
     # Spares: the like bearings, 1.65 (0 to 3), whoever's line they're on.
     assert lines["totals"]["spares"]["like_items"]["expected"] == pytest.approx(1.65, abs=0.005)
     assert lines["totals"]["spares"]["like_items"]["interval"] == [0, 3]
+
+
+def test_3_4_with_its_follow_on_and_corrective_response(setting):
+    """The plan's 3.4 in full, from records: found at an inspection, replace the bearing (1 h and an $85
+    bearing, $160); missed, replace the spindle after it fails (4 h, $900 all in). Follow-on 1.52 finds,
+    $242, 1.5 h; corrective 0.14 failures, $122, 0.5 h; the deck $715 ($351 to $1,411), 6.3 h (4.2 to 9.2)."""
+    m, db, fetch = setting
+    deck, _grease, _insp, modes = _deck(m, db)
+    for fm in modes:
+        m.set_mode_costs(fm, failure_cost=None)
+        m.set_mode_response(fm, "found", name="Replace the bearing",
+                            labour=[{"trade": "Fitter", "people": 1, "hours": 1}], cost=160,
+                            spares=[{"name": "Spindle bearing", "qty": 1}])
+        m.set_mode_response(fm, "failure", name="Replace the spindle",
+                            labour=[{"trade": "Fitter", "people": 1, "hours": 4}], cost=900)
+    assert m.mode_costs(modes[0])["has_check"]
+    out = fl.node_forecast(m, fetch, "position", deck, deck, 12)
+    lines = out["lines"]
+    found = _by(out, "follow_on", "Spindle bearing worn out")
+    missed = _by(out, "corrective", "Spindle bearing worn out")
+    assert found["response"]["name"] == "Replace the bearing" and not found["gaps"]
+    assert found["cost"]["expected"] == pytest.approx(242, abs=1) and found["hours"]["expected"] == pytest.approx(1.5, abs=0.02)
+    assert found["spares"][0] == {"name": "Spindle bearing", "part_id": None, "expected": pytest.approx(1.514, abs=0.002)}
+    assert missed["cost"]["expected"] == pytest.approx(122, abs=1) and missed["hours"]["expected"] == pytest.approx(0.54, abs=0.01)
+    cost, hours = lines["totals"]["cost"], lines["totals"]["hours"]
+    assert cost["known"] and cost["expected"] == pytest.approx(715, abs=2)
+    assert cost["interval"] == [pytest.approx(351), pytest.approx(1411)]
+    assert cost["by_kind"]["follow_on"] == pytest.approx(242, abs=1)
+    assert hours["known"] and hours["expected"] == pytest.approx(6.3, abs=0.05)
+    assert hours["interval"] == [pytest.approx(4.2), pytest.approx(9.2)]
+    assert not [x for x in lines["not_counted"] if x["kind"] in ("no_follow_on", "no_response")]
 
 
 def test_3_4_the_sum_with_a_follow_on():

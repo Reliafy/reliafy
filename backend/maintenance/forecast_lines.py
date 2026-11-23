@@ -136,7 +136,7 @@ def _modes_text(row: dict) -> str:
 def build(m, fc: dict, model_rows: list[dict], tree, root) -> dict:
     """The lines, totals by kind and what's not counted, from a position forecast's answer
     (``fc``) and its life forecasts (``model_rows``: {row, fc})."""
-    from backend.maintenance import supporting
+    from backend.maintenance import responses, supporting
     from backend.maintenance.position_forecast import _explorer_link
 
     lines: list[dict] = []
@@ -207,13 +207,13 @@ def build(m, fc: dict, model_rows: list[dict], tree, root) -> dict:
         left = float(row["expected_failures"] or 0.0)
         n_all = left / (1.0 - found) if found and found < 1.0 else left
         each = row.get("cost_per_failure")
+        follow = responses.response_view(m, row["response_mode"], "found") if found and row.get("response_mode") else None
         def sig(resp):
             return None if resp is None else (resp["name"], resp.get("hours_each"), resp.get("cost_each"),
                                               tuple((x["name"], x["qty"]) for x in resp.get("spares") or []))
 
-        # The same response on several positions (each mode its own task) is one owner.
-        key = (_modes_text(row), each, round(found, 6), sig(row.get("response")))
-        g = groups.setdefault(key, {"owner": key[0], "each": each, "found": found, "n": 0.0, "pmfs": [],
+        key = (_modes_text(row), each, round(found, 6), sig(row.get("response")), sig(follow))
+        g = groups.setdefault(key, {"owner": key[0], "each": each, "found": found, "follow": follow, "n": 0.0, "pmfs": [],
                                     "positions": [], "rows": [], "methods": set(), "ranged": True})
         g["n"] += n_all
         pmf = _pmf(lib)
@@ -221,8 +221,10 @@ def build(m, fc: dict, model_rows: list[dict], tree, root) -> dict:
             g["ranged"] = False
         else:
             g["pmfs"].append(pmf)
-            cost_parts.append((pmf, found, float(each) if each is not None else 0.0, 0.0))
-            hour_parts.append((pmf, found, float((row.get("response") or {}).get("hours_each") or 0.0), 0.0))
+            cost_parts.append((pmf, found, float(each) if each is not None else 0.0,
+                               float((follow or {}).get("cost_each") or 0.0)))
+            hour_parts.append((pmf, found, float((row.get("response") or {}).get("hours_each") or 0.0),
+                               float((follow or {}).get("hours_each") or 0.0)))
             spare_parts.append((pmf, 0.0, 1.0, 1.0))
         g["positions"].append(row["position"])
         g["rows"].append(row)
@@ -293,19 +295,45 @@ def build(m, fc: dict, model_rows: list[dict], tree, root) -> dict:
                                             "unknown", "fix": "Add", "link": respond_link})
         members = [corrective]
         if found:
+            fr = g["follow"]
+            found_n = n_all * found
+            found_link = _explorer_link(where["id"], root, "rcm", sel=rows0.get("response_mode") or where["id"],
+                                        fm=rows0.get("response_mode") or "", respond="found")
             follow = {"id": f"{gid}:follow_on", "owner": owner, "owner_kind": "failure_mode", "kind": "follow_on",
                       "group": gid, "number": number, "position": where, "on": on,
-                      "times": {"expected": _r(n_all * found), "interval": count_range(g, found)},
-                      "hours": None, "cost": None,
-                      "spares": [{"name": f"a like item ({owner})", "expected": _r(n_all * found)}],
-                      "gaps": [{"view": "hours", "text": "nothing recorded for when an inspection finds it"},
-                               {"view": "cost", "text": "nothing recorded for when an inspection finds it, so its "
-                                                        "cost is unknown"}]}
-            gaps["cost"].append(f"{owner} on {on}: found at an inspection (nothing recorded for what's done then)")
-            not_counted.append({"kind": "no_follow_on", "position": where,
-                                "text": f"{owner}: nothing recorded for when an inspection finds it, so the cost of "
-                                        f"{_r(n_all * found, 3):g} finds is unknown", "fix": "Open",
-                                "link": group["link"]})
+                      "times": {"expected": _r(found_n), "interval": count_range(g, found)},
+                      "response": ({"id": fr["id"], "name": fr["name"]} if fr else None),
+                      "hours": None, "cost": None, "spares": [], "gaps": []}
+            if fr is None:
+                follow["spares"] = [{"name": f"a like item ({owner})", "expected": _r(found_n)}]
+                follow["gaps"] = [{"view": "hours", "text": "nothing recorded for when an inspection finds it"},
+                                  {"view": "cost", "text": "nothing recorded for when an inspection finds it, so its "
+                                                           "cost is unknown"}]
+                gaps["hours"].append(f"{owner} on {on}: found at an inspection (nothing recorded for what's done then)")
+                gaps["cost"].append(f"{owner} on {on}: found at an inspection (nothing recorded for what's done then)")
+                not_counted.append({"kind": "no_follow_on", "position": where,
+                                    "text": f"{owner}: nothing recorded for when an inspection finds it, so what "
+                                            f"{_r(found_n, 3):g} finds need is unknown", "fix": "Add",
+                                    "link": found_link})
+            else:
+                if fr.get("hours_each") is not None:
+                    follow["hours"] = {"expected": _r(found_n * fr["hours_each"]), "interval": None,
+                                       "each": fr["hours_each"]}
+                else:
+                    follow["gaps"].append({"view": "hours", "text": "what's done when it's found has no labour"})
+                    gaps["hours"].append(f"{owner} on {on}: found at an inspection (no labour recorded)")
+                if fr.get("cost_each") is not None:
+                    follow["cost"] = {"expected": _r(found_n * fr["cost_each"]), "interval": None,
+                                      "each": fr["cost_each"]}
+                else:
+                    follow["gaps"].append({"view": "cost", "text": "what's done when it's found has no cost"})
+                    gaps["cost"].append(f"{owner} on {on}: found at an inspection (no cost recorded)")
+                    not_counted.append({"kind": "no_follow_on_cost", "position": where,
+                                        "text": f"{owner}: what's done when an inspection finds it has no cost each "
+                                                "time", "fix": "Add", "link": found_link})
+                follow["spares"] = [{"name": sp["name"], "part_id": sp.get("part_id"), "expected": _r(found_n * sp["qty"])}
+                                    for sp in fr.get("spares") or []] or [
+                    {"name": f"a like item ({owner})", "expected": _r(found_n)}]
             members.append(follow)
         group["lines"] = [x["id"] for x in members]
         lines.append(group)
