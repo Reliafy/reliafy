@@ -77,6 +77,7 @@ from backend.maintenance.captures import PROJECTORS as _CAPTURE_PROJECTORS
 from backend.maintenance import task_costs as _task_costs
 from backend.maintenance.captures import CaptureOps
 from backend.maintenance import restoration as _restoration
+from backend.maintenance import supporting as _supporting
 from backend.maintenance import failure_costs as _failure_costs
 from backend.maintenance import visit_costs as _visit_costs
 from backend.maintenance import shutdowns as _shutdowns
@@ -3247,7 +3248,7 @@ def _walk_down(top: str, kids: dict) -> set[str]:
 
 
 class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDeleteOps, PositionModelOps,
-                  CaptureOps, AssetSearchOps, _restoration.RestorationOps, _shutdowns.ShutdownOps, _operations.OperationsOps,
+                  CaptureOps, AssetSearchOps, _restoration.RestorationOps, _supporting.SupportOps, _shutdowns.ShutdownOps, _operations.OperationsOps,
                   _failure_costs.FailureCostOps, _visit_costs.VisitCostOps):
     """One organisation's maintenance graph, acted on by one person."""
 
@@ -6277,6 +6278,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 # mode's decision's own, so the RCM can show and change one mode's.
                 | ({"restoration": t["restoration"]} if t.get("restoration") else {})
                 | ({"restorations": t["restorations"]} if t.get("restorations") else {})
+                # A supporting task (supporting.py): what it supports and its impact, for the RCM.
+                | ({"support": t["support"]} if t.get("support") else {})
                 | Maintenance._calendar_due(t) for t in tasks]
 
     @staticmethod
@@ -7046,6 +7049,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         # What it leaves the item as, how its interval is counted, its age limit at a shutdown
         # (restoration.py): what the RBD plan reads.
         out |= self._restoration_view(task, out["by_use"])
+        # Whether it keeps the item on its life (a supporting task, supporting.py): what it supports,
+        # its reference interval, the impact if it isn't done, grace and source.
+        out |= self._support_view(task)
         if on_event and not open_wo:
             out["status"] = "Waiting for the event"
         if subject and subject["label"] == "Item":
@@ -11178,7 +11184,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                          # Where it came from: an RCM decision's (no source of its own) or added
                          # directly (manual, oem, statutory, other, with its reference).
                          "source": view["source"], "reference": view["reference"],
-                         "cost": view["cost"]})
+                         "cost": view["cost"],
+                         # A supporting task's marker (supporting.py): "Supports × 2"; null otherwise.
+                         "support": (view.get("support") or {}).get("marker")})
         rows.sort(key=lambda r: (r["subject"]["name"].lower(), r["name"].lower(), r["id"]))
         # A product's design (or one of its design locations): its programme, packaged on the built items.
         return {"scope": self._subject_brief(scope), "tasks": rows[:limit], "total": len(rows),
@@ -16944,6 +16952,8 @@ PROJECTORS.update(_task_costs.PROJECTORS)
 # its interval is counted, its age limit at a shutdown; and shutdown packages (Nov 2026,
 # restoration.py, shutdowns.py).
 PROJECTORS.update(_restoration.PROJECTORS)
+# A supporting task: it keeps the item on its life (Nov 2026, supporting.py).
+PROJECTORS.update(_supporting.PROJECTORS)
 PROJECTORS.update(_failure_costs.PROJECTORS)
 PROJECTORS.update(_visit_costs.PROJECTORS)
 PROJECTORS.update(_shutdowns.PROJECTORS)

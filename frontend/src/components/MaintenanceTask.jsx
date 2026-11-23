@@ -25,6 +25,8 @@ import TaskTwins from "./TaskTwins.jsx";
 import NeedsSection, { useNeeds } from "./TaskNeeds.jsx";
 import { every } from "../taskOptimise.js";
 import { restorationBody, restorationForm, restorationProblem, RESTORE_CHOICES } from "../taskRestoration.js";
+import { canSupport, COMBINE_HELP, SOURCE_WORD, SUPPORT_HELP, SUPPORT_SOURCES, impactWords, supportBody, supportForm, supportProblem } from "../taskSupport.js";
+import Chip from "./ui/Chip.jsx";
 
 // A task on the Explorer's Maintenance tab, in the panel beside the tree (never a dialog):
 // "Add task" (?addtask=<the row>) and a task opened from the table (?mtask=<id>). It draws the
@@ -61,6 +63,7 @@ function startFrom(task) {
     visitCost: task?.visit_cost != null ? String(task.visit_cost) : "",
     modes: new Set((task?.failure_modes || []).map((m) => m.id)),
     ...restorationForm(task),
+    ...supportForm(task),
   };
 }
 
@@ -148,10 +151,12 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
   const setHow = (how) => setF((x) => ({ ...x, how, interval: how.every, unit: how.unit }));
   const flip = (id) => setF((x) => { const m = new Set(x.modes); if (m.has(id)) m.delete(id); else m.add(id); return { ...x, modes: m }; });
   const missing = task?.cost?.lsa?.missing_rates?.filter((t) => t !== "no trade") || [];
-  const restoreProblem = f.outcome === "fixed_interval" ? restorationProblem(f) : null;
+  const restoreProblem = f.outcome === "fixed_interval" && !f.supporting ? restorationProblem(f) : null;
+  const supportable = canSupport(f.outcome);
+  const supportIssue = supportable ? supportProblem(f) : null;
   const howProblem = howOftenProblem(f.how);
   const can = ready && !!f.name.trim() && !tooLong(f.name) && !howProblem && validMoney(f.cost) && validMoney(f.visitCost)
-    && Object.values(rates).every(validMoney) && !restoreProblem;
+    && Object.values(rates).every(validMoney) && !restoreProblem && !supportIssue;
   const subject = { kind: row.type === "loc" ? "location" : "position", id: row.key, name: row.ref?.name };
 
   const send = useSendOnce(async () => {
@@ -168,6 +173,9 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
       if (f.cost !== "") await updateMaintenanceTask(made.id, { cost: Number(f.cost) });
       const extra = restorationBody(null, f);
       if (Object.keys(extra).length) await updateMaintenanceTask(made.id, extra);
+      // Keeps it on its life: after its failure modes are linked (it supports only modes it serves).
+      const sup = supportable ? supportBody(null, f, { modes: subject.kind === "position" ? ids : [], unit: f.unit }) : {};
+      if (Object.keys(sup).length) await updateMaintenanceTask(made.id, sup);
       onDone(`Added ${made.name}.`, made.id);
       return;
     }
@@ -184,6 +192,11 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
       for (const id of ids) if (!had.has(id)) await linkTaskFailureMode(task.id, id);
       for (const id of had) if (!f.modes.has(id)) await unlinkTaskFailureMode(task.id, id);
     }
+    // Keeps it on its life (after its failure modes, which it may name): a kind that can't be
+    // supporting (a check) clears it.
+    const served = rcm ? (task.failure_modes || []).map((m) => m.id) : ids;
+    const sup = supportBody(task, supportable ? f : { ...f, supporting: false }, { modes: served, unit: f.unit });
+    if (Object.keys(sup).length) await updateMaintenanceTask(task.id, sup);
     // A new interval: the same task on identical positions may be brought in line (offered first).
     if (Number(f.interval) !== Number(task.interval) || f.unit !== task.unit) {
       setTwinCheck({ taskId: task.id, name: f.name.trim(), interval: Number(f.interval), unit: f.unit });
@@ -285,6 +298,10 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
           </Field>
           {f.outcome === "fixed_interval" && <More summary="How replace at age is counted">{AGE_NOTE}</More>}
         </Section>
+        {supportable && (
+          <SupportFields f={f} setF={setF} task={task} problem={supportIssue}
+                         modes={rcm ? (task.failure_modes || []) : modes.filter((m) => f.modes.has(m.id))} />
+        )}
         {f.outcome === "fixed_interval" && (
           <RestorationFields f={f} setF={setF} task={task} problem={restoreProblem} />
         )}
@@ -411,12 +428,16 @@ function RestorationFields({ f, setF, task, problem }) {
   const calendar = ["days", "weeks", "months", "years"].includes(f.unit);
   return (
     <Section title="What it leaves the item as" className="ruled mt-sec mt-restore">
-      <Field label="After the task">
-        <NativeSelect value={f.restoreKind} onChange={set("restoreKind")}>
-          {RESTORE_CHOICES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </NativeSelect>
-      </Field>
-      {f.restoreKind !== "as_new" && (
+      {f.supporting ? (
+        <p className="field-help" role="note">It keeps the item on its life (above): it restores none of its age.</p>
+      ) : (
+        <Field label="After the task">
+          <NativeSelect value={f.restoreKind} onChange={set("restoreKind")}>
+            {RESTORE_CHOICES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </NativeSelect>
+        </Field>
+      )}
+      {!f.supporting && f.restoreKind !== "as_new" && (
         <div className="mt-restore-row">
           <Field label="Restores (% of the age)">
             <TextInput type="number" inputMode="decimal" min="0" max="100" step="any" value={f.restores} onChange={set("restores")}
@@ -433,19 +454,19 @@ function RestorationFields({ f, setF, task, problem }) {
           )}
         </div>
       )}
-      <p className="field-help" role="note">
+      {!f.supporting && <p className="field-help" role="note">
         {f.restoreKind === "as_new"
           ? "The item is as good as new after each task (replaced, or fully overhauled)."
           : `An overhaul that takes away ${f.restores || "X"}% of ${f.restoreKind === "kijima1" ? "the age gained since the last task" : "its whole age"}: 100% is as good as new, 0% as old as before.`}
         {f.replaceEvery !== "" && f.replacementCost === "" ? " With no replacement cost, a replacement is charged nothing until you set one." : ""}
-      </p>
-      {r?.source === "assumed" && (
+      </p>}
+      {!f.supporting && r?.source === "assumed" && (
         <p className="field-help" role="note">
           Not set yet: taken as restoring none of its age, as servicing work (greasing, cleaning, adjusting) usually
           does, so the forecast counts no failures off for it. Choose As new if it replaces or fully restores the item.
         </p>
       )}
-      {r?.source === "decision" && (
+      {!f.supporting && r?.source === "decision" && (
         <p className="field-help" role="note">
           Its failure modes&apos; decisions set this for themselves ({r.by_mode.map((x) => `${x.text}: ${x.words}`).join("; ")}).
           {r.conflict ? " They disagree: an RBD takes the least restoring." : ""} Saving here sets it for every failure mode it serves.
@@ -469,6 +490,65 @@ function RestorationFields({ f, setF, task, problem }) {
           <NativeSelect value={f.olderUnit} onChange={set("olderUnit")}>{["days", "weeks", "months", "years"].map((u) => <option key={u} value={u}>{u}</option>)}</NativeSelect>
         </Field>
       </div>
+      {problem && <p className="field-error" role="alert">{problem}</p>}
+    </Section>
+  );
+}
+
+// Keeps it on its life (a supporting task, taskSupport.js): greasing or an oil change keeps the part
+// on the life its model describes rather than renewing it. What it supports (the failure modes it
+// prevents, ticked above, or its whole life), the interval the life model assumes, the optional
+// impact if it isn't done (failure rate × k), grace, and where the impact comes from ("Assumed"
+// by default, shown as a chip). Recorded only: the forecast is unchanged.
+function SupportFields({ f, setF, task, problem, modes }) {
+  const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
+  const flip = (id) => setF((x) => { const m = new Set(x.supports); if (m.has(id)) m.delete(id); else m.add(id); return { ...x, supports: m }; });
+  const combined = task?.support?.combined;
+  const chip = f.k !== "" ? <Chip tone={f.supportSource === "assumed" ? "warning" : "neutral"}>{SOURCE_WORD[f.supportSource] || "Assumed"}</Chip> : null;
+  return (
+    <Section title="Keeps it on its life" className="ruled mt-sec mt-support" aside={f.supporting ? chip : null}>
+      <Checkbox checked={f.supporting} label="Supporting: it keeps the item on its life (greasing, an oil change)"
+                onChange={(e) => setF((x) => ({ ...x, supporting: e.target.checked, reference: x.reference || (e.target.checked ? String(x.interval || "") : "") }))} />
+      {!f.supporting && <p className="field-help">{SUPPORT_HELP}</p>}
+      {f.supporting && (
+        <>
+          {modes.length > 0 ? (
+            <Field as="fieldset" label="What it supports" optional help="None ticked: the part's whole life." className="mt-modes">
+              {modes.map((m) => <Checkbox key={m.id} checked={f.supports.has(m.id)} onChange={() => flip(m.id)} label={m.text} />)}
+            </Field>
+          ) : (
+            <p className="field-help">It supports the part&apos;s whole life. Link a failure mode it prevents to name one instead.</p>
+          )}
+          <div className="mt-restore-row">
+            <Field label={`Reference interval (${f.unit})`} help="The interval the life model assumes.">
+              <TextInput type="number" inputMode="decimal" min="0" step="any" value={f.reference} onChange={set("reference")}
+                         placeholder={String(f.interval || "")} />
+            </Field>
+            <Field label="If it isn't done: failure rate ×" optional help="Blank: supports, no modelled impact.">
+              <TextInput type="number" inputMode="decimal" min="1" max="100" step="any" value={f.k} onChange={set("k")} placeholder="e.g. 2" />
+            </Field>
+            <Field label="Grace (% overdue)" optional help="Overdue by more than this before the impact applies.">
+              <TextInput type="number" inputMode="decimal" min="0" max="100" step="any" value={f.grace} onChange={set("grace")} placeholder="0" />
+            </Field>
+          </div>
+          {f.k !== "" && (
+            <div className="mt-restore-row">
+              <Field label="Where the impact comes from">
+                <NativeSelect value={f.supportSource} onChange={set("supportSource")}>
+                  {SUPPORT_SOURCES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </NativeSelect>
+              </Field>
+              <Field label="Note" optional>
+                <TextInput value={f.supportNote} onChange={set("supportNote")} placeholder="e.g. Maker's manual §4.2" />
+              </Field>
+            </div>
+          )}
+          <p className="field-help" role="note">
+            {impactWords(f.k === "" ? null : { k: f.k })}: recorded, the forecast is unchanged. {COMBINE_HELP}
+            {combined ? ` On this part, with ${combined.tasks.filter((t) => t.id !== task.id).map((t) => `${t.name} (× ${t.k})`).join(", ")}: × ${combined.k} if none is done.` : ""}
+          </p>
+        </>
+      )}
       {problem && <p className="field-error" role="alert">{problem}</p>}
     </Section>
   );
