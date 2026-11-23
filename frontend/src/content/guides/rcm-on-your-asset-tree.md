@@ -815,7 +815,8 @@ you need to.
 **Move to…, without dragging:** every function, performance standard,
 functional failure and failure mode has **Move to…** in its row menu
 (right-click, its **⋯**, or Shift+F10) and in the **⋯** at the top of its
-Details; a failure mode with a task also has **Move a task…**. It opens the
+Details; a failure mode with a task also has **Move a task…** (under **More ›**
+in its row menu). It opens the
 tree, with a search box: the places it can go can be picked, and the rest are
 greyed, with the reason when you point at one or tap it (*A failure mode goes
 under a functional failure*). A function goes on a position; a performance
