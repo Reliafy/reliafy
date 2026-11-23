@@ -360,7 +360,7 @@ test("a new diagram built with Add block is connected from Input to Output", asy
   await status.click();
   const check = page.locator(".rbd-check").first();
   await expect(check).toBeVisible();
-  await expect(check).not.toContainText(/Not connected|Nothing feeds into|don't lead anywhere|not on any path/);
+  await expect(check).not.toContainText(/Not connected|Nothing feeds into|don't lead anywhere|not on any path|not wired between/);
   await expectHealthy(page, problems, { label: "new diagram built with Add block" });
 });
 
@@ -425,6 +425,37 @@ test("a repairable model's block: repairs and replacement", async ({ page, reque
   // Crow-AMSAA with a replacement rule is worked out exactly since RePyability 0.19, so free.
   await expect(section.getByText("Its long-run availability is worked out without simulation.")).toBeVisible();
   await expectHealthy(page, problems, { label: "repairable model block" });
+  await request.delete(`/api/rbds/${id}`);
+});
+
+// Structure on a repairable diagram ("Base frame", no repair time) blocks Calculate; Never fails in
+// its settings leaves it out of the model, and the diagram checks out.
+test("a block that never fails is left out of a repairable diagram from its settings", async ({ page, request, problems }) => {
+  const exp = (rate) => ({ source: "params", distribution: "Exponential", distribution_id: "exponential",
+                           params: [{ name: "failure_rate", value: rate }] });
+  const graph = {
+    repairable: true, unit: "Hours",
+    nodes: [{ id: "input", type: "input", position: { x: 0, y: 0 }, data: { label: "Input" } },
+            { id: "p", type: "component", position: { x: 200, y: 0 }, data: { label: "Pump", model: exp(0.001), repair: exp(0.1) } },
+            { id: "f", type: "component", position: { x: 400, y: 0 }, data: { label: "Base frame", model: exp(0.0001) } },
+            { id: "output", type: "output", position: { x: 600, y: 0 }, data: { label: "Output" } }],
+    edges: [{ id: "a", source: "input", target: "p" }, { id: "b", source: "p", target: "f" },
+            { id: "c", source: "f", target: "output" }],
+  };
+  const { id } = await (await request.post("/api/rbds", { data: { name: "Smoke never fails", graph } })).json();
+  await open(page, `/systems/b/${id}`);
+  await page.locator(".react-flow__node", { hasText: "Base frame" }).first().dblclick();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel(/Never fails/).check();
+  await expect(dialog.getByText(/It counts as always working/)).toBeVisible();
+  await expect(dialog.getByText("Repair-time distribution (time to repair)")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Save block" }).click();
+  await expect(dialog).toHaveCount(0);
+  const check = await (await request.post("/api/rbds/validate", { data: { ...graph,
+    nodes: graph.nodes.map((n) => (n.id === "f" ? { ...n, data: { ...n.data, state: "working" } } : n)) } })).json();
+  expect(check.valid).toBe(true);
+  await expect(page.locator(".rbd-valid-menu .rbd-valid-toggle")).toContainText(/Valid/, { timeout: 15_000 });
+  await expectHealthy(page, problems, { label: "never fails block" });
   await request.delete(`/api/rbds/${id}`);
 });
 
