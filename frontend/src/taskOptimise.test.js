@@ -44,3 +44,12 @@ test("a task's Optimise opens on its asset's Maintenance tab", async () => {
   assert.equal(q.get("optimise"), "t1");
   assert.equal(q.get("on"), "p1");
 });
+
+test("a supporting task's break-even: tiles, never an interval", async () => {
+  const { breakEvenTiles } = await import("./taskOptimise.js");
+  const tiles = breakEvenTiles({ break_even: 6360.4, task_cost: 562.5, k: 2.5, reference: 250, unit: "hours" });
+  assert.deepEqual(tiles.map((t) => t.label), ["Break-even, one doing", "It costs", "If it isn't done", "Its life assumes"]);
+  assert.equal(tiles[0].value, "$6,360");
+  assert.equal(tiles[1].value, "$562.50");
+  assert.deepEqual(breakEvenTiles({ break_even: null }), []);
+});

@@ -576,8 +576,12 @@ def optimise(m, db, owners, hidden, task_id: str, *, failure_mode_id: str | None
         near = _nearest_rule(task, row.get("use"))
         if near:
             row["use_rule"] = near
+    # A supporting task with a one-number impact: its break-even (forecast plan step 8), never an interval.
+    from backend.maintenance import support_whatif
+
+    support = support_whatif.break_even(m, fetch, task["id"])
     return {"task": {k: task[k] for k in ("id", "name", "interval", "unit", "outcome", "position_id", "position_name")}
-            | {"rule_text": _rule_text(task)}, "modes": out_modes}
+            | {"rule_text": _rule_text(task)}, "modes": out_modes, "support": support}
 
 
 def _rule_text(task: dict) -> str | None:

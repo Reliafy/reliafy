@@ -40,7 +40,7 @@ async function deck(request, tag) {
   const check = await post(`${M}/positions/${top.id}/tasks`, { name: `Inspect bearings for play ${tag}`, interval: 100,
     unit: "hours", outcome: "on_condition", failure_mode_ids: modes });
   await patch(`${M}/tasks/${check.id}`, { cost: 22.5, resources: { labour: [{ trade: "Fitter", people: 1, hours: 0.3 }] } });
-  return top;
+  return { ...top, grease: grease.id };
 }
 
 for (const width of [1440, 400]) {
@@ -107,4 +107,17 @@ test("Not counted · Add opens If it fails anyway; recorded, the failure line co
   await expect(table).toContainText("Corrective: after a failure", { timeout: 30_000 });
   await expect(table.locator("tr", { hasText: "Corrective" }).first()).toContainText(" h");
   await expectHealthy(page, problems, { label: "if it fails anyway" });
+});
+
+test("Optimise… on a supporting task gives its break-even, not an interval", async ({ page, request, problems }) => {
+  const tag = `b${Date.now()}`;
+  const top = await deck(request, tag);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page, `/asset-register/explorer?arrange=positions&root=${top.id}&sel=${top.id}&tab=maintenance&optimise=${top.grease}&on=${top.id}`);
+  const block = page.getByRole("region", { name: "Keeps it on its life: break-even" });
+  await expect(block).toContainText("It pays for itself if one doing costs less than", { timeout: 30_000 });
+  await expect(block).toContainText("Break-even, one doing");
+  await expect(block).toContainText("A best interval needs a curve");
+  await shot(page, "optimise-break-even-1440");
+  await expectHealthy(page, problems, { label: "optimise break-even" });
 });

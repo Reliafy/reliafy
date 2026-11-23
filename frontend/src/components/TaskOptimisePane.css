@@ -21,3 +21,5 @@
 @media (max-width: 640px) {
   .optimise-pane .to-body { padding: var(--space-3) var(--space-4); }
 }
+/* A supporting task's break-even (forecast plan step 8). */
+.to-support .to-gaps { margin: var(--space-2) 0 0; padding-left: var(--space-5); color: var(--text-secondary); font-size: var(--fs-13); line-height: var(--lh-13); }

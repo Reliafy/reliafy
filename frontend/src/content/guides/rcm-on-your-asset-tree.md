@@ -556,6 +556,21 @@ say *Sets the interval of: Replace spark plugs (every 96 h)*. When the model is
 refitted, the task's evidence says its optimum may have moved and offers
 **Re-optimise…**. The interval never changes by itself.
 
+### Optimise a supporting task: its break-even
+
+A supporting task with an impact (**If it isn't done: failure rate × k**) gets a
+**break-even** in **Optimise…**, not an interval: it pays for itself if one
+doing costs less than the failures one interval of it holds off. For an oil
+change the engine's life assumes every 250 h, at × 2.5 if it isn't done, with
+0.688 engine failures expected in 7,300 h at $180,000 each: $180,000 × (0.688 ÷
+7,300 h) × 1.5 × 250 h = about **$6,360** a change, against its $562.50. With
+an inspection finding some problems early, a problem costs the follow-on for
+the share found and the corrective response for the share missed, so the
+break-even is lower. A failure mode with no cost of a failure is left out and
+listed. One number can't place an interval: that needs a curve of how the
+failure rate changes with the interval, fitted from data on the time since
+service, and Optimise says so.
+
 ## Read the evidence check
 
 Each decision's **Evidence check** shows one of these:
