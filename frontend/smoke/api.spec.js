@@ -22,6 +22,7 @@ const SIGNED_IN = [
   ["GET", "/api/maintenance/hierarchy/export"],
   ["GET", "/api/maintenance/operations"], // the Explorer's Operations tab
   ["POST", "/api/maintenance/hierarchy/import"],
+  ["POST", "/api/maintenance/schedule/dates"], // How often's next dates, from the server
   // RCM studies (the standalone worksheets under Maintenance).
   ["GET", "/api/rcm/studies"],
   // The interval calculators on an RCM task card.

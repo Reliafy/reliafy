@@ -187,8 +187,12 @@ no plan here or above, from the counter's recent rate (basis kind rate), as befo
 due_at: hours by date and when the meter reaches a value). Saves nothing.
 - How often, as a pattern: maintenance tasks.create / update take rule: {kind: 'weekly', weekdays: \
 ['Saturday']}, {kind: 'monthly', weekday: 'Saturday', nth: 1} (nth 1 to 5, -1 last; a 5th skips months with \
-none) or {kind: 'monthly', day: 15}, {kind: 'yearly', month: 11, weekday: 'Tuesday', nth: 1} or {kind: \
-'yearly', month: 7, day: 1}; every: N (default 1) for every N weeks, months or years. The task's interval and \
+none) or {kind: 'monthly', day: 15} (day 31: the last day), {kind: 'yearly', month: 11, weekday: 'Tuesday', \
+nth: 1} or {kind: 'yearly', month: 7, day: 1}; every: N (default 1) for every N weeks, months or years. Monthly \
+every 2, 3, 4 or 6 with anchor: the same months each year (every 6, day 1, anchor 2027-03-01: 1 March and 1 \
+September; every 3, day 31: the last day of each quarter). {kind: 'shutdowns', every: 12, unit: 'months'} (a \
+position's task): at the first planned shutdown (its or above it) 12 months after it was last done; it joins a \
+shutdown package only. analyse schedule doesn't take shutdowns: read the task's next_due. The task's interval and \
 unit follow it, and it falls due on the rule's dates (the first after it was last done). update rule {} clears \
 it; a new interval also clears it. A work package takes the same with month (packages.create / update: unit \
 years, month, weekday + nth or day). Show the user the next dates before saving."""),

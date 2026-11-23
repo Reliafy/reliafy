@@ -4,7 +4,7 @@
 import { cadenceWords, daysLate } from "./lsaTab.js";
 import { doneText } from "./maintenanceOrders.js";
 import { formatDate } from "./dates.js";
-import { CALENDAR, formFromPackage, howOftenProblem, packageBody } from "./howOften.js";
+import { CALENDAR, cadenceOf, formFromPackage, howOftenProblem, packageBody } from "./howOften.js";
 
 // A package's cadence is edited with the shared "How often" control (HowOften.jsx).
 export const PACKAGE_UNITS = CALENDAR;
@@ -102,7 +102,7 @@ const whole = (v, lo, hi) => {
 // What's wrong with the form, in words, or null.
 export function formProblem(form, pkg) {
   if (!form.name.trim()) return "Give it a name.";
-  if (!whole(form.how.every, 1, 1000)) return "Every is a whole number, 1 or more.";
+  if (!whole(cadenceOf(form.how).every, 1, 1000)) return "Every is a whole number, 1 or more.";
   const how = howOftenProblem(form.how, { wholeOnly: true });
   if (how) return how;
   if (!pkg?.parent && form.toleranceUnit === "days" && !whole(form.tolerance, 0, 366)) return "On time within is a whole number of days, 0 to 366.";
@@ -135,7 +135,7 @@ export function editBody(pkg, form) {
   if (form.timing !== start.timing || JSON.stringify(form.how) !== JSON.stringify(start.how)) {
     body.timing = pkg?.parent ? "fixed" : form.timing;
     // Counted from the last visit: no pattern (the next is the close date plus the interval).
-    Object.assign(body, packageBody(body.timing === "fixed" ? form.how : { ...form.how, pattern: "none" }));
+    Object.assign(body, packageBody(body.timing === "fixed" ? form.how : { ...form.how, ...cadenceOf(form.how), type: "interval" }));
   }
   if (!pkg?.parent && (form.tolerance !== start.tolerance || form.toleranceUnit !== start.toleranceUnit)) {
     body.tolerance = Number(form.tolerance);

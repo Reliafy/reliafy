@@ -95,7 +95,7 @@ def test_shutdown_and_outage_windows_are_inherited(m):
     assert shut["end"] == "2027-03-04T00:00"
     assert rows["Line 1"]["windows"][1]["own"] is True
     # The small API other features read.
-    assert m.shutdown_windows(pump, "2027-02-01", "2027-12-31") == [shut]
+    assert m.operation_windows(pump, "2027-02-01", "2027-12-31") == [shut]
 
 
 def test_a_duty_at_the_site_dates_an_hour_package_below_with_no_duty_of_its_own(m):

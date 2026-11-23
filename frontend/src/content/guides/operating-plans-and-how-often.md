@@ -1,6 +1,6 @@
 ---
 title: "Say how equipment runs, so tasks by hours land on dates (Explorer › Operations)"
-task: "How do I tell Reliafy when a pump or a vehicle runs, so a task every 2,000 running hours, or a pattern like the first Saturday of the month, falls due on the right date, in my time zone?"
+task: "How do I tell Reliafy when a pump or a vehicle runs, so a task every 2,000 running hours, a pattern like the first Saturday of the month, or a task at the next shutdown falls due on the right date, in my time zone?"
 category: "Maintenance strategy"
 prerequisites: "A position in your asset tree with a task on it. An hours counter helps, but isn't needed."
 order: 29
@@ -130,24 +130,49 @@ duty): check it*). That is the longest the age can be, so check it.
 
 ## How often
 
-Every task and every work package has the same **How often** control. It reads
-as a sentence:
+Every task and every work package has the same **How often** control. First
+pick its type, then fill a short sentence:
 
-- *Every 1 month on the first Saturday*
-- *Every 1 year on the first Tuesday of November*
-- *Every 2,000 operating hours*
-- *or every 6 months, whichever comes first* (a task's second limit)
+- **Running hours**: *Every 2,000 operating hours* (or km, or cycles). It falls
+  due through the operating plan, as above.
+- **Days, weeks or months**: *Every 3 months after it was last done*.
+- **Calendar rule**: set dates that don't move when the work is late:
+  - *On the first Saturday of every month*;
+  - *On Tuesday, every 2 weeks* (every second Tuesday);
+  - *On a date, day 1, of every 6 months from March*: 1 March and 1 September
+    each year (every 2, 3, 4 or 6 months falls in the same months each year,
+    from the month you pick);
+  - *On the last day of every 3 months from March*: the last day of each
+    quarter;
+  - *On the first Tuesday of November, every year*.
 
-Pick days, weeks, months or years, and for weeks and months the day: a weekday,
-which one in the month (the first to the fifth, or the last) or a date. A fifth
-Saturday exists in only some months, and the rest are skipped. Under the
-sentence it always shows the next dates, so a wrong rule shows before you save
-it. Where work management is off, a task has an optional **Last done**, so
-the next date counts from then.
+  A fifth Saturday exists in only some months, and the rest are skipped. A day
+  past a short month's end (the 31st) falls on its last day.
+- **At shutdowns** (a position's task): *At the first planned shutdown 12
+  months after it was last done*. The task waits for the next planned shutdown
+  of its position, or of a position above it, once the time has passed. The
+  shutdowns are the shutdown packages there (a package made a shutdown, with
+  its set dates). With none planned, the task says so and has no date.
 
-A task counted in operating hours falls due through the operating plan as
-above. "Every 2,000 hours or every 6 months, whichever comes first" falls due at
-the sooner of the two.
+A task's first two types can take a second limit: *or every 6 months,
+whichever comes first*. "Every 2,000 hours or every 6 months" falls due at the
+sooner of the two.
+
+Under the sentence it always shows the rule in words and its next five dates,
+worked out as you choose, so a wrong rule shows before you save it. Where work
+management is off, a task has an optional **Last done**, so the next date
+counts from then.
+
+On the **Maintenance** tab, the **Interval** column says the rule in words
+(*The first Saturday of every month*), and each task's **Forecast** row counts
+its dates over the year, whatever the type.
+
+**Optimise…** on a task with a calendar rule gives its answer in the task's
+unit, and offers two ways to use it: the plain interval, or the nearest rule
+like the one it has (*every 8 weeks on Monday* in place of *every Monday*).
+
+"The last working day of each quarter" can't be said yet: use the last day,
+or the last Friday, of every 3 months.
 
 ## The time zone
 

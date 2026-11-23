@@ -3128,6 +3128,11 @@ export function optimiseTask(taskId, body = {}) {
 export function useTaskOptimise(taskId, body = {}) {
   return postJson(`/api/maintenance/tasks/${encodeURIComponent(taskId)}/optimise/use`, body);
 }
+// The next dates a "how often" gives, worked out on the server by RePyability (nothing saved): body
+// {rule, start?, after?, also?, count?, position_id?} (howOften.js previewFor builds it).
+export function scheduleDates(body) {
+  return postJson("/api/maintenance/schedule/dates", body);
+}
 // What a task's interval rests on ({rests_on: [{mode, model, analysis, use, moved}]}).
 export function getTaskIntervalBasis(taskId) {
   return request(`/api/maintenance/tasks/${encodeURIComponent(taskId)}/interval-basis`);

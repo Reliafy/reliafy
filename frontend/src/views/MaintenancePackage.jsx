@@ -14,7 +14,7 @@ import { SubjectCell } from "./MaintenanceHome.jsx";
 import usePhone from "../usePhone.js";
 import { rollupLines, visitRuleText } from "../lsaTab.js";
 import HowOften from "../components/HowOften.jsx";
-import { HOURS_PACKAGE_NOTE, packageDates } from "../howOften.js";
+import { HOURS_PACKAGE_NOTE, previewFor } from "../howOften.js";
 import { PACKAGES_PATH, linesText, packagePath, workOrderPath } from "../maintenanceOrders.js";
 import {
   editBody, formProblem, initialForm, outcomeText, packageSentence, packageWithoutWorkOrders,
@@ -322,8 +322,9 @@ function EditPane({ pkg, phone, onClose, onSaved }) {
   const layer = !!pkg.parent;
   const fixed = layer || form.timing === "fixed";
   const today = workspaceToday();
-  const dates = problem ? null : packageDates(form.how, { anchor: pkg.cadence?.anchor, today, timing: fixed ? "fixed" : "from_last_visit" });
   const hours = form.how.unit === "hours";
+  // The next dates, from the server: on set dates from its anchor; counted from the last visit, from today.
+  const preview = problem || hours ? null : previewFor(form.how, { from: today, anchor: pkg.cadence?.anchor || today, fixed });
   const save = async (e) => {
     e.preventDefault();
     if (problem || nothing) return;
@@ -352,7 +353,8 @@ function EditPane({ pkg, phone, onClose, onSaved }) {
         <fieldset className="mt-how">
           <legend>How often</legend>
           <HowOften value={form.how} onChange={(how) => setForm((f) => ({ ...f, how }))} units={unitsFor(pkg)} patterns={fixed && !hours}
-                    dates={dates} datesNote={hours ? HOURS_PACKAGE_NOTE : fixed ? "" : "Counted from the last visit: each visit is the interval after the one before closes."} />
+                    preview={preview} datesNote={hours ? HOURS_PACKAGE_NOTE : ""} />
+          {!fixed && !hours && <p className="field-help">Counted from the last visit: each visit is the interval after the one before closes.</p>}
         </fieldset>
         {layer ? (
           <p className="lib-date">A layer visits on some of {pkg.parent.name}&apos;s set dates; its on-time window is {pkg.parent.name}&apos;s.</p>

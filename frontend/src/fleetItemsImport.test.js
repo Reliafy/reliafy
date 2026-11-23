@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  unitTotal,
   calendarUnit, guessAgeUnit, guessMapping, hasHeader, mergeItems, patchSelected, readBlock, readDate, readItems,
   readNumber, removeSelected, sniffDelimiter, splitRows, summary, unitFactor,
 } from "./fleetItemsImport.js";
@@ -123,4 +124,13 @@ test("many items at once: add, replace, set for the selected, remove", () => {
 test("converted ages carry no floating-point noise", () => {
   const out = readItems([["P", "2.24"]], ["name", "current_use"], { modelUnit: "Months", ageUnit: "Years" });
   assert.equal(out.items[0].current_use, 26.88);
+});
+
+// A warranty table's rows each stand for many units still in the field: the
+// preview counts every unit, not just the rows.
+test("items with a count: the summary counts their units", () => {
+  const items = [{ name: "Shipped Jan", current_use: 6, count: 450 }, { name: "Shipped Jun", current_use: 1, count: 2422 }];
+  assert.equal(unitTotal(items), 2872);
+  assert.equal(summary({ items }), "2 items read (2,872 units)");
+  assert.equal(summary({ items: [{ name: "A", current_use: 1 }] }), "1 item read");
 });

@@ -135,7 +135,11 @@ its range, and each month's expectation and range.
    lighter than the rest. Three ways save typing them one by one:
    - **Use the … still-running units from this model's data** — the units the
      model's data records as still running, each at the age it had reached (for a
-     repairable model, each system at the end of its record). One click.
+     repairable model, each system at the end of its record). One click. Every
+     unit is taken: a row of the data with a count (say 450 units still running
+     at 6 months) becomes one item for 450 **Units**, and when there are more
+     ages than a forecast's 500 rows, units of close ages share a row at their
+     average age, and the preview says so.
    - **Paste from Excel** — copy the rows (a name and an age; a header row is
      optional) and paste them in. Columns are matched by their headers, and you
      can change each one: name, current use, the date it was last replaced

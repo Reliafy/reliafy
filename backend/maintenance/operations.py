@@ -13,7 +13,8 @@ The record of how each position runs, read in one go for a whole asset:
   each saying where it comes from;
 * its **time zone** (the plan's, else the workspace's).
 
-:meth:`OperationsOps.shutdown_windows` is the small API other features read ("at shutdowns" on a
+:meth:`OperationsOps.operation_windows` is the small API other features read (through
+``shutdowns.shutdown_dates``, the seam "at shutdowns" uses) ("at shutdowns" on a
 task or package schedule): one position's effective windows, inherited, in a date range. Nothing
 here writes: a duty is set and cleared with ``set_operating_plan`` / ``end_operating_plan``, a
 shutdown is a package (``set_package_shutdown``) and an outage is ``take_out_of_service``.
@@ -169,7 +170,7 @@ class OperationsOps:
         out = []
         for pkg in self.s.nodes(self.org, "WorkPackage"):
             sd = pkg.get("shutdown")
-            if pkg.get("retired") or not sd:
+            if pkg.get("retired") or pkg.get("paused") or not sd:
                 continue
             subject = self._package_made_on(pkg)
             if subject is None or subject["label"] != "Position" or subject["id"] not in live:
@@ -186,6 +187,7 @@ class OperationsOps:
                     days = [d.isoformat() for d in self._cadence(pkg).dates(start, end, MAX_WINDOWS)]
                 except (ValueError, TypeError, KeyError):
                     days = []
+                days = [d for d in days if self._in_season(pkg, d)]
                 rule = self._cadence_text(pkg)
             hours = float(sd["duration_hours"])
             windows = []
@@ -217,7 +219,7 @@ class OperationsOps:
             node_id = parent and parent["id"]
         return out
 
-    def shutdown_windows(self, position_id: str, start=None, end=None, root: str | None = None) -> list[dict]:
+    def operation_windows(self, position_id: str, start=None, end=None, root: str | None = None) -> list[dict]:
         """The windows that take a position off-line from ``start`` (default today) to ``end``
         (default a year on), its own and those it inherits, oldest first:
 
@@ -272,7 +274,7 @@ class OperationsOps:
         "inherited" | "none", from {id, name} (inherited), plan {id, name, text, hours_per_week,
         time_zone, from, until, plan}}, own_plan (its own plan in force today, or None), parent_duty
         (what Clear would leave it on: {source, from, text} or None), other_use [{meter, amount,
-        per, text}], windows (shutdowns_for: own and inherited), time_zone {zone, source}}]}."""
+        per, text}], windows (operation_windows: own and inherited), time_zone {zone, source}}]}."""
         live, parent = self._ops_parents()
         if position_id not in (None, ""):
             node = self.s.node(self.org, str(position_id))
