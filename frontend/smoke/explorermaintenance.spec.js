@@ -81,6 +81,7 @@ test("Maintenance: the tasks in the tree with a roll-up at each level; open one,
   await expect(menu.getByRole("menuitem").first()).toHaveText("Open");
   await expect(menu.getByRole("menuitem").nth(6)).toHaveText("Add task…");
   await expect(menu.getByRole("menuitem", { name: "Forecast…" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: /Spares for the year/ })).toHaveCount(0);
   await menu.getByRole("menuitem", { name: "Add task…" }).click();
   await expect.poll(() => query(page).get("addtask")).toBe(p.motor.id);
   const form = side(page).getByRole("form", { name: "Add a task" });
