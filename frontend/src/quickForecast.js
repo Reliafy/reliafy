@@ -39,8 +39,10 @@ export const ON_REPLACE = [
 ];
 export const BLANK = {
   units: "1", runPer: "all", runHours: "", horizon: "12",
-  work: null, part: false, ages: "", hoursIfFails: "", costIfFails: "", spareCost: "", usePerDay: "", spares: {},
+  work: null, part: false, ages: "", partUnit: "hours", hoursIfFails: "", costIfFails: "", spareCost: "", usePerDay: "", spares: {},
 };
+// The units a typed life (and its age) can be in; hours by default. A saved model brings its own.
+export const PART_UNITS = ["hours", "days", "weeks", "months", "years", "cycles", "starts", "km", "miles", "operations"];
 
 const num = (v) => (String(v ?? "").trim() === "" ? null : Number(String(v).replace(/,/g, "")));
 const HOURS = new Set(["h", "hr", "hrs", "hour", "hours", "operating hours", "running hours"]);
@@ -48,33 +50,52 @@ const CALENDAR = new Set(["day", "days", "week", "weeks", "month", "months", "ye
 export const isHours = (unit) => HOURS.has(String(unit || "").trim().toLowerCase());
 export const isCalendar = (unit) => CALENDAR.has(String(unit || "").trim().toLowerCase());
 
-// What's missing before an answer can be worked out (null: ready), said under the sentence.
-export function missing(f, model, unit) {
-  if (!f.work && !f.part) return "Add work on a schedule, or a part that fails.";
-  if (!(Number(f.units) >= 1) || !Number.isInteger(Number(f.units))) return "Enter how many units: a whole number, 1 or more.";
+// What blocks a calculation, field by field: [{field, text}] (empty: ready). `field` names the input to mark
+// and focus (ForecastTool.jsx gives each that id: "ft-<field>"). Calculate is never disabled for these:
+// pressed, it says them beside their fields.
+export function problems(f, model, unit) {
+  const out = [];
+  const add = (field, text) => out.push({ field, text });
+  if (!f.work && !f.part) add("add", "Add work on a schedule, or a part that fails.");
+  if (!(Number(f.units) >= 1) || !Number.isInteger(Number(f.units))) add("units", "Enter how many units: a whole number, 1 or more.");
   if (f.runPer !== "all") {
     const h = num(f.runHours);
     const most = f.runPer === "day" ? 24 : 168;
-    if (!(h > 0)) return `Enter the hours it runs a ${f.runPer}, or choose all the time.`;
-    if (h > most) return `It can't run more than ${most} h a ${f.runPer}.`;
+    if (!(h > 0)) add("runHours", `Enter the hours it runs a ${f.runPer}, or choose all the time.`);
+    else if (h > most) add("runHours", `It can't run more than ${most} h a ${f.runPer}.`);
   }
   if (f.work) {
-    if (!(num(f.work.every) > 0)) return "Enter how often the work is done.";
-    if (f.work.effect === "replaces" && !f.part) return "Work that replaces the part needs a part that fails.";
+    if (!(num(f.work.every) > 0)) add("every", "Enter how often the work is done.");
+    if (f.work.effect === "replaces" && !f.part) add("effect", "Work that replaces the part needs a part that fails.");
     if (f.work.effect === "supports" && f.part && f.work.impactK !== "" && !(num(f.work.impactK) >= 1)) {
-      return "The impact is × 1 or more: how many times the failure rate while it isn't done.";
+      add("impact", "The impact is × 1 or more: how many times the failure rate while it isn't done.");
+    }
+    if (f.part && f.work.effect === "supports" && f.work.whatif === "stretch" && !(num(f.work.whatifEvery) > 0)) {
+      add("whatifEvery", "Enter the interval to stretch it to.");
     }
   }
   if (f.part) {
-    if (!model) return "Pick a saved model for the part, or choose a distribution and type its parameters.";
-    if (!unit) return "Type the unit of its times, after its age (hours, days, cycles…).";
+    if (!model) add("life", "Pick a saved model, or type the distribution's parameters.");
+    else if (!unit) add("unit", "Pick the unit of its age and its life.");
     const a = parseAges(f.ages);
-    if (a.error) return a.error.replace("the units' age now", "how old the part is now");
-    if (!isHours(unit) && !isCalendar(unit) && !(num(f.usePerDay) > 0)) {
-      return `This life is in ${unit}: enter the ${unit} a unit adds a day (More options).`;
+    if (a.error) add("age", "Enter how old it is now: one age, or one per unit under More options.");
+    if (unit && !isHours(unit) && !isCalendar(unit) && !(num(f.usePerDay) > 0)) {
+      add("usePerDay", `Enter the ${unit} a unit adds a day.`);
     }
   }
-  return null;
+  return out;
+}
+
+// The first thing that blocks a calculation, in words (null: ready).
+export function missing(f, model, unit) {
+  return problems(f, model, unit)[0]?.text || null;
+}
+
+// A typed life's name, as the answer and the lines say it: "Part (Weibull 100, 2.2)".
+export function typedName(model) {
+  const dist = String(model?.distribution_id || "life").replace(/_/g, " ");
+  const values = (model?.params || []).map((p) => Number(p.value).toLocaleString("en-GB", { maximumSignificantDigits: 4 }));
+  return `Part (${dist[0].toUpperCase()}${dist.slice(1)}${values.length ? ` ${values.join(", ")}` : ""})`;
 }
 
 // The request (POST /api/fleet/quick-forecast). `start` (an ISO date): today where the user is.
@@ -103,7 +124,7 @@ export function requestOf(f, model, unit, start = null) {
     const { ages } = parseAges(f.ages);
     body.part = {
       distribution_id: model.distribution_id, params: model.params, extras: model.extras || null,
-      unit, name: model.name || "Typed parameters",
+      unit, name: model.name || typedName(model),
       ...(ages.length === 1 ? { age: ages[0] } : { ages }),
       hours_if_fails: num(f.hoursIfFails), cost_if_fails: num(f.costIfFails), spare_cost: num(f.spareCost),
       use_per_day: num(f.usePerDay),

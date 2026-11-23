@@ -1,8 +1,8 @@
-// The quick forecast tool as a sentence (Decisions › Forecasts: Spares, Hours and Cost forecast;
-// forecast plan step 1, Nov 2026): one page, three views over the same inputs, nothing saved, and
-// the answer follows as you type (no Forecast button). Hours: greasing every 50 h at 12 h a week is
-// 12 times, 2.4 h, certain. Costs: add a part that fails (the sample bearing model) and its cost if
-// it fails. Spares: the parts it uses, and when. At 400 px nothing scrolls sideways.
+// The quick forecast tool (Decisions › Forecasts: Spares, Hours and Cost forecast; redesigned Nov 2026 after
+// Derryn's "this screen doesn't look very good. Also there is no calculate button!"). One inputs card on a
+// grid, Calculate bottom right; results only after Calculate, marked stale when the inputs change; nothing
+// blocks silently: Calculate says what's missing beside the field and goes there. Three views share the
+// inputs and the result. At 400 px the fields stack and nothing scrolls sideways.
 //
 // With SMOKE_SHOTS_DIR set, it saves screenshots (for the pull request).
 import { test, expect, open, expectHealthy } from "./health.js";
@@ -13,60 +13,80 @@ const shot = async (page, name) => {
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: true });
 };
 const sideways = (page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+const label = (page, text) => page.getByLabel(text, { exact: true });
 
 for (const width of [1440, 400]) {
-  test(`work on a schedule and a part that fails, live, not saved (${width} px)`, async ({ page, problems }) => {
-    await page.setViewportSize({ width, height: 900 });
-    await open(page, "/forecasts/hours");
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Hours forecast");
-    await expect(page.getByText("Scratch pad: not saved")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Forecast", exact: true })).toHaveCount(0);
-    await choose(page.getByRole("combobox", { name: "How it runs" }), "week");
-    await page.getByLabel("Hours it runs", { exact: true }).fill("12");
-    await page.getByLabel("What the work is", { exact: true }).fill("Grease deck spindles");
-    await page.getByLabel("Every", { exact: true }).fill("50");
-    await page.getByLabel("Hours each time", { exact: true }).fill("0.2");
+  test(`typed parameters: blocked, then Calculate, then stale (${width} px)`, async ({ page, problems }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await open(page, "/forecasts/spares");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Spares forecast");
+    await expect(page.getByText("Set the inputs and press")).toBeVisible();
+    const calc = page.getByRole("button", { name: "Calculate", exact: true });
+    await expect(calc).toBeEnabled();
+    // Nothing filled in: Calculate says what's missing beside the fields, and goes to the first.
+    await calc.click();
+    const life = page.locator("#ft-life");
+    await expect(life).toContainText("Pick a saved model, or type the distribution's parameters.");
+    await expect(page.locator(".field.has-error", { hasText: "Age now" })).toContainText("Enter how old it is now");
+    await shot(page, `after-blocked-${width}`);
+    // The owner's case: Weibull scale 100, shape 2.2, 23 old, in the default unit (hours).
+    await life.getByRole("radio", { name: "Type parameters" }).click();
+    await label(page, "Scale α (hours)").fill("100");
+    await label(page, "Shape β").fill("2.2");
+    await label(page, "Age now").fill("23");
+    await expect(page.getByRole("combobox", { name: "Unit" })).toHaveAttribute("data-value", "hours");
+    await calc.click();
     const answer = page.locator(".ft-result .rs-sentence");
-    await expect(answer).toHaveText("12 times in the next 12 months: 2.4 h.", { timeout: 30_000 });
-    await expect(page.locator(".ft-result .rs-note")).toContainText("Certain: a schedule, no chance involved.");
-    await expect(page.locator(".ft-lines")).toContainText("Grease deck spindles");
-    await shot(page, `forecast-tool-hours-${width}`);
-    if (width <= 400) expect(await sideways(page)).toBeLessThanOrEqual(0);
-
-    // Costs: the same inputs; the cost each time, then a part that fails.
-    const views = page.getByRole("radiogroup", { name: "Show" });
-    await views.getByRole("radio", { name: "Costs" }).click();
-    await expect(page).toHaveURL(/\/forecasts\/costs$/);
-    await expect(page.getByLabel("Every", { exact: true })).toHaveValue("50");
-    await page.getByLabel("Cost each time", { exact: true }).fill("18");
-    await expect(answer).toContainText("12 times in the next 12 months", { timeout: 30_000 });
-    await page.getByRole("button", { name: "A part that fails" }).click();
-    await page.getByRole("combobox", { name: /: saved model$/ }).click();
-    await page.getByRole("option", { name: /^Bearing life — Weibull/ }).click();
-    await page.getByLabel("How old it is now", { exact: true }).fill("500");
-    await page.getByLabel("Cost if it fails", { exact: true }).fill("900");
-    await expect(answer).toContainText("expected in the next 12 months", { timeout: 30_000 });
-    await expect(page.getByText("Likely range (90% two-sided)").first()).toBeVisible();
-    await expect(page.locator(".ft-lines")).toContainText("failures");
-    await shot(page, `forecast-tool-costs-${width}`);
-    // The greasing keeps the bearings on their life (× 2 if not done): its worth, and the what-if "not done".
-    await choose(page.getByRole("combobox", { name: "What the work does to the part" }), "supports");
-    await page.getByLabel("Failure rate times if it isn't done", { exact: true }).fill("2");
-    await expect(page.locator(".ft-worth")).toContainText("Worth: avoids about", { timeout: 30_000 });
-    await choose(page.getByRole("combobox", { name: "What if" }), "drop");
-    await expect(page.locator(".ft-whatif-line")).toContainText("Not done:", { timeout: 30_000 });
-    await expect(page.locator(".ft-whatif-line")).toContainText("failure rate × 2");
-    await shot(page, `forecast-tool-whatif-${width}`);
-    await choose(page.getByRole("combobox", { name: "What if" }), "");
-    if (width <= 400) expect(await sideways(page)).toBeLessThanOrEqual(0);
-
-    // Spares: the replacement parts with their range, and when each is likely used.
-    await views.getByRole("radio", { name: "Spares" }).click();
-    await expect(page).toHaveURL(/\/forecasts\/spares$/);
     await expect(answer).toContainText("replacement part", { timeout: 30_000 });
-    await expect(page.getByRole("region", { name: "Not counted" })).toContainText("no spares each time");
-    await shot(page, `forecast-tool-spares-${width}`);
+    await shot(page, `after-typed-${width}`);
     if (width <= 400) expect(await sideways(page)).toBeLessThanOrEqual(0);
-    await expectHealthy(page, problems, { label: `forecast tool ${width}` });
+    // An input changes: the answer stays, marked stale, until Calculate again (Enter in a field calculates).
+    await label(page, "Age now").fill("50");
+    await expect(page.locator(".ft-stale")).toHaveText("Inputs changed: Calculate again.");
+    await label(page, "Age now").press("Enter");
+    await expect(page.locator(".ft-stale")).toHaveCount(0, { timeout: 30_000 });
+    // Another view: the same inputs and the same result, shown for that view.
+    await page.getByRole("radiogroup", { name: "Show" }).getByRole("radio", { name: "Costs" }).click();
+    await expect(page).toHaveURL(/\/forecasts\/costs$/);
+    await expect(label(page, "Age now")).toHaveValue("50");
+    await expect(answer).toContainText("No costs given");
+    await expectHealthy(page, problems, { label: `forecast tool typed ${width}` });
+  });
+
+  test(`a saved model and work on a schedule (${width} px)`, async ({ page, problems }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await open(page, "/forecasts/costs");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Cost forecast");
+    const calc = page.getByRole("button", { name: "Calculate", exact: true });
+    // Work on a schedule alone: no model needed.
+    await choose(page.getByRole("combobox", { name: "Running" }), "week");
+    await label(page, "Hours a week").fill("12");
+    await label(page, "What's done").fill("Grease deck spindles");
+    await label(page, "Every").fill("50");
+    await page.getByLabel(/^Cost each time/).first().fill("18");
+    await calc.click();
+    const answer = page.locator(".ft-result .rs-sentence");
+    await expect(answer).toHaveText("12 times in the next 12 months: $216.", { timeout: 30_000 });
+    await shot(page, `after-schedule-${width}`);
+    // Add a part that fails, from a saved model: its unit comes with it, read-only.
+    await page.getByRole("button", { name: "Add a part that fails" }).click();
+    await page.getByRole("combobox", { name: "Model" }).click();
+    await page.getByRole("option", { name: /^Bearing life — Weibull/ }).click();
+    await expect(page.locator(".ft-fixed")).toContainText("(the model's)");
+    await label(page, "Age now").fill("500");
+    await page.getByLabel(/^Cost if it fails/).first().fill("900");
+    await calc.click();
+    await expect(answer).toContainText("expected in the next 12 months", { timeout: 30_000 });
+    await expect(page.locator(".ft-lines")).toContainText("failures");
+    await shot(page, `after-saved-${width}`);
+    if (width <= 400) expect(await sideways(page)).toBeLessThanOrEqual(0);
+    // Supporting work: its worth, and the what-if "not done".
+    await choose(page.getByRole("combobox", { name: "What it does to the part" }), "supports");
+    await label(page, "If it isn't done: failure rate ×").fill("2");
+    await choose(page.getByRole("combobox", { name: "What if it's" }), "drop");
+    await calc.click();
+    await expect(page.locator(".ft-worth")).toContainText("Worth: avoids about", { timeout: 30_000 });
+    await expect(page.locator(".ft-whatif-line")).toContainText("Not done:");
+    await expectHealthy(page, problems, { label: `forecast tool saved ${width}` });
   });
 }

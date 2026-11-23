@@ -15,19 +15,25 @@ order: 23
 - [Hours forecast](/forecasts/hours): the maintenance hours they will need.
 - [Cost forecast](/forecasts/costs): what they will cost to maintain.
 
-It's a scratch pad: nothing is saved. There is no Forecast button: the answer
-follows as you type. The three views share the same inputs, so you can switch
-between **Spares**, **Labour hours** and **Costs** at the top without typing
-anything twice.
+It's a scratch pad: nothing is saved. Fill in the inputs and press
+**Calculate** (bottom right of the inputs, or Enter in any field). The three
+views share the same inputs and the same answer, so you can switch between
+**Spares**, **Labour hours** and **Costs** at the top without typing anything
+twice or calculating again. Change an input after an answer and it says
+**Inputs changed: Calculate again**; the answer stays until you do.
+
+If something is missing when you press **Calculate**, it says what beside the
+field and goes there: "Enter how old it is now", "Pick the unit of its age and
+its life".
 
 For a forecast you keep, with each item named and its own usage, use
 [Fleet forecasts](/forecasts) instead.
 
-## Fill in the sentence
+## Fill in the inputs
 
-The inputs read as one sentence: *[1] unit, running [12] [h a week], over [the
-next 12 months]*. **Running** is all the time (24 hours a day), so many hours a
-day, or so many hours a week. Then fill in one or both of these:
+At the top: **Units**, **Running** (all the time, so many hours a day, or so
+many hours a week) and the **Horizon**. Then add one or both of these
+sections (each has **Add** and **Remove** at its right):
 
 - **Work on a schedule**: what the work is, how often (every so many hours,
   days, weeks, months or years) and what it needs **each time**. No model is
@@ -35,10 +41,11 @@ day, or so many hours a week. Then fill in one or both of these:
   chance involved. It's assumed just done at the start. Work by hours goes
   through the running hours; work on the calendar counts on dates whatever the
   running.
-- **A part that fails**: its life (a saved model, or **Type parameters…** at the
-  top of the list for a distribution and its parameters), how old it is
-  **now** (the unit follows the age; for typed parameters, type the unit there)
-  and what a failure needs (**if it fails**). Its failures are a chance, so they
+- **A part that fails**: its life, **Saved model** (it brings its own unit) or
+  **Type parameters** (the distribution, its parameters such as **Scale α** and
+  **Shape β**, and the **Unit**, hours unless you pick another: days, weeks,
+  months, years, cycles, starts, km, miles or operations); its **Age now**, in
+  the same unit; and what a failure needs (**if it fails**). Its failures are a chance, so they
   come with a likely range. They're *worked out* (exact arithmetic, the same
   as a forecast opened from the Explorer), not simulated; only a list of more
   than 60 different ages is simulated, and the answer says so.
@@ -58,9 +65,10 @@ dates, failures or not). Work that doesn't change the part's life and restarts
 when it's replaced shows its scheduled count with a note on how many fewer
 replacements may make it.
 
-**More options** holds the rest: a different age for each unit, the cost of a
-spare (added to each failure and replacement), the use a unit adds a day for a
-life in cycles or kilometres, and the other views' figures.
+**More options**, at the bottom, holds the rest: a different age for each unit,
+the cost of a spare (added to each failure and replacement), and the other
+views' figures. A life in cycles or kilometres asks how many a unit adds a day,
+beside its age.
 
 ## Read the answer
 

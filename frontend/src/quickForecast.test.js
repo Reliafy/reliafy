@@ -21,10 +21,23 @@ test("what's missing is said in words", () => {
   assert.match(missing({ ...BLANK, runPer: "day", runHours: "30", work: { ...BLANK_WORK, every: "5" } }, null, ""), /24 h a day/);
   assert.match(missing({ ...BLANK, work: { ...BLANK_WORK } }, null, ""), /how often/);
   assert.match(missing({ ...BLANK, part: true }, null, ""), /Pick a saved model/);
-  assert.match(missing({ ...BLANK, part: true }, WEIBULL, "hours"), /how old the part is now/);
+  assert.match(missing({ ...BLANK, part: true }, WEIBULL, "hours"), /how old it is now/);
   assert.match(missing({ ...BLANK, part: true, ages: "10" }, WEIBULL, "cycles"), /cycles a unit adds a day/);
   // Work that replaces the part needs one.
   assert.match(missing({ ...BLANK, work: { ...BLANK_WORK, every: "100", effect: "replaces" } }, null, ""), /needs a part/);
+});
+
+test("every problem names its field, so Calculate can say it there and go to it", async () => {
+  const { problems, PART_UNITS } = await import("./quickForecast.js");
+  assert.equal(BLANK.partUnit, "hours");
+  assert.equal(PART_UNITS[0], "hours");
+  // The owner's case: typed Weibull, 23 old, unit not picked.
+  assert.deepEqual(problems({ ...BLANK, part: true, ages: "23" }, WEIBULL, "").map((p) => p.field), ["unit"]);
+  assert.deepEqual(problems({ ...BLANK, part: true }, null, "").map((p) => p.field), ["life", "age"]);
+  const { typedName } = await import("./quickForecast.js");
+  assert.equal(typedName({ distribution_id: "weibull", params: [{ name: "alpha", value: 100 }, { name: "beta", value: 2.2 }] }), "Part (Weibull 100, 2.2)");
+  assert.deepEqual(problems({ ...BLANK, runPer: "week", work: { ...BLANK_WORK } }, null, "").map((p) => p.field), ["runHours", "every"]);
+  assert.deepEqual(problems({ ...BLANK, part: true, ages: "23" }, WEIBULL, "hours"), []);
 });
 
 test("a part with a list of ages counts the units; replaces only with a part", () => {
