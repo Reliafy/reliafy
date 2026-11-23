@@ -840,10 +840,12 @@ def _qty_name(x: dict) -> str:
 
 
 def _placeholders(graph: dict) -> list[str]:
+    """The blocks of a built diagram with no model (or, built before, a placeholder)."""
     out = []
     for n in (graph or {}).get("nodes") or []:
         d = n.get("data") or {}
-        if (d.get("model") or {}).get("placeholder"):
+        if (d.get("model") or {}).get("placeholder") or (
+                n.get("type") == "component" and not d.get("model") and d.get("state") not in ("working", "failed")):
             out.append(d.get("label") or n.get("id"))
     return out
 
@@ -871,12 +873,11 @@ def rbd_summary(db, owners, doc, age: float | None = None) -> dict:
                       "basic_placeholders": t["placeholders"], "nested": rbd_placeholders.nested(t)},
            "placeholders": ph, "placeholder_blocks": rbd_placeholders.summary(t),
            "path": f"/systems/b/{doc.id}", "repairable": bool(graph.get("repairable")),
-           "quality": ({"word": f"{t['placeholders']:,} of {t['basic']:,} placeholders" if rbd_placeholders.nested(t)
-                        else f"{t['placeholders']} placeholder{'s' if t['placeholders'] != 1 else ''}",
+           "quality": ({"word": f"{t['placeholders']:,} of {t['basic']:,} need a model" if rbd_placeholders.nested(t)
+                        else f"{t['placeholders']} need{'s' if t['placeholders'] == 1 else ''} a model",
                         "tone": "danger" if most else "warning",
                         "why": (f"{rbd_placeholders.words(t).capitalize()} ({rbd_placeholders.names_text(t)}): "
-                                + ("most of the answer rests on invented lives, so " if most else "")
-                                + "the figures aren't real until they have models.")}
+                                "the figures aren't real until each has one.")}
                        if ph else {"word": "", "tone": "neutral", "why": ""})}
     if graph.get("repairable"):
         out["numbers"].append({"id": "reference", "label": "", "text": "a repairable diagram: open it to simulate "
@@ -911,15 +912,15 @@ def rbd_summary(db, owners, doc, age: float | None = None) -> dict:
 
 
 def rbd_source(link: dict, model: dict | None) -> str:
-    """An RBD row's Source: "Built from 5 positions inside · 2 placeholders" or "Linked: <name>"."""
+    """An RBD row's Source: "Built from 5 positions inside · 2 need a model" or "Linked: <name>"."""
     src = link.get("source") or {}
     counts = (model or {}).get("counts") or {}
     ph = counts.get("basic_placeholders", len((model or {}).get("placeholders") or []))
     basic = counts.get("basic_blocks") or 0
     if ph and basic > 1 and counts.get("nested"):
-        tail = f" · {ph:,} of {basic:,} basic blocks {'is a placeholder' if ph == 1 else 'are placeholders'}"
+        tail = f" · {ph:,} of {basic:,} basic blocks {'needs' if ph == 1 else 'need'} a model"
     else:
-        tail = f" · {ph} placeholder{'s' if ph != 1 else ''}" if ph else ""
+        tail = f" · {ph} {'needs' if ph == 1 else 'need'} a model" if ph else ""
     if src.get("built_from") is not None:
         n = int(src["built_from"])
         return f"Built from {n} position{'s' if n != 1 else ''} inside{tail}"
@@ -1703,7 +1704,8 @@ def rbd_blocks(m, link: dict, doc, resolve_subsystem=None) -> list[dict]:
         whole = bool(row) and row["basic"] > 0 and row["placeholders"] == row["basic"]
         out.append({"id": n.get("id"), "label": d.get("label") or n.get("id"), "type": n.get("type"),
                     "model": (f"RBD: {sub.get('name') or 'a sub-system'}" if sub else _model_words(model)) or "—",
-                    "placeholder": bool(model.get("placeholder")) or (bool(sub) and whole),
+                    "placeholder": bool(model.get("placeholder")) or (bool(sub) and whole) or (
+                        not sub and not model and n.get("type") == "component" and d.get("state") not in ("working", "failed")),
                     **({"inside": {"basic": row["basic"], "placeholders": row["placeholders"]}}
                        if sub and row else {}),
                     "source": d.get("model_source") or None,
@@ -1826,7 +1828,7 @@ def _tree_parts(m, db, owners, hidden, position_id: str, with_self: bool = False
         conv = _convert(r.get("distribution_id") or d.distribution_id, r.get("params") or [], f) if f and \
             d.kind == "distribution" else None
         if conv is None:
-            return None, f"{child['name']}'s model is in {r.get('unit')}, which can't be put in {unit}: a placeholder stands in."
+            return None, f"{child['name']}'s model is in {r.get('unit')}, which can't be put in {unit}: it has no model in this diagram yet."
         return ({"model": {"distribution_id": r.get("distribution_id") or d.distribution_id, "params": conv,
                            **({"extras": r["extras"]} if r.get("extras") else {})},
                  "data": {"model_source": f"{source}, put in {unit}"}},
@@ -1856,7 +1858,7 @@ def _tree_parts(m, db, owners, hidden, position_id: str, with_self: bool = False
             if inside and owner_id is not None and depth < MAX_NEST and child["id"] != position_id:
                 if _open_covariates_below(m, child["id"]):
                     return None, (f"{child['name']}'s parts have models with covariates left open, which a "
-                                  "sub-system's blocks can't take from this diagram yet: a placeholder stands in.")
+                                  "sub-system's blocks can't take from this diagram yet: it has no model in this diagram yet.")
                 sub = build_rbd(m, db, owners, hidden, child["id"], owner_id, _unit=unit, _depth=depth + 1)
                 nested_placeholders.extend(f"{child['name']} › {ph}" for ph in sub.get("placeholders") or [])
                 if sub.get("existing"):
@@ -1882,7 +1884,7 @@ def _tree_parts(m, db, owners, hidden, position_id: str, with_self: bool = False
             if rate.get("rate") is None or _factor((d.results or {}).get("unit") or unit, unit) != 1.0:
                 return None, (f"{child['name']}'s model in use ({d.name}) is on two clocks and "
                               + (f"needs its {per}" if rate.get("rate") is None
-                                 else f"is in {(d.results or {}).get('unit')}, not {unit}") + ": a placeholder stands in.")
+                                 else f"is in {(d.results or {}).get('unit')}, not {unit}") + ": it has no model in this diagram yet.")
             return ({"model": {"saved_model_id": d.id, "usage_rate": rate["rate"],
                                "usage_rate_source": rate.get("source")},
                      "data": {"model_source": f"Its model in use ({d.name}), at {rate['rate']:.4g} {per}: "
@@ -2002,7 +2004,7 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
     if was_in_use:
         m.use_position_model(position_id, link["id"])
     if nested:
-        built["notes"].append(f"Placeholders inside sub-systems: {', '.join(nested[:8])}"
+        built["notes"].append(f"No life model yet inside sub-systems: {', '.join(nested[:8])}"
                               f"{' …' if len(nested) > 8 else ''}. Give each a model on its Models tab and rebuild.")
     return {**link, "notes": built["notes"], "placeholders": built["placeholders"] + nested, "ask": built["ask"]}
 
@@ -2033,10 +2035,10 @@ def new_rbd(m, db, owners, hidden, position_id: str, owner_id: str, repairable: 
         if said:
             notes.append(said)
         if fields is None:
-            fields = {"model": dict(rbd_derive.PLACEHOLDER), "data": {"model_source": "A placeholder: no model in use"}}
+            fields = {"data": {"model_source": rbd_derive.NO_MODEL_SOURCE}}
             placeholders.append(p["name"])
-            notes.append(f"{p['name']} has no life model in use: a placeholder (flagged) stands in. Give it one on its "
-                         "Models tab, or set the block's model in the builder.")
+            notes.append(f"{p['name']} has no life model in use, so the diagram can't be worked out yet. Give it one "
+                         "on its Models tab, or set the block's model in the builder.")
         bid = rbd_derive._bid(p["id"])
         nodes.append({"id": bid, "type": "component", "label": p["name"], **fields})
         edges = [{"source": "in", "target": bid}, {"source": bid, "target": "out"}]
@@ -2305,15 +2307,17 @@ def _add_new_blocks(old: dict, fresh: dict, resolve) -> dict:
 
     have = {n.get("id") for n in old.get("nodes") or []}
     new = [n for n in fresh.get("nodes") or [] if n.get("type") == "component" and n["id"] not in have]
-    # A block still standing on a placeholder takes the model its position has now (nothing else
-    # about it changes); a block given a model by hand is left as it is.
-    found = {n["id"]: n for n in fresh.get("nodes") or [] if n.get("type") == "component"
-             and not (n.get("model") or {}).get("placeholder")}
+    # A block still with no model (or on a placeholder) takes the model its position has now
+    # (nothing else about it changes); a block given a model by hand, or marked as never failing
+    # (Status › Working), is left as it is.
+    found = {n["id"]: n for n in fresh.get("nodes") or [] if n.get("type") in ("component", "subsystem")
+             and ((n.get("model") and not n["model"].get("placeholder")) or (n.get("data") or {}).get("rbd"))}
     filled = []
     for n in old.get("nodes") or []:
         d = n.get("data") or {}
         f = found.get(n.get("id"))
-        if f is None or not (d.get("model") or {}).get("placeholder"):
+        bare = not d.get("model") and not d.get("rbd") and d.get("state") not in ("working", "failed")
+        if f is None or not (bare or (d.get("model") or {}).get("placeholder")):
             filled.append(n)
             continue
         d = {k: v for k, v in d.items() if k not in ("model", "rbd")}

@@ -330,7 +330,7 @@ function useKeepOnScreen(open, popRef) {
 // a chip, "✓ Valid", "! 1 warning" or "✕ 2 problems", toned by the worst item, that opens the
 // full check. It never stops a save: a half-built diagram saves as it is and the chip says
 // what's left to do.
-function ValidationStatus({ validation, stale, validating, onValidate }) {
+function ValidationStatus({ validation, stale, validating, onValidate, onOpenBlock = null }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const close = useCallback(() => setOpen(false), []);
@@ -380,7 +380,8 @@ function ValidationStatus({ validation, stale, validating, onValidate }) {
         <span className="rbd-tb-caret"><Caret /></span>
       </button>
       <div className="ovm-menu rbd-valid-pop" hidden={!open} ref={popRef}>
-        <ValidationPanel validation={validation} stale={false} />
+        <ValidationPanel validation={validation} stale={false}
+          onOpenBlock={onOpenBlock ? (id) => { setOpen(false); onOpenBlock(id); } : null} />
         <button type="button" className="secondary sm" onClick={() => onValidate()}>
           Check again
         </button>
@@ -595,6 +596,20 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
   // Always-current snapshot of the canvas, so the AI assistant can read the
   // live diagram via the bridge without stale-closure issues.
   const liveRef = useRef({ nodes: [], edges: [], unit: "" });
+  // A block named in the check as needing a life model: open its model on the Builder.
+  const openBlockModel = useCallback((id) => {
+    const nodes = liveRef.current?.nodes || [];
+    const node = nodes.find((x) => x.id === id);
+    if (!node) return;
+    setTab("builder");
+    if (node.type === "standby") {
+      setStandbyCtx({ nodeId: id, ...node.data });
+      setModal("standby");
+      return;
+    }
+    setModalNodeId(originalId(nodes, id));
+    setModal("lifemodel");
+  }, []);
   liveRef.current = { nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField };
   const { screenToFlowPosition, fitView, getNodes, getEdges, deleteElements } = useReactFlow();
   // The builder's own width (NARROW_BUILDER): measured, as the pane beside the tree is narrower
@@ -2135,6 +2150,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           stale={validationStale}
           validating={validating}
           onValidate={runValidate}
+          onOpenBlock={openBlockModel}
         />
         {/* The explicit Save: a diagram not saved yet, a sample (a copy), or autosave turned off. */}
         {!autosave && (
@@ -2494,6 +2510,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         rbdId={savedRbdId}
         name={savedRbdName}
         onBuild={toBuilder}
+        onOpenBlock={openBlockModel}
         onProduction={setProduction}
         onCurrentState={setAsOfState}
         onNodeData={(updates) =>

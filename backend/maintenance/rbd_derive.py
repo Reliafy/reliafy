@@ -4,8 +4,9 @@ k of n is enough.
 
 * Each child position is a block. Its model is the position's own model in use, else its
   class's fitted model, else its parts-count rate, else (positions inside it) a sub-system
-  built from them (position_models._tree_parts); with none of these, a placeholder, named in
-  the notes and on the block.
+  built from them (position_models._tree_parts); with none of these, no model: the block is
+  named in the notes and says so, and the diagram isn't calculated until it has one (a life is
+  never invented for it).
 * A connection from A to B is an edge A -> B.
 * A redundancy group (k of its n members needed) becomes a vote node: each
   member feeds it, and it feeds whatever the members fed. A standby group of
@@ -30,17 +31,15 @@ from __future__ import annotations
 
 from backend.maintenance.service import Invalid, Maintenance, class_id
 
-PLACEHOLDER = {"distribution_id": "exponential", "params": [{"name": "failure_rate", "value": 0.001}],
-               "placeholder": True}
 
 
 def _bid(pid: str) -> str:
     return "p" + pid[:10]
 
 
-#: A placeholder block's own words (its tooltip), so it's never read as a result.
-PLACEHOLDER_SOURCE = ("A placeholder: this position has no model in use, no class model and no parts-count "
-                      "rate. Give it a model and rebuild")
+#: A block with no model: its own words (its tooltip). No life is invented in its place.
+NO_MODEL_SOURCE = ("No life model yet: this position has no model in use, no class model and no parts-count "
+                   "rate. Give it a model, or mark it as never failing (Status › Working)")
 
 
 def _children(m: Maintenance, scope_id: str) -> list[dict]:
@@ -117,7 +116,7 @@ def build(m: Maintenance, scope_id: str, block_model=None, unit: str = "days", s
     """The compact RBD graph for a position's children, and notes on how it was built.
     ``block_model(child) -> (node fields or None, note or None)`` gives each block its model
     (the Modelling tab's "Build an RBD from what's inside": the child's model in use; None:
-    a placeholder); by default the child's class model, in days."""
+    no model, listed in ``placeholders``); by default the child's class model, in days."""
     scope = m._get(scope_id, "Position")
     children = _children(m, scope_id)
     if len(children) < 1:
@@ -131,7 +130,7 @@ def build(m: Maintenance, scope_id: str, block_model=None, unit: str = "days", s
             if note:
                 notes.append(note)
             if fields is None:
-                fields = {"model": dict(PLACEHOLDER), "data": {"model_source": PLACEHOLDER_SOURCE}}
+                fields = {"data": {"model_source": NO_MODEL_SOURCE}}
                 placeholders.append(c["name"])
             # A position whose block is an RBD of its own is a sub-system block (analysed as one).
             sub = fields.get("subsystem_rbd_id") or ((fields.get("data") or {}).get("rbd") or {}).get("id")
@@ -144,10 +143,11 @@ def build(m: Maintenance, scope_id: str, block_model=None, unit: str = "days", s
             fields = {"distribution_id": model["distribution"], "params": model["params"]}
             if model.get("extras"):
                 fields["extras"] = model["extras"]
+            nodes.append({"id": _bid(c["id"]), "type": "component", "label": c["name"], "model": fields})
         else:
-            fields = dict(PLACEHOLDER)
             placeholders.append(c["name"])
-        nodes.append({"id": _bid(c["id"]), "type": "component", "label": c["name"], "model": fields})
+            nodes.append({"id": _bid(c["id"]), "type": "component", "label": c["name"],
+                          "data": {"model_source": NO_MODEL_SOURCE}})
 
     edges: set[tuple[str, str]] = set()
     for c in children:
@@ -217,10 +217,11 @@ def build(m: Maintenance, scope_id: str, block_model=None, unit: str = "days", s
         edges |= {(head, b) for b in sources} | {(b, "out") for b in sinks}
 
     if placeholders:
-        notes.append(f"No non-repairable model yet for {', '.join(placeholders)}: a placeholder is used. Fit one for "
-                     "the position's class, or give each block a model in the RBD builder." if block_model is None else
-                     f"No model in use yet for {', '.join(placeholders)}: a placeholder (flagged) stands in. Give "
-                     "each a model on its Models tab and rebuild, or set one in the RBD builder.")
+        notes.append(f"No life model yet for {', '.join(placeholders)}, so the diagram can't be worked out until "
+                     + ("each has one: fit one for the position's class, or give each block a model in the RBD builder."
+                        if block_model is None else
+                        "each has one: give each a model on its Models tab and rebuild, or set one in the RBD builder.")
+                     + " A block that never fails (a frame, say) can be marked Working under Status instead.")
     alike = suspected_sets(m, children, said_series)
     for x in alike:
         names = x["names"]
@@ -336,7 +337,7 @@ def save(m: Maintenance, db, scope_id: str, owners=None, hidden=frozenset(), arr
          check: bool = False) -> dict:
     """Build the RBD and save it to the workspace (updating the one made before). Each block takes
     what Build from what's inside gives it (the position's model in use, its class's, its
-    parts-count rate, or a sub-system of what's inside it), never a placeholder where there is one.
+    parts-count rate, or a sub-system of what's inside it); a block with none of these has no model.
     ``check``: only what to ask first ({ask}), nothing saved. ``arrangements``: the answers
     (apply_arrangements), recorded before building."""
     from backend.maintenance import position_models as pm
@@ -351,7 +352,7 @@ def save(m: Maintenance, db, scope_id: str, owners=None, hidden=frozenset(), arr
     built = build(m, scope_id, block_model=block, unit=unit, said_series=said)
     scope = built["scope"]
     if nested:
-        built["notes"].append(f"Placeholders inside sub-systems: {', '.join(nested[:8])}"
+        built["notes"].append(f"No life model yet inside sub-systems: {', '.join(nested[:8])}"
                               f"{' …' if len(nested) > 8 else ''}. Give each a model and rebuild.")
     try:
         graph = normalize_graph(built["graph"], resolve_saved_model=lambda mid: fetch("model", mid))

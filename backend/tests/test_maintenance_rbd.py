@@ -99,19 +99,28 @@ def test_rebuild_matches_with_interfaces_and_groups(plant):
 
 
 def test_the_generated_rbd_solves(plant):
-    """RePyability analyses the generated diagram: a 1-of-2 pump pair beats one pump."""
+    """RePyability analyses the generated diagram once its blocks have models: a 1-of-2 pump pair
+    beats one pump. With no models, nothing is invented: the analysis names the blocks."""
     from backend.services import rbd_analysis
     from backend.services.rbd_graph import normalize_graph
+
+    def given(graph):  # the user gives every block the same life (MTTF 1,000 h)
+        for n in graph["nodes"]:
+            if n["type"] == "component":
+                n["data"]["model"] = {"source": "params", "distribution_id": "exponential",
+                                      "params": [{"name": "failure_rate", "value": 0.001}]}
+        return graph
 
     m, p = plant
     m.create_group("Pool pumps", [p["a"], p["b"]], k=1)
     graph = normalize_graph(rbd_derive.build(m, p["pool"])["graph"])
-    result = rbd_analysis.analyze(graph, t_max=2000, at_times=[500])
-    assert result.get("mttf") or result.get("summary") or result
+    with pytest.raises(rbd_analysis.AnalysisError, match="These blocks need a life model"):
+        rbd_analysis.analyze(graph, t_max=2000)
+    result = rbd_analysis.analyze(given(graph), t_max=2000, at_times=[500])
     single = Maintenance(GraphStore(":memory:", PROJECTORS), ORG)
     sys_ = single.create_position("One pump system")["id"]
     for name in ("Balance tank", "Pump A", "Filter"):
         single.create_position(name, parent_id=sys_)
-    chain = normalize_graph(rbd_derive.build(single, sys_)["graph"])
+    chain = given(normalize_graph(rbd_derive.build(single, sys_)["graph"]))
     alone = rbd_analysis.analyze(chain, t_max=2000, at_times=[500])
     assert result["mttf"] > alone["mttf"]

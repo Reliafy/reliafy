@@ -1529,7 +1529,7 @@ const WINDOW_PRESETS = [
 
 export default function RbdCalculator({
   graph, validation, stale: checkStale, onValidate = null, rbdId = null, name = null, onBuild, onProduction = null,
-  onNodeData = null, onConditions = null, onCurrentState = null, onTime = null,
+  onNodeData = null, onConditions = null, onCurrentState = null, onTime = null, onOpenBlock = null,
 }) {
   const [result, setResult] = useState(null);
   // The diagram the shown result is for. A result is never shown as current
@@ -2055,7 +2055,7 @@ export default function RbdCalculator({
 
   return (
     <div className="rbd-calc">
-      {phNote && (
+      {phNote && !(validation?.needs_model?.length && !checkStale) && (
         <div className={`rbd-placeholder-note${phNote.mostly ? " is-most" : ""}`} role="status">
           {phNote.text}
         </div>
@@ -2242,7 +2242,7 @@ export default function RbdCalculator({
       {/* The check shows here only when it has something to say (#313):
           problems, or warnings. */}
       {validation && !checkStale && (!validation.can_calculate || validation.warnings?.length > 0) && (
-        <ValidationPanel validation={validation} stale={false} />
+        <ValidationPanel validation={validation} stale={false} onOpenBlock={onOpenBlock} />
       )}
 
       {result && stale && phase !== "calculating" && !checking && (

@@ -700,7 +700,7 @@ def test_rest_add_set_states_calculate_and_delete_a_mission_with_its_own_rbd(cli
     assert nothing.status_code == 422 and "already has a mission named" in nothing.json()["detail"]
 
 
-# ---- blocks with no model: a placeholder stands in, and the result says so --------------------
+# ---- blocks with no model: nothing is invented, and the mission names them -------------------
 
 MTBF = 17520.0  # hours
 
@@ -726,43 +726,24 @@ DEPLOYMENT = [{"name": "Start and load", "duration": 2}, {"name": "Run", "durati
 MODELLED = e(-100 / MTBF) * e(-((100 / MTBF) ** 3))  # 99.43%: the engine and the alternator in series
 
 
-def test_a_mission_resting_on_placeholders_says_which_blocks_and_what_it_is_without_them(m, db):
+def test_a_mission_with_blocks_on_no_model_names_them_and_gives_no_figure(m, db):
+    """Nothing is invented for a block with no life model: the mission isn't worked out until
+    each block a phase needs has one, and the refusal names them."""
     top = _genset(m, db)
     made = pm.build_mission_rbd(m, db, OWNERS, set(), top, ORG, "100-hour deployment")
     assert made["placeholders"] == ["Battery", "Control panel", "Fuel system"]
     graph = db.rbds.find_one({"_id": made["rbd"]["id"]})["graph"]
     g, mission = rm.save(graph, rm.LEGACY_ID, phases=DEPLOYMENT)
-    # The pane's blocks say which are placeholders.
+    # The pane's blocks say which have no model.
     blocks = {b["label"]: b["placeholder"] for b in rm.detail(db, OWNERS, g, mission)["blocks"]}
     assert blocks == {"Alternator": False, "Battery": True, "Control panel": True, "Engine": False, "Fuel system": True}
-
-    got = rm.analyze(db, OWNERS, g, g["phases"])
-    # Each placeholder is a 1,000-hour MTBF: three of them take the figure to 73.7%.
-    assert got["reliability"] == pytest.approx(MODELLED * e(-0.3), rel=1e-9)
-    assert round(got["reliability"], 3) == 0.737
-    assert sorted(p["label"] for p in got["placeholders"]) == ["Battery", "Control panel", "Fuel system"]
-    assert got["blocks"] == 5 and got["placeholders_left_out"] == []
-    # Without them: the two blocks with models, 99.43%.
-    assert got["without_placeholders"]["reliability"] == pytest.approx(MODELLED, rel=1e-9)
-    assert round(got["without_placeholders"]["reliability"], 4) == 0.9943
-    # A placeholder is never named the weakest block: the weakest is one with a model.
-    guessed = {p["id"] for p in got["placeholders"]}
-    assert all(r["weakest"]["id"] not in guessed for r in got["phases"])
-    assert {r["weakest"]["label"] for r in got["phases"]} == {"Engine"}
-    assert "isn't ranked" in got["weakest_note"]
-    # For the tools: said first, with the figure without them.
-    summary = rbd_phases.agent_summary(got)
-    assert summary["placeholders"] == ["Battery", "Control panel", "Fuel system"]
-    assert summary["mission_reliability_without_placeholders"] == pytest.approx(MODELLED)
-    assert summary["notes"][0].startswith("Battery, Control panel, Fuel system have no model: a placeholder")
-    # Kept with the result for the lists.
-    record = rm.result_record(g, rbd_phases.parse_phases(DEPLOYMENT), got)
-    row = rm.summary(g, mission, {mission["id"]: record})
-    assert row["result"]["placeholders"] == ["Battery", "Control panel", "Fuel system"]
-    assert row["result"]["without_placeholders"] == pytest.approx(MODELLED)
+    with pytest.raises(AnalysisError) as exc:
+        rm.analyze(db, OWNERS, g, g["phases"])
+    assert "Battery, Control panel, Fuel system" in str(exc.value)
+    assert [b["label"] for b in exc.value.blocks] == ["Battery", "Control panel", "Fuel system"]
 
 
-def test_placeholders_not_needed_in_any_phase_are_left_out_and_the_result_no_longer_rests_on_them(m, db):
+def test_blocks_with_no_model_not_needed_in_any_phase_are_left_out(m, db):
     top = _genset(m, db)
     made = pm.build_mission_rbd(m, db, OWNERS, set(), top, ORG, "100-hour deployment")
     graph = db.rbds.find_one({"_id": made["rbd"]["id"]})["graph"]
@@ -771,12 +752,10 @@ def test_placeholders_not_needed_in_any_phase_are_left_out_and_the_result_no_lon
     got = rm.analyze(db, OWNERS, graph, [{**p, "not_needed": off} for p in DEPLOYMENT])
     assert got["reliability"] == pytest.approx(MODELLED, rel=1e-9)
     assert got["placeholders"] == [] and got["without_placeholders"] is None
-    assert sorted(p["label"] for p in got["placeholders_left_out"]) == ["Battery", "Control panel", "Fuel system"]
     assert "placeholders" not in rbd_phases.agent_summary(got) and "weakest_note" not in got
-    # Needed in one phase only: it counts again.
-    part = rm.analyze(db, OWNERS, graph, [{**DEPLOYMENT[0], "not_needed": off}, {**DEPLOYMENT[1], "not_needed": off[1:]}])
-    assert [p["label"] for p in part["placeholders"]] == ["Battery"]
-    assert part["without_placeholders"]["reliability"] == pytest.approx(MODELLED, rel=1e-9)
+    # Needed in one phase only: it needs a model again.
+    with pytest.raises(AnalysisError, match="needs a life model.*Battery"):
+        rm.analyze(db, OWNERS, graph, [{**DEPLOYMENT[0], "not_needed": off}, {**DEPLOYMENT[1], "not_needed": off[1:]}])
 
 
 def test_a_mission_with_a_model_on_every_block_says_nothing_about_placeholders(m, db):
@@ -790,13 +769,11 @@ def test_a_mission_with_a_model_on_every_block_says_nothing_about_placeholders(m
     assert "placeholders" not in record
 
 
-def test_only_placeholders_gives_no_figure_without_them():
+def test_only_placeholders_gives_no_figure():
     ph = {**_exp(0.001), "placeholder": True}
-    got = rbd_phases.analyze_phases(_diagram([("input", "a"), ("a", "b"), ("b", "output")], {"a": ph, "b": ph}),
-                                    phases=[{"name": "Run", "duration": 100}], weakest=True)
-    assert got["reliability"] == pytest.approx(e(-0.2))
-    assert len(got["placeholders"]) == 2 and got["without_placeholders"] is None
-    assert got["phases"][0]["weakest"] is None
+    with pytest.raises(AnalysisError, match="These blocks need a life model"):
+        rbd_phases.analyze_phases(_diagram([("input", "a"), ("a", "b"), ("b", "output")], {"a": ph, "b": ph}),
+                                  phases=[{"name": "Run", "duration": 100}], weakest=True)
 
 
 def test_rest_a_plain_mission_s_length_starting_age_and_bound(client):

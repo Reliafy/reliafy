@@ -58,6 +58,76 @@ class AnalysisError(ValueError):
     """Raised when a graph can't be turned into an analysable RBD."""
 
 
+#: Block types whose life is a non-repairable model on the block itself.
+_MODEL_BLOCKS = ("component", "series", "parallel", "standby")
+
+
+#: The life "Make an RBD from this structure" used to invent for a position with no model (MTTF
+#: 1,000 h, flagged placeholder). Diagrams made before it stopped still hold it: it counts as no model.
+_DERIVED_PLACEHOLDER = ("exponential", 0.001)
+
+
+def _invented(model: dict, data: dict) -> bool:
+    """A placeholder life made up for a block with no model when a diagram was built from the tree
+    (not one a user or the assistant chose as a starting point, which says so on the block)."""
+    if not model.get("placeholder"):
+        return False
+    if str(data.get("model_source") or "").startswith("A placeholder"):
+        return True
+    params = model.get("params") or []
+    return (model.get("distribution_id"), params[0].get("value") if len(params) == 1 and isinstance(
+        params[0], dict) else None) == _DERIVED_PLACEHOLDER and not model.get("source")
+
+
+def _lacks_model(model, data: dict) -> bool:
+    """No life model, or only the life invented when the diagram was built from the tree."""
+    return not isinstance(model, dict) or not model or _invented(model, data)
+
+
+def blocks_needing_models(graph: dict) -> list[dict]:
+    """The blocks with no life model of their own (or only a life invented for them when the diagram was
+    built from the tree): ``[{id, label}]``.
+    A block pinned working or failed (Status) needs none, nor a linked copy of another block. While
+    any block is listed, no system figure is worked out: a made-up life is never put in its place."""
+    from backend.services import rbd_repeats
+
+    out = []
+    for node in (graph or {}).get("nodes") or []:
+        if not isinstance(node, dict) or node.get("type") not in _MODEL_BLOCKS:
+            continue
+        data = node.get("data") or {}
+        if data.get("state") in ("working", "failed") or rbd_repeats.repeat_of(node) is not None:
+            continue
+        models = _unit_models(data) if node.get("type") == "standby" else [data.get("model")]
+        if not models or any(_lacks_model(m, data) for m in models):
+            out.append({"id": node.get("id"), "label": data.get("label") or node.get("id")})
+    return out
+
+
+def needs_models_message(blocks: list[dict]) -> str:
+    """What a diagram with blocks on no life model says, naming every one."""
+    names = ", ".join(str(b["label"]) for b in blocks)
+    one = len(blocks) == 1
+    return (f"{'This block needs' if one else 'These blocks need'} a life model before the system can be "
+            f"worked out: {names}. Give {'it' if one else 'each one'} a model, or mark a block that never "
+            "fails (a frame, a pipe) as Working under Status.")
+
+
+class NeedsModels(AnalysisError):
+    """A diagram whose blocks need life models first (``blocks``: [{id, label}])."""
+
+    def __init__(self, blocks: list[dict]):
+        super().__init__(needs_models_message(blocks))
+        self.blocks = blocks
+
+
+def require_models(graph: dict) -> None:
+    """Refuse a diagram with any block on no life model (:func:`blocks_needing_models`)."""
+    blocks = blocks_needing_models(graph)
+    if blocks:
+        raise NeedsModels(blocks)
+
+
 class _DistName:
     """Minimal stand-in for a SurPyval ``model.dist`` so RePyability's
     fixed-probability check (``model.dist.name``) works on reduced blocks."""
@@ -1074,6 +1144,7 @@ def validate_graph(
 
     with rbd_standby.simulation("check") as simulated:
         out = _validate_graph(graph, resolve_subsystem)
+    out = _with_needed_models(out, graph)
     if simulated and not graph.get("repairable"):
         labels = list(dict.fromkeys(b.label for b in simulated))
         out["simulated_blocks"] = labels
@@ -1082,6 +1153,22 @@ def validate_graph(
             **(out.get("non_analytic_nodes") or {}),
             **{label: f"standby, simulated from {rbd_standby.SIM_LIVES:,} lifetimes with Pro" for label in labels}}
     return out
+
+
+def _with_needed_models(out: dict, graph: dict) -> dict:
+    """A check whose blocks on no life model are named once, together (``needs_model``: [{id,
+    label}], so the app can link each), in place of one error per block: the diagram isn't
+    calculated until each has one."""
+    if out.get("empty"):
+        return out
+    needs = blocks_needing_models(graph)
+    if not needs:
+        return out
+    own = tuple(f"{b['label']} has no" for b in needs)
+    errors = [e for e in out.get("errors") or []
+              if not e.startswith(own) and not e.startswith("These nodes have no non-repairable model")]
+    return {**out, "valid": False, "can_calculate": False, "errors": [needs_models_message(needs), *errors],
+            "needs_model": needs}
 
 
 def _validate_graph(
@@ -2296,6 +2383,7 @@ def analyze(
     """
     from backend.services import rbd_standby
 
+    require_models(graph)  # no system figure while a block has no life model (nothing invented)
     # Blocks fitted in another unit of the same kind: converted to the diagram's unit, and listed.
     graph, conversions = model_units.convert_graph(graph)
     conversions += model_units.subsystem_conversions(graph, resolve_subsystem)
@@ -2771,6 +2859,7 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
     working_nodes: set = set()
     broken_nodes: set = set()
     schedule_notes: list = []
+    require_models(graph)
 
     for node in nodes:
         nid = node.get("id")

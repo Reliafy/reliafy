@@ -70,8 +70,8 @@ trains, standby and k-out-of-n stay as they are (a repairable RBD's repairs and
 planned work are left out: a mission doesn't repair). Without one, Reliafy
 builds the mission's RBD from what's inside the position, the same way
 **Build an RBD from what's inside…** does: each block takes the model in use
-at its position, and a position with none gets a placeholder block, flagged,
-never a made-up figure. Positions marked as backing each other up (the position's
+at its position, and a position with none gets a block with no model, never a
+made-up figure. Positions marked as backing each other up (the position's
 **Redundancy inside…**) are wired as redundancy. Where nothing says how the blocks are wired (no
 connections and no redundancy sets), they go in series, and the mission says so
 (**Check the wiring**) until you mark the sets or wire its RBD otherwise. It's saved once, named after the
@@ -255,19 +255,17 @@ mission is still going at each point. Then, for each phase:
 
 ### Blocks with no model
 
-A position with no model becomes a **placeholder** block: a stand-in life, so
-the diagram can be drawn, not a real figure. A mission that needs such a block
-says so with its answer. It names the blocks, shows the chance with the
-placeholders and the chance from the blocks with models alone, and never names
-a placeholder the weakest block. The grid marks each one **Placeholder**, and
-the mission's row on the **Models** tab shows the result with "placeholders" beside it.
+A position with no model becomes a block with no model. Reliafy never invents
+a life for it, so a mission that needs such a block gives no answer: it names
+the blocks that need a life model. The grid marks each one.
 
 You choose what to do with them:
 
 - **Give them a model**: open the mission's RBD and set each block's model.
 - **Leave them out**: mark them **Not needed** in every phase, so the mission
   is worked out from the blocks with models.
-- Or set one **Not needed** only in the phases that don't use it.
+- **Mark a block that never fails** (a frame, say) as **Working** under
+  **Status** in the RBD.
 
 The parts age across the **whole** mission, not afresh in each phase: wear in a
 hot climb stays with a motor for the rest of the flight (except while a spare

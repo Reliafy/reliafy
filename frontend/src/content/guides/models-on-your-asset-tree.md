@@ -190,9 +190,9 @@ with none, its class's fitted model; with neither but positions inside it (a
 sub-assembly such as Propulsion, whose lives are its motors' and propellers'),
 its own RBD, built from what's inside it the same way and brought in as a
 sub-system (a position with its own RBD in use comes in as a sub-system too).
-Only a position with none of these gets a placeholder, flagged: the row warns
-until each has a model, and a placeholder inside a sub-system is named with
-its path (Propulsion › ESC 1). Each block's tooltip, and the RBD row's panel,
+Only a position with none of these gets a block with no model: no life is
+invented for it, the diagram isn't calculated until each block has one, and a
+block inside a sub-system is named with its path (Propulsion › ESC 1). Each block's tooltip, and the RBD row's panel,
 say where its model came from. They're wired by their connections and
 redundancy sets (below), in series where there are none. A repairable diagram can't
 take sub-systems: its **Maintenance plan** names them and offers **Expand
@@ -212,7 +212,7 @@ second diagram.
 **RBD › New blank RBD…** starts a diagram of the position's own, on any
 position, a leaf included. Choose **Non-repairable** (the default) or
 **Repairable**, and start either with **one block for the position itself**
-(its life model in use, or a placeholder until it has one) or **empty**. It's
+(its life model in use, or no model until it has one) or **empty**. It's
 saved in your RBDs, linked to the position as its RBD, and opens beside the
 tree.
 
@@ -281,7 +281,7 @@ system's reliability there. Double-click the row (or **Open** in its menu) to
 edit the diagram beside the tree; **Open full page** opens it on its own page.
 **Rebuild from what's inside…** (on the row, or under **RBD ›**) opens the
 diagram and asks first; **Rebuild** then adds the positions inside that have
-no block yet, and gives a block still on a placeholder the model its position
+no block yet, and gives a block still with no model the model its position
 has now, keeping your other edits.
 
 ## The model in use

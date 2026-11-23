@@ -238,7 +238,7 @@ def test_fixed_probability_events_import_without_a_life_model():
     # The structure is intact; only the missing models stop the analysis.
     check = rbd_analysis.validate_graph(normalize_graph(d.graph))
     assert not check["valid"]
-    assert all("has no non-repairable model" in e for e in check["errors"]) and len(check["errors"]) == 2
+    assert check["errors"][0].startswith("These blocks need a life model") and len(check["needs_model"]) == 2
 
     with pytest.raises(RbdImportError, match="isn't between 0 and 1"):
         load('<opsa-mef><define-gate name="T"><or><basic-event name="A"/><basic-event name="B"/></or>'

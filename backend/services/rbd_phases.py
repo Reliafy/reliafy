@@ -784,6 +784,7 @@ def analyze_phases(
     from backend.services import rbd_standby
 
     _refuse(graph)
+    graph = _needs_models(graph, phases)
     state = ra.parse_nonrepairable_state(graph, current_state)
     built = with_state(ra._build_rbd(graph, resolve_subsystem, None, resolve_model, covariates), state)
     mission, phases, labels, schedule_notes = build_mission(graph, resolve_subsystem, resolve_model, covariates,
@@ -937,6 +938,29 @@ PARTLY_NOTE = ("{names} rest partly on placeholders inside: the result carries i
                "models.")
 WEAKEST_PLACEHOLDER_NOTE = ("The weakest block in each phase is the weakest of the blocks with a model: a block "
                             "with a placeholder isn't ranked.")
+
+
+def _needs_models(graph: dict, phases=None) -> dict:
+    """No mission figure while a block some phase needs has no life model (nothing is invented for
+    it): :class:`rbd_analysis.NeedsModels` names them. A block no phase needs (Not needed
+    throughout) doesn't touch the result, so it may have none: it's held working here."""
+    from backend.services import rbd_analysis as ra
+
+    missing = ra.blocks_needing_models(graph)
+    if not missing:
+        return graph
+    try:
+        parsed = parse_phases(graph.get("phases") if phases is None else phases)
+    except PhaseError:
+        parsed = []
+    never = set.intersection(*(set(p.get("not_needed", [])) for p in parsed)) if parsed else set()
+    needed = [b for b in missing if b["id"] not in never]
+    if needed:
+        raise ra.NeedsModels(needed)
+    held = {b["id"] for b in missing}
+    nodes = [{**n, "data": {**(n.get("data") or {}), "state": "working"}} if n.get("id") in held else n
+             for n in graph.get("nodes") or []]
+    return {**graph, "nodes": nodes}
 
 
 def placeholder_ids(graph: dict) -> list[str]:

@@ -343,9 +343,9 @@ function RbdDetails({ d, model, age, onAge }) {
     <section aria-label="The diagram" className="ml-rbd">
       {model?.placeholders?.length > 0 && (
         <p className={`ml-stale${model.placeholder_blocks?.mostly ? " is-most" : ""}`} role="note">
-          {model.placeholder_blocks?.words ? `${model.placeholder_blocks.words.charAt(0).toUpperCase()}${model.placeholder_blocks.words.slice(1)}: ` : ""}
-          placeholders stand in for {model.placeholders.slice(0, 8).join(", ")}{model.placeholders.length > 8 ? ` and ${model.placeholders.length - 8} more` : ""}
-          {model.placeholder_blocks?.mostly ? ". Most of the answer rests on invented lives, so" : ":"} the figures aren't real until they have models.
+          {model.placeholder_blocks?.words ? `${model.placeholder_blocks.words.charAt(0).toUpperCase()}${model.placeholder_blocks.words.slice(1)}: ` : "No real life model yet: "}
+          {model.placeholders.slice(0, 8).join(", ")}{model.placeholders.length > 8 ? ` and ${model.placeholders.length - 8} more` : ""}.
+          The figures aren&rsquo;t real until each has one.
         </p>
       )}
       {model?.repairable && <p className="rim-tquiet">A repairable diagram: its availability is simulated on its own page.</p>}
