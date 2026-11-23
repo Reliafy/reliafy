@@ -35,13 +35,23 @@ The form asks for:
   each other up, so the series version says so until you rewire its RBD. Either
   way the mission gets an RBD of its own (a copy), so changing it never changes
   the original.
-- **Start:** now, or a date.
-- **Length:** hours of running (a 10-hour sortie is 10), or days, months or
-  years on the calendar.
-- **Calendar:** **Linked to Operations** uses this position's duty (its own, or
-  the one from above; all the time with none), or give it its own duty: hours a
-  day and days a week. A calendar length becomes running time through it: 12
-  months at 8 hours a day, 5 days a week is about 2,087 hours.
+- **Clock:** **Operating time** or **Calendar time**.
+  - **Operating time** is for a mission measured in use: a 10-flight-hour
+    sortie, 500 cycles. Its length and every phase are in operating units:
+    hours of operation (call them what you call them: "flight hours",
+    "running hours"), or cycles or km where the models count in them. No date
+    or calendar is needed; **On the calendar (optional)** puts it on the
+    calendar if you want its dates.
+  - **Calendar time** is for a stretch of the calendar: a summer, a year of
+    use. Give a **start** (now or a date), a **length** in days, weeks, months
+    or years, and its **calendar**: **Linked to Operations** uses this
+    position's duty (its own, or the one from above; all the time with none),
+    or give it its own duty, hours a day and days a week. The answers say how
+    it converts: "12 months ≈ 2,087 operating hours at 8 h a day, 5 days a
+    week". Its phases show in the same calendar unit.
+- **Length:** in the clock's units. A length in cycles or km against models
+  that count in hours needs a rate, and is refused with a message until it has
+  one.
 - **Starting state:** **New**, or **As today**, each block at its item's age
   now. A block with no age to read starts new, and the answers say which.
 
@@ -56,8 +66,9 @@ mission's length is always their sum.
 Open a mission (double-click it, or **Open** in its menu) to see two cards:
 
 - **Chance of completing:** the chance the system gets through every phase
-  without a system failure, in plain words first ("About 97 in 100 missions like
-  this finish without a system failure"). Its bound is **90% one-sided**: at
+  without a system failure, in plain words first, on the mission's clock
+  ("About 98 in 100 missions like this (10 flight hours) finish without a
+  system failure"; "97.8% chance of completing a 10-flight-hour mission"). Its bound is **90% one-sided**: at
   least this chance, from the fitted models' uncertainty. A mission of several
   phases has no bound yet, and says so.
 - **Failures to expect:** the part failures during the mission when each failed

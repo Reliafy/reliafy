@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import Card, { CardHeader } from "./ui/Card.jsx";
 import Chip from "./ui/Chip.jsx";
 import { fmt, lengthText, pct } from "../explorerMissions.js";
-import { boundText, calendarText, chanceSentence, failuresSentence, rangeShort } from "../missionSetup.js";
+import { boundText, calendarText, chanceOf, chanceSentence, failuresSentence, missionLength, rangeShort } from "../missionSetup.js";
 
 // A mission's two answers as plain cards (the Missions tab, 23 Nov 2026): the chance of completing
 // the whole phased mission, with its 90% one-sided lower bound, and the part failures to expect
@@ -34,17 +34,17 @@ export default function MissionAnswers({ answers, busy = false, error = null, on
     <div className="mission-answers" aria-busy={busy || undefined}>
       <div className="mission-cards">
         <Card className="mission-card">
-          <CardHeader title="Chance of completing" level={3} subtitle={chanceSentence(chance) || "Waiting for the values the phases need."} />
+          <CardHeader title="Chance of completing" level={3} subtitle={chanceSentence(chance, answers.clock) || "Waiting for the values the phases need."} />
           {chance?.value != null && (
             <p className="mission-figure">
               <b>{pct(chance.value)}</b>
-              <span className="mission-figure-sub">{boundText(chance)}</span>
+              <span className="mission-figure-sub">{chanceOf(answers.clock)}. {boundText(chance)}</span>
             </p>
           )}
           {!lb && chance?.value != null && <Chip tone="neutral">No bound</Chip>}
         </Card>
         <Card className="mission-card">
-          <CardHeader title="Failures to expect" level={3} subtitle={failuresSentence(failures, length, unit)} />
+          <CardHeader title="Failures to expect" level={3} subtitle={failuresSentence(failures, length, unit, answers.clock)} />
           {failures?.expected != null && (
             <p className="mission-figure">
               <b>{fmt(failures.expected)}</b>
@@ -63,7 +63,10 @@ export default function MissionAnswers({ answers, busy = false, error = null, on
         </Card>
       </div>
       <ul className="mission-assumed" aria-label="What it assumed">
-        <li>{lengthText(length, unit)} of running in {answers.phases} phase{answers.phases === 1 ? "" : "s"}{answers.calendar ? `: ${calendarText(answers.calendar)}` : ""}.</li>
+        <li>
+          {answers.clock?.kind === "calendar" ? `Calendar time: ${answers.clock.words}` : `Operating time: ${answers.clock ? missionLength(answers.clock) : lengthText(length, unit)}, no calendar needed`}
+          {` in ${answers.phases} phase${answers.phases === 1 ? "" : "s"}`}{answers.calendar ? ` · ${calendarText(answers.calendar)}` : ""}.
+        </li>
         <li>{answers.setup?.from === "today" ? "Blocks start at their items' ages today." : "Every block starts new."}</li>
         {(answers.assumed || []).map((a) => <li key={a}>{a}</li>)}
       </ul>

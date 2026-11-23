@@ -2,7 +2,7 @@ import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { calculateMission, getMission, getRbd, missionAnswers, updateMission } from "../api.js";
 import MissionSetup from "./MissionSetup.jsx";
 import MissionAnswers from "./MissionAnswers.jsx";
-import { DEFAULT_SETUP, NEW_LENGTH, runsOnBody, sameSetup, setupBody, setupErrors, setupForm } from "../missionSetup.js";
+import { DEFAULT_SETUP, NEW_LENGTH, phaseShown, phaseStored, runsOnBody, sameSetup, setupBody, setupErrors, setupForm } from "../missionSetup.js";
 import Field from "./ui/Field.jsx";
 import PhaseCovValue from "./PhaseCovValue.jsx";
 import TablePane from "./TablePane.jsx";
@@ -44,6 +44,21 @@ const RbdDiagramView = lazy(() => import("./RbdDiagramView.jsx"));
 //   onSaved(text)        onDeleted(text)      onDirty(changed)
 //   onOpenRbd()          the mission's RBD opened in the shared RBD builder, in this table area
 //   phone, headingRef, onClose: TablePane's
+
+// A phase's duration on the mission's clock: typed in operating units, or on calendar time in its
+// calendar unit (kept as typed while editing; stored in operating time).
+function PhaseDuration({ duration, conv, disabled, onChange }) {
+  const first = phaseShown(duration, conv);
+  const [text, setText] = useState(() => (first.value == null ? String(duration ?? "") : String(Number(first.value.toPrecision(6)))));
+  return (
+    <>
+      <input type="number" inputMode="decimal" min="0" step="any" value={text} placeholder="Duration" disabled={disabled}
+             aria-label={`Duration (${first.unit})`}
+             onChange={(e) => { setText(e.target.value); onChange(phaseStored(e.target.value, conv)); }} />
+      {first.unit && <span className="cov-unit">{first.unit}</span>}
+    </>
+  );
+}
 
 // A value a block uses, with its unit; a schedule in words ("follows a table of 2 steps"), never "[object Object]".
 const valueText = (v, unit) => (v == null ? "—" : isSchedule(v) ? `the schedule (${covValueText(v, unit).replace(/^follows /, "")})`
@@ -241,6 +256,21 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
     return [...rs, p];
   });
   const removePhase = (key) => change((rs) => rs.filter((r) => r.key !== key));
+  // The mission's clock (operating or calendar time): its phases' durations follow it. On calendar
+  // time they're shown and typed in its calendar unit, through its duty (the answers' per_day); the
+  // records keep operating time, as before.
+  const ansClock = ans.data?.clock || null;
+  const conv = {
+    clock: setupOn ? setup.clock : "operating",
+    perDay: ansClock?.per_day ?? null,
+    calUnit: ansClock?.calendar_length?.unit || "days",
+    unit,
+    label: (setupOn && setup.clock !== "calendar" && String(setup.label || "").trim()) || ansClock?.label || u,
+  };
+  const shownLength = (v) => {
+    const p = phaseShown(v, conv);
+    return p.value == null ? "—" : `${fmt(p.value)} ${p.unit}`;
+  };
   const missionView = answersMode && detail && !atRow ? (
     <>
       <div className="mission-head">
@@ -252,13 +282,15 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
         <p className="rim-tquiet mission-on">
           Lives on <b>{position.name}</b>. Runs on <b>{detail.rbd.name}</b>
           {onOpenRbd ? <> (<button type="button" className="link" onClick={onOpenRbd}>open it</button>)</> : null}
-          {u ? `, in ${u}` : ""}: {rows.length} phase{rows.length === 1 ? "" : "s"}, {lengthText(total, unit)} in all.{" "}
+          : {rows.length} phase{rows.length === 1 ? "" : "s"}, {shownLength(total)} in all
+          {conv.clock === "calendar" && conv.perDay ? ` (${fmt(total)} ${ansClock?.label || u})` : ""}.{" "}
           <ShowMe help={{ guide: "missions" }}>Read the guide</ShowMe>
         </p>
       </div>
       <section className="mission-sec" aria-labelledby="mission-setup-h">
         <h3 className="mission-k" id="mission-setup-h">Set-up</h3>
-        {setupOn && <MissionSetup value={setup} onChange={editSetup} withFrom={!simple} tried={tried} disabled={readOnly} />}
+        {setupOn && <MissionSetup value={setup} onChange={editSetup} withFrom={!simple} tried={tried} disabled={readOnly}
+                                  conversion={setup.clock === "calendar" && !dirty ? ansClock?.words : ""} />}
         {simple && (
           <div className="mission-simple-start">
             <ChoiceChips label="Starts at" disabled={readOnly} value={start.mode} onChange={(v) => v && pickStart({ mode: v })}
@@ -311,7 +343,7 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
                     <tr key={row.key}>
                       <td className="num">{i + 1}</td>
                       <td><button type="button" className="link mission-phase-open" onClick={() => setAt(i)}>{row.name || "(no name)"}</button></td>
-                      <td className="num">{row.duration === "" || row.duration == null ? "—" : lengthText(Number(row.duration), unit)}</td>
+                      <td className="num">{row.duration === "" || row.duration == null ? "—" : shownLength(row.duration)}</td>
                       <td className="num">{res?.waiting || (needs.length && !res) ? <Chip tone="warning" title={`Needs a value: ${needs.join(", ")}`}>Needs values</Chip>
                         : res ? pct(phaseCompletes(res)) : <span className="rw-blank">—</span>}</td>
                       <td>{res?.weakest ? <>{res.weakest.label} <span className="mission-sub">({fmt(res.weakest.share * 100)}%)</span></> : <span className="rw-blank">—</span>}</td>
@@ -353,9 +385,8 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
           <label className="mission-simple-length">
             <span>Duration</span>
             <span className="mission-simple-input">
-              <input type="number" inputMode="decimal" min="0" step="any" value={atRow.duration} placeholder="Duration" disabled={readOnly}
-                     onChange={(e) => patch(atRow.key, { duration: e.target.value })} />
-              {u && <span className="cov-unit">{u}</span>}
+              <PhaseDuration key={`${atRow.key}:${conv.clock}:${conv.perDay}`} duration={atRow.duration} conv={conv} disabled={readOnly}
+                             onChange={(d) => patch(atRow.key, { duration: d })} />
             </span>
           </label>
         </div>

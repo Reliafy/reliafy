@@ -419,10 +419,15 @@ what. Over MCP: `analyse rbd_mission` and `change rbd_mission`.
 The Explorer's Missions tab adds, on `POST /api/maintenance/positions/{id}/missions`:
 `link_id` may be an RBD on a position inside this one; `tree: true` builds it
 from the positions inside even where the position has an RBD of its own;
-`setup: {start: "now" | "YYYY-MM-DD", calendar: {linked: true} | {hours_per_day,
-days_per_week}, from: "new" | "today"}` is kept as `graph.mission_setup`; and
-`length: {value, unit}` (`hours` of running, or `days`, `months`, `years`
-through the calendar) becomes its one first phase, in running time. `PUT
+`setup: {clock: "operating" | "calendar", label?, start: "now" | "YYYY-MM-DD",
+calendar: {linked: true} | {hours_per_day, days_per_week}, from: "new" |
+"today"}` is kept as `graph.mission_setup`; and `length: {value, unit}` becomes
+its one first phase, in running time. On operating time (`clock: "operating"`,
+the default for a mission saved with no start date or calendar) the length is in
+`hours` of operation (called `label`, e.g. "flight hours"), `cycles` or `km`, and
+no calendar is needed; on calendar time it's in `days`, `weeks`, `months` or
+`years`, through the calendar. A unit the RBD's models don't count in, with no
+rate per operating hour, is refused in words. `PUT
 /api/rbds/{id}/missions/mission {setup}` changes the setup (a mission's own
 RBD only); a list's mission carries `setup`. `POST
 /api/rbds/{id}/missions/{mission}/answers` gives its two answers over the whole
@@ -433,7 +438,10 @@ bound yet) and `failures {expected, system, method (exact | simulated), range
 failures with each failed block replaced like new, the range from 2,000 seeded
 simulated missions (Pro). With them `calendar {start, end, days, clock}`,
 `setup`, `plan` (the tasks on its positions, read only), `assumed` and
-`length`/`phases`; or `blocked: [{id, label, why}]` while a block some phase
+`length`/`phases`, `clock {kind, label, length, unit, per_day, words,
+calendar_length?}` ("12 months ≈ 2,087 operating hours at 8 h a day, 5 days a
+week") and `summary {chance, clock, length, unit, label, calendar_length}`, the
+one number with its clock and length; or `blocked: [{id, label, why}]` while a block some phase
 needs has no model or a placeholder. Over MCP: `analyse rbd_mission
 answers=true` and `change rbd_mission setup`.
 `fit: true` with `data` (`position`, `class`, or `both`: the position's history
