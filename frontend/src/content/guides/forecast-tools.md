@@ -51,6 +51,12 @@ part). A value typed in one view is kept in the others.
 With both filled in, say what the work does to the part: it **doesn't change
 the part's life** (an oil change, a test), or it **replaces the part** (a
 planned replacement at that age, so the failures left are those before it).
+**When the part is replaced** (under More options) is **Restart its
+schedule** by default (age replacement: a failure restarts its clock, so the
+planned count is a chance) or **Keep its schedule** (block replacement: on its
+dates, failures or not). Work that doesn't change the part's life and restarts
+when it's replaced shows its scheduled count with a note on how many fewer
+replacements may make it.
 
 **More options** holds the rest: a different age for each unit, the cost of a
 spare (added to each failure and replacement), the use a unit adds a day for a

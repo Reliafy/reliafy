@@ -1283,6 +1283,9 @@ def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(m
         if "cost" in body:
             # What it costs each time, typed (null: its LSA's figure again).
             view = m.set_task_cost(task_id, body["cost"])
+        if "on_replace" in body:
+            # When the item is replaced: restart the schedule or keep it (restart.py); null: the default.
+            view = m.set_task_on_replace(task_id, body["on_replace"])
         if "visit_cost" in body:
             # A task in no package: its call-out and setup each time (null: none; visit_costs.py).
             view = m.set_task_visit_cost(task_id, body["visit_cost"])

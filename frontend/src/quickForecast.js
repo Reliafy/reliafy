@@ -23,7 +23,12 @@ export const HORIZON_OPTIONS = [
   { value: "36", label: "3 years" }, { value: "60", label: "5 years" },
 ];
 
-export const BLANK_WORK = { name: "", every: "", unit: "hours", effect: "none", hoursEach: "", costEach: "", sparesEach: "", spareName: "" };
+export const BLANK_WORK = { name: "", every: "", unit: "hours", effect: "none", onReplace: "restart", hoursEach: "", costEach: "", sparesEach: "", spareName: "" };
+// When the part is replaced (forecast-rules 1.8): restart (age replacement) or keep (block replacement).
+export const ON_REPLACE = [
+  { value: "restart", label: "Restart its schedule (age replacement)" },
+  { value: "keep", label: "Keep its schedule (block replacement)" },
+];
 export const BLANK = {
   units: "1", runPer: "all", runHours: "", horizon: "12",
   work: null, part: false, ages: "", hoursIfFails: "", costIfFails: "", spareCost: "", usePerDay: "", spares: {},
@@ -72,6 +77,7 @@ export function requestOf(f, model, unit, start = null) {
     const w = f.work;
     body.work = {
       name: w.name.trim() || "The work", every: num(w.every), unit: w.unit, effect: f.part ? w.effect : "none",
+      on_replace: w.onReplace || "restart",
       hours_each: num(w.hoursEach), cost_each: num(w.costEach), spares_each: num(w.sparesEach),
       spare_name: w.spareName.trim() || null,
     };

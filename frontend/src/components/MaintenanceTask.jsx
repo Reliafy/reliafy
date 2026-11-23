@@ -11,6 +11,7 @@ import Field from "./ui/Field.jsx";
 import { Checkbox, Select as NativeSelect, TextInput } from "./ui/Controls.jsx";
 import Section from "./ui/Section.jsx";
 import Select from "./Select.jsx";
+import { formatDate } from "../dates.js";
 import LoadFailed from "./LoadFailed.jsx";
 import Loading from "./ui/Loading.jsx";
 import HowOften from "./HowOften.jsx";
@@ -64,7 +65,20 @@ function startFrom(task) {
     modes: new Set((task?.failure_modes || []).map((m) => m.id)),
     ...restorationForm(task),
     ...supportForm(task),
+    onReplace: task?.on_replace?.set || "",
   };
+}
+
+// When the item is replaced: restart the schedule or keep it (backend/maintenance/restart.py). "" is the
+// default, said with why (restart on its own; keep for a calendar pattern or a task in a package).
+function onReplaceOptions(task) {
+  const d = task?.on_replace;
+  const word = (v) => (v === "restart" ? "Restart the schedule" : "Keep the schedule");
+  return [
+    { value: "", label: d ? `${word(d.default)} (the default: ${d.why})` : "The default" },
+    { value: "restart", label: "Restart the schedule from the new item" },
+    { value: "keep", label: "Keep the schedule" },
+  ];
 }
 
 // The trades this task's labour uses with no rate yet: a box each, saved with the task.
@@ -197,6 +211,7 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
     const served = rcm ? (task.failure_modes || []).map((m) => m.id) : ids;
     const sup = supportBody(task, supportable ? f : { ...f, supporting: false }, { modes: served, unit: f.unit });
     if (Object.keys(sup).length) await updateMaintenanceTask(task.id, sup);
+    if ((f.onReplace || null) !== (task.on_replace?.set || null)) await updateMaintenanceTask(task.id, { on_replace: f.onReplace || null });
     // A new interval: the same task on identical positions may be brought in line (offered first).
     if (Number(f.interval) !== Number(task.interval) || f.unit !== task.unit) {
       setTwinCheck({ taskId: task.id, name: f.name.trim(), interval: Number(f.interval), unit: f.unit });
@@ -290,6 +305,14 @@ export default function MaintenanceTask({ row, taskId = null, taskName = "", hea
           {task && <DueBasis task={task} positionId={task.subject?.kind === "position" ? task.subject.id : null}
                              root={new URLSearchParams(location.search).get("root")} />}
           {task && <RestsOn taskId={task.id} onOptimise={onOptimise} />}
+          {task && task.subject?.kind === "position" && !task.on_event && (
+            <Field label="When the item is replaced" help={task.on_replace?.restarted_on && (f.onReplace || task.on_replace.default) === "restart"
+              ? `Restarted when the item was fitted on ${formatDate(task.on_replace.restarted_on)}.`
+              : "Restart counts its interval again from the new item; keep runs on regardless (a package's visits set its dates)."}>
+              <Select value={f.onReplace} onChange={(v) => setF((x) => ({ ...x, onReplace: v }))} options={onReplaceOptions(task)}
+                      ariaLabel="When the item is replaced" className="mt-onreplace" />
+            </Field>
+          )}
         </Section>
         <Section title="What kind of task" className="ruled mt-sec">
           <Field label="What kind of task" labelHidden>

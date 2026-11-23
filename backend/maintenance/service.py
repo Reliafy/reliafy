@@ -80,6 +80,7 @@ from backend.maintenance import restoration as _restoration
 from backend.maintenance import supporting as _supporting
 from backend.maintenance import failure_costs as _failure_costs
 from backend.maintenance import responses as _responses
+from backend.maintenance import restart as _restart
 from backend.maintenance import visit_costs as _visit_costs
 from backend.maintenance import shutdowns as _shutdowns
 from backend.maintenance import operations as _operations
@@ -1140,10 +1141,11 @@ def _item_fitted(s: GraphStore, org: str, p: dict) -> None:
                | ({"from_precision": p["from_precision"]} if p.get("from_precision") else {}))
     s.put_edge(org, "IN", p["item_id"], p["fitment_id"])
     s.put_edge(org, "AT", p["fitment_id"], p["position_id"])
-    # A new item is a renewal: the position's tasks count from the day it went in.
+    # A new item is a renewal: the position's tasks count from the day it went in (a task set to keep its
+    # schedule reads its last real doing back: restart.py).
     for task in s.inn(org, p["position_id"], "ON"):
         if task["label"] == "Task":
-            _renew_task(s, org, task, p["on"], (p.get("task_readings") or {}).get(task["id"]))
+            _renew_task(s, org, task, p["on"], (p.get("task_readings") or {}).get(task["id"]), by="fit")
 
 
 def _item_removed(s: GraphStore, org: str, p: dict) -> None:
@@ -2265,13 +2267,23 @@ def _item_usage(s: GraphStore, org: str, item_id: str, unit: str, read) -> dict 
     return {"rows": rows, "points": points, "uncounted": uncounted}
 
 
-def _renew_task(s: GraphStore, org: str, task: dict, day: str, reading=None) -> None:
+def _renew_task(s: GraphStore, org: str, task: dict, day: str, reading=None, by: str = "done") -> None:
     """The task was done (or its item renewed) on ``day``: record the date, and the
     counter reading then if it goes by use. A feed's reading comes in the event (the
-    projector can't read the time-series store); a manual one is read here."""
+    projector can't read the time-series store); a manual one is read here.
+
+    ``by`` (Nov 2026, restart.py): "fit" when a new item was fitted, else "done". A fitting keeps
+    the task's last real doing in ``done_before_fit``, so a task set to keep its schedule when the
+    item is replaced counts from that, not from the fitting."""
     if task.get("last_done") and task["last_done"] >= day:
         return
-    changes = {"last_done": day}
+    changes = {"last_done": day, "renewed_by": by}
+    if by == "fit":
+        if task.get("renewed_by") != "fit":
+            changes["done_before_fit"] = {"last_done": task.get("last_done"),
+                                          "last_done_reading": task.get("last_done_reading")}
+    else:
+        changes["done_before_fit"] = None
     if task.get("last_done_reading_estimated"):
         changes["last_done_reading_estimated"] = False  # read when it was done, not worked out
     if reading is not None:
@@ -3250,7 +3262,8 @@ def _walk_down(top: str, kids: dict) -> set[str]:
 
 class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDeleteOps, PositionModelOps,
                   CaptureOps, AssetSearchOps, _restoration.RestorationOps, _supporting.SupportOps, _shutdowns.ShutdownOps, _operations.OperationsOps,
-                  _failure_costs.FailureCostOps, _visit_costs.VisitCostOps, _responses.ResponseOps):
+                  _failure_costs.FailureCostOps, _visit_costs.VisitCostOps, _responses.ResponseOps,
+                  _restart.RestartOps):
     """One organisation's maintenance graph, acted on by one person."""
 
     def __init__(self, store: GraphStore, org: str, actor: str | None = None, limited: bool = True,
@@ -6779,6 +6792,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         counter of its own goes by the use it has had wherever it was fitted; an item's
         calendar task set to pause while stored doesn't count the days it spent out of
         a position."""
+        # Restart on a replacement (restart.py): counted from the item fitted since it was last done.
+        task = self.restarted(task)
         base = task.get("last_done") or task["start"]
         limit = f"{interval:g} {unit}"
         subject = _subject(self.s, self.org, task) or {}
@@ -7042,6 +7057,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                               if p["label"] == "Proposal" and p.get("status") == "pending"), None),
             # What raises it besides (or instead of) the interval: null when only the interval does.
             "trigger": self._trigger_view(task.get("trigger")), "on_event": on_event,
+            "on_replace": {**self.task_on_replace(task), "restarted_on": self.restarted(task).get("restarted_on")},
             # What doing it needs (its LSA record: labour, tools, spares, consumables, access, method).
             "resources": self._resources_view(task),
         }
@@ -16969,6 +16985,7 @@ PROJECTORS.update(_restoration.PROJECTORS)
 # A supporting task: it keeps the item on its life (Nov 2026, supporting.py).
 PROJECTORS.update(_supporting.PROJECTORS)
 PROJECTORS.update(_failure_costs.PROJECTORS)
+PROJECTORS.update(_restart.PROJECTORS)
 PROJECTORS.update(_visit_costs.PROJECTORS)
 PROJECTORS.update(_shutdowns.PROJECTORS)
 
@@ -16984,4 +17001,6 @@ PROJECTORS.update({
 # content goes, and the projector does nothing.
 PROJECTORS.update(_purge.PROJECTORS)
 
-PROJECTION_VERSION = 5
+# 6 (Nov 2026, restart.py): a task renewed by a fitting keeps its last real doing (renewed_by,
+# done_before_fit), so "keep the schedule when the item is replaced" can count from it.
+PROJECTION_VERSION = 6

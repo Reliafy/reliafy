@@ -91,7 +91,15 @@ def _quantiles(dist: dict) -> tuple[float, float, float]:
 def _sampled(parts: list[tuple[list, float, float, float]]) -> tuple[float, float, float]:
     rng = np.random.default_rng(20261123)
     total = np.zeros(SAMPLES)
-    for pmf, found, a_m, a_f in parts:
+    for part in parts:
+        if part[0] == "joint":
+            _, j, a, b = part
+            flat = np.asarray(j, dtype=float).ravel()
+            idx = rng.choice(flat.size, size=SAMPLES, p=flat / flat.sum())
+            f, p = np.unravel_index(idx, np.asarray(j).shape)
+            total += a * f + b * p
+            continue
+        pmf, found, a_m, a_f = part
         n = rng.choice(len(pmf), size=SAMPLES, p=np.asarray(pmf) / np.sum(pmf))
         k = rng.binomial(n, found) if found > 0 else np.zeros(SAMPLES, dtype=int)
         total += k * a_f + (n - k) * a_m
@@ -104,8 +112,17 @@ def _chance_sum(parts) -> dict | None:
     if not parts:
         return None
     dist: dict | None = {0.0: 1.0}
-    for pmf, found, a_m, a_f in parts:
-        dist = _convolve(dist, _split(pmf, found, a_m, a_f)) if dist is not None else None
+    for part in parts:
+        if part[0] == "joint":
+            # Failures and planned replacements together (age replacement: worked_part.py), a × f + b × p.
+            _, j, a, b = part
+            one: dict = defaultdict(float)
+            for (f, p), w in np.ndenumerate(np.asarray(j, dtype=float)):
+                if w > 0:
+                    one[round(a * f + b * p, 6)] += float(w)
+        else:
+            one = _split(*part)
+        dist = _convolve(dist, one) if dist is not None else None
         if dist is None:
             break
     if dist is not None:
@@ -152,7 +169,18 @@ def build(m, fc: dict, model_rows: list[dict], tree, root) -> dict:
         for c in r["row"].get("tasks_counted") or []:
             counted_effect.setdefault(c["task"]["id"], c["effect"])
 
-    # Planned work: each task's own line, certain.
+    # Age replacement (restart.py): a replacing task's planned count is a chance, from its life's joint
+    # distribution of failures and planned replacements; the lives at each position, for the note on a
+    # servicing task that restarts when the item is replaced.
+    from backend.services import worked_part
+
+    joint_of = {r["row"]["replacing_task"]["id"]: r for r in model_rows
+                if r.get("joint") is not None and (r["row"].get("replacing_task") or {}).get("resets")}
+    lives_at: dict = {}
+    for r in model_rows:
+        lives_at.setdefault(r["row"]["position"]["id"], []).append(r["row"])
+
+    # Planned work: each task's own line, certain (a replacing task that restarts: worked out).
     for t in fc.get("tasks") or []:
         node = m.s.node(m.org, t["id"]) or {}
         n = int(t["count"])
@@ -177,6 +205,40 @@ def build(m, fc: dict, model_rows: list[dict], tree, root) -> dict:
         else:
             line["gaps"].append({"view": "cost", "text": "no cost each time"})
             gaps["cost"].append(f"{t['name']} (no cost)")
+        restart = m.task_on_replace(node)["value"] if node else "keep"
+        line["on_replace"] = restart
+        jr = joint_of.get(t["id"])
+        if jr is not None:
+            j = jr["joint"]
+            planned = worked_part.block(j, 0, 1)
+            line.update(number="worked out", joint_task=True,
+                        times={"expected": _r(planned["expected"]), "interval": planned["interval"]},
+                        note="Restarts after a failure (age replacement): how many it takes is a chance.")
+            if t.get("labour_each"):
+                line["hours"] = {"expected": _r(planned["expected"] * float(t["labour_each"])), "interval": None,
+                                 "each": float(t["labour_each"])}
+            if t.get("cost_each") is not None:
+                line["cost"] = {"expected": _r(planned["expected"] * float(t["cost_each"])), "interval": None,
+                                "each": float(t["cost_each"])}
+            n = planned["expected"]
+        elif restart == "restart" and t["id"] not in {(r["row"].get("replacing_task") or {}).get("id")
+                                                      for r in model_rows}:
+            rows_here = [r for r in lives_at.get(t["position"]["id"], []) if r.get("mean_life")]
+            if rows_here and node.get("interval"):
+                from backend.maintenance import restart as rs
+                from backend.maintenance.position_forecast import _in_life_unit
+
+                rate = sum(1.0 / r["mean_life"] for r in rows_here)
+                every = _in_life_unit(node["interval"], node["unit"], rows_here[0]["unit"])
+                share = rs.shortfall(every, 1.0 / rate) if every is not None else None
+                if share is not None:
+                    line["restart_share"] = _r(share, 3)
+                    line["note"] = (
+                        f"Restarts when the item is replaced: about one fewer for each replacement, half the time "
+                        f"(about {share:.1%} fewer here); shown as scheduled." if share < rs.NOTE_BELOW else
+                        f"Restarts when the item is replaced: about {share:.0%} fewer than scheduled, as each "
+                        "replacement drops half an interval; shown as scheduled, as its exact range isn't "
+                        "worked out yet.")
         view = m._task_view(node) if node else {}
         for sp in ((view.get("resources") or {}).get("spares") or []):
             try:
@@ -221,10 +283,18 @@ def build(m, fc: dict, model_rows: list[dict], tree, root) -> dict:
             g["ranged"] = False
         else:
             g["pmfs"].append(pmf)
-            cost_parts.append((pmf, found, float(each) if each is not None else 0.0,
-                               float((follow or {}).get("cost_each") or 0.0)))
-            hour_parts.append((pmf, found, float((row.get("response") or {}).get("hours_each") or 0.0),
-                               float((follow or {}).get("hours_each") or 0.0)))
+            rt = row.get("replacing_task") or {}
+            if r.get("joint") is not None and rt.get("resets") and not found:
+                task_line = next((x for x in lines if x.get("task_id") == rt["id"]), None) or {}
+                cost_parts.append(("joint", r["joint"], float(each) if each is not None else 0.0,
+                                   float((task_line.get("cost") or {}).get("each") or 0.0)))
+                hour_parts.append(("joint", r["joint"], float((row.get("response") or {}).get("hours_each") or 0.0),
+                                   float((task_line.get("hours") or {}).get("each") or 0.0)))
+            else:
+                cost_parts.append((pmf, found, float(each) if each is not None else 0.0,
+                                   float((follow or {}).get("cost_each") or 0.0)))
+                hour_parts.append((pmf, found, float((row.get("response") or {}).get("hours_each") or 0.0),
+                                   float((follow or {}).get("hours_each") or 0.0)))
             spare_parts.append((pmf, 0.0, 1.0, 1.0))
         g["positions"].append(row["position"])
         g["rows"].append(row)
@@ -342,7 +412,8 @@ def build(m, fc: dict, model_rows: list[dict], tree, root) -> dict:
     # Totals: the certain lines plus the chance of the failure lines (forecast-rules 1.4).
     certain_hours = sum((x["hours"] or {}).get("expected") or 0 for x in lines if x["number"] == "certain")
     certain_cost = sum((x["cost"] or {}).get("expected") or 0 for x in lines if x["number"] == "certain")
-    failure_cost = sum((x["cost"] or {}).get("expected") or 0 for x in lines if x.get("kind") in ("corrective", "follow_on"))
+    failure_cost = sum((x["cost"] or {}).get("expected") or 0 for x in lines
+                       if x.get("kind") in ("corrective", "follow_on") or x.get("joint_task"))
     chance = _chance_sum(cost_parts) if model_rows else None
     exact_ranges = len(cost_parts) == len(model_rows)
     cost_total = {"expected": _r(certain_cost + failure_cost),
@@ -350,14 +421,16 @@ def build(m, fc: dict, model_rows: list[dict], tree, root) -> dict:
                                if chance and exact_ranges else None if model_rows else
                                [_r(certain_cost), _r(certain_cost)]),
                   "known": not gaps["cost"], "leaves_out": gaps["cost"],
-                  "by_kind": {"planned": _r(certain_cost),
+                  "by_kind": {"planned": _r(sum((x["cost"] or {}).get("expected") or 0 for x in lines
+                                                if x.get("kind") == "planned")),
                               "follow_on": _r(sum((x["cost"] or {}).get("expected") or 0 for x in lines
                                                   if x.get("kind") == "follow_on")),
                               "corrective": _r(sum((x["cost"] or {}).get("expected") or 0 for x in lines
                                                    if x.get("kind") == "corrective"))}}
     if model_rows and not exact_ranges:
         cost_total["range_note"] = "No range: a life here has no distribution of its count yet."
-    failure_hours = sum((x["hours"] or {}).get("expected") or 0 for x in lines if x.get("kind") in ("corrective", "follow_on"))
+    failure_hours = sum((x["hours"] or {}).get("expected") or 0 for x in lines
+                        if x.get("kind") in ("corrective", "follow_on") or x.get("joint_task"))
     hours_chance = _chance_sum(hour_parts) if failure_hours and len(hour_parts) == len(model_rows) else None
     hours_total = {"expected": _r(certain_hours + failure_hours),
                    "interval": ([_r(certain_hours + hours_chance["interval"][0]),
