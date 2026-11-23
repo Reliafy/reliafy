@@ -96,7 +96,7 @@ the failures are as they would be without it)*):
 
 When a position's failure modes each have a life of their own, each is
 forecast with its own tasks, and the position's whole-life model is listed
-under **Left out**, so no failure is counted twice.
+under **Not placed**, so no failure is counted twice.
 
 ## Count the stock
 

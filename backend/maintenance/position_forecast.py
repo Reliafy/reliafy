@@ -34,8 +34,10 @@ from dateutil.relativedelta import relativedelta
 from backend.maintenance import service as svc
 from backend.maintenance.service import Invalid, Maintenance
 
-PERIODS = ("month", "quarter", "year")
+PERIODS = ("day", "week", "month", "quarter", "year")
 MAX_MONTHS = 120
+CONTINUOUS_NOTE = "No duty set: assuming it runs all the time (24 h a day)"
+MAX_ROWS = 400  # periods in one read (a year by day; ten years by week is too many)
 MAX_POSITIONS = 500  # positions under the one opened, forecast in one read
 MAX_TASKS = 2000
 RANGE_LEVEL = 0.90
@@ -49,6 +51,13 @@ def horizon(today: str, period: str, periods: int) -> tuple[date, date]:
     """From today to the end of the period ``periods`` periods on: the last date included.
     A partial first period (today is the 16th) is counted and the last is whole."""
     start = date.fromisoformat(today)
+    if period == "day":
+        return start, start + timedelta(days=periods - 1)
+    if period == "week":
+        # Monday to Sunday: a week begun counts, then ``periods`` whole weeks (none begun: just those).
+        monday = start - timedelta(days=start.weekday())
+        weeks = periods if monday == start else periods + 1
+        return start, monday + timedelta(days=7 * weeks - 1)
     months = _MONTHS_OF[period]
     first = start.replace(day=1)
     if period == "quarter":
@@ -69,9 +78,24 @@ def _check(period, periods) -> tuple[str, int]:
         periods = int(periods if periods not in (None, "") else 12)
     except (TypeError, ValueError):
         raise Invalid("periods must be a whole number.") from None
-    if not 1 <= periods or periods * _MONTHS_OF[period] > MAX_MONTHS:
+    days = {"day": 1, "week": 7}.get(period)
+    too_far = periods * days > MAX_MONTHS * 366 // 12 if days else periods * _MONTHS_OF[period] > MAX_MONTHS
+    if not 1 <= periods or too_far or periods > MAX_ROWS:
         raise Invalid("Forecast 1 period or more, at most 10 years ahead.")
     return period, periods
+
+
+def _until(start: date, end) -> date:
+    """A horizon's last day, given (``end``, an ISO date): from today, at most 10 years on."""
+    try:
+        last = date.fromisoformat(str(end)[:10])
+    except ValueError:
+        raise Invalid("end is a date, such as 2027-11-30.") from None
+    if last < start:
+        raise Invalid(f"The horizon ends before it starts: end on {_short(start)} or later.")
+    if last > start + relativedelta(months=MAX_MONTHS):
+        raise Invalid("Forecast at most 10 years ahead.")
+    return last
 
 
 def _subtree(m: Maintenance, position_id: str) -> list[tuple[dict, int]]:
@@ -109,10 +133,14 @@ def _short(day) -> str:
 
 # ---- the map between dates and operating hours, for one position ------------------------------
 
-def _hours_map(m: Maintenance, pos: dict, root, start: date, end_excl: date) -> dict | None:
+def _hours_map(m: Maintenance, pos: dict, root, start: date, end_excl: date, strict: bool = False) -> dict | None:
     """The position's map from dates to operating hours over the horizon: from its operating
     plan (anchored on its hours counter's latest reading, when it has one), else the hours
-    counter's recent rate; {usage, basis {kind, text}, counter, reading}. None with neither."""
+    counter's recent rate; {usage, basis {kind, text}, counter, reading}. None with neither.
+    ``strict`` (the forecast details): the duty, else running all the time, 24 h a day, never
+    the meter's rate (Derryn, 21 Nov 2026: "assume continuous use unless there is a duty against
+    that position"), anchored on the latest hours reading, else 0 h today; basis kind
+    "continuous" says it's assumed."""
     from backend.maintenance import schedule
 
     counter = svc._counter_on(m.s, m.org, pos["id"], "hours")
@@ -132,6 +160,16 @@ def _hours_map(m: Maintenance, pos: dict, root, start: date, end_excl: date) -> 
         return {"usage": usage, "counter": counter, "readings": readings,
                 "basis": {"kind": "plan", "text": text, "plan": duty["text"], "inherited_from": duty["inherited_from"],
                           "ended": duty["ended"], "reading": None}}
+    if strict:
+        last = readings[-1] if readings else None
+        value = float(last["value"]) if last else 0.0
+        read_at = last["on"][:10] if last else start.isoformat()
+        usage = schedule.DutyPlan(schedule.Continuous()).forecast(start, end_excl, readings={"hours": value},
+                                                                  read_at=read_at)
+        anchor = (f", from {value:,.6g} h on {_short(read_at)}" if last else ", counted from 0 h today (no hours reading)")
+        return {"usage": usage, "counter": counter, "readings": readings,
+                "basis": {"kind": "continuous", "reading": {"value": value, "on": read_at},
+                          "text": f"{CONTINUOUS_NOTE}{anchor}"}}
     if counter and len(readings) >= 2:
         rate = svc._rate(readings)
         if rate and rate > 0:
@@ -186,15 +224,18 @@ def _limit(m: Maintenance, task: dict, interval, unit, rule, hours_map) -> tuple
     return schedule.Usage(float(interval), "hours"), None
 
 
-def _lib_task(m: Maintenance, task: dict, hours_map, end: date, name: str | None = None):
+def _lib_task(m: Maintenance, task: dict, hours_map, end: date, name: str | None = None, hours_only: bool = False):
     """One task as the library's Task: ((lib, view, basis, first, by_use), None), or (None, why it
-    can't be put on dates)."""
+    can't be put on dates). ``hours_only`` (by operating hours with no duty): a calendar limit
+    beside a limit by use is left out, as nothing turns it into hours."""
     from backend.maintenance import schedule
 
     view = m._task_view(task)
     every, why = _limit(m, task, task["interval"], task["unit"], task.get("rule"), hours_map)
     also = None
-    if why is None and task.get("also_interval") and task.get("also_unit"):
+    if hours_only and task.get("also_unit") and svc._is_calendar(task["also_unit"]):
+        pass
+    elif why is None and task.get("also_interval") and task.get("also_unit"):
         also, why = _limit(m, task, task["also_interval"], task["also_unit"], None, hours_map)
     if why:
         return None, why
@@ -231,17 +272,20 @@ def _lib_task(m: Maintenance, task: dict, hours_map, end: date, name: str | None
     return (lib, view, basis, first if first and first <= end.isoformat() else None, by_use), None
 
 
-def _task_rows(m: Maintenance, pos: dict, hours_map, start: date, end: date) -> tuple[list, list, list]:
+def _task_rows(m: Maintenance, pos: dict, hours_map, start: date, end: date,
+               only: set | None = None, hours_only: bool = False) -> tuple[list, list, list]:
     """The position's tasks as the library's Tasks: (rows [(library Task, view, task, basis)],
-    not on dates [{task, reason}], the library Tasks)."""
+    not on dates [{task, reason}], the library Tasks). ``only``: just these task ids."""
     rows, skipped = [], []
     names: set = set()
     for task in sorted(m._tasks_on(pos["id"]), key=lambda t: (t.get("name") or "", t["id"])):
+        if only is not None and task["id"] not in only:
+            continue
         if svc._on_event_only(task):
             skipped.append({"task": {"id": task["id"], "name": task["name"]}, "reason": "waits for its trigger"})
             continue
         name = task["name"] if task["name"] not in names else f"{task['name']} ({task['id'][:6]})"
-        found, why = _lib_task(m, task, hours_map, end, name)
+        found, why = _lib_task(m, task, hours_map, end, name, hours_only=hours_only)
         if why:
             skipped.append({"task": {"id": task["id"], "name": task["name"]}, "reason": why})
             continue
@@ -293,6 +337,22 @@ def _lives_on(m: Maintenance, pos: dict) -> tuple[list[tuple[dict, list | None]]
         return list(reversed(own)), skipped
     link = m.in_use_link(pos["id"])
     return ([(link, None)] if link else []), skipped
+
+
+def _lives_served(m: Maintenance, pos: dict, lives, served: set):
+    """The lives a task's (or package's) forecast counts: a life for failure modes, those the tasks
+    serve (just those modes); the position's whole life, when they serve any mode on it."""
+    out = []
+    for link, mode_ids in lives:
+        if mode_ids is None:
+            mine = [fm["id"] for fm in m._modes_on(pos["id"]) if fm["id"] in served]
+            if mine:
+                out.append((link, None))
+        else:
+            mine = [i for i in mode_ids if i in served]
+            if mine:
+                out.append((link, mine))
+    return out
 
 
 def _mode_tasks(m: Maintenance, pos: dict, mode_ids) -> list[dict]:
@@ -478,10 +538,12 @@ class _Credited:
 
 
 def _model_forecast(m: Maintenance, fetch, pos: dict, hours_map, start: date, end_excl: date, period: str,
-                    link: dict | None = ..., mode_ids=None):
+                    link: dict | None = ..., mode_ids=None, windows=None):
     """A life on the position (``link``; by default the model in use), forecast by period with
     the tasks of the failure modes it's for (``mode_ids``; None: all the position's) counted:
-    (found, None) or (None, reason)."""
+    (found, None) or (None, reason). ``windows(life_unit, usage)``: forecast in these windows
+    instead of calendar periods (the forecast details by operating hours): their ends in the
+    life's unit from now, or a reason they can't be had."""
     from repyability import NonRepairable
 
     from backend.maintenance import forecast as class_fc
@@ -589,8 +651,14 @@ def _model_forecast(m: Maintenance, fetch, pos: dict, hours_map, start: date, en
     else:
         part = NonRepairable(dist, unplanned_cost=cost) if cost is not None else NonRepairable(dist)
     try:
-        fc = schedule.failures_by_period(part, usage, period, age=float(age), unit=lib_unit, **policy)
-    except (ValueError, TypeError) as exc:
+        if windows is not None:
+            ends = windows(lib_unit, usage)
+            if isinstance(ends, str):
+                return None, {**brief, "reason": ends}
+            fc = by_windows(part, ends, float(age), policy)
+        else:
+            fc = schedule.failures_by_period(part, usage, period, age=float(age), unit=lib_unit, **policy)
+    except (ValueError, TypeError, NotImplementedError) as exc:
         return None, {**brief, "reason": f"couldn't be forecast: {exc}"}
     if cost is None and policy:
         fc = _NoCost(fc)
@@ -622,6 +690,65 @@ def _model_forecast(m: Maintenance, fetch, pos: dict, hours_map, start: date, en
              "given for them yet."] if effects["miss"] < 1.0 else []),
     }
     return {"row": row, "fc": fc}, None
+
+
+def _count_at(counts, probabilities, q: float) -> float:
+    """The smallest count whose chance of that many or fewer reaches ``q`` (a percentile of a count)."""
+    cum = np.cumsum(np.asarray(probabilities, dtype=float))
+    at = int(np.searchsorted(cum, q / 100.0 - 1e-12))
+    return float(counts[min(at, len(counts) - 1)])
+
+
+class _Windows:
+    """A life forecast over windows in operating time (not calendar periods), the shape the rows
+    read from ``failures_by_period``."""
+
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+
+
+def by_windows(part, ends, age: float, policy: dict) -> _Windows:
+    """A part's expected failures, cost and their 90% range (the 5th to 95th percentile) in each of
+    a run of windows from now, ``ends`` in the life's unit: RePyability's
+    ``NonRepairable.cost_by_window`` (or, run to failure with no cost, its exact ``failures``).
+    What ``schedule.failures_by_period`` does for calendar periods, for windows of running hours."""
+    ends = np.maximum.accumulate(np.asarray(ends, dtype=float))
+    n = len(ends)
+    has_cost = getattr(part, "cu", None) is not None
+    found = None
+    try:
+        found = part.cost_by_window(ends, policy.get("every"), resets=policy.get("resets"), age=age,
+                                    since_renewal=policy.get("since_renewal"), levels=(5.0, 95.0))
+    except (ValueError, NotImplementedError):
+        if policy.get("every") is not None:
+            raise
+    if found is not None:
+        ws = list(found.windows)
+        expected = np.array([float(w.expected_failures) for w in ws])
+        cost = np.array([float(w.mean) for w in ws])
+        low = np.array([float(w.percentiles[0]) for w in ws])
+        high = np.array([float(w.percentiles[1]) for w in ws])
+        f_low = np.array([_count_at(np.arange(len(w.failure_probabilities)), w.failure_probabilities, 5.0) for w in ws])
+        f_high = np.array([_count_at(np.arange(len(w.failure_probabilities)), w.failure_probabilities, 95.0) for w in ws])
+        whole = found.total
+        probs = [float(p) for p in whole.failure_probabilities]
+        counts = np.arange(len(probs))
+        total = {"expected_failures": float(whole.expected_failures), "expected_cost": float(whole.mean),
+                 "cost_low": float(whole.percentiles[0]), "cost_high": float(whole.percentiles[1]),
+                 "failures_low": _count_at(counts, probs, 5.0), "failures_high": _count_at(counts, probs, 95.0),
+                 "failure_probabilities": probs, "probability": 1.0 - probs[0] if probs else 0.0}
+        return _Windows(method="numerical", notes=(), expected_failures=expected,
+                        expected_cost=cost if has_cost else None, cost_low=low if has_cost else None,
+                        cost_high=high if has_cost else None, failures_low=f_low, failures_high=f_high, total=total)
+    got = part.failures(ends, age=age)
+    cumulative = np.asarray(got.expected_failures, dtype=float)
+    expected = np.diff(cumulative, prepend=0.0)
+    total = {"expected_failures": float(cumulative[-1]) if n else 0.0,
+             "expected_cost": float(cumulative[-1] * part.cu) if has_cost and n else None,
+             "probability": float(np.asarray(got.probability, dtype=float)[-1]) if n else 0.0}
+    return _Windows(method="exact", notes=("No ranges: the part has no cost the windows can be worked out with.",),
+                    expected_failures=expected, expected_cost=expected * part.cu if has_cost else None,
+                    cost_low=None, cost_high=None, failures_low=None, failures_high=None, total=total)
 
 
 class _NoCost:
@@ -687,6 +814,18 @@ def _visits(m: Maintenance, tasks_out: list[dict], starts: list, n: int) -> tupl
     visit_cost at each time one of its tasks falls due; a task in no package with a visit_cost, each
     time it does. Tasks due on the same position at the same time (or the same day, on the
     calendar) are one visit, charged the largest visit cost among them once."""
+    visits = visit_list(m, tasks_out)
+    cost_arr, count_arr = np.zeros(n), np.zeros(n)
+    day_starts = np.array(starts)
+    for cost, day in visits.values():
+        idx = max(0, min(n - 1, int(np.searchsorted(day_starts, date.fromisoformat(day), side="right")) - 1))
+        cost_arr[idx] += cost
+        count_arr[idx] += 1
+    return cost_arr, count_arr
+
+
+def visit_list(m: Maintenance, tasks_out: list[dict]) -> dict:
+    """The visits with a cost of their own: {(position id, moment or day): (cost, day)} (see _visits)."""
     index = m._package_index()
     visits: dict = {}
     for t in tasks_out:
@@ -702,13 +841,7 @@ def _visits(m: Maintenance, tasks_out: list[dict], starts: list, n: int) -> tupl
         for key, day in zip(keys, t["dates"]):
             k = (t["position"]["id"], key or day)
             visits[k] = (max(cost, visits.get(k, (0.0, day))[0]), day)
-    cost_arr, count_arr = np.zeros(n), np.zeros(n)
-    day_starts = np.array(starts)
-    for cost, day in visits.values():
-        idx = max(0, min(n - 1, int(np.searchsorted(day_starts, date.fromisoformat(day), side="right")) - 1))
-        cost_arr[idx] += cost
-        count_arr[idx] += 1
-    return cost_arr, count_arr
+    return visits
 
 
 def _cost_basis_words(t: dict, unpriced: list[dict]) -> dict:
@@ -799,14 +932,29 @@ def _prompts(m: Maintenance, fetch, tree, tasks_out: list[dict], models: list[di
 
 # ---- the forecast ----------------------------------------------------------------------------
 
+def served_modes(m: Maintenance, task_ids) -> set:
+    """The failure modes the tasks serve (MITIGATES): a task's or a package's forecast counts the
+    failures of these only."""
+    out = set()
+    for tid in task_ids or ():
+        for fm in m.s.out(m.org, tid, "MITIGATES"):
+            if fm.get("label") == "FailureMode" and not fm.get("retired"):
+                out.add(fm["id"])
+    return out
+
+
 def position_forecast(m: Maintenance, position_id: str, root: str | None = None, period="month", periods=12,
-                      fetch=None) -> dict:
+                      fetch=None, end=None, task_ids=None, strict: bool = False) -> dict:
     """The forecast for a position and everything under it: see the module docstring.
     ``fetch(model_type, model_id)`` opens a saved model (position_models.fetcher); without
-    it, no failures are forecast."""
+    it, no failures are forecast. ``end`` (an ISO date): the horizon's last day instead of
+    ``periods``. ``task_ids``: only these tasks, and the failures of the modes they serve (a
+    task's or a package's forecast). ``strict``: hours by a duty only (``_hours_map``)."""
     from backend.maintenance import schedule
 
     period, periods = _check(period, periods)
+    only = set(task_ids) if task_ids is not None else None
+    served = served_modes(m, only) if only is not None else None
     pos = m._get(position_id, "Position")
     if root:
         scope = m.s.node(m.org, root)
@@ -815,11 +963,20 @@ def position_forecast(m: Maintenance, position_id: str, root: str | None = None,
         if root != position_id and root not in m._ancestor_ids(position_id):
             raise Invalid("That position isn't inside the asset opened.")
     today = m.today()
-    start, end = horizon(today, period, periods)
+    if end not in (None, ""):
+        start = date.fromisoformat(today)
+        end = _until(start, end)
+        periods = None
+    else:
+        start, end = horizon(today, period, periods)
     end_excl = end + timedelta(days=1)
     calendar = schedule.UsageForecast.calendar(start, end_excl).by_period(period)
     starts = [d.date() if isinstance(d, datetime) else d for d in calendar.starts]
     n = len(starts)
+    if n > MAX_ROWS:
+        raise Invalid(f"That's {n:,} {period}s: group by a longer period, or forecast a shorter time "
+                      f"(at most {MAX_ROWS} rows).")
+    periods = periods or n
     zeros = lambda: np.zeros(n)  # noqa: E731
     count, labour, planned = zeros(), zeros(), zeros()
     labour_cost, materials_cost = zeros(), zeros()
@@ -833,10 +990,10 @@ def position_forecast(m: Maintenance, position_id: str, root: str | None = None,
     own_map = None
     n_tasks = 0
     for node, depth in tree:
-        hours_map = _hours_map(m, node, root, start, end_excl)
+        hours_map = _hours_map(m, node, root, start, end_excl, strict=strict)
         if node["id"] == position_id:
             own_map = hours_map
-        rows, skipped, lib_tasks = _task_rows(m, node, hours_map, start, end)
+        rows, skipped, lib_tasks = _task_rows(m, node, hours_map, start, end, only)
         n_tasks += len(rows)
         if n_tasks > MAX_TASKS:
             raise Invalid(f"More than {MAX_TASKS} tasks under this position: open a smaller branch.")
@@ -892,7 +1049,10 @@ def position_forecast(m: Maintenance, position_id: str, root: str | None = None,
             here = {"id": node["id"], "name": node.get("name", "")}
             lives, left_out = _lives_on(m, node)
             not_forecast.extend({**x, "position": here} for x in left_out)
+            if served is not None:
+                lives = _lives_served(m, node, lives, served)
             for link, mode_ids in lives:
+                # A life in hours with no duty runs all the time (running_clock), strict or not.
                 found, why = _model_forecast(m, fetch, node, hours_map, start, end_excl, period, link, mode_ids)
                 if why:
                     not_forecast.append({**why, "position": here})

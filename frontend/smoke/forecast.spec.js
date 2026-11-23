@@ -31,11 +31,13 @@ test("forecast: the answer first, tasks by use on dates from the plan, kept insi
   await expect(page).toHaveURL(new RegExp(`forecast=${pump.id}`));
   const view = page.locator("section.fc-view").first();
   await expect(view.getByText(/^To \d+ \w+ \d{4}: \d+ tasks/)).toBeVisible();
-  await expect(view.getByText(/Hours from the operating plan \(Monday to Friday, 06:00 to 22:00\)/).first()).toBeVisible();
+  await expect(view.getByText(/Duty: Monday to Friday, 06:00 to 22:00/).first()).toBeVisible();
   await expect(view.getByRole("table").first()).toBeVisible();
-  await expect(view.getByText(/^Service \(/).first()).toBeVisible();
+  // When next: the weekly inspection first; 12 months by month is 12 rows.
+  await expect(view.getByRole("region", { name: "When next" })).toContainText("Inspect");
+  await expect(view.locator(".fcd-table tbody tr")).toHaveCount(12);
   await expect(page.getByText(`Elsewhere ${tag}`)).toHaveCount(0);
-  await view.getByRole("radio", { name: "Quarters" }).click();
+  await view.getByRole("radiogroup", { name: "Group by" }).getByRole("radio", { name: "Quarter" }).click();
   await expect(view.getByRole("columnheader", { name: "Quarter" })).toBeVisible();
   await expectHealthy(page, problems);
 });

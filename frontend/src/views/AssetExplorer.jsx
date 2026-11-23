@@ -25,11 +25,11 @@ import {
 } from "../explorerMissions.js";
 import TaskOptimisePane from "../components/TaskOptimisePane.jsx";
 import {
-  DraftPackagesPane, ForecastPane, PackageCell, PackagePane, PackageSide, TASK_COLUMNS, TASK_TREE_HEAD, TaskCell, TaskSide, forecastSpan, taskPhoneRow,
+  DraftPackagesPane, ForecastPane, ForecastSide, PackageCell, PackagePane, PackageSide, TASK_COLUMNS, TASK_TREE_HEAD, TaskCell, TaskSide, forecastSpan, taskPhoneRow,
   useTreeForecast, useTreeTasks,
 } from "../components/TaskTreeTable.jsx";
 import {
-  FC_OPEN, PKG_FORECAST, PKG_OPEN, PKG_RETIRE, REF_GO, REF_REMOVE, TASK_RETIRE, TASK_ADD_TO, TASK_CLEAR, TASK_DRAFT, TASK_FORECAST, TASK_OPEN, TASK_OPTIMISE, TASK_PACKAGE, TASK_SELECT,
+  FC_LEVEL, FC_OPEN, PKG_FORECAST, PKG_OPEN, PKG_RETIRE, REF_GO, REF_REMOVE, TASK_RETIRE, TASK_ADD_TO, TASK_CLEAR, TASK_DRAFT, TASK_FORECAST, TASK_OPEN, TASK_OPTIMISE, TASK_PACKAGE, TASK_SELECT,
   anyFilter, commonHolder, facetValues, facetsOf, filterTasks, filterWords, forecastItem, forecastRowActions, forecastWanted,
   graftTasks, isForecastRow, isMaintRow, isPackageRef, isPackageRow, isTaskRow, keepShown, openForTasks, packageKey, packageRowActions,
   packageWhere, pickTasks, refRowActions, rollupText as taskRollup, shownTasks, taskKey, taskRowActions,
@@ -2028,7 +2028,16 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setDraftAt({ key: r.key, n: Date.now() });
     setTimeout(() => paneHeading.current?.focus({ preventScroll: true }), 0);
   };
-  // A Forecast row's (or a package's) full forecast: Forecast… on the level it sits at.
+  // A task's or a package's Forecast row opened (a double-click, Enter or Open…): its details across
+  // the table, the tree kept beside them, as a task's open; a single click shows them beside it.
+  const openForecastRow = (r) => {
+    if (!isForecastRow(r)) return;
+    setQuery_((q) => { for (const k of ["mtask", "addtask", "rates", "mpkg", "needs"]) q.delete(k); });
+    pick(r.key, { go: true });
+    if (!phone) setExpanded(true);
+    setTimeout(() => detailsHeading.current?.focus({ preventScroll: true }), 0);
+  };
+  // A package's (or a Forecast row's level) full forecast: Forecast… on the level it sits at.
   const openForecastAt = (r) => {
     const at = whole.rows.get(r?.ref?.position_id);
     if (at) openForecast(at);
@@ -2207,7 +2216,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       }
       if (id === TASK_DRAFT) return openDraft(r);
       if (id === PKG_OPEN) return openPackageView(r.ref.pkg);
-      if (id === PKG_FORECAST || id === FC_OPEN) return openForecastAt(r);
+      if (id === FC_OPEN) return openForecastRow(r);
+      if (id === PKG_FORECAST || id === FC_LEVEL) return openForecastAt(r);
       if (id === REF_GO) return reveal(r.ref.task_key);
       if (id === "pos-here") {
         setNewParent(TOP);
@@ -2854,7 +2864,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       onClear: () => setTfilters({}),
       words: filterWords(tfilters),
     },
-    onOpen: (key) => openTaskRow(display.rows.get(key)),
+    onOpen: (key) => {
+      const r = display.rows.get(key);
+      return isForecastRow(r) ? openForecastRow(r) : openTaskRow(r);
+    },
     // A level's roll-up; a Forecast row's (and each of its lines') numbers across the columns.
     rollupOf: (r, isOpen) => (r.tsum ? taskRollup(r, isOpen) : isForecastRow(r) ? forecastSpan(r) : null),
     phoneRow: (r, isOpen) => taskPhoneRow(r, r.tsum ? taskRollup(r, isOpen) : ""),
@@ -3235,7 +3248,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   const mtaskRow = tasksOn ? whole.rows.get(taskKey(params.get("mtask") || "")) : null;
   // A package open (?mpkg=, or its row picked): its details beside the table.
   const mpkgId = tasksOn && !addingAt && !ratesOn ? (panel && isPackageRow(focusRow) ? focusRow.ref.pkg.id : params.get("mpkg")) : null;
-  const taskRow = !tasksOn || addingAt || ratesOn || (panel && isPackageRow(focusRow)) ? null
+  // A task's or package's Forecast row picked: its forecast details beside (or across) the table.
+  const fcRow = tasksOn && !designScope && panel && isForecastRow(focusRow) ? focusRow : null;
+  const taskRow = !tasksOn || addingAt || ratesOn || fcRow || (panel && isPackageRow(focusRow)) ? null
     : panel && isTaskRow(focusRow) ? focusRow : !mpkgId && isTaskRow(mtaskRow) ? mtaskRow : null;
   const needsOn = !!taskRow && params.get("needs") === "1" && params.get("mtask") === taskRow.ref.task.id;
   const sideHolder = taskRow ? whole.rows.get(taskRow.ref.position_id) : addingAt ? whole.rows.get(addingAt) : null;
@@ -3244,7 +3259,14 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     setQuery_((q) => { for (const k of ["addtask", "rates", "mtask", "needs", "mpkg"]) q.delete(k); });
     if (focus) setTimeout(() => document.getElementById(`tp-${focus}`)?.focus({ preventScroll: true }), 0);
   };
-  const taskSide = (taskRow && sideHolder) || (addingAt && sideHolder) || ratesOn ? (
+  const taskSide = fcRow ? (
+    <div className="rw tt-side">
+      {phone && <div className="rw-scrim" onClick={closeTaskSide} aria-hidden="true" />}
+      <ForecastSide r={fcRow} holder={whole.rows.get(fcRow.ref.position_id)} root={root || tasksWithin} phone={phone}
+                    expanded={wideDetails} onExpand={expandDetails} onCollapse={collapseDetails}
+                    headingRef={detailsHeading} onClose={closeTaskSide} />
+    </div>
+  ) : (taskRow && sideHolder) || (addingAt && sideHolder) || ratesOn ? (
     <div className="rw tt-side">
       {phone && <div className="rw-scrim" onClick={closeTaskSide} aria-hidden="true" />}
       <TaskSide holder={sideHolder} taskId={taskRow ? taskRow.ref.task.id : null} taskName={taskRow ? taskRow.ref.task.name : ""} rates={ratesOn} phone={phone}
@@ -3543,7 +3565,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
           if (isMissionRow(r)) return openMissionRow(r);
           if (isTaskRow(r)) return openTaskRow(r);
           if (isPackageRow(r) || isPackageRef(r)) return openTaskRow(r);
-          if (isForecastRow(r)) return openForecastAt(r);
+          if (isForecastRow(r)) return openForecastRow(r);
           if (isRcmRow(r)) {
             setPanel(true);
             return setTimeout(() => detailsHeading.current?.focus(), 0);

@@ -57,9 +57,7 @@ for (const width of [1440, 400]) {
     if (width > 720) await expect(row).toContainText("The first Saturday of every month");
     await row.locator(".tp-chev").click();
     const fc = page.locator(`[id="tp-MF:MT:${p.task.id}"]`);
-    await fc.locator(".tp-chev").click();
-    await expect(fc).toContainText(/12 times to \d+ \w+ \d{4}/);
-    await expect(page.locator(`[id="tp-MF:MT:${p.task.id}:next"]`)).toContainText("Next due");
+    await expect(fc).toContainText(/next \d+ \w+ \d{4} · 12 times a year/);
     await shot(page, `calendar-rule-forecast-${width}`);
     expect(await sideways(page)).toBeLessThanOrEqual(0);
     await expectHealthy(page, problems, { label: `calendar schedules ${width}` });

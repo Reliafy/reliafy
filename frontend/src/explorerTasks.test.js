@@ -193,7 +193,7 @@ test("a new package goes on the lowest position over all its tasks", () => {
 // ---- where a package lives, and forecasts under tasks and packages (Derryn, 22 Nov 2026) ----
 
 import {
-  FC_LINE_TYPE, FC_TYPE, PKG_REF_TYPE, PKG_TYPE, forecastLines, forecastOf, forecastSummary, forecastWanted, packageCell,
+  FC_TYPE, PKG_REF_TYPE, PKG_TYPE, forecastWanted, packageCell,
   packageHomes, packageKey, packageWhere,
 } from "./explorerTasks.js";
 
@@ -265,54 +265,48 @@ test("a filter never moves a package, and keeps only its tasks that match", () =
   assert.equal(none.rows.get("mw").kids.includes(packageKey("s50")), false);
 });
 
+// The level's forecast for the next year, as the server's forecast details give it.
 const fc = {
-  period: "month", end: "2027-11-30",
-  rows: [{ start: "2026-11-22" }, { start: "2026-12-01" }, { start: "2027-01-01" }],
+  basis: "calendar", period: "month", start: "2026-12-01", end: "2027-11-30",
   tasks: [
-    { id: "oil", dates: ["2026-12-05", "2027-01-05", "2027-01-25"], cost_each: 80, labour_each: 1.5, overdue: false },
-    { id: "blade", dates: ["2026-11-30"], cost_each: null, labour_each: 0.5, overdue: true },
+    { id: "oil", dates: ["2026-12-05", "2027-01-05", "2027-01-25"], count: 3, cost_each: 80, overdue: false },
+    { id: "blade", dates: ["2026-11-30"], count: 1, cost_each: null, overdue: true },
   ],
-  not_on_dates: [{ task: { id: "plug" }, reason: "it goes by use, with no hours counter" }],
+  not_placed: [{ task: { id: "plug" }, reason: "every 250 h, not dated: set a duty in Operations" }],
+  occurrences: [
+    { kind: "visit", package: { id: "s50" }, date: "2026-11-30" },
+    { kind: "visit", package: { id: "s50" }, date: "2026-12-05" },
+  ],
 };
 
-test("a task's Forecast row: next due, each month's count, labour, parts and cost", () => {
-  const oil = task("oil", "en", { resources: { spares: [{ part_id: "of", name: "Oil filter", part_number: "OF-1", qty: 1 }], consumables: [{ name: "Engine oil", unit: "L", qty: 2 }] } });
-  const f = forecastOf([oil], fc);
-  assert.equal(f.count, 3);
-  assert.equal(f.cost, 240);
-  assert.equal(f.labour, 4.5);
-  assert.deepEqual(f.periods.map((p) => p.count), [0, 1, 2]);
-  assert.equal(forecastSummary(f), "3 times to 30 Nov 2027 · 4.5 h labour · $240");
-  const lines = forecastLines(f);
-  assert.deepEqual(lines.map((l) => l.label), ["Next due", "Dec 2026", "Jan 2027", "Parts and spares", "In all"]);
-  assert.equal(lines[0].text, "5 Dec 2026");
-  assert.equal(lines[2].text, "2 times · 3 h labour · $160");
-  assert.equal(lines[3].text, "3 × Oil filter (OF-1), 6 L Engine oil");
-  // Overdue first; a task not on dates says why; no cost set says so.
-  const blade = forecastOf([task("blade", "dk")], fc);
-  assert.equal(forecastLines(blade)[0].label, "Overdue");
-  assert.match(forecastSummary(blade), /cost not set/);
-  assert.deepEqual(forecastLines(forecastOf([task("plug", "en")], fc)).map((l) => l.label), ["Not on dates"]);
+test("a task's Forecast row is one line: next, how many a year and the cost a year; no dates under it", () => {
+  const out = graftTasks(mowerTree, [task("oil", "en"), task("plug", "en")], { forecasts: true, forecast: { fc } });
+  const f = out.rows.get(out.rows.get(taskKey("oil")).kids[0]);
+  assert.equal(f.type, FC_TYPE);
+  assert.deepEqual(f.kids, []);
+  assert.equal(f.ref.summary, "next 5 Dec 2026 · 3 times a year · $240 a year");
+  assert.equal(f.ref.task_id, "oil");
+  // By use with no duty: not dated, and why.
+  const plug = out.rows.get(out.rows.get(taskKey("plug")).kids[0]);
+  assert.equal(plug.ref.summary, "every 250 h, not dated: set a duty in Operations");
+  // Overdue first; no cost set says so.
+  const blade = graftTasks(mowerTree, [task("blade", "dk")], { forecasts: true, forecast: { fc } });
+  assert.equal(blade.rows.get(blade.rows.get(taskKey("blade")).kids[0]).ref.summary, "overdue, done first 30 Nov 2026 · 1 time a year · cost not set");
 });
 
-test("a package's Forecast adds up its tasks, with its next visit first; Forecast rows hang under tasks and packages", () => {
+test("a package's Forecast row counts its visits; the read starts once a task or package is open", () => {
   const tasks = [task("oil", "en", inPkg(svc)), task("blade", "dk", inPkg(svc))];
-  const f = forecastOf(tasks, fc);
-  assert.equal(f.count, 4);
-  assert.equal(forecastSummary(f, "package"), "4 tasks to 30 Nov 2027 · 5 h labour · $240 (some not priced)");
-  assert.deepEqual(forecastLines(f, { kind: "package", pkg: svc })[0], { id: "next", label: "Next visit", text: "10 Dec 2026" });
   const out = graftTasks(mowerTree, tasks, { packages: [svc], forecasts: true, forecast: { fc } });
-  const t = out.rows.get(taskKey("oil"));
-  assert.equal(out.rows.get(t.kids[0]).type, FC_TYPE);
-  assert.equal(out.rows.get(t.kids[0]).ref.summary, "3 times to 30 Nov 2027 · 4.5 h labour · $240");
-  assert.ok(out.rows.get(out.rows.get(t.kids[0]).kids[0]).type === FC_LINE_TYPE);
   const p = out.rows.get(packageKey("s50"));
-  assert.equal(out.rows.get(p.kids.at(-1)).type, FC_TYPE);
-  // Not read yet: its one line says it's being worked out; the read starts when one is open.
+  const pf = out.rows.get(p.kids.at(-1));
+  assert.equal(pf.type, FC_TYPE);
+  assert.equal(pf.ref.package_id, "s50");
+  assert.equal(pf.ref.summary, "overdue, done first 30 Nov 2026 · 2 visits a year · $240 a year");
+  // Not read yet: it says it's being worked out.
   const wait = graftTasks(mowerTree, tasks, { forecasts: true });
   const w = wait.rows.get(wait.rows.get(taskKey("oil")).kids[0]);
-  assert.equal(wait.rows.get(w.kids[0]).ref.name, "Working out…");
-  assert.equal(forecastWanted(new Set(["mw", w.key])), true);
+  assert.equal(w.ref.summary, "Working out…");
+  assert.equal(forecastWanted(new Set(["mw", taskKey("oil")])), true);
   assert.equal(forecastWanted(new Set(["mw"])), false);
   // A filter on keeps a task's Forecast with it.
   const pr = graftTasks(mowerTree, tasks, { forecasts: true, prune: true });

@@ -3070,16 +3070,42 @@ def get_operating_plan(kind: str, target_id: str, root: str | None = None,
 
 @router.get("/positions/{position_id}/forecast")
 def position_forecast(position_id: str, root: str | None = None, period: str = "month", periods: int = 12,
+                      end: str | None = None, strict: bool = False,
                       session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
                       m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """The forecast for a position and everything inside it (inside root, the asset opened): tasks
     on dates, work per period, expected failures and cost per period with a 90% range, each saying
-    what it rests on. Also over MCP and the CLI: maintenance get.forecast."""
+    what it rests on. period: day, week, month, quarter or year; end (a date): the last day instead
+    of periods; strict: hours by a duty only (no meter rate, no running all day). Also over MCP and
+    the CLI: maintenance get.forecast."""
     from backend.maintenance import position_forecast as pf
     from backend.maintenance import position_models as pm
 
     fetch = pm.fetcher(session, ctx.read_owners, ctx.hidden)
-    return _run(pf.position_forecast, m, position_id, root or None, period, periods, fetch)
+    return _run(pf.position_forecast, m, position_id, root or None, period, periods, fetch, end or None, None, strict)
+
+
+@router.get("/positions/{position_id}/forecast/details")
+def position_forecast_details(position_id: str, root: str | None = None, basis: str | None = None,
+                              period: str = "month", end: str | None = None, months: int | None = None,
+                              hours: float | None = None,
+                              every: float | None = None, reading: float | None = None,
+                              task_id: str | None = None, package_id: str | None = None,
+                              session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                              m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """A forecast's details (the Explorer's Forecast rows and Forecast…): the position and everything
+    inside it, or one task (task_id) or a package (package_id) there. basis calendar (period: day,
+    week, month, quarter or year; end: the last day, default a year on; or months: to the end of a month,
+    this one counted) or hours (hours ahead, grouped
+    every so many hours, from reading); left out, the calendar when there's a duty. Rows of counts and
+    costs, expected failures with their 90% range, each time it's done (occurrences) and what couldn't
+    be placed and why."""
+    from backend.maintenance import forecast_details as fd
+    from backend.maintenance import position_models as pm
+
+    fetch = pm.fetcher(session, ctx.read_owners, ctx.hidden)
+    return _run(fd.forecast_details, m, position_id, root or None, basis or None, period, end or None, hours,
+                every, reading, [task_id] if task_id else None, package_id or None, fetch, months)
 
 
 @router.put("/positions/{position_id}/operating-plan")

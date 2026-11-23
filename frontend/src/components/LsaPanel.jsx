@@ -6,7 +6,7 @@ import {
 } from "../api.js";
 import { Field, FormModal, fmtDate, today as workspaceToday, useSendOnce } from "./MaintenanceParts.jsx";
 import HowOften from "./HowOften.jsx";
-import PositionForecast from "./PositionForecast.jsx";
+import ForecastDetails from "./ForecastDetails.jsx";
 import SparesYear from "./SparesYear.jsx";
 import PackageParts from "./PackageParts.jsx";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
@@ -713,7 +713,7 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
   const adding = useOpenParam("addtask");
   const ratesOpen = useOpenParam("rates");
   // Tasks / Forecast (?mview=forecast): the forecast for a position and everything inside it
-  // (PositionForecast.jsx), inside the asset opened (?root=). The Maintenance tab is operators' only.
+  // (ForecastDetails.jsx), inside the asset opened (?root=). The Maintenance tab is operators' only.
   const viewParam = useOpenParam("mview");
   const [search] = useSearchParams();
   const forecastable = maint && row.type === "pos";
@@ -854,8 +854,8 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
   if (forecastOn) {
     return (
       <div className="td-tab-page pk-panel rw">
-        <PositionForecast positionId={row.key} name={row.ref.name || "this position"} root={search.get("root") || null}
-                          bar={viewSwitch} />
+        <ForecastDetails positionId={row.key} name={row.ref.name || "this position"} root={search.get("root") || null}
+                         bar={viewSwitch} />
       </div>
     );
   }

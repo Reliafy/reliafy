@@ -11,8 +11,20 @@ test("opening a task row (double-click, Enter, Open…) expands the details acro
   const src = read("views/AssetExplorer.jsx");
   const open = src.slice(src.indexOf("const openTaskRow"), src.indexOf("const openForecast"));
   assert.match(open, /if \(!phone\) setExpanded\(true\)/);
-  assert.match(src, /onOpen: \(key\) => openTaskRow\(/); // the table's double-click
+  assert.match(src, /isForecastRow\(r\) \? openForecastRow\(r\) : openTaskRow\(r\)/); // the table's double-click
   assert.match(src, /if \(isTaskRow\(r\)\) return openTaskRow\(r\)/); // Enter
+});
+
+// A Forecast row opens its details the same way (Derryn, 23 Nov 2026: the dates belong in the details).
+test("opening a Forecast row (double-click, Enter, Open…) expands its details the same way", () => {
+  const src = read("views/AssetExplorer.jsx");
+  const open = src.slice(src.indexOf("const openForecastRow"), src.indexOf("const openForecastAt"));
+  assert.match(open, /pick\(r\.key, \{ go: true \}\)/);
+  assert.match(open, /if \(!phone\) setExpanded\(true\)/);
+  assert.match(src, /if \(isForecastRow\(r\)\) return openForecastRow\(r\)/); // Enter
+  assert.match(src, /<ForecastSide [^>]*\n\s*expanded=\{wideDetails\} onExpand=\{expandDetails\} onCollapse=\{collapseDetails\}/);
+  const side = read("components/TaskTreeTable.jsx");
+  assert.match(side.slice(side.indexOf("export function ForecastSide")), /expanded && onCollapse\) onCollapse\(\); else onClose\(\)/);
 });
 
 test("the task side offers Back to table and Esc returns before it closes", () => {
