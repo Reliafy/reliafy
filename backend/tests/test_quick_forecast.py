@@ -1,7 +1,8 @@
 """The quick forecast tool as a sentence (Decisions › Forecasts; forecast plan step 1, Nov 2026):
 work on a schedule (a certain count, no model), a part that fails (the saved-fleet engine, unchanged)
-or both, as lines with one owner each. The figures are the plan's worked examples 3.1 to 3.3: the
-schedule counts exactly, the part's failures within the engine's simulation."""
+or both, as lines with one owner each. The figures are the plan's worked examples 3.1 to 3.4: the
+schedule counts exactly, and the part's failures are worked out (RePyability, not simulated), so they
+agree with the lines by owner from the Explorer."""
 
 import pytest
 
@@ -53,15 +54,16 @@ def test_a_calendar_task_counts_on_dates_whatever_the_running():
 
 def test_the_oil_change_and_the_engine():
     """3.2: one truck at 20 h a day, engine 9,000 h old. 29 oil changes (certain, $16,312.50, 43.5 h); the
-    engine's failures 0.688 expected, 64% chance of one or more, range 0 to 1, from the engine's runs."""
+    engine's failures 0.688 expected, 64% chance of one or more, range 0 to 1, worked out."""
     out = quick_forecast({"start": START, "running": {"hours": 20, "per": "day"},
                           "work": {"name": "Change engine oil", "every": 250, "hours_each": 1.5, "cost_each": 562.5},
                           "part": {**ENGINE, "age": 9000, "cost_if_fails": 180000, "hours_if_fails": 60}})
     oil, engine = _line(out, "task"), _line(out, "failure")
     assert oil["number"] == "certain" and oil["times"]["expected"] == 29
     assert oil["cost"]["expected"] == pytest.approx(16312.5) and oil["hours"]["expected"] == pytest.approx(43.5)
-    assert engine["number"] == "simulated" and engine["kind"] == "corrective"
-    assert engine["times"]["expected"] == pytest.approx(0.688, abs=0.04)
+    assert engine["number"] == "worked out" and engine["kind"] == "corrective"
+    assert engine["times"]["expected"] == pytest.approx(0.688, abs=0.001)
+    assert engine["cost"]["expected"] == pytest.approx(123840, rel=0.001)
     assert engine["times"]["probability"] == pytest.approx(0.64, abs=0.01)  # exact, per unit
     assert engine["times"]["interval"] == [0, 1]
     cost = out["totals"]["cost"]
@@ -88,16 +90,29 @@ def test_a_gap_is_flagged_never_filled():
 
 
 def test_work_that_replaces_the_part_is_a_planned_replacement():
-    """3.3, restart (age replacement), the engine's: plugs every 100 h at 12 h a week, 626 h: about 5.77
-    planned changes and 0.243 failures, about $501 at $49 and $900."""
+    """3.3, restart (age replacement): plugs every 100 h at 12 h a week, 626 h: 5.77 planned changes and
+    0.243 failures, $501 at $49 and $900, worked out."""
     out = quick_forecast({"start": START, "running": {"hours": 12, "per": "week"},
                           "work": {"name": "Replace spark plug", "every": 100, "effect": "replaces", "cost_each": 49},
                           "part": {**PLUG, "age": 0, "cost_if_fails": 900}})
     plan, fail = _line(out, "task"), _line(out, "failure")
-    assert plan["replaces"] and plan["number"] == "simulated"
-    assert plan["times"]["expected"] == pytest.approx(5.77, abs=0.15)
-    assert fail["times"]["expected"] == pytest.approx(0.243, abs=0.05)
-    assert out["totals"]["cost"]["expected"] == pytest.approx(501, rel=0.05)
+    assert plan["replaces"] and plan["number"] == "worked out"
+    assert plan["times"]["expected"] == pytest.approx(5.77, abs=0.005)
+    assert fail["times"]["expected"] == pytest.approx(0.243, abs=0.001)
+    assert out["totals"]["cost"]["expected"] == pytest.approx(501, abs=1)
+
+
+def test_three_bearings_agree_with_the_lines():
+    """3.4 without the inspection: three bearings 900 h old, 626 h: 1.65 failures (0 to 3), a 90% chance of
+    at least one (10% of none), $1,486 at $900: the same as the lines by owner give."""
+    bearing = {"distribution_id": "weibull", "unit": "hours", "name": "Spindle bearing",
+               "params": [{"name": "alpha", "value": 1537}, {"name": "beta", "value": 3.04}]}
+    out = quick_forecast({"start": START, "units": 3, "running": {"hours": 12, "per": "week"},
+                          "part": {**bearing, "age": 900, "cost_if_fails": 900}})
+    fail = _line(out, "failure")
+    assert fail["times"]["expected"] == pytest.approx(1.65, abs=0.005) and fail["times"]["interval"] == [0, 3]
+    assert out["probability_any"] == pytest.approx(0.90, abs=0.005)
+    assert sum(r["failures"] for r in out["rows"]) == pytest.approx(fail["times"]["expected"], rel=1e-6)
 
 
 @pytest.mark.parametrize("body, words", [

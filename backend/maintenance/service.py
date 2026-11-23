@@ -79,6 +79,7 @@ from backend.maintenance.captures import CaptureOps
 from backend.maintenance import restoration as _restoration
 from backend.maintenance import supporting as _supporting
 from backend.maintenance import failure_costs as _failure_costs
+from backend.maintenance import responses as _responses
 from backend.maintenance import visit_costs as _visit_costs
 from backend.maintenance import shutdowns as _shutdowns
 from backend.maintenance import operations as _operations
@@ -3249,7 +3250,7 @@ def _walk_down(top: str, kids: dict) -> set[str]:
 
 class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDeleteOps, PositionModelOps,
                   CaptureOps, AssetSearchOps, _restoration.RestorationOps, _supporting.SupportOps, _shutdowns.ShutdownOps, _operations.OperationsOps,
-                  _failure_costs.FailureCostOps, _visit_costs.VisitCostOps):
+                  _failure_costs.FailureCostOps, _visit_costs.VisitCostOps, _responses.ResponseOps):
     """One organisation's maintenance graph, acted on by one person."""
 
     def __init__(self, store: GraphStore, org: str, actor: str | None = None, limited: bool = True,
@@ -11837,6 +11838,11 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             word = "" if trigger.get("above") is not None else "below "
             out["point"] = {"id": trigger["point_id"], "name": point.get("name", ""), "unit": point.get("unit", "")}
             out["text"] = f"{word}{limit:g}{unit} on {point.get('name') or 'its point'}"
+        elif trigger.get("kind") in ("failure", "found"):
+            fm = self.s.node(self.org, trigger.get("failure_mode_id") or "") or {}
+            what = fm.get("text") or "its failure mode"
+            out["text"] = f"if {what} fails" if trigger["kind"] == "failure" else f"when an inspection finds {what}"
+            out["failure_mode"] = {"id": fm.get("id"), "text": fm.get("text") or ""}
         else:
             out["text"] = trigger.get("event_type", "")
         return out
@@ -11847,8 +11853,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             return None
         if not isinstance(trigger, dict):
             raise Invalid("trigger is {kind: 'reading', point_id, above or below} or {kind: 'event', event_type, "
-                          "note?}, with with_interval true to keep the interval running too; null clears it.")
+                          "note?}, with with_interval true to keep the interval running too; or {kind: 'failure' | "
+                          "'found', failure_mode_id} (a failure mode's response); null clears it.")
         kind = trigger.get("kind")
+        if kind in ("failure", "found"):
+            # A failure mode's corrective response (failure) or follow-on (found): responses.py.
+            extra = sorted(set(trigger) - {"kind", "failure_mode_id"})
+            if extra:
+                raise Invalid(f"A {kind} trigger takes only failure_mode_id (not {', '.join(extra)}).")
+            fm, _pos = self._live_mode(trigger.get("failure_mode_id"))
+            return {"kind": kind, "failure_mode_id": fm["id"]}
         takes = {"reading": {"kind", "point_id", "above", "below", "with_interval"},
                  "event": {"kind", "event_type", "note", "with_interval"}}.get(kind)
         if takes is None:

@@ -50,7 +50,7 @@ bounds move with confidence, read [B-lives and confidence bounds](/guides/b-live
 When the bound falls short, plan a test. On the model's page, press **Use this
 model** and choose **Plan a demonstration test**: it opens
 [Test planning](/strategy/test-planning) on its **Demonstration** tab with the
-model's unit and its Weibull shape, *β from Bearing life — Weibull (sample):
+model's unit and its Weibull shape, *β from Bearing life — Weibull:
 2.5, 90% interval 1.96–3.17*. Set **Requirement** to **B-life (e.g. B10 ≥ a
 life)**, then the **B-life (% failed)** to **10**, the **Life required** to
 **500** and the **Confidence (%)** to **90**: a pass/fail test of **B10 ≥ 500

@@ -4,6 +4,7 @@ import { saveErrorText } from "../confirm.js";
 import { checkFigure, costFields, placeholderFor, usedText } from "../failureCosts.js";
 import { PanelField } from "./PanelField.jsx";
 import { StepLabel } from "./RcmModeTasks.jsx";
+import ModeResponseRows from "./ModeResponseRows.jsx";
 
 // A failure mode's "What a failure costs" (the RCM tab's step 2, under its consequence): what one
 // failure costs to put right, how long it stops the asset, and what an hour out of use costs
@@ -11,7 +12,10 @@ import { StepLabel } from "./RcmModeTasks.jsx";
 // the placeholder; the line under the fields says what one failure costs all in and where each
 // figure came from. The forecast (Maintenance › Forecast…) and Optimise… charge each failure this.
 // Grid rows of the panel's step grid (`rw-sg`): a label cell, then the fields.
-export default function FailureCostRows({ modeId, readOnly = false, onSaid = null }) {
+// Above it, "If it fails anyway" (ModeResponseRows): what's done when it fails, whose cost each time is the
+// failure cost unless one is typed here (an override). `respond` ("failure"): opened from the forecast's
+// "Not counted · Add", so that row opens with its first field focused.
+export default function FailureCostRows({ modeId, readOnly = false, onSaid = null, respond = null }) {
   const [costs, setCosts] = useState(null);
   const [error, setError] = useState(null);
   const [saved, setSaved] = useState({});
@@ -31,8 +35,13 @@ export default function FailureCostRows({ modeId, readOnly = false, onSaid = nul
       return true;
     }, (e) => saveErrorText(e, { offline: navigator.onLine === false }));
   };
+  const reload = () => getFailureModeCosts(modeId).then(setCosts).catch(() => {});
   return (
     <>
+      {costs && (
+        <ModeResponseRows modeId={modeId} kind="failure" response={costs.responses?.failure || null} readOnly={readOnly}
+                          focus={respond === "failure"} onChanged={reload} onSaid={onSaid} />
+      )}
       <StepLabel>What a failure costs</StepLabel>
       <div className="rw-sc fcost">
         {error && <p className="fcost-note">Couldn&apos;t read the failure cost: {error}</p>}

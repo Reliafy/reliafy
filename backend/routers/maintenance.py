@@ -844,6 +844,25 @@ def unlink_task_failure_mode(task_id: str, mode_id: str, m: Maintenance = Depend
     return _run(m.unlink_task, task_id, mode_id)
 
 
+@router.put("/failure-modes/{mode_id}/response/{kind}")
+def set_mode_response(mode_id: str, kind: str, body: dict = Body(default={}),
+                      m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A failure mode's response: kind failure ("If it fails anyway", its corrective response) or found
+    ("If an inspection finds it", its follow-on). {name?, labour? [{trade, people, hours}], cost? (each
+    time; null: from its LSA), spares? [{name, qty, part_id?}]}; what's left out is kept. It's a task
+    raised by that event (trigger {kind, failure_mode_id}): also over MCP and the CLI as maintenance
+    tasks.create / tasks.update with that trigger."""
+    return _run(m.set_mode_response, mode_id, kind, body.get("name"),
+                body["labour"] if "labour" in body else ..., body["cost"] if "cost" in body else ...,
+                body["spares"] if "spares" in body else ...)
+
+
+@router.delete("/failure-modes/{mode_id}/response/{kind}")
+def clear_mode_response(mode_id: str, kind: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """No response of that kind any more (its task is retired, kept in the history)."""
+    return _run(m.clear_mode_response, mode_id, kind)
+
+
 @router.get("/failure-modes/{mode_id}/costs")
 def failure_mode_costs(mode_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """What one failure of the mode costs: its own figures, its class's, and those in force (each the

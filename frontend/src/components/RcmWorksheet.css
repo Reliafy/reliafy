@@ -1091,3 +1091,7 @@ button.link.rim-tquietlink { align-self: flex-start; font-size: var(--fs-13); }
    to one a row on a narrow panel, and the all-in line under them. */
 .fcost-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-3); }
 .fcost-note { margin: 0; color: var(--text-secondary); font-size: var(--fs-12); line-height: var(--lh-12); }
+/* A failure mode's response (ModeResponseRows.jsx): "If it fails anyway", "If an inspection finds it".
+   Missing, it's a visible gap with one link to add it. */
+.mresp .fcost-note { margin-top: var(--space-2); }
+.mresp-gap { color: var(--warning-text); }

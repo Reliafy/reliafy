@@ -36,6 +36,7 @@
 .ft-words { color: var(--text-secondary); font-size: var(--fs-14); line-height: var(--lh-14); }
 .ft .ft-n { width: 5em; }
 .ft .ft-age { width: 7em; }
+.ft .ft-unit { width: 8em; }
 .ft .ft-name { width: 16em; max-width: 100%; }
 .ft-clause .ctl-group { width: auto; }
 .ft-inputs .psec { margin-top: var(--space-4); }

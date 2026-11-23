@@ -10,7 +10,7 @@ import { headMenu, subItem } from "./explorer.js";
 import { choose, optionLabels } from "./select.js";
 
 const M = "/api/maintenance";
-const SAMPLE = "Bearing life — Weibull (sample)";
+const SAMPLE = "Bearing life — Weibull";
 const row = (page, key) => page.locator(`.tp-row[data-key="${key}"]`);
 const side = (page) => page.locator(".ml-panel");
 const sideways = (page) => page.evaluate(() => document.documentElement.scrollWidth);
@@ -422,7 +422,7 @@ test("an RBD row opens in the table area: reload, edit and save, unsaved changes
   await page.keyboard.press("Escape");
   await headPick(page, "RBD", "Link an existing RBD…");
   const picker = page.getByRole("dialog", { name: "Link an existing RBD" });
-  await picker.getByText("Pump station — 1 controller, 2 pumps (sample)").click();
+  await picker.getByText("Pump station — 1 controller, 2 pumps").click();
   await picker.getByRole("button", { name: "Link", exact: true }).click();
   await expect(picker).toHaveCount(0);
   await expect(pane).toBeVisible();

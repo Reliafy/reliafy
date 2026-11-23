@@ -198,7 +198,8 @@ def build(m, fc: dict, model_rows: list[dict], tree, root) -> dict:
     # follow-on's. The same failure mode on several positions at the same cost (three spindle
     # bearings) is one owner, its counts summed and its range over all of them.
     cost_parts, spare_parts = [], []
-    no_response = bool(model_rows)
+    no_response = False
+    hour_parts = []
     groups: dict = {}
     for r in model_rows:
         row, lib = r["row"], r["fc"]
@@ -206,7 +207,7 @@ def build(m, fc: dict, model_rows: list[dict], tree, root) -> dict:
         left = float(row["expected_failures"] or 0.0)
         n_all = left / (1.0 - found) if found and found < 1.0 else left
         each = row.get("cost_per_failure")
-        key = (_modes_text(row), each, round(found, 6))
+        key = (_modes_text(row), each, round(found, 6), (row.get("response") or {}).get("id"))
         g = groups.setdefault(key, {"owner": key[0], "each": each, "found": found, "n": 0.0, "pmfs": [],
                                     "positions": [], "rows": [], "methods": set(), "ranged": True})
         g["n"] += n_all
@@ -216,6 +217,7 @@ def build(m, fc: dict, model_rows: list[dict], tree, root) -> dict:
         else:
             g["pmfs"].append(pmf)
             cost_parts.append((pmf, found, float(each) if each is not None else 0.0, 0.0))
+            hour_parts.append((pmf, found, float((row.get("response") or {}).get("hours_each") or 0.0), 0.0))
             spare_parts.append((pmf, 0.0, 1.0, 1.0))
         g["positions"].append(row["position"])
         g["rows"].append(row)
@@ -243,20 +245,47 @@ def build(m, fc: dict, model_rows: list[dict], tree, root) -> dict:
                  "times": {"expected": _r(n_all), "interval": count_range(g, 1.0), "probability": prob},
                  "found_share": _r(found, 3) if found else None, "hours": None, "cost": None, "spares": [], "gaps": [],
                  "link": _explorer_link(where["id"], root, "rcm")}
+        response = rows0.get("response")
+        missed_n = n_all * (1.0 - found)
+        respond_link = _explorer_link(where["id"], root, "rcm", sel=rows0.get("response_mode") or where["id"],
+                                      fm=rows0.get("response_mode") or "", respond="failure")
         corrective = {"id": f"{gid}:corrective", "owner": owner, "owner_kind": "failure_mode", "kind": "corrective",
                       "group": gid, "number": number, "position": where, "on": on,
-                      "times": {"expected": _r(n_all * (1.0 - found)), "interval": count_range(g, 1.0 - found),
+                      "times": {"expected": _r(missed_n), "interval": count_range(g, 1.0 - found),
                                 "probability": prob},
-                      "hours": None, "cost": None,
-                      "spares": [{"name": f"a like item ({owner})", "expected": _r(n_all * (1.0 - found))}],
-                      "gaps": [{"view": "hours", "text": "no corrective response recorded, so the hours to put a "
-                                                         "failure right are unknown"}]}
+                      "response": ({"id": response["id"], "name": response["name"]} if response else None),
+                      "hours": None, "cost": None, "spares": [], "gaps": []}
+        if response is None:
+            no_response = True
+            corrective["spares"] = [{"name": f"a like item ({owner})", "expected": _r(missed_n)}]
+            corrective["gaps"].append({"view": "hours", "text": "no response if it fails, so the hours to put a "
+                                                                "failure right are unknown"})
+            gaps["hours"].append(f"{owner} on {on} (no response if it fails)")
+            not_counted.append({"kind": "no_response", "position": where,
+                                "text": f"{owner}: no response if it fails, so the hours and spares to put a failure "
+                                        "right are unknown", "fix": "Add", "link": respond_link})
+        else:
+            if response.get("hours_each") is not None:
+                corrective["hours"] = {"expected": _r(missed_n * response["hours_each"]), "interval": None,
+                                       "each": response["hours_each"]}
+            else:
+                corrective["gaps"].append({"view": "hours", "text": "its response has no labour, so its hours are "
+                                                                    "unknown"})
+                gaps["hours"].append(f"{owner} on {on} (its response has no labour)")
+            corrective["spares"] = [{"name": sp["name"], "part_id": sp.get("part_id"),
+                                     "expected": _r(missed_n * sp["qty"])} for sp in response.get("spares") or []]
+            if not corrective["spares"]:
+                corrective["spares"] = [{"name": f"a like item ({owner})", "expected": _r(missed_n)}]
         if each is not None:
             corrective["cost"] = {"expected": _r(n_all * (1.0 - found) * float(each)), "interval": None,
                                   "each": each, "basis": rows0.get("cost_basis")}
         else:
             corrective["gaps"].append({"view": "cost", "text": "no response if it fails, so its failure cost is unknown"})
             gaps["cost"].append(f"{owner} on {on} (no cost of a failure)")
+            if response is not None:
+                not_counted.append({"kind": "no_failure_cost", "position": where,
+                                    "text": f"{owner}: its response has no cost each time, so its failure cost is "
+                                            "unknown", "fix": "Add", "link": respond_link})
         members = [corrective]
         if found:
             follow = {"id": f"{gid}:follow_on", "owner": owner, "owner_kind": "failure_mode", "kind": "follow_on",
@@ -276,8 +305,6 @@ def build(m, fc: dict, model_rows: list[dict], tree, root) -> dict:
         group["lines"] = [x["id"] for x in members]
         lines.append(group)
         lines.extend(members)
-    if no_response and model_rows:
-        gaps["hours"].append("hours to put failures right (no corrective response recorded)")
 
     # Totals: the certain lines plus the chance of the failure lines (forecast-rules 1.4).
     certain_hours = sum((x["hours"] or {}).get("expected") or 0 for x in lines if x["number"] == "certain")
@@ -297,7 +324,12 @@ def build(m, fc: dict, model_rows: list[dict], tree, root) -> dict:
                                                    if x.get("kind") == "corrective"))}}
     if model_rows and not exact_ranges:
         cost_total["range_note"] = "No range: a life here has no distribution of its count yet."
-    hours_total = {"expected": _r(certain_hours), "interval": [_r(certain_hours), _r(certain_hours)],
+    failure_hours = sum((x["hours"] or {}).get("expected") or 0 for x in lines if x.get("kind") in ("corrective", "follow_on"))
+    hours_chance = _chance_sum(hour_parts) if failure_hours and len(hour_parts) == len(model_rows) else None
+    hours_total = {"expected": _r(certain_hours + failure_hours),
+                   "interval": ([_r(certain_hours + hours_chance["interval"][0]),
+                                 _r(certain_hours + hours_chance["interval"][1])] if hours_chance else
+                                [_r(certain_hours), _r(certain_hours)] if not failure_hours else None),
                    "known": not gaps["hours"], "leaves_out": gaps["hours"]}
     spares: dict = {}
     for x in lines:
@@ -316,6 +348,11 @@ def build(m, fc: dict, model_rows: list[dict], tree, root) -> dict:
     for x in prompts.get("no_failure_cost") or []:
         if x.get("counted"):
             what = x["mode"]["text"] if x.get("mode") else x.get("life") or "A life"
+            same = next((y for y in not_counted if y["kind"] == "no_response" and y["text"].startswith(f"{what}:")), None)
+            if same is not None:
+                same["text"] = f"{what}: no response if it fails, so the hours, spares and cost to put a failure right " \
+                               "are unknown"
+                continue
             not_counted.append({"kind": "no_failure_cost", "position": x["position"],
                                 "text": f"{what}: no response if it fails, so its failure cost is unknown",
                                 "fix": "Add", "link": x["link"]})
@@ -350,11 +387,6 @@ def build(m, fc: dict, model_rows: list[dict], tree, root) -> dict:
             if x.get("kind") == "planned":
                 not_counted.append({"kind": f"task_no_{g['view']}", "position": x.get("position"),
                                     "text": f"{x['owner']}: {g['text']}", "fix": "Add", "link": x.get("link")})
-    if no_response and model_rows:
-        not_counted.append({"kind": "no_corrective_response", "position": None,
-                            "text": "No corrective response is recorded for any failure mode yet, so the hours to put "
-                                    "failures right are unknown (the cost of a failure is used for their cost)",
-                            "fix": None, "link": None})
 
     return {
         "lines": lines,

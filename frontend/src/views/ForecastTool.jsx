@@ -13,7 +13,6 @@ import Select from "../components/Select.jsx";
 import ResultSummary, { ResultDetails } from "../components/ui/ResultSummary.jsx";
 import LoadFailed from "../components/LoadFailed.jsx";
 import ModelPicker from "../components/ModelPicker.jsx";
-import StrategyUnit from "../components/StrategyUnit.jsx";
 import FleetSparesCard from "../components/FleetSparesCard.jsx";
 import Plot from "../components/Plot.jsx";
 import { ACCENT, INK } from "../plotTheme.js";
@@ -418,8 +417,7 @@ function SentenceTool({ view }) {
         {form.part ? (
           <Section title="A part that fails" action={{ label: "Remove", onClick: () => set({ part: false }), ariaLabel: "Remove the part that fails" }}>
             <div className="ft-clause ft-model">
-              <ModelPicker label="Its life" value={model} onChange={setModel} preferSaved />
-              <StrategyUnit model={model} unit={typedUnit} onUnit={setTypedUnit} />
+              <ModelPicker label="Its life" value={model} onChange={setModel} preferSaved typeEntry />
             </div>
             <div className="ft-clause">
               <span className="ft-words">now</span>
@@ -427,7 +425,10 @@ function SentenceTool({ view }) {
                 <TextInput inputMode="decimal" className="ft-age" aria-label="How old it is now" value={ages.ages?.length > 1 ? "" : form.ages}
                            placeholder={ages.ages?.length > 1 ? `${ages.ages.length} ages` : "e.g. 9,000"} disabled={ages.ages?.length > 1}
                            onChange={(e) => set({ ages: e.target.value })} />
-                {partNow && <Addon>{partNow}</Addon>}
+                {model && !model.unit ? (
+                  <TextInput className="ft-unit" aria-label="Unit of its times" placeholder="unit, e.g. hours" value={typedUnit}
+                             onChange={(e) => setTypedUnit(e.target.value)} />
+                ) : partNow && <Addon>{partNow}</Addon>}
               </InputGroup>
               <span className="ft-words">old · if it fails:</span>
               <IfItFails view={view.value} form={form} set={set} currency={currency} />

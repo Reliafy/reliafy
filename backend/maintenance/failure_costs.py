@@ -176,11 +176,21 @@ class FailureCostOps:
         return out, name
 
     def _mode_consequence(self, fm: dict | None, cls: dict, cls_name: str | None) -> dict:
+        from backend.maintenance import responses
+
         figures, sources = {}, {}
+        # The corrective response's cost each time ("If it fails anyway"): the failure mode's cost of a
+        # failure, unless one is typed on the mode, which overrides it (forecast plan step 3).
+        response = responses.response_view(self, fm["id"], "failure") if fm else None
         for key in FIELDS:
             own = (fm or {}).get(key)
             if own is not None:
                 figures[key], sources[key] = float(own), "the failure mode's"
+                if key == "failure_cost" and response and response.get("cost_each") is not None:
+                    sources[key] = "the failure mode's, typed over its corrective response's"
+            elif key == "failure_cost" and response and response.get("cost_each") is not None:
+                figures[key] = float(response["cost_each"])
+                sources[key] = f"its corrective response's ({response['name']})"
             elif cls.get(key) is not None:
                 figures[key] = float(cls[key])
                 sources[key] = cls["_failure_from"] if key == "failure_cost" else f"the {cls_name} class's"
@@ -190,7 +200,7 @@ class FailureCostOps:
         down = (figures["downtime_hours"] or 0.0) * (figures["downtime_rate"] or 0.0)
         out = {**figures, "per_failure": total, "downtime_cost": down if figures["downtime_hours"] else None,
                "sources": sources, "mode": {"id": fm["id"], "text": fm.get("text") or ""} if fm else None,
-               "class": cls_name}
+               "class": cls_name, "response": response}
         if total is None:
             out["missing_text"] = (f"no failure cost set (on the failure mode, or its {cls_name} class)" if cls_name
                                    else "no failure cost set (enter it on the failure mode, or give the position "
@@ -229,4 +239,4 @@ class FailureCostOps:
         used = self._mode_consequence(fm, cls, cls_name)
         return {"id": fm["id"], "own": {k: fm.get(k) for k in FIELDS},
                 "class_figures": {k: cls.get(k) for k in FIELDS} if cls_name else None,
-                "used": used, "class": cls_name}
+                "used": used, "class": cls_name, "responses": self.mode_responses(fm["id"])}

@@ -84,7 +84,10 @@ Measurement = Annotated[dict[str, Any] | str | None, Field(description=(
 Trigger = Annotated[dict[str, Any] | None, Field(description=(
     "Raise it when an event happens: {kind: 'reading', point_id (a condition point), above | below} or "
     "{kind: 'event', event_type (e.g. 'Lightning strike'), note?}; with_interval true keeps the interval running "
-    "too (otherwise it waits for the event, never overdue)."))]
+    "too (otherwise it waits for the event, never overdue). A failure mode's response: {kind: 'failure', "
+    "failure_mode_id} (what's done if it fails anyway: its labour, spares and cost feed the forecast's failure "
+    "lines and its cost of a failure) or {kind: 'found', failure_mode_id} (what's done when an inspection finds "
+    "it); make it on the mode's position."))]
 
 
 # How often, as a pattern an interval can't say (how_often.py).

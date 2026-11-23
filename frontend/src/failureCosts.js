@@ -22,8 +22,11 @@ export function figureText(key, v) {
   return key === "downtime_rate" ? `${money(v)} an hour` : money(v);
 }
 
-// A field's placeholder: the class's figure, used while the mode has none of its own.
+// A field's placeholder: the corrective response's cost (failure cost only), else the class's figure,
+// used while the mode has none of its own (a typed figure overrides both).
 export function placeholderFor(key, costs) {
+  const resp = costs?.responses?.failure;
+  if (key === "failure_cost" && resp?.cost_each != null) return `From its response: ${figureText(key, resp.cost_each)}`;
   const cls = costs?.class_figures?.[key];
   if (cls != null) return `From its class (${costs.class}): ${figureText(key, cls)}`;
   return "Not set";
@@ -98,4 +101,52 @@ export function plannedTitle(row) {
   if (row.visits_cost) bits.push(`visits' call-out and setup ${money(row.visits_cost)}`);
   if (row.other_planned_cost) bits.push(`other (a typed cost the LSA doesn't explain) ${money(row.other_planned_cost)}`);
   return bits.length ? `Planned: ${bits.join(", ")}` : "";
+}
+
+// A failure mode's responses (responses.py): "If it fails anyway" (kind failure, its corrective response)
+// and "If an inspection finds it" (kind found, its follow-on). The panel's fields, each read from the
+// response and sent as the route takes it (PUT …/response/<kind>).
+export const RESPONSE_WORDS = {
+  failure: { title: "If it fails anyway", none: "Nothing recorded: the forecast counts these failures but can't say the hours, spares or cost to put one right.", add: "Add what's done" },
+  found: { title: "If an inspection finds it", none: "Nothing recorded: the forecast counts the finds but can't say what acting on one needs.", add: "Add what's done" },
+};
+
+export function responseFields(sym = workspaceCurrency()) {
+  return [
+    { key: "name", label: "What's done", help: "The work, in a few words: \"Replace the spindle\"." },
+    { key: "hours", label: "Labour", suffix: "h", type: "number", help: "Hours of work to do it once (people × hours)." },
+    { key: "cost", label: "Cost each time", suffix: sym, type: "number", optional: true, help: "All in, once. Left empty, it's worked out from its labour and parts in the LSA." },
+    { key: "spare", label: "Spare it uses", optional: true, help: "The part fitted each time (one), if any." },
+  ];
+}
+
+// A response's value for a field, as the panel shows it.
+export function responseValue(resp, key) {
+  if (!resp) return "";
+  if (key === "name") return resp.name || "";
+  if (key === "hours") return resp.hours_each ?? "";
+  if (key === "cost") return resp.cost_source === "typed" ? resp.cost_each ?? "" : "";
+  if (key === "spare") return (resp.spares || [])[0]?.name || "";
+  return "";
+}
+
+// One field's change as the route's body, or {error}.
+export function responseBody(key, raw) {
+  const text = String(raw ?? "").trim();
+  if (key === "name") return text ? { body: { name: text } } : { error: "Say what's done, in a few words." };
+  if (key === "spare") return { body: { spares: text ? [{ name: text, qty: 1 }] : [] } };
+  const v = text === "" ? null : Number(text.replace(/[$,\s]/g, ""));
+  if (v != null && (!Number.isFinite(v) || v < 0)) return { error: key === "hours" ? "Enter the hours, 0 or more." : "Enter an amount, 0 or more." };
+  if (key === "hours") return { body: { labour: v ? [{ trade: "", people: 1, hours: v }] : [] } };
+  return { body: { cost: v } };
+}
+
+// The line under a response's fields: what it adds to each failure, or what's still missing.
+export function responseNote(resp) {
+  if (!resp) return "";
+  const bits = [];
+  if (resp.hours_each != null) bits.push(`${Number(Number(resp.hours_each).toPrecision(4)).toLocaleString("en-GB")} h`);
+  if (resp.cost_each != null) bits.push(`${money(resp.cost_each)}${resp.cost_source === "typed" ? "" : " (from its LSA)"}`);
+  const gaps = resp.gaps || [];
+  return `${bits.length ? `Each time: ${bits.join(", ")}.` : ""}${gaps.length ? ` Not known yet: ${gaps.join("; ")}.` : ""}`.trim();
 }

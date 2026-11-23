@@ -277,55 +277,55 @@ _FEED_PUMP_LIVES_CSV, _FEED_PUMP_VIBRATION_CSV = _feed_pump_fleet()
 SAMPLE_DATASETS = [
     {
         "id": "sample-ds-bearings",
-        "name": "Bearing fatigue test (sample)",
+        "name": "Bearing fatigue test",
         "csv": _BEARINGS_CSV,
     },
     {
         # One dataset with both parts (docs/datasets.md): the pumps' lives
         # and their vibration readings, for condition and life.
         "id": "sample-ds-feed-pumps",
-        "name": "Feed pumps — lives and vibration readings (sample)",
+        "name": "Feed pumps — lives and vibration readings",
         "csv": _FEED_PUMP_LIVES_CSV,
         "measurements": _FEED_PUMP_VIBRATION_CSV,
     },
     {
         "id": "sample-ds-insulating-fluid",
-        "name": "Insulating fluid breakdown vs. voltage (sample)",
+        "name": "Insulating fluid breakdown vs. voltage",
         "csv": _INSULATING_FLUID_CSV,
     },
     {
         "id": "sample-ds-compressor-events",
-        "name": "Compressor fleet — repair history (sample)",
+        "name": "Compressor fleet — repair history",
         "csv": _COMPRESSOR_EVENTS_CSV,
     },
     {
         "id": "sample-ds-pump-repairs",
-        "name": "Slurry pumps — repairs by site and duty (sample)",
+        "name": "Slurry pumps — repairs by site and duty",
         "csv": _PUMP_REPAIRS_CSV,
     },
     {
         "id": "sample-ds-seal-alt",
-        "name": "Valve seal life vs. temperature & load (sample)",
+        "name": "Valve seal life vs. temperature & load",
         "csv": _SEAL_ALT_CSV,
     },
     {
         "id": "sample-ds-pumps",
-        "name": "Pump field returns (sample)",
+        "name": "Pump field returns",
         "csv": _PUMP_CSV,
     },
     {
         "id": "sample-ds-brake-wear",
-        "name": "Brake pad wear (sample)",
+        "name": "Brake pad wear",
         "csv": _BRAKE_WEAR_CSV,
     },
     {
         "id": "sample-ds-pump-load",
-        "name": "Pump bearings under changing load (sample)",
+        "name": "Pump bearings under changing load",
         "csv": _PUMP_LOAD_CSV,
     },
     {
         "id": "sample-ds-pump-modes",
-        "name": "Pump failures by mode (sample)",
+        "name": "Pump failures by mode",
         "csv": _PUMP_MODES_CSV,
     },
 ]
@@ -336,7 +336,7 @@ SAMPLE_DATASETS = [
 SAMPLE_JOINT_MODELS = [
     {
         "id": "sample-joint-feed-pumps",
-        "name": "Feed pumps — condition and life (sample)",
+        "name": "Feed pumps — condition and life",
         "dataset_id": "sample-ds-feed-pumps",
         "spec": {
             "dataset_id": "sample-ds-feed-pumps",
@@ -357,7 +357,7 @@ SAMPLE_JOINT_MODELS = [
 SAMPLE_DEGRADATION_MODELS = [
     {
         "id": "sample-deg-brake-wear",
-        "name": "Brake pad wear — linear degradation (sample)",
+        "name": "Brake pad wear — linear degradation",
         "dataset_id": "sample-ds-brake-wear",
         "spec": {
             "mapping": {"i": "item", "x": "hours", "y": "wear_mm"},
@@ -374,7 +374,7 @@ SAMPLE_DEGRADATION_MODELS = [
 SAMPLE_RECURRENT_MODELS = [
     {
         "id": "sample-rec-compressors",
-        "name": "Compressor fleet — Crow-AMSAA (sample)",
+        "name": "Compressor fleet — Crow-AMSAA",
         "dataset_id": "sample-ds-compressor-events",
         "spec": {
             "mapping": {"i": "compressor", "x": "hours", "t": "test_end", "mode": "failure_mode"},
@@ -386,7 +386,7 @@ SAMPLE_RECURRENT_MODELS = [
     {
         # #65: covariates on the repair rate (site, duty) and failures by cause.
         "id": "sample-rec-pumps-pi",
-        "name": "Slurry pumps — repair rate by site and duty (sample)",
+        "name": "Slurry pumps — repair rate by site and duty",
         "dataset_id": "sample-ds-pump-repairs",
         "spec": {
             "mapping": {"i": "pump", "x": "hours", "tr": "observed_to", "mode": "cause",
@@ -399,7 +399,7 @@ SAMPLE_RECURRENT_MODELS = [
         # #65: imperfect repair (Kijima I) on the compressor history: each
         # repair takes away about 79% of the age gained since the last one.
         "id": "sample-rec-compressors-grp",
-        "name": "Compressor fleet — imperfect repair (sample)",
+        "name": "Compressor fleet — imperfect repair",
         "dataset_id": "sample-ds-compressor-events",
         "spec": {
             "mapping": {"i": "compressor", "x": "hours", "t": "test_end", "mode": "failure_mode"},
@@ -418,7 +418,7 @@ SAMPLE_ALT_MODELS = [
         # observations per level (11–19) that the probability plot shows the
         # points genuinely tracking the fitted lines.
         "id": "sample-alt-fluid",
-        "name": "Insulating fluid — Weibull ALT on voltage (sample)",
+        "name": "Insulating fluid — Weibull ALT on voltage",
         "dataset_id": "sample-ds-insulating-fluid",
         "spec": {
             "mapping": {"x": "minutes"},
@@ -432,7 +432,7 @@ SAMPLE_ALT_MODELS = [
     },
     {
         "id": "sample-alt-seal",
-        "name": "Valve seal — Weibull ALT on temp & load (sample)",
+        "name": "Valve seal — Weibull ALT on temp & load",
         "dataset_id": "sample-ds-seal-alt",
         "spec": {
             "mapping": {"x": "hours", "c": "censored"},
@@ -472,7 +472,7 @@ SAMPLE_TRACKED_ITEMS = [
 SAMPLE_MODELS = [
     {
         "id": "sample-model-bearings-weibull",
-        "name": "Bearing life — Weibull (sample)",
+        "name": "Bearing life — Weibull",
         "dataset_id": "sample-ds-bearings",
         "distribution": "weibull",
         "mapping": {"x": "hours"},
@@ -480,7 +480,7 @@ SAMPLE_MODELS = [
     },
     {
         "id": "sample-model-bearings-lognormal",
-        "name": "Bearing life — Lognormal (sample)",
+        "name": "Bearing life — Lognormal",
         "dataset_id": "sample-ds-bearings",
         "distribution": "lognormal",
         "mapping": {"x": "hours"},
@@ -488,7 +488,7 @@ SAMPLE_MODELS = [
     },
     {
         "id": "sample-model-pumps-weibull",
-        "name": "Pump life — Weibull, right-censored (sample)",
+        "name": "Pump life — Weibull, right-censored",
         "dataset_id": "sample-ds-pumps",
         "distribution": "weibull",
         "mapping": {"x": "months", "c": "censored"},
@@ -496,7 +496,7 @@ SAMPLE_MODELS = [
     },
     {
         "id": "sample-model-seal-weibull-ph",
-        "name": "Valve seal life — Weibull PH on temp & load (sample)",
+        "name": "Valve seal life — Weibull PH on temp & load",
         "dataset_id": "sample-ds-seal-alt",
         "distribution": "weibull_ph",
         "mapping": {"x": "hours", "c": "censored"},
@@ -506,7 +506,7 @@ SAMPLE_MODELS = [
     {
         # #60: the item column makes it a fit with covariates that change over time.
         "id": "sample-model-pump-load-weibull-ph",
-        "name": "Pump bearings — Weibull PH on changing load (sample)",
+        "name": "Pump bearings — Weibull PH on changing load",
         "dataset_id": "sample-ds-pump-load",
         "distribution": "weibull_ph",
         "mapping": {"i": "pump", "xl": "start_h", "xr": "stop_h", "c": "censored"},
@@ -516,7 +516,7 @@ SAMPLE_MODELS = [
     },
     {
         "id": "sample-model-pump-modes",
-        "name": "Pump failures by mode — competing risks (sample)",
+        "name": "Pump failures by mode — competing risks",
         "dataset_id": "sample-ds-pump-modes",
         "distribution": "competing_risks",
         "mapping": {"x": "hours", "e": "failure_mode", "g": "site"},
@@ -908,22 +908,22 @@ def _solar_farm_graph() -> dict:
 SAMPLE_RBDS = [
     {
         "id": "sample-rbd-pump-station",
-        "name": "Pump station — 1 controller, 2 pumps (sample)",
+        "name": "Pump station — 1 controller, 2 pumps",
         "graph": _pump_station_graph(),
     },
     {
         "id": "sample-rbd-instrument-air-design",
-        "name": "Instrument air — 2oo3 compressors, cold-standby dryer, CCF (sample)",
+        "name": "Instrument air — 2oo3 compressors, cold-standby dryer, CCF",
         "graph": _instrument_air_design_graph(),
     },
     {
         "id": "sample-rbd-instrument-air-availability",
-        "name": "Instrument air — availability with repair times (sample)",
+        "name": "Instrument air — availability with repair times",
         "graph": _instrument_air_availability_graph(),
     },
     {
         "id": "sample-rbd-solar-farm",
-        "name": "Solar farm — four inverters, energy lost (sample)",
+        "name": "Solar farm — four inverters, energy lost",
         "graph": _solar_farm_graph(),
     },
 ]
@@ -1137,6 +1137,35 @@ def remove_withdrawn_samples(db) -> int:
     return gone
 
 
+#: Said once on a sample dataset or model (its notes), not in its name (Derryn, Nov 2026: no "sample" or
+#: "example" in a name; name things for what they are).
+MADE_UP = "Made-up data, shared with every workspace so you can try Reliafy: not from a real asset."
+_SUFFIX = " (sample)"
+
+
+def plain_sample_names(db) -> None:
+    """Shared samples seeded before Nov 2026 carry " (sample)" in their names: drop it, and note on a
+    sample dataset or model that its data is made up, once. Only the shared samples' own documents
+    (owner SAMPLE_OWNER) are touched; a user's copy keeps its name. Safe to re-run; never raises."""
+    try:
+        names = db.list_collection_names()
+    except Exception:  # pragma: no cover - defensive; never block boot
+        return
+    for coll in names:
+        try:
+            for doc in db[coll].find({"owner_id": SAMPLE_OWNER, "name": {"$regex": r" \(sample\)$"}},
+                                     {"_id": 1, "name": 1}):
+                db[coll].update_one({"_id": doc["_id"]}, {"$set": {"name": doc["name"][: -len(_SUFFIX)]}})
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Couldn't tidy sample names in %s: %s", coll, exc)
+    try:
+        db.datasets.update_many({"owner_id": SAMPLE_OWNER, "notes": {"$in": [None, ""]}}, {"$set": {"notes": MADE_UP}})
+        db.models.update_many({"owner_id": SAMPLE_OWNER, "spec.notes": {"$in": [None, ""]}},
+                              {"$set": {"spec.notes": MADE_UP}})
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Couldn't note the samples' made-up data: %s", exc)
+
+
 def seed_samples(db) -> None:
     """Ensure the shared sample datasets and models exist, and that withdrawn
     ones (REMOVED_SAMPLES) are gone. Safe to re-run.
@@ -1147,6 +1176,7 @@ def seed_samples(db) -> None:
     if not config.SEED_SAMPLES:
         return
     remove_withdrawn_samples(db)
+    plain_sample_names(db)
 
     for spec in SAMPLE_DATASETS:
         try:
@@ -1238,6 +1268,7 @@ def seed_samples(db) -> None:
 
     _seed_strategy_analyses(db)
     _seed_rcm_study(db)
+    plain_sample_names(db)
     _seed_fleet(db)
 
     for spec in SAMPLE_RBDS:
@@ -1436,7 +1467,7 @@ def _seed_rcm_study(db) -> None:
 
         study = RcmStudy(
             id="sample-rcm-truck",
-            name="Delivery truck — RCM demo (sample)",
+            name="Delivery truck — RCM demo",
             system="Delivery truck (brakes + drivetrain)",
             description=(
                 "A worked RCM study with every decision linked to its evidence. "
@@ -1473,7 +1504,7 @@ def _seed_strategy_analyses(db) -> None:
         if params:
             specs.append({
                 "id": "sample-strategy-bearing-replacement",
-                "name": "Bearing preventive replacement (sample)",
+                "name": "Bearing preventive replacement",
                 "kind": "optimal_replacement",
                 "inputs": {
                     "distribution_id": "weibull",
@@ -1485,7 +1516,7 @@ def _seed_strategy_analyses(db) -> None:
             })
     specs.append({
         "id": "sample-strategy-ffi-brake-circuit",
-        "name": "Secondary brake circuit — failure finding (sample)",
+        "name": "Secondary brake circuit — failure finding",
         "kind": "failure_finding",
         "inputs": {
             "distribution_id": "exponential",
@@ -1575,7 +1606,7 @@ def _seed_fleet(db) -> None:
         ages = [5200, 4100, 3600, 2900, 2400, 1800, 900, 350]
         fleet = Fleet(
             id="sample-fleet-trucks",
-            name="Delivery trucks — bearing forecast (sample)",
+            name="Delivery trucks — bearing forecast",
             owner_id=SAMPLE_OWNER,
             model_id="sample-model-bearings-weibull",
             settings={"periods": 12, "period_label": "months",
@@ -1606,7 +1637,7 @@ def _seed_tracked_fleet(db) -> None:
                 return
             fleet = TrackedFleet(
                 id="sample-tracked-trucks",
-                name="Delivery trucks — brake pads (sample)",
+                name="Delivery trucks — brake pads",
                 owner_id=SAMPLE_OWNER,
                 model_id="sample-deg-brake-wear",
             )

@@ -35,9 +35,13 @@ day, or so many hours a week. Then fill in one or both of these:
   chance involved. It's assumed just done at the start. Work by hours goes
   through the running hours; work on the calendar counts on dates whatever the
   running.
-- **A part that fails**: its life (a saved model, or a distribution with its
-  parameters), how old it is **now** and what a failure needs (**if it fails**).
-  Its failures are a chance, so they come with a likely range.
+- **A part that fails**: its life (a saved model, or **Type parameters…** at the
+  top of the list for a distribution and its parameters), how old it is
+  **now** (the unit follows the age; for typed parameters, type the unit there)
+  and what a failure needs (**if it fails**). Its failures are a chance, so they
+  come with a likely range. They're *worked out* (exact arithmetic, the same
+  as a forecast opened from the Explorer), not simulated; only a list of more
+  than 60 different ages is simulated, and the answer says so.
 
 Each view asks only its own extra: on **Labour hours**, the hours each time and
 the hours if it fails; on **Costs**, the cost each time and the cost if it
@@ -90,8 +94,10 @@ records are the inputs, and the answer is set out **by owner**:
   cost (call-out, set-up) is its own line.
 - **Each failure mode** with a life model has its line: the failures expected
   with the plan in place and their likely range (*worked out*). Under it, the
-  **corrective** line (after a failure: the cost of a failure from the failure
-  mode, else its position class) and, when a check with a P-F interval finds
+  **corrective** line (after a failure: its hours, spares and cost from the
+  failure mode's response if it fails; a cost of a failure typed on the mode
+  overrides the response's cost, and the position class's figure is used when
+  neither is there) and, when a check with a P-F interval finds
   some in time, the **follow-on** line (found at an inspection). The same
   failure mode on several positions at the same cost is one owner.
 - **A supporting task** (greasing, an oil change) reads *Keeps it on its life*:
@@ -105,8 +111,8 @@ records are the inputs, and the answer is set out **by owner**:
 with no cost of a failure (its failures are still counted, their cost isn't), a
 check with no P-F interval (its finds aren't counted, so every failure goes to
 the corrective line), a fitted position with no life model, a task that can't
-be put on dates, a task with no cost or no labour. What's done after a failure
-or a find isn't recorded in hours yet, so those hours are listed too. A total
+be put on dates, a task with no cost or no labour, and a failure mode with no
+response if it fails (**Add** opens **If it fails anyway** in its RCM). A total
 with a gap says it's the **known** total; nothing is guessed.
 
 The horizon is from today, 12 months unless you choose 2, 3 or 5 years. The
