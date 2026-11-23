@@ -74,7 +74,7 @@ def test_a_cheaper_plan_of_another_kind_is_said():
     out = optimal_overhaul_replace(CROW, **COSTS, max_overhauls=4)
     assert out["cheaper"] in ("overhaul_only", "run_to_failure")
     assert any("costs" in w and "less" in w for w in out["warnings"])
-    assert "less again" in out["sentence"]
+    assert "less than it" in out["sentence"]
 
 
 def _never_replaced(alpha, beta, cr, co, f, x, periods=4000):
@@ -218,3 +218,17 @@ def test_a_strategy_saved_for_a_model_on_a_position_names_its_row(monkeypatch):
         assert "position_link_id" not in rows["Plain"] and rows["On a row"]["position_link_id"] == "L-1"
     finally:
         app.dependency_overrides.clear()
+
+
+def test_a_cheaper_plan_is_said_as_a_share_of_the_best_plan():
+    """Overhaul only at about 37.34/h against the best overhaul-and-replace plan at about 39.31/h
+    costs 5.0% less (37.34 / 39.31 - 1), not 5.3% (the best plan's excess over overhaul only)."""
+    out = optimal_overhaul_replace({"model_id": "crow_amsaa", "params": [500.0, 2.2]}, cost_repair=2000,
+                                   cost_overhaul=15000, cost_replace=60000, overhaul_restores=60, unit="hours")
+    only = next(c for c in out["comparisons"] if c["id"] == "overhaul_only")
+    assert out["cheaper"] == "overhaul_only"
+    assert only["vs_best_pct"] == pytest.approx((only["cost_rate"] / out["best"]["cost_rate"] - 1) * 100)
+    assert only["vs_best_pct"] == pytest.approx(-5.0, abs=0.05)
+    assert "costs 5.0% less than it" in out["sentence"]
+    assert any("costs 5.0% less than the best" in w for w in out["warnings"])
+    assert not any("5.3%" in w for w in out["warnings"]) and "5.3%" not in out["sentence"]

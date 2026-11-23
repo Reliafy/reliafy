@@ -21,6 +21,17 @@ export function formatNumber(v, { sig = 3 } = {}) {
   return new Intl.NumberFormat("en-US", { maximumSignificantDigits: sig }).format(n);
 }
 
+// A number in plain figures at any size, never scientific notation: 2.01e-7 → "0.000000201",
+// 2.5e8 → "250,000,000". For an answer someone acts on (a test interval), where "2.01e-7" hides
+// how wrong an input was.
+export function formatPlain(v, { sig = 3 } = {}) {
+  if (v == null || v === "") return MISSING;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return MISSING;
+  if (n === 0) return "0";
+  return new Intl.NumberFormat("en-US", { maximumSignificantDigits: sig, maximumFractionDigits: 20 }).format(n);
+}
+
 // A number for reading, with very small or large values as "5.16 × 10⁻²⁶"
 // rather than "5.16e-26" (formatNumber's compact form).
 const SUPERSCRIPT = { "-": "⁻", 0: "⁰", 1: "¹", 2: "²", 3: "³", 4: "⁴", 5: "⁵", 6: "⁶", 7: "⁷", 8: "⁸", 9: "⁹" };
@@ -80,8 +91,9 @@ export function singularUnit(unit) {
 
 // A value with its unit: (4573.2, "hours") → "4,570 hours"; (1, "hours") →
 // "1 hour" (only when the shown number is exactly "1").
+// ``opts.plain``: in plain figures at any size (formatPlain).
 export function formatWithUnit(v, unit, opts) {
-  const s = formatNumber(v, opts);
+  const s = opts?.plain ? formatPlain(v, opts) : formatNumber(v, opts);
   if (!unit || s === MISSING) return s;
   return `${s} ${s === "1" ? singularUnit(unit) : unit}`;
 }

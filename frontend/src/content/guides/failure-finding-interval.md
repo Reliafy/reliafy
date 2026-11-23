@@ -25,13 +25,17 @@ Open **Decisions → Strategy → Failure finding**. Under **Non-repairable mode
 function**, choose where the non-repairable model comes from:
 
 - **Saved model** — a fit from your own failure data.
+- **Mean** — the mean life (MTBF) typed in, for a vendor or handbook MTBF.
 - **Parameters** — a distribution and its parameters typed in, for a handbook
   or vendor figure.
 
 For a protective device the vendor figure is usually a constant failure rate.
 Choose **Parameters**, set the **Distribution** to **Exponential**, and enter
 the **Failure rate λ**. For a trip that fails, on average, once a year (8,760
-hours), that's 1 ÷ 8,760 = 0.000114 per hour.
+hours), that's 1 ÷ 8,760 = 0.000114 per hour. If you have the MTBF instead,
+choose **Mean** and type 8760. A rate above 1 per hour reads like an MTBF
+typed in the wrong box, so the tool asks "did you mean a rate of … per hour?"
+and offers to use it.
 
 Then set the **Target availability**, as a percentage: the share of time the
 device must be able to work when demanded. 99 is a common starting point; your

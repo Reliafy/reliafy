@@ -15,6 +15,8 @@ import math
 import mongomock
 import pytest
 
+from backend.services.rbd_analysis import AnalysisError
+
 from backend.maintenance import position_models as pm
 from backend.maintenance import rcm_graph
 from backend.maintenance.service import PROJECTORS, Maintenance
@@ -77,10 +79,10 @@ def test_placeholders_are_counted_through_every_sub_system(m, db):
     link = pm.build_rbd(m, db, OWNERS, set(), ids["top"])
     [row] = [r for r in pm.describe(m, db, OWNERS, set(), m.position_models(ids["top"])) if r["id"] == link["id"]]
     # 7 basic blocks (Comms, 4 in Propulsion, 2 in Power), every one a placeholder: never "1 placeholder".
-    assert row["source_text"] == "Built from 3 positions inside · 7 of 7 basic blocks are placeholders"
+    assert row["source_text"] == "Built from 3 positions inside · 7 of 7 basic blocks need a model"
     counts = row["model"]["counts"]
     assert (counts["blocks"], counts["basic_blocks"], counts["basic_placeholders"], counts["nested"]) == (3, 7, 7, True)
-    assert row["model"]["quality"]["word"] == "7 of 7 placeholders"
+    assert row["model"]["quality"]["word"] == "7 of 7 need a model"
     assert row["model"]["quality"]["tone"] == "danger"  # most of the answer rests on placeholders
     assert row["model"]["placeholder_blocks"]["mostly"] is True
     assert "Propulsion › Motor 1" in row["model"]["placeholders"]
@@ -93,7 +95,8 @@ def test_placeholders_are_counted_through_every_sub_system(m, db):
     from backend.services import rbds as rbds_service
 
     check = rbds_service.validate_graph(db, db.rbds.find_one({"_id": link["model_id"]})["graph"], OWNERS)
-    assert check["placeholder_blocks"]["words"] == "7 of 7 basic blocks are placeholders"
+    assert check["placeholder_blocks"]["words"] == "7 of 7 basic blocks have no real life model yet"
+    assert not check["can_calculate"] and [b["label"] for b in check["needs_model"]] == ["Comms"]
     _same_after_rebuild(m)
 
 
@@ -109,21 +112,12 @@ def test_a_mission_never_counts_an_all_placeholder_sub_system_as_a_block_with_a_
     made = pm.build_mission_rbd(m, db, OWNERS, set(), ids["top"], ORG, "Sortie")
     graph = db.rbds.find_one({"_id": made["rbd"]["id"]})["graph"]
     g, mission = rm.save(graph, rm.LEGACY_ID, phases=[{"name": "Sortie", "duration": 25}])
-    got = rm.analyze(db, OWNERS, g, g["phases"])
-    assert sorted(p["label"] for p in got["placeholders"]) == ["Power", "Propulsion"]
-    assert got["placeholder_blocks"]["basic"] == 7 and got["placeholder_blocks"]["placeholders"] == 6
-    assert got["placeholder_blocks"]["nested"] is True and got["placeholder_blocks"]["mostly"] is True
-    # "From the blocks with models alone" is Comms alone: exp(-25e-4).
-    assert got["without_placeholders"]["reliability"] == pytest.approx(math.exp(-25e-4), rel=1e-9)
-    # The weakest block is never a sub-system of placeholders.
-    for row in got["phases"]:
-        assert (row.get("weakest") or {}).get("label") in (None, "Comms")
+    # Nothing is invented for the blocks inside with no model: no mission figure, and it says which.
+    with pytest.raises(AnalysisError, match="no non-repairable model"):
+        rm.analyze(db, OWNERS, g, g["phases"])
     # The pane's grid flags the sub-systems as placeholders too.
     flags = {b["label"]: b["placeholder"] for b in rm.detail(db, OWNERS, g, mission)["blocks"]}
     assert flags == {"Comms": False, "Power": True, "Propulsion": True}
-    from backend.services import rbd_phases
-
-    assert rbd_phases.agent_summary(got)["notes"][0].startswith("6 of 7 basic blocks are placeholders.")
 
 
 def test_a_mission_with_every_block_a_placeholder_gives_no_figure_without_them(m, db):
@@ -132,10 +126,8 @@ def test_a_mission_with_every_block_a_placeholder_gives_no_figure_without_them(m
     made = pm.build_mission_rbd(m, db, OWNERS, set(), ids["top"], ORG, "Sortie")
     graph = db.rbds.find_one({"_id": made["rbd"]["id"]})["graph"]
     g, _ = rm.save(graph, rm.LEGACY_ID, phases=[{"name": "Sortie", "duration": 25}])
-    got = rm.analyze(db, OWNERS, g, g["phases"])
-    assert sorted(p["label"] for p in got["placeholders"]) == ["Comms", "Power", "Propulsion"]
-    assert got["without_placeholders"] is None  # nothing left with a model: no "52.2% without them"
-    assert all(not row.get("weakest") for row in got["phases"])  # no "weakest with a model"
+    with pytest.raises(AnalysisError, match="needs a life model.*Comms"):
+        rm.analyze(db, OWNERS, g, g["phases"])
 
 
 def test_a_partly_placeholder_sub_system_is_said_and_gives_no_clean_figure(m, db):
@@ -149,10 +141,8 @@ def test_a_partly_placeholder_sub_system_is_said_and_gives_no_clean_figure(m, db
     made = pm.build_mission_rbd(m, db, OWNERS, set(), ids["top"], ORG, "Sortie")
     graph = db.rbds.find_one({"_id": made["rbd"]["id"]})["graph"]
     g, _ = rm.save(graph, rm.LEGACY_ID, phases=[{"name": "Sortie", "duration": 25}])
-    got = rm.analyze(db, OWNERS, g, g["phases"])
-    assert [p["label"] for p in got["partly_placeholders"]] == ["Propulsion"]
-    assert got["partly_placeholders"][0]["placeholders"] == 3 and got["partly_placeholders"][0]["basic"] == 4
-    assert got["without_placeholders"] is None  # still carries invented lives inside Propulsion
+    with pytest.raises(AnalysisError, match="needs a life model.*Comms"):
+        rm.analyze(db, OWNERS, g, g["phases"])
 
 
 def test_a_leaf_with_a_parts_count_rate_is_an_exponential_block_at_that_rate(m, db):
@@ -168,8 +158,8 @@ def test_a_leaf_with_a_parts_count_rate_is_an_exponential_block_at_that_rate(m, 
     assert rate == pytest.approx(MOTOR_RATE / 1e6)  # 30 per million hours, not a 1,000-hour placeholder
     assert motor["model_source"].startswith("From the parts count: 30 per million hours")
     assert motor["rate_source"] == "parts count"
-    # A propeller (left out of the parts count as not electronic) has no rate: still a placeholder.
-    assert blocks["Propeller 1"]["model"]["placeholder"] is True
+    # A propeller (left out of the parts count as not electronic) has no rate: no model, none invented.
+    assert not blocks["Propeller 1"].get("model")
     assert sorted(link["placeholders"]) == ["Propeller 1", "Propeller 2"]
     _same_after_rebuild(m)
 

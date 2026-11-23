@@ -144,7 +144,7 @@ def test_fixed_probability_events_import_without_a_life_model():
     # The structure is intact; only the missing models stop the analysis.
     check = rbd_analysis.validate_graph(normalize_graph(d.graph))
     assert not check["valid"]
-    assert all("has no non-repairable model" in e for e in check["errors"]) and len(check["errors"]) == 2
+    assert check["errors"][0].startswith("These blocks need a life model") and len(check["needs_model"]) == 2
 
 
 def test_fixed_probability_unit_in_a_spare_gate_is_refused():

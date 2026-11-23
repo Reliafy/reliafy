@@ -476,11 +476,21 @@ def readable_raw(db, collection: str, artifact_id: str, ctx: AccessCtx) -> tuple
         return None, False
     doc = db[collection].find_one({"_id": artifact_id, "owner_id": {"$in": ctx.read_owners}})
     if doc is not None:
-        return doc, False
+        return _live(db, collection, doc, ctx), False
     if not ctx.is_personal or not ctx.share_fallback:
         return None, False
     doc = _shared_raw(db, collection, artifact_id, ctx.uid)
-    return doc, doc is not None
+    return _live(db, collection, doc, ctx), doc is not None
+
+
+def _live(db, collection: str, doc, ctx: AccessCtx):
+    """A diagram's blocks linked to a saved model on that model's current fit, so every route that
+    reads a diagram uses the model as it is now (backend/services/rbd_live_models.py)."""
+    if collection != "rbds" or doc is None:
+        return doc
+    from backend.services import rbd_live_models
+
+    return rbd_live_models.refresh_doc(db, doc, list(ctx.read_owners))
 
 
 def fetch_readable(db, collection: str, cls, artifact_id: str, ctx: AccessCtx):

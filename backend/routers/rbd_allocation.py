@@ -15,6 +15,7 @@ from backend.db import get_session
 from backend.services import rbd_allocation
 from backend.services.access import AccessCtx, get_access
 from backend.errors import client_message
+from backend.services import rbd_live_models
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -34,6 +35,7 @@ def allocate_rbd(
     (repairable) for the system to meet ``target``, against what it has now.
     An unreachable target is a 422 with ``reachable``: the range the system
     can reach."""
+    graph = rbd_live_models.refresh(session, graph, ctx.read_owners)  # linked blocks on their model's fit
     try:
         result = rbd_allocation.allocate_for_owner(
             session, graph, ctx.read_owners, target, method, t=t, options=options)

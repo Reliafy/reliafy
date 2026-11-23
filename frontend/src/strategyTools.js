@@ -30,7 +30,11 @@ const blank = (v) => v === "" || v === null || v === undefined;
 // plain distribution (not a proportional-hazards fit). ``source`` is what the
 // picker shows: with "Parameters" open, the parameters are what's missing.
 function modelMissing(model, source) {
-  if (!model) return source === "params" ? "Enter the model's parameters." : "Choose a non-repairable model first.";
+  if (!model) {
+    if (source === "params") return "Enter the model's parameters.";
+    if (source === "mean") return "Enter the mean life.";
+    return "Choose a non-repairable model first.";
+  }
   if (model.kind === "regression" || !model.distribution_id) return "Choose a plain distribution model.";
   return null;
 }

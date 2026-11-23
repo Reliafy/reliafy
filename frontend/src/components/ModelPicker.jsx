@@ -6,7 +6,9 @@ import JointBlockSource from "./JointBlockSource.jsx";
 import { paramLabel } from "../paramLabels.js";
 import { unitInText } from "./unitText.js";
 import { blockConversion } from "../unitConvert.js";
-import { formatNumber } from "../format.js";
+import { formatNumber, formatPlain } from "../format.js";
+import Button from "./ui/Button.jsx";
+import { rateLooksLikeMean } from "../rateCheck.js";
 import { DEG, degradationLifeRef, latestOnly, savedModelRef, twoClockAt } from "../modelNext.js";
 import { clockWords, parseRate, rateHint, rateLabel, rateText } from "../twoClocks.js";
 
@@ -390,6 +392,32 @@ export default function ModelPicker({ label, value, onChange, rbdBlock = false, 
               </label>
             ))}
           </div>
+          {(dist?.params || []).map((p) => {
+            // An MTBF typed into the rate box (4,000 for 0.00025 per hour): asked, never changed for the user.
+            const looks = rateLooksLikeMean(distId, p, pvals[p], unit);
+            if (!looks) return null;
+            const typed = String(pvals[p]);
+            return (
+              <p key={`looks-${p}`} className="rbd-dlg-echo is-warn" role="status" data-testid="rate-looks-like-mean">
+                ! {looks.text}{" "}
+                <Button variant="link" size="sm" onClick={() => {
+                  const next = { ...pvals, [p]: String(looks.rate) };
+                  setPvals(next);
+                  emitParams(distId, next);
+                }}>Use {formatPlain(looks.rate)}</Button>
+                {meanEntry && (
+                  <>
+                    {" "}
+                    <Button variant="link" size="sm" onClick={() => {
+                      setSource("mean");
+                      setMeanVal(typed);
+                      emitMean(meanDistId, typed, given);
+                    }}>Enter {typed} as the mean life</Button>
+                  </>
+                )}
+              </p>
+            );
+          })}
         </>
       ) : saved.length === 0 && !repairables.length && !degradations.length ? (
         <p className="muted-line">No saved distribution models yet.</p>

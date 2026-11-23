@@ -505,16 +505,12 @@ def test_an_rbd_built_from_whats_inside_with_placeholders_then_rebuilt(m, db):
     assert rbd["name"] == "Pump station (from the tree)"
     blocks = {n["data"]["label"]: n["data"] for n in rbd["graph"]["nodes"] if n["type"] == "component"}
     assert blocks["Pump A"]["model"].get("modelId") == SAMPLE  # the child's model in use, linked
-    assert blocks["Pump B"]["model"]["placeholder"] is True  # never invented: flagged
+    assert not blocks["Pump B"].get("model")  # no life invented for it
     [row] = pm.describe(m, db, OWNERS, set(), m.position_models(plant), age=500)
-    assert row["source_text"] == "Built from 2 positions inside · 1 placeholder"
-    assert row["model"]["kind"] == "RBD" and row["model"]["quality"]["word"] == "1 placeholder"
-    nums = {n["id"]: n for n in row["model"]["numbers"]}
-    assert nums["mean"]["value"] > 0 and nums["reference"]["text"].startswith("reliability ")
-    # Non-repairable: a mean life, never an MTBF; no bounds, and the note says why.
-    assert "mtbf" not in nums and nums["mean"]["label"] == "Mean life"
-    assert nums["b10"]["value"] > 0 and nums["b10"]["lower"] is None
-    assert nums["b10"]["note"] == nums["mean"]["note"] == "no bounds: the system curve is exact from the blocks' point models"
+    assert row["source_text"] == "Built from 2 positions inside · 1 needs a model"
+    assert row["model"]["kind"] == "RBD" and row["model"]["quality"]["word"] == "1 needs a model"
+    # No system figure until Pump B has a model: the row says which block, and shows no numbers.
+    assert row["model"]["numbers"] == [] and "Pump B" in row["model"]["analysis_error"]
     full = pm.detail(m, db, OWNERS, set(), link["id"])
     assert {b["label"]: b["position"]["name"] for b in full["blocks"]} == {"Pump A": "Pump A", "Pump B": "Pump B"}
     assert next(b for b in full["blocks"] if b["label"] == "Pump B")["placeholder"] is True
