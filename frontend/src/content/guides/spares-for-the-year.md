@@ -10,7 +10,7 @@ hidden: true
 ---
 
 Open the Explorer's **Maintenance** tab, then **Forecast…** in a position's
-**⋯** menu (on a location, **Spares for the year…**). The table area shows the
+**⋯** menu (on a location too). The table area shows the
 forecast for that level and everything inside it, and under it **Spares for the
 year**: one row for each part that a failure or a task uses, here and inside it:
 
@@ -116,6 +116,6 @@ the package.
 
 ## A product not built yet
 
-On a product's design, **Spares for the year…** in a row's **⋯** menu counts the items built from it.
+On a product's design, **Forecast…** in a row's **⋯** menu counts the items built from it.
 With none built, enter a **planned fleet size** (and hours a day for lives by
 use) to size the spares for that many new units.

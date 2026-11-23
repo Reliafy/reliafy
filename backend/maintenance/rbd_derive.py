@@ -332,19 +332,42 @@ def redundancy_units(m: Maintenance, children: list[dict], nodes: list[dict], no
     return units, used
 
 
+EXISTING_CHOICES = ("open", "copy", "rebuild")
+
+
+def _existing_rbd(m: Maintenance, db, scope_id: str):
+    """The RBD made from this structure before, while it's still saved (else None)."""
+    scope = m.s.node(m.org, scope_id) or {}
+    rid = scope.get("rbd_id")
+    return db.rbds.find_one({"_id": rid, "owner_id": m.org}) if rid else None
+
+
 def save(m: Maintenance, db, scope_id: str, owners=None, hidden=frozenset(), arrangements=None,
-         check: bool = False) -> dict:
-    """Build the RBD and save it to the workspace (updating the one made before). Each block takes
-    what Build from what's inside gives it (the position's model in use, its class's, its
-    parts-count rate, or a sub-system of what's inside it), never a placeholder where there is one.
-    ``check``: only what to ask first ({ask}), nothing saved. ``arrangements``: the answers
-    (apply_arrangements), recorded before building."""
+         check: bool = False, existing: str | None = None) -> dict:
+    """Build the RBD and save it to the workspace. Each block takes what Build from what's inside
+    gives it (the position's model in use, its class's, its parts-count rate, or a sub-system of
+    what's inside it), never a placeholder where there is one. ``check``: only what to ask first
+    ({ask}, and {existing} when an RBD was made from it before), nothing saved. ``arrangements``:
+    the answers (apply_arrangements), recorded before building.
+
+    An RBD made from this structure before is never overwritten unasked: ``existing`` says what to
+    do with it. None or "open": nothing is built or saved, it comes back ({existing: true, rbd_id,
+    name}); "copy": a new RBD beside it (the position stays linked to the first); "rebuild": built
+    again over it, which replaces every edit made to it since."""
     from backend.maintenance import position_models as pm
     from backend.services import rbds as rbds_service
     from backend.services.rbd_graph import GraphError, normalize_graph, wrap_layout
 
+    if existing not in (None, *EXISTING_CHOICES):
+        raise Invalid("existing is open, copy or rebuild.")
+    had = _existing_rbd(m, db, scope_id)
+    when = had.get("updated_at") if had else None
+    found = ({"rbd_id": had["_id"], "name": had.get("name", ""),
+              "updated_at": when.isoformat() if hasattr(when, "isoformat") else when} if had else None)
     if check:
-        return {"ask": ask(m, scope_id)}
+        return {"ask": ask(m, scope_id), **({"existing": found} if found else {})}
+    if found and existing in (None, "open"):
+        return {**found, "existing": True, "notes": [], "placeholders": [], "ask": []}
     said = apply_arrangements(m, scope_id, arrangements)
     owners = list(owners or [m.org])
     _, fetch, _, unit, block, nested = pm._tree_parts(m, db, owners, hidden, scope_id, owner_id=m.org)
@@ -356,13 +379,13 @@ def save(m: Maintenance, db, scope_id: str, owners=None, hidden=frozenset(), arr
     try:
         graph = normalize_graph(built["graph"], resolve_saved_model=lambda mid: fetch("model", mid))
         graph["nodes"] = wrap_layout(graph["nodes"])
-        existing = scope.get("rbd_id")
-        if existing and not db.rbds.find_one({"_id": existing, "owner_id": m.org}):
-            existing = None
-        rbd = rbds_service.save_rbd(db, f"{scope['name']} (from Maintenance)", graph, m.org, rbd_id=existing)
+        copy = bool(found) and existing == "copy"
+        name = f"{scope['name']} (from Maintenance)" + (" (copy)" if copy else "")
+        rbd = rbds_service.save_rbd(db, name, graph, m.org,
+                                    rbd_id=found["rbd_id"] if found and existing == "rebuild" else None)
     except GraphError as err:
         raise Invalid(f"The diagram couldn't be made: {err}") from None
-    if rbd.id != scope.get("rbd_id"):
+    if not copy and rbd.id != scope.get("rbd_id"):
         m._emit("position.rbd_linked", {"id": scope_id, "changes": {"rbd_id": rbd.id}})
     return {"rbd_id": rbd.id, "name": rbd.name, "notes": built["notes"],
             "placeholders": built["placeholders"] + nested, "ask": built["ask"], "unit": unit,

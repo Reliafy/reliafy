@@ -797,10 +797,11 @@ TOPOLOGY: Table = {
     "set_duty": ("group_id position_id", "", "Which member of a standby group runs now (a duty / standby swap)."),
     "retire_group": ("group_id", "reason", "Take a redundancy group out of use (kept in the history)."),
     "restore_group": ("group_id", "", "Bring a retired group back with its members."),
-    "generate_rbd": ("position_id", "", """Generate (or regenerate) an RBD for a system position from the
+    "generate_rbd": ("position_id", "existing", """Generate an RBD for a system position from the
         positions inside it: connections wire the blocks, groups become k of n (or one standby block), blocks
         take each position's model in use (placeholders otherwise, in notes); look-alikes with no group come back
-        in ask (create_group, then regenerate). Saved as a normal RBD: analyse rbd."""),
+        in ask (create_group, then regenerate). One made before is returned unchanged (existing: true) unless
+        existing is copy (a new one) or rebuild (replaces its edits: ask the user). Saved as a normal RBD."""),
 }
 
 ITEM_CLASSES: Table = {
@@ -2802,7 +2803,8 @@ def register() -> None:
                              remove: list[str] | None = None, position_id: str | None = None,
                              clear_realised_by: bool | None = None, reason: str | None = None,
                              start_probability: float | None = None,
-                             dormancy: float | None = None) -> dict[str, Any]:
+                             dormancy: float | None = None,
+                             existing: Literal["open", "copy", "rebuild"] | None = None) -> dict[str, Any]:
         """How positions depend on each other: connections (what passes from one to another) and
         redundancy groups (k of n will do). They drive impact (maintenance get.impact) and the RBD
         generate_rbd makes from a system."""
@@ -2830,7 +2832,7 @@ def register() -> None:
                        clear(start_probability), clear(dormancy))
         if action == "set_duty":
             return run(m.set_duty, group_id, position_id)
-        return run(rbd_derive.save, m, _db(), position_id)
+        return run(rbd_derive.save, m, _db(), position_id, existing=existing)
 
     # ---- item classes and the manufacturer register (optional) --------------------------
 

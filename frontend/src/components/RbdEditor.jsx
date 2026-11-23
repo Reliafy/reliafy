@@ -1622,7 +1622,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         ...(t === "loadshare" ? [{ id: "node-loadshare", label: "Edit load-sharing", onSelect: () => { setLoadshareCtx({ nodeId: id, ...node?.data }); setModal("loadshare"); } }] : []),
         ...(t === "subsystem" ? [{ id: "node-subsystem", label: "Select RBD…", onSelect: () => { setSubsystemNodeId(id); setModal("subsystem"); } }] : []),
         { id: "node-status", label: "Status", items: [
-          { id: "node-working", label: "Working", checked: menu.state === "working", onSelect: () => setNodeState(id, "working") },
+          { id: "node-working", label: "Working (never fails)", checked: menu.state === "working", onSelect: () => setNodeState(id, "working") },
           { id: "node-failed", label: "Failed", checked: menu.state === "failed", onSelect: () => setNodeState(id, "failed") },
           { id: "node-clear", label: "Not set", checked: !menu.state, onSelect: () => setNodeState(id, null) },
         ] },
@@ -2328,6 +2328,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           safety={repairable && !!policies.safety_function}
           capacity={nodes.find((n) => n.id === modalNodeId)?.type === "component"}
           jointBlock={nodes.find((n) => n.id === modalNodeId)?.type === "component"}
+          canNeverFail={nodes.find((n) => n.id === modalNodeId)?.type === "component"}
           conditions={conditions}
           nodeId={modalNodeId}
           onClose={() => {
