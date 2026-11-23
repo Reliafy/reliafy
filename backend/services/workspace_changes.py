@@ -460,10 +460,11 @@ def _alerts(db, fleet_docs: dict, since, until) -> list:
     return out
 
 
-def _rcm_modes(owners: list, user: dict | None) -> list[tuple[str, dict]]:
+def _rcm_modes(owners: list, user: dict | None, evidence_ids=None) -> list[tuple[str, dict]]:
     """Every decided failure mode on the workspace's asset tree (Reliafy
     Maintenance; each owner is a maintenance organisation), as (position name,
-    mode with its decision) pairs. Nothing without Maintenance."""
+    mode with its decision) pairs. Nothing without Maintenance. evidence_ids: only the positions
+    with a mode decided on one of those models are read (the rest could never match)."""
     from backend.maintenance.access import allowed
 
     if not allowed(user):
@@ -476,7 +477,8 @@ def _rcm_modes(owners: list, user: dict | None) -> list[tuple[str, dict]]:
     for org in owners:
         if org == SAMPLE_OWNER:
             continue
-        for p in Maintenance(store, org, (user or {}).get("uid") or org).rcm_all()["positions"]:
+        for p in Maintenance(store, org, (user or {}).get("uid") or org).rcm_all(
+                evidence_ids=evidence_ids)["positions"]:
             modes = [m for fn in p["functions"] for ff in fn["failures"] for m in ff["modes"]] + p["unassigned"]
             out.extend((p["id"], p["name"], m) for m in modes if m.get("decision"))
     return out
@@ -490,7 +492,7 @@ def _rcm(db, model_docs: dict, refit_rows: dict, owners, user: dict | None) -> l
         return []
     out = []
     fetch = None
-    for pid, position, mode in _rcm_modes(owners, user):
+    for pid, position, mode in _rcm_modes(owners, user, set(refit_rows)):
         decision = mode.get("decision") or {}
         evidence = decision.get("evidence") or {}
         if evidence.get("type") != "model" or evidence.get("id") not in refit_rows:
