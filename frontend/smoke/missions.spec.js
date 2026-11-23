@@ -46,8 +46,8 @@ test("missions: a product's mission by phase, its covariates with the blocks the
   });
 
   await page.setViewportSize({ width: 1440, height: 900 });
-  // The old Missions address opens the Models tab: one view, no Life models / Missions switch.
-  await open(page, `/asset-register/explorer?arrange=positions&sel=${drone.id}&tab=missions`);
+  // The Models tab: one view, no Life models / Missions switch; missions under their models.
+  await open(page, `/asset-register/explorer?arrange=positions&sel=${drone.id}&tab=models`);
   await expect(page.getByRole("tab", { name: "Models", exact: true })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("radiogroup", { name: "Models: what to show" })).toHaveCount(0);
   const mission = nameRow(page, `Corridor inspection ${tag}`);

@@ -124,6 +124,12 @@ export const TABS = [
   // explorerMissions.js nestMissions). It was two views, Life models and Missions, until then;
   // ?tab=missions opens this one (TAB_ALIASES).
   { id: "models", label: "Models", title: "The models on this position and the positions inside it, with the missions flown on them: what each says, where it came from and what uses it", kinds: ["pos"] },
+  // Every mission here and below (Derryn, 23 Nov 2026: missions are the deliberate, saved "what
+  // will happen"; step 3 of the missions plan): each under the position it lives on, with its
+  // phases, their covariates and node status rules; a mission opens with its setup (start,
+  // calendar, starting state) and its two answers. A design's positions have it too (their
+  // missions carry their own calendar). The Models tab keeps them under their models for now.
+  { id: "missions", label: "Missions", title: "The missions here and below: each one's phases, its start and calendar, the chance it completes and the failures to expect", kinds: ["pos"] },
   // An item class (a row of the tree by Classes) has this one tab and no Summary: its fleet. A
   // position on an asset has it too, in every arrangement: its own risk now (one id and one label,
   // so the tab stays picked from a class to a position and on to the next). Not a design's
@@ -164,7 +170,8 @@ export const DEFAULT_TAB = "summary";
 // Earlier tab ids and the tab they open now (Derryn, 9 Nov 2026: Packages became
 // the LSA tab, packaging included).
 // Missions became rows of the Models tab, under the model each is flown on (22 Nov 2026).
-export const TAB_ALIASES = EXPLORER_LSA_TAB ? { packages: "lsa", missions: "models" } : { packages: "maintenance", lsa: "maintenance", missions: "models" };
+// Missions had been rows of the Models tab alone from 22 Nov 2026; ?tab=missions is its own tab again (23 Nov).
+export const TAB_ALIASES = EXPLORER_LSA_TAB ? { packages: "lsa" } : { packages: "maintenance", lsa: "maintenance" };
 
 // An old address of the Maintenance tab's inner views (?tab=lsa: What it needs, Packages, Spares;
 // ?tab=maintenance&mview=forecast), as the one table opens the same thing: a package open
@@ -383,6 +390,7 @@ export const PANEL_TABS = [
   { id: "fmea", label: "FME(C)A", views: [{ id: "fmea", tab: "fmea" }] },
   // One view (22 Nov 2026): the models, each with the missions flown on it as rows under it.
   { id: "models", label: "Models", views: [{ id: "models", tab: "models" }] },
+  { id: "missions", label: "Missions", views: [{ id: "missions", tab: "missions" }] },
   { id: "history", label: "History", designLabel: "Field reports", views: [{ id: "reports", label: "Failure reports", tab: "reports" }] },
 ];
 

@@ -73,7 +73,7 @@ export const MISSION_COLUMNS = [
   { id: "phases", label: "Phases or setting", width: 230, title: "A mission's phases; a phase's place in it; under a phase, a covariate's value or a block's state in it" },
   { id: "duration", label: "Length", width: 130, num: true, title: "A phase's own length; a mission's is every phase added up. In the RBD's unit" },
   { id: "reliability", label: "Completes", width: 190, num: true, title: "The chance the mission completes, once worked out; a phase's, the chance of getting through it once started" },
-  { id: "rbd", label: "RBD", width: 200, title: "The diagram the mission is flown on" },
+  { id: "rbd", label: "Runs on", width: 200, title: "The diagram the mission runs on (its own RBD, built from a saved RBD or the tree)" },
 ];
 export const MISSION_TREE_HEAD = "Position, and its missions";
 
