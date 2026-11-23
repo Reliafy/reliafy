@@ -215,6 +215,27 @@ def _startup() -> None:
     # Operator crash alerts. A no-op unless Pushover is configured, so
     # self-hosted and dev instances are unaffected.
     push_service.install_error_alerts()
+    _warm_maintenance_graph()
+
+
+def _warm_maintenance_graph() -> None:
+    """Replay the maintenance log into the graph in the background, so the first request that
+    reads it (Home's counts) doesn't wait for the replay. Nothing waits on it: a request that
+    arrives meanwhile queues on the store's own lock, as it would have. A failure is only
+    logged; the first request then tries again."""
+    if not _config.MAINTENANCE_ENABLED:
+        return
+    import threading
+
+    def warm() -> None:
+        try:
+            from backend.routers.maintenance import get_store
+
+            get_store()
+        except Exception:  # noqa: BLE001 - warming is an optimisation
+            logger.warning("maintenance graph warm-up failed", exc_info=True)
+
+    threading.Thread(target=warm, name="maintenance-warm", daemon=True).start()
 
 
 @app.exception_handler(Exception)
