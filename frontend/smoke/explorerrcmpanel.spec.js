@@ -1,7 +1,7 @@
 // The one details panel on the Explorer's RCM tab (Assets ›
 // Explorer › RCM). A click on a row shows its details beside the table; a
 // double-click on its name (not on a data cell, which edits in place, nor the
-// chevron), Open… in its row menu (after the adds), or Expand in the panel spreads them
+// chevron), Open in its row menu (first), or Expand in the panel spreads them
 // across the table, the tree column kept on the left: another row picked there
 // shows in the panel. Back to table and Esc return; the focus goes into the
 // heading and back to the row. Everything the old dialog had is here, kept as
@@ -215,7 +215,7 @@ test("a click shows the details beside the table; a double-click on the name spr
   await expectHealthy(page, problems, { label: "rcm panel" });
 });
 
-test("Open… and Add a task… in the row menu expand the details; Enter shows them beside the table", async ({ page, request, problems }) => {
+test("Open and Add a task… in the row menu expand the details; Enter shows them beside the table", async ({ page, request, problems }) => {
   const tag = `o${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -225,12 +225,10 @@ test("Open… and Add a task… in the row menu expand the details; Enter shows 
   await ffRow.locator(".tp-nm").click();
   await page.keyboard.press("Shift+F10");
   const menu = page.getByRole("menu", { name: new RegExp(`^Actions for Functional failure: No flow ${tag}`) });
-  // Adding inside the row leads its menu; Open… comes straight after.
-  await expect(menu.getByRole("menuitem").first()).toHaveText("Add failure mode");
-  await expect(menu.getByRole("menuitem").nth(1)).toHaveText("Open…");
-  await expect(menu.getByRole("menuitem", { name: "Add failure mode" })).toBeFocused();
-  await page.keyboard.press("ArrowDown");
-  await expect(menu.getByRole("menuitem", { name: "Open…" })).toBeFocused();
+  // Open leads the menu (the general section, focused); adding inside the row leads the middle.
+  await expect(menu.getByRole("menuitem").first()).toHaveText("Open");
+  await expect(menu.locator(":scope > [role='menuitem']").nth(6)).toHaveText("Add failure mode");
+  await expect(menu.getByRole("menuitem", { name: "Open", exact: true })).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(panel(page).getByRole("heading", { name: `No flow ${tag}` })).toBeFocused();
   expect(await isExpanded(page)).toBe(true);
@@ -265,14 +263,14 @@ test("Open… and Add a task… in the row menu expand the details; Enter shows 
   await expectHealthy(page, problems, { label: "rcm open from menu" });
 });
 
-test("at 400 px Open… shows the details sheet, which fits; no Expand", async ({ page, request, problems }) => {
+test("at 400 px Open shows the details sheet, which fits; no Expand", async ({ page, request, problems }) => {
   const tag = `p${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, url(p));
   const fnRow = trow(page, `^Function: Pump water ${tag}`);
   await fnRow.getByRole("button", { name: /^Actions for / }).click();
-  await page.getByRole("menu", { name: new RegExp(`^Actions for Function: Pump water ${tag}`) }).getByRole("menuitem", { name: "Open…" }).click();
+  await page.getByRole("menu", { name: new RegExp(`^Actions for Function: Pump water ${tag}`) }).getByRole("menuitem", { name: "Open", exact: true }).click();
   const sheet = panel(page);
   await expect(sheet.getByRole("heading", { name: `Pump water ${tag}` })).toBeVisible();
   await expect(sheet.getByRole("button", { name: "Expand the details" })).toHaveCount(0);
@@ -319,7 +317,7 @@ test("screenshots of the panel side by side and expanded (SMOKE_SHOTS_DIR)", asy
       else {
         await page.getByRole("button", { name: "Close the details" }).click();
         await row.getByRole("button", { name: /^Actions for / }).click();
-        await page.getByRole("menuitem", { name: "Open…" }).click();
+        await page.getByRole("menuitem", { name: "Open", exact: true }).click();
       }
       await settled(page);
       await page.screenshot({ path: `${SHOTS}/rcm-panel-${name}-${w}.png` });
@@ -374,7 +372,7 @@ test("one order at every level: its notes under the title and chips, what's insi
       else {
         if (await panel(page).count()) await panel(page).getByRole("button", { name: "Close the details" }).click();
         await row.getByRole("button", { name: /^Actions for / }).click();
-        await page.getByRole("menuitem", { name: "Open…" }).click();
+        await page.getByRole("menuitem", { name: "Open", exact: true }).click();
       }
     };
     await show(`^Function: Pump water ${tag}`);

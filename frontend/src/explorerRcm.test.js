@@ -75,9 +75,9 @@ test("no Add rows in the tree: adding is from each row's menu", () => {
   // The adds come first (what goes under the row), then Open… and the rest.
   assert.deepEqual(ids("m1"), ["add-task", "open", "decide", "rename", "delete"]);
   assert.deepEqual(ids("U:pump"), ["add-mode"]); // the "Not under a functional failure" heading: add a mode there
-  // On a phone the details panel edits the description, so no Edit description.
+  // On a phone the details panel edits the description: Edit description stays, greyed, saying so.
   // Open… stays on a phone: it's the way to the dialog there (no double-click).
-  assert.deepEqual(ids("f1", { canRename: false }), ["add-std", "add-fail", "open", "delete"]);
+  assert.deepEqual(ids("f1", { canRename: false }), ["add-std", "add-fail", "open", "rename", "delete"]);
   const label = (key) => rowActions(d.rows.get(key)).map((a) => a.label);
   assert.deepEqual(label("f1"), ["Add a performance standard…", "Add functional failure", "Open…", "Edit description", "Delete function…"]);
   assert.equal(label("m2")[2], "Change the decision…");
@@ -347,7 +347,7 @@ test("row menus: a failure offers Link to a cause and Link to an effect; a refer
   // The top's failure too: an effect may be beside it or on the same position.
   assert.deepEqual(labels("px"), ["Add failure mode", "Open…", "Link to a cause…", "Link to an effect…", "Edit description", "Delete functional failure…"]);
   assert.deepEqual(labels("x1"), ["Add failure mode", "Open…", "Link to a cause…", "Link to an effect…", "Edit description", "Delete functional failure…"]);
-  assert.deepEqual(labels(causeKey("px", "x1")), ["Go to it", "Unlink"]);
+  assert.deepEqual(labels(causeKey("px", "x1")), ["Go to it", "Remove the link"]);
   assert.deepEqual(rowActions(d.rows.get(causeKey("px", "x1")), { canRename: false }).map((a) => a.id), ["go", "unlink"]);
   assert.deepEqual(rowActions(d.rows.get("f1")).map((a) => a.id), ["add-std", "add-fail", "open", "rename", "delete"]);
 });
@@ -583,9 +583,9 @@ test("row menus for the standards level: add, edit, move, remove; a failure chan
   // A wide screen's pointer menu drags them instead (moves: false): no Move up / down.
   assert.deepEqual(labels("s1", { moves: false }), ["Add a functional failure…", "Open…", "Edit text", "Delete performance standard…"]);
   assert.equal(items("s1").find((a) => a.id === "delete").danger, true);
-  // The one text's row: no moving; on a phone no in-place edit.
+  // The one text's row: no moving; on a phone the in-place edit is greyed, saying where to edit.
   assert.deepEqual(labels(legacyKey("f2")), ["Add a functional failure…", "Open…", "Edit text", "Remove performance standard"]);
-  assert.deepEqual(items(legacyKey("f2"), { canRename: false }).map((a) => a.id), ["add-fail", "open", "delete"]);
+  assert.deepEqual(items(legacyKey("f2"), { canRename: false }).map((a) => a.id), ["add-fail", "open", "rename", "delete"]);
   assert.deepEqual(labels(noStdKey("f1")), ["Add a functional failure…"]); // the "No standard" heading: its details, on the add row
   // A failure under a function with a list offers Change standard…; one without doesn't.
   // Which standard it breaches is where it sits: moved (Move to…, a drag), not picked here.

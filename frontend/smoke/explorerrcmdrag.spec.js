@@ -330,7 +330,7 @@ test("a task's row drags to copy: linked to a sibling failure mode, kept on its 
   // The keyboard's way: its row menu's Link to another failure mode…, the picker, Link.
   await trow(page, `^Task: Grease bearings ${tag}`).first().locator(".tp-nm").click();
   await page.keyboard.press("Shift+F10");
-  await page.getByRole("menu").getByRole("menuitem", { name: "Link to another failure mode…" }).click();
+  await page.getByRole("menu").getByRole("menuitem", { name: "Link to another failure mode…", exact: true }).click();
   const pick = page.getByRole("dialog", { name: `Link the task “Grease bearings ${tag}” to another failure mode` });
   await expect(pick).toBeVisible();
   // Only failure modes it can reach and doesn't prevent yet are offered (Pump A's seal has it now; Pump B is beside it).
@@ -380,8 +380,10 @@ test("at 400 px there's no dragging: the row menu's Move to… moves it, with Un
   const row = trow(page, `^Function: Contain the water ${tag}`);
   await row.getByRole("button", { name: /^Actions for / }).click();
   const menu = page.getByRole("menu");
-  await expect(menu.getByRole("menuitem", { name: "Move up" })).toBeVisible();
-  await menu.getByRole("menuitem", { name: "Move to…" }).click();
+  // Move up and Move down are there too, under More › (the menu standard's ten at a level).
+  await menu.getByRole("menuitem", { name: "More", exact: true }).click();
+  await expect(menu.getByRole("group", { name: "More" }).getByRole("menuitem", { name: /^Move up/ })).toBeVisible();
+  await menu.getByRole("menuitem", { name: "Move to…", exact: true }).click();
   const dlg = page.getByRole("dialog", { name: `Move “Contain the water ${tag}”` });
   await expect(dlg).toBeVisible();
   await pickPlace(dlg, p.b.id, `Pump B ${tag}`);

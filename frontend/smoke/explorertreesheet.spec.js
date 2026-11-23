@@ -3,6 +3,7 @@
 // imported (all or nothing), and importing it again makes nothing. A position's row menu exports
 // its branch. A phone: the pane takes the screen, and nothing scrolls sideways at 400 px.
 import { test, expect, open, postOk } from "./health.js";
+import { subItem } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -105,9 +106,11 @@ test("export every asset from Assets; an asset opened on its own exports its bra
 
   await page.getByRole("treeitem", { name: new RegExp(`^Plant ${tag}`) }).locator(".tp-nm").click({ button: "right" });
   const menu = page.getByRole("menu", { name: new RegExp(`^Actions for Plant ${tag}`) });
-  await expect(menu.getByRole("menuitem", { name: "Export this branch…" })).toBeVisible();
+  // Under More › (the menu's middle keeps its adds; the rest folds there).
+  const exportItem = await subItem(page, menu, "More", "Export this branch…");
+  await expect(exportItem).toBeVisible();
   await shot(page, "1440-export-row-menu");
-  await menu.getByRole("menuitem", { name: "Export this branch…" }).click();
+  await exportItem.click();
   await expect(pane(page).getByRole("radio", { name: `This branch: Plant ${tag}` })).toBeChecked();
   const [download] = await Promise.all([
     page.waitForEvent("download"),

@@ -277,7 +277,7 @@ mark them as a set only if the system can run without one of them.
 
 The RBD row shows the system's MTBF and B10, and its panel lists every block
 with its model and the position it came from; type an age to see the
-system's reliability there. Double-click the row (or **Open in the pane**) to
+system's reliability there. Double-click the row (or **Open** in its menu) to
 edit the diagram beside the tree; **Open full page** opens it on its own page.
 **Rebuild from what's inside…** (on the row, or under **RBD ›**) opens the
 diagram and asks first; **Rebuild** then adds the positions inside that have

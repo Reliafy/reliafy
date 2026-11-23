@@ -4,7 +4,7 @@
 // with a value past the handbook's limit), and a prediction line set to an NSWC bearing with its
 // Conditions… (the result changes). At 400 px nothing scrolls the page sideways.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
-import { headMenu } from "./explorer.js";
+import { headMenu, subItem } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SOURCE = "NSWC-11: covariate models for mechanical parts (base rate × condition factors)";
@@ -16,9 +16,16 @@ const shot = async (page, name, full = false) => {
 const sideways = (page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 
 async function headPick(page, group, item) {
-  await headMenu(page);
-  await page.getByRole("menuitem", { name: group, exact: true }).click();
-  await page.getByRole("menu", { name: group }).getByRole("menuitem", { name: item }).click();
+  // A group (Life model ›, RBD ›) at the top of the heading's menu, or folded into More › with its
+  // items in place (the menu standard keeps ten a level).
+  const menu = await headMenu(page);
+  const g = menu.getByRole("menuitem", { name: group, exact: true });
+  if (await g.count()) {
+    await g.click();
+    await page.getByRole("menu", { name: group }).getByRole("menuitem", { name: item }).click();
+    return;
+  }
+  await (await subItem(page, menu, "More", item, { exact: false })).click();
 }
 
 test("the NSWC-11 library source, a bearing's record and Try it past a limit", async ({ page, problems }) => {

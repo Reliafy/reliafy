@@ -87,7 +87,8 @@ test("each row's menu on the FME(C)A tab: a function adds a failure mode directl
   assert.deepEqual(ids("f1"), ["add-mode", "open", "rename", "delete"]); // the add first
   assert.deepEqual(ids("m1"), ["open", "score", "rename", "delete"]);
   assert.deepEqual(ids("U:motor"), ["add-mode"]);
-  assert.deepEqual(ids("m1", { canRename: false }), ["open", "score", "delete"]);
+  assert.deepEqual(ids("m1", { canRename: false }), ["open", "score", "rename", "delete"]); // greyed, with the reason
+  assert.ok(rowActions(d.rows.get("m1"), { canRename: false }).find((a) => a.id === "rename").reason);
   assert.deepEqual(rowActions(null), []);
 });
 

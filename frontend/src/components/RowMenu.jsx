@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Link } from "react-router-dom";
 import { portalHost } from "../fullScreen.js";
 import { placeMenu, placeSubmenu } from "../menuPlace.js";
 import usePhone from "../usePhone.js";
@@ -178,6 +179,15 @@ export default function RowMenu({ items, at, label, anchorId, onChoose, onClose 
   const button = (it, path, { hover = null } = {}) => {
     const radio = typeof it.checked === "boolean";
     const why = it.disabled && it.reason ? `${uid}-${path}` : undefined;
+    // An item with `to` is a link (Open the full page): a real address, opened by the router.
+    if (it.to && !it.disabled) {
+      return (
+        <Link key={it.id} to={it.to} role="menuitem" tabIndex={-1} data-path={path} data-label={it.label} className="ovm-item"
+              onPointerEnter={hover} onClick={() => onClose()}>
+          {it.label}
+        </Link>
+      );
+    }
     return (
       <button key={it.id} type="button" role={radio ? "menuitemradio" : "menuitem"} tabIndex={-1} data-path={path} data-label={it.label}
               aria-checked={radio ? String(it.checked) : undefined}

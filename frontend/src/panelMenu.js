@@ -24,7 +24,10 @@ export function menuKey(items) {
 // The tab's items with "Open the full page" last (where the row has a page).
 export function withFullPage(items, to) {
   const out = (items || []).filter(Boolean);
-  return to ? [...out, { id: "open-full", label: "Open the full page", to }] : out;
+  // A menu built to the standard (the row's own, menuStandard.js) has it in its middle already.
+  const has = (list) => list.some((it) => it && (it.id === "open-full" || (it.items && has(it.items))));
+  if (!to || has(out)) return out;
+  return [...out, { id: "open-full", label: "Open the full page", to }];
 }
 
 // A tab's body gives the page its items (null when it goes). Each item's

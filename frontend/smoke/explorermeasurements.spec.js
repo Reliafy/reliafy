@@ -8,7 +8,21 @@
 // typed in Record is recorded now; a consumable's quantity is a use, out of
 // stock. Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
-import { headMenu } from "./explorer.js";
+import { headMenu, subItem } from "./explorer.js";
+
+// Every label in a row menu: its top level and the items under Add › and More ›.
+async function headLabels(page, menu) {
+  const read = (loc) => loc.evaluateAll((els) => els.map((e) => e.dataset.label || e.textContent.trim()));
+  const out = await read(menu.locator(":scope > [role='menuitem']"));
+  for (const group of ["Add", "More"]) {
+    if (!out.includes(group)) continue;
+    await menu.getByRole("menuitem", { name: group, exact: true }).hover();
+    const sub = page.getByRole("menu", { name: group, exact: true });
+    await expect(sub).toBeVisible();
+    out.push(...await read(sub.getByRole("menuitem")));
+  }
+  return out;
+}
 import { choose } from "./select.js";
 
 const M = "/api/maintenance";
@@ -50,9 +64,11 @@ test("a point hangs under its position in the tree-table, and opens beside it", 
   await expect(side(page).getByRole("heading", { name: `Bearing ${tag}` })).toBeVisible();
   await expect(side(page).locator(".rt-row")).toHaveCount(3);
   await expect(side(page).locator(".js-plotly-plot")).toBeVisible();
+  // The heading's "…" is the row's own menu (the menu standard): the four adds under Add ›, and the
+  // heading's Columns…, Export CSV and the point's own among the rest (under More › past ten).
   const head = await headMenu(page);
-  await expect(head.locator(".ovm-menu .ovm-item")).toContainText(["Add a measuring point…", "Add a setting…", "Add a consumable…",
-    "Add a sensor channel…", "Columns…", "Export CSV", "Add reading…", "Edit limits…", "Move…"]);
+  expect(await headLabels(page, head)).toEqual(expect.arrayContaining(["Add a measuring point…", "Add a setting…", "Add a consumable…",
+    "Add a sensor channel…", "Columns…", "Export CSV", "Add reading…", "Edit limits…", "Move…"]));
   await page.keyboard.press("Escape");
   // Full screen, and back.
   await page.locator(".tt-headslot .tt-actions").getByRole("button", { name: "Full screen", exact: true }).click();
@@ -177,7 +193,7 @@ test("roll-ups, the search, Needs attention, a reading in place, the row's ⋯",
   await expect(r.locator(".mt-latest strong")).toHaveText("130 kPa");
   // The row's ⋯.
   await r.locator(".tp-nm").click({ button: "right" });
-  await expect(page.getByRole("menu").last().getByRole("menuitem")).toContainText(["Open", "Record a reading…", "Edit limits…", "Move…", "Retire…"]);
+  await expect(page.getByRole("menu").last().getByRole("menuitem")).toContainText(["Open", "Move to…", "Record a reading…", "Edit limits…", "Retire…"]);
   await page.keyboard.press("Escape");
   await expectHealthy(page, problems, { label: "the Measurements tree-table" });
 });
@@ -222,7 +238,7 @@ test("consumables: a row, a use typed in place out of stock, its additions besid
   await expect(side(page).locator(".mv-changes li").first()).toContainText(`from Pool shed ${tag}`);
   // Add a consumable… from the register.
   const head = await headMenu(page);
-  await head.locator(".ovm-menu .ovm-item", { hasText: "Add a consumable…" }).click();
+  await (await subItem(page, head, "Add", "Add a consumable…")).click();
   const dialog = page.getByRole("dialog", { name: "Add a consumable" });
   await choose(dialog.getByRole("combobox", { name: "Part" }), { label: `ACID-${tag} Acid ${tag} (L)` });
   await dialog.getByRole("button", { name: "Add" }).click();

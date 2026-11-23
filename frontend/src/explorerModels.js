@@ -272,7 +272,7 @@ export function inUseWords(link) {
 // the table area (Open in the pane) or on its own page (Open full page).
 export function rowActions(r, { viewOnly = null } = {}) {
   const link = r.ref.link;
-  const off = viewOnly ? { disabled: true, title: viewOnly } : {};
+  const off = viewOnly ? { disabled: true, reason: viewOnly, title: viewOnly } : {};
   // A model's Strategy row: open it (the pane: its saved strategies and the tools that fit).
   if (r.ref.strategy) return [{ id: "model-strategy-open", label: "Open" }];
   // Strategy is optional (Derryn, 16 Nov 2026): offered quietly on a model a strategy tool takes.
@@ -301,7 +301,7 @@ export function rowActions(r, { viewOnly = null } = {}) {
     link.model?.entered ? { id: "model-params-edit", label: "Edit parameters…", ...off } : null,
     strategy,
     rbd ? null : { id: "model-replace", label: "Replace with…", ...off },
-    { id: "model-unlink", label: "Unlink…", ...off },
+    { id: "model-unlink", label: "Unlink…", danger: true, ...off },
   ].filter(Boolean);
 }
 

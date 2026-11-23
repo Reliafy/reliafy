@@ -29,7 +29,7 @@ import {
   useTreeForecast, useTreeTasks,
 } from "../components/TaskTreeTable.jsx";
 import {
-  FC_OPEN, PKG_FORECAST, PKG_OPEN, REF_GO, TASK_ADD_TO, TASK_CLEAR, TASK_DRAFT, TASK_FORECAST, TASK_OPEN, TASK_OPTIMISE, TASK_PACKAGE, TASK_SELECT,
+  FC_OPEN, PKG_FORECAST, PKG_OPEN, PKG_RETIRE, REF_GO, REF_REMOVE, TASK_RETIRE, TASK_ADD_TO, TASK_CLEAR, TASK_DRAFT, TASK_FORECAST, TASK_OPEN, TASK_OPTIMISE, TASK_PACKAGE, TASK_SELECT,
   anyFilter, commonHolder, facetValues, facetsOf, filterTasks, filterWords, forecastItem, forecastRowActions, forecastWanted,
   graftTasks, isForecastRow, isMaintRow, isPackageRef, isPackageRow, isTaskRow, keepShown, openForTasks, packageKey, packageRowActions,
   packageWhere, pickTasks, refRowActions, rollupText as taskRollup, shownTasks, taskKey, taskRowActions,
@@ -55,12 +55,13 @@ import {
   createPositionMission, deleteMission, getMission, updateMission, calculateMission, getFmeaExcelBlob, getItemClasses, getMaintenanceTree, getProduct, getWorkspaceRcm, getPositionRcm, getRcmOptions,
   hasFmeaExcel, linkPositionModel, restoreRcm, restoreTree, updateMaintenanceLocation, updateMaintenancePosition,
   listStrategyAnalyses,
+  changePackage, removePackageTask, retireMaintenanceTask,
 } from "../api.js";
 import MergeAssetPane from "../components/MergeAssetPane.jsx";
 import { mergeSourceKind, separateChange, separateConfirm } from "../assetMerge.js";
 import { useWorkspace } from "../WorkspaceProvider.jsx";
 import TreePane from "../components/TreePane.jsx";
-import TreeDetail, { HeaderTabs, SlimHeader, forgetPositions, prefetchPosition, rememberChange, usePosition } from "../components/TreeDetail.jsx";
+import TreeDetail, { HeaderTabs, SlimHeader, fullPagePath, forgetPositions, prefetchPosition, rememberChange, usePosition } from "../components/TreeDetail.jsx";
 import DecisionModal from "../components/DecisionModal.jsx";
 import LinkFailurePicker from "../components/FailureLinks.jsx";
 import RcmImportModal from "../components/RcmImportModal.jsx";
@@ -117,6 +118,8 @@ import { keepLevel } from "../outlineTree.js";
 import { canPin, crumbAction, inBranch, levelMatches, pinCoversAll, pinDisplay, pinPath, pinTarget } from "../treePin.js";
 import { EXPLORER_LABEL } from "../navigation.js";
 import { ASSETS_LIST_PATH, explorerCarry } from "../maintenanceAssets.js";
+import { explorerRowMenu } from "../explorerMenu.js";
+import { COPY_LINK, OPEN, copyLink, rowLink } from "../menuStandard.js";
 import { addsFirst, focusNoun, isolateItems, liveKids, lsaLead, maintenanceLead, moveTargets, showsAddRow, summaryActions, tabMenu as menuOnTab, viewOnlyReason, withAssetMoves, withPin } from "../treeRowMenu.js";
 import { canIsolate, depthWords, focusFrom, focusShown, isolateIncompleteItem, isolateIncompleteOpen, isolateOpen, levelsBelow } from "../treeIsolate.js";
 import { removeTaskFromMode } from "../components/RcmModeTasks.jsx";
@@ -1895,7 +1898,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     const pid = r.type === "pos" ? r.key : r.ref.position_id;
     const pr = whole.rows.get(pid);
     const position = { id: pid, name: pr?.ref.name || "(no name)", ...classFields(pr?.ref) };
-    if (id === "mission-open" || id === "mission-phase-open") return openMissionRow(r);
+    if (id === "mission-open" || id === "mission-length" || id === "mission-phase-open") return openMissionRow(r);
     // Under a phase: its covariates (set in their details) and node status rules.
     if (id === "mission-rule-add") {
       setMissionAddRule(r.key);
@@ -2033,7 +2036,75 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // Package the tasks… on a level (what was the LSA tab's): not a design's, nor view only.
   const draftItem = (r) => (!designScope && !viewOnly && (r.type === "pos" || r.type === "loc")
     ? [{ id: TASK_DRAFT, label: "Package the tasks…", title: "Drafts packages from every task here and below in none, by how often and by trade" }] : []);
+  // Each tab's own list for a row (below), to the standard (explorerMenu.js): Open, Rename…, Move
+  // to…, Focus ›, Pin this branch, Copy link; the tab's adds and the row's own; one red item last.
+  const treeChangesOf = (r) => (r.type === "pos" || r.type === "loc"
+    ? designActions(summaryActions(r, { mode, viewOnly }), designScope, { row: r, viewOnly }) : []);
+  const standardOf = (r, items) => explorerRowMenu(r, items, { tree: treeChangesOf(r) });
+  // Open: what Enter on the row does (its details beside or across the table; on the Summary tab its page).
+  const openRow = (key) => {
+    const r = display.rows.get(key);
+    if (!r) return undefined;
+    if (isMeasRow(r)) return openMeas(key);
+    if (isModelRow(r)) return openModel(key);
+    if (isMissionRow(r)) return openMissionRow(r);
+    if (isTaskRow(r)) return openTaskRow(r);
+    if (isPackageRow(r) || isPackageRef(r)) return openTaskRow(r);
+    if (isForecastRow(r)) return openForecastAt(r);
+    if (isRcmRow(r) && opensItem(r)) return openItem(key);
+    pick(key, { go: true });
+    if (!phone) setTimeout(() => headingRef.current?.focus({ preventScroll: true }), 0);
+    return undefined;
+  };
+  // Copy link: this page's address with the row picked (and a task or package open).
+  const copyRowLink = (r) => {
+    const sel = isRcmRow(r) || isModelRow(r) || isMissionRow(r) || isMaintRow(r) ? positionOf(r) ?? r.ref.position_id ?? r.key : r.key;
+    const url = rowLink(window.location.href, sel, {
+      mtask: isTaskRow(r) ? r.ref.task.id : undefined, mpkg: isPackageRow(r) ? r.ref.pkg.id : undefined,
+    });
+    copyLink(url).then((ok) => say(ok ? "Link copied." : `Couldn't copy the link: ${url}`, ok ? "ok" : "error", { fade: ok }));
+  };
+  const retireTaskRow = async (r) => {
+    const task = r.ref.task;
+    const ok = await confirm({
+      title: "Retire this task?", body: `“${task.name}” stops falling due and raising work orders. It stays in the history.`,
+      confirmLabel: "Retire the task", pendingLabel: "Retiring…", failedWhat: "retire it",
+      run: () => retireMaintenanceTask(task.id, "").then(() => true),
+    });
+    if (ok) {
+      say(`Retired ${task.name}.`);
+      ptasks.load();
+    }
+  };
+  // A package's Retire…: its tasks go back to being raised on their own (it stays in the history).
+  const retirePackageRow = async (r) => {
+    const pkg = r.ref.pkg;
+    const ok = await confirm({
+      title: `Retire ${pkg.name}?`, body: "Its tasks go back to being raised on their own. It stays in the history and can be restored.",
+      confirmLabel: "Retire the package", pendingLabel: "Retiring…", failedWhat: "retire it",
+      run: () => changePackage(pkg.id, "retire", { reason: "" }).then(() => true),
+    });
+    if (ok) {
+      say(`Retired ${pkg.name}.`);
+      ptasks.load();
+    }
+  };
+  const removeRefRow = async (r) => {
+    const ok = await confirm({
+      title: "Take this task out?", body: `“${r.ref.name}” is raised on its own again, by its own interval.`,
+      confirmLabel: "Take it out", pendingLabel: "Taking out…", failedWhat: "take it out",
+      run: () => removePackageTask(r.ref.package_id, r.ref.task.id).then(() => true),
+    });
+    if (ok) {
+      say(`Took ${r.ref.name} out.`);
+      ptasks.load();
+    }
+  };
   const rowMenu = {
+    actions: (r, opts = {}) => standardOf(r, tabActions(r, opts)),
+    onAction: (r, id) => rowAction(r, id),
+  };
+  const tabRowMenu = {
     // The moves a drag does: on a phone, or from the keyboard (no dragging there).
     actions: (r, { keyboard = false } = {}) => {
       // The plain tree's tabs: the Summary menu; on a tab with something of its own for the row (Failure
@@ -2063,11 +2134,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       if (missionsOn && isMissionRow(r)) return withPin(missionRowActions(r, { viewOnly }), isolateItem(r));
       // The Maintenance tab: a task's own (Open…); a level's: Add task…, Forecast… (a position on an
       // asset), then Rename…, Focus ›, Pin this branch.
-      if (tasksOn && isTaskRow(r)) return taskRowActions(r, { tasks: tasksFor(r).map((x) => x.ref.task), canPackage: !designScope && !viewOnly, canSelect: phone && !designScope && !viewOnly });
+      if (tasksOn && isTaskRow(r)) return taskRowActions(r, { tasks: tasksFor(r).map((x) => x.ref.task), canPackage: !designScope && !viewOnly, canSelect: phone && !designScope && !viewOnly, viewOnly });
       // A package (at the meeting point of its tasks): Open…, Forecast…; a task listed under it: Show
       // the task (under its own position); a Forecast row or line: Open the full forecast….
-      if (tasksOn && isPackageRow(r)) return packageRowActions(r);
-      if (tasksOn && isPackageRef(r)) return refRowActions(r);
+      if (tasksOn && isPackageRow(r)) return packageRowActions(r, { viewOnly });
+      if (tasksOn && isPackageRef(r)) return refRowActions(r, { viewOnly });
       if (tasksOn && isForecastRow(r)) return forecastRowActions(r);
       if (tasksOn && (r.type === "pos" || r.type === "loc")) {
         const own = summaryActions(r, { mode, viewOnly }).filter((it) => MODEL_POSITION_ITEMS.includes(it.id));
@@ -2107,6 +2178,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       return withPin(own, [...isolateItem(r), ...isolateIncompleteItem(display.rows.get(r.key) || r, { can: canIsolate(display.rows.get(r.key) || r, mode, canPin) }), ...pinItem(r)]);
     },
     onAction: (r, id) => {
+      if (id === OPEN) return openRow(r.key);
+      if (id === COPY_LINK) return copyRowLink(r);
+      if (id === TASK_RETIRE) return retireTaskRow(r);
+      if (id === PKG_RETIRE) return retirePackageRow(r);
+      if (id === REF_REMOVE) return removeRefRow(r);
       if (id.startsWith("meas-")) return measAction(r, id.slice(5));
       if (id.startsWith("model-attach-") || id === "model-refresh-predict") return attachAt(r.key, id);
       if (id.startsWith("model-")) return modelAction(r, id);
@@ -2193,6 +2269,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       else if (id === "export-csv") exportRcm(r);
     },
   };
+  const tabActions = tabRowMenu.actions;
+  const rowAction = tabRowMenu.onAction;
   // A position's RCM (it and everything inside it) as a CSV file, its columns
   // named as the import reads them.
   const exportRcm = (r) => {
@@ -2923,16 +3001,33 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     { id: "mt-rates", label: "Trade rates…", title: "The hourly rate of each trade: it prices every task's labour",
       onSelect: () => { setPanel(false); setQuery_((q) => { q.set("rates", "1"); q.delete("addtask"); }); } },
   ] : [];
+  // The panel heading's ⋯: the same menu as the row's (right-click, its ⋯), with what the tab adds
+  // for the heading (Columns…, Export CSV, Trade rates…, Open the full page) among the row's own
+  // actions: one list for one row, never a third.
+  const headMenu = (row, extras = []) => {
+    const list = (extras || []).filter(Boolean);
+    if (!row) return list;
+    const own = tabActions(row) || [];
+    const ids = new Set(own.flatMap((it) => [it.id, ...(it.items || []).map((s) => s.id)]));
+    const more = list.filter((it) => !it.separator && !ids.has(it.id))
+      .map((it) => ({ ...it, add: false, ...(it.disabled && !it.reason ? { reason: it.title || "Not available for this row." } : {}) }));
+    const page = fullPagePath(row);
+    const items = explorerRowMenu(row, [...own, ...more, ...(page ? [{ id: "open-full", label: "Open the full page", to: page }] : [])], { tree: treeChangesOf(row) });
+    const bind = (it) => (it.separator ? it : {
+      ...it, onSelect: it.onSelect || (it.to ? undefined : () => rowAction(row, it.id)), ...(it.items ? { items: it.items.map(bind) } : {}),
+    });
+    return items.map(bind);
+  };
   const head = phone ? null : opsOn ? posRow && (posRow.type === "pos" || posRow.type === "item") && (
     <SlimHeader display={whole} row={posRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
                 headingRef={headingRef} fullScreenButton={fullButton} message={msg} heading={heading}
                 meta={pops.data ? <span className="tt-rollup mt-rollup">{posRow.type === "item" ? "Runs as the position it's fitted to" : opsHeadline(pops.byId.get(posRow.key))}</span> : null}
-                menu={posRow.type === "pos" && !viewOnly ? [{ id: "ops-plan", label: "Operating plan…", onSelect: () => leavePane().then((ok) => ok && openPane("plan", { id: posRow.key, name: posRow.ref.name || "(no name)" })) }] : []} />
+                menu={headMenu(posRow, posRow.type === "pos" && !viewOnly ? [{ id: "ops-plan", label: "Operating plan…", onSelect: () => leavePane().then((ok) => ok && openPane("plan", { id: posRow.key, name: posRow.ref.name || "(no name)" })) }] : [])} />
   ) : tasksOn ? taskHolder && (
     <SlimHeader display={whole} row={posRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
                 headingRef={headingRef} fullScreenButton={fullButton} message={msg} heading={heading}
                 meta={ptasks.tasks ? <span className="tt-rollup mt-rollup">{taskRollup(taskHolder, true)}</span> : null}
-                menu={taskMenu} />
+                menu={headMenu(posRow, taskMenu)} />
   ) : modelsOn ? posRow && posRow.type === "pos" && (
     <SlimHeader display={whole} row={posRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
                 headingRef={headingRef} fullScreenButton={fullButton} message={msg} heading={heading}
@@ -2946,20 +3041,20 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                     )}
                   </span>
                 ) : null}
-                menu={modelMenu} popover={modelColumns} />
+                menu={headMenu(posRow, modelMenu)} popover={modelColumns} />
   ) : measOn ? posRow && posRow.type === "pos" && (
     <SlimHeader display={whole} row={posRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
                 headingRef={headingRef} fullScreenButton={fullButton} message={msg} heading={heading}
                 meta={meas.data ? <span className="tt-rollup mt-rollup">{measRollup(posRow, false) || "Nothing measured here yet"}</span> : null}
-                menu={measMenu} popover={measColumns} />
+                menu={headMenu(posRow, measMenu)} popover={measColumns} />
   ) : rcmOn ? posRow && posRow.type === "pos" && (
     <SlimHeader display={whole} row={posRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
                 headingRef={headingRef} fullScreenButton={fullButton} message={msg} heading={heading}
                 meta={rcm?.positions ? <span className="tt-rollup"><RollupBadges rollup={rollupOf(rcm, posRow.key, whole)} /></span> : null}
-                menu={rcmMenu} popover={columns} />
+                menu={headMenu(posRow, rcmMenu)} popover={columns} />
   ) : summaryRow && (
     <SlimHeader display={whole} row={summaryRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
-                headingRef={headingRef} fullScreenButton={fullButton} heading={heading} menu={tabMenu || []}
+                headingRef={headingRef} fullScreenButton={fullButton} heading={heading} menu={headMenu(summaryRow, tabMenu || [])}
                 meta={rowKind(summaryRow) ? <span className="tt-kind">{rowKind(summaryRow)}</span> : null}
                 message={message?.fade ? msg : null} />
   );
@@ -3096,7 +3191,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                     onSelect={selectFromPanel} onCrumb={(k) => crumbGo(k, selectFromPanel)} above={above}
                     back={back} version={version} empty={emptyDetail} headless={!phone} heading={heading}
                     tab={tab} onTab={setTab} fullScreenButton={fullButton} reports={reportsApi} within={root} structure={structure}
-                    menu={tabMenu || []} onMenu={setTabMenu}
+                    menu={headMenu(data && !nothing ? treeRow : null, tabMenu || [])} onMenu={setTabMenu}
                     actions={summaryActionsOf(data && !nothing ? treeRow : null)} />
       )}
     </section>
