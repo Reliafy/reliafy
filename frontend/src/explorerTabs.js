@@ -96,6 +96,14 @@ export const TABS = [
     id: "maintenance", label: "Maintenance", title: "Every maintenance task here and below, the packages they're done in, and the forecast of each: how often, when it's next due and what it costs",
     kinds: ["pos", "loc"],
   },
+  // How each position runs (Derryn, 23 Nov 2026: Operations is the record of what a real asset
+  // does): its duty, its own or the one it takes from above ("from Site A"), other use, the
+  // shutdowns and outages that take it off-line, and its time zone. Built assets only: a product's
+  // design has no operations (its missions will carry their own calendars). explorerOperations.js.
+  {
+    id: "operations", label: "Operations", title: "How it runs: its duty (its own or from above), other use, planned shutdowns and outages, and its time zone",
+    kinds: ["pos", "item"], asset: true,
+  },
   // A design's positions have it too (designKinds): the reports on the items built from the
   // product, here and below; its design locations don't.
   {
@@ -314,7 +322,7 @@ export function classesInBranch(display, branch) {
 //
 // The panel's tabs as one flat row, ordered by use, the ones that don't fit folded into a last
 // "⋯ N" tab (the shared Tabs with `overflow`):
-//   Summary · Maintenance · Monitoring · RCM · FME(C)A · Models · History
+//   Summary · Operations · Maintenance · Monitoring · RCM · FME(C)A · Models · History
 // Maintenance is one view (its tasks, packages and forecasts in the tree: no inner views since
 // 22 Nov 2026); Monitoring has Readings (Measurements) · Life left (Condition
 // monitoring: the chance of failing soon and the life left); Models is one view, its missions rows
@@ -331,6 +339,7 @@ export const EXPLORER_PANEL_TABS = true;
 
 export const PANEL_TABS = [
   { id: "summary", label: "Summary", views: [{ id: "summary", tab: "summary" }] },
+  { id: "operations", label: "Operations", views: [{ id: "operations", tab: "operations" }] },
   {
     id: "maintenance", label: "Maintenance", title: "The maintenance tasks here and below, the packages they're done in, and their forecasts",
     designTitle: "The maintenance programme here: its tasks and what each needs",

@@ -109,10 +109,23 @@ def shutdown_dates(m, position_id: str, start: str, end: str) -> list[dict]:
     dates, both included), oldest first: [{on, hours, package: {id, name}}]. A task "at shutdowns"
     (how_often.py) is done at these.
 
-    The one seam for where shutdown windows come from: today the shutdown packages on the position
-    or above it whose scope covers it. When the Operations tab's inherited shutdown windows land,
-    this reads those instead (one line), and every caller follows."""
-    return m.shutdown_windows(position_id, start, end)
+    The one seam for where shutdown windows come from: the Operations read's effective windows
+    (``Maintenance.operation_windows``, operations.py): the shutdown packages on the position or
+    above it whose scope covers it. An item reads the position it's fitted to's."""
+    sv = _sv()
+    node = m.s.node(m.org, position_id) or {}
+    if node.get("label") == "Item":
+        position_id = m._plan_holder(position_id, None)
+        if position_id is None:
+            return []
+    elif node.get("label") != "Position" or node.get("retired"):
+        return []
+    try:
+        windows = m.operation_windows(position_id, start, end)
+    except (sv.NotFound, sv.Invalid):
+        return []
+    return [{"on": w["start"][:10], "hours": w["hours"], "package": {"id": w["package_id"], "name": w["name"]}}
+            for w in windows if w["kind"] == "shutdown"]
 
 
 def _sv():
@@ -209,40 +222,6 @@ class ShutdownOps:
                         "position": {"id": subject["id"], "name": subject.get("name") or ""},
                         "shutdown": sd, "next": nxt, "tasks": tasks, "today": today})
         out.sort(key=lambda x: (x["package"]["name"].lower(), x["package"]["id"]))
-        return out
-
-    def shutdown_windows(self, position_id: str, start: str, end: str) -> list[dict]:
-        """The shutdown packages' shuts that take ``position_id`` off-line from ``start`` to
-        ``end`` (both included): those made on it or a position above it, whose scope is the
-        whole of that position or names it (or a position it's inside). See shutdown_dates."""
-        node = self.s.node(self.org, position_id) or {}
-        if node.get("label") == "Item":  # an item: the shutdowns of the position it's fitted to
-            position_id = self._plan_holder(position_id, None)
-            if position_id is None:
-                return []
-        elif node.get("label") != "Position":
-            return []
-        line = [position_id] + self._ancestor_ids(position_id)
-        out = []
-        for pkg in self.s.nodes(self.org, "WorkPackage"):
-            if pkg.get("retired") or pkg.get("paused") or not pkg.get("shutdown"):
-                continue
-            subject = self._package_made_on(pkg)
-            if subject is None or subject["id"] not in line:
-                continue
-            sd = pkg["shutdown"]
-            # Its scope: the whole of its position, or a set inside it that this position is (in).
-            below = line[:line.index(subject["id"]) + 1]
-            if sd.get("scope") and not set(sd["scope"]) & set(below):
-                continue
-            if sd.get("dates"):
-                days = [d for d in sd["dates"] if start <= d <= end]
-            else:
-                days = [d.isoformat() for d in self._cadence(pkg).dates(start, end)]
-                days = [d for d in days if self._in_season(pkg, d)]
-            out += [{"on": d, "hours": sd["duration_hours"], "package": {"id": pkg["id"], "name": pkg["name"]}}
-                    for d in days]
-        out.sort(key=lambda x: (x["on"], x["package"]["name"].lower()))
         return out
 
     def schedule_dates(self, rule, start=None, count: int = 5, after: bool = False, position_id=None,
