@@ -105,7 +105,7 @@ import { saveErrorText } from "../confirm.js";
 import FullScreenButton from "../components/FullScreenButton.jsx";
 import useFullScreen from "../components/useFullScreen.js";
 import { hasOpenLayer, isFullScreenKey, isTyping } from "../fullScreen.js";
-import { EXPLORER_PANEL_TABS, addressTab, forecastRedirect, maintenanceRedirect, tabPlace, isDesignRow, rowKind, shownTab, tabCarried, tabForArrangement, tabsFor } from "../explorerTabs.js";
+import { EXPLORER_PANEL_TABS, TREE_TABLE_TABS, addressTab, forecastRedirect, maintenanceRedirect, positionsTreeLock, isDesignRow, rowKind, shownTab, tabCarried, tabForArrangement, tabsFor } from "../explorerTabs.js";
 import { ShowMe } from "../components/SectionPage.jsx";
 import { openGuide } from "../components/HelpButton.jsx";
 import { PlusIcon } from "../components/LibRows.jsx";
@@ -281,7 +281,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // The Operations tab (Derryn, 23 Nov 2026): how each position runs, as columns on the
   // position's own row (explorerOperations.js); a position's details are its operating plan.
   const opsOn = tab === "operations";
-  const tableOn = rcmOn || measOn || modelsOn || missionTabOn || tasksOn || opsOn;
+  // A tree-table tab: the tree is by positions on it, and the switch is locked (positionsTreeLock).
+  const tableOn = TREE_TABLE_TABS.has(tab);
+  const arrangeLock = positionsTreeLock(tab);
   // RCM (and the FME(C)A) is by position: on its tab the tree is arranged by positions.
   // One tree on show (a product's design, an item's tree) opens by positions; its
   // Locations (?arrange=locations) are its own layout, never what's remembered here.
@@ -298,7 +300,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   // into another asset, and a row inside it made its own asset (assetMerge.js).
   const assetTree = !!root && !rootProp && data?.scope?.kind !== "design";
   const unitBranch = root && data?.scope?.kind === "unit" ? { id: root, name: data.scope.name || "(no name)" } : null;
-  const mode = arrangementFor({ param: params.get("arrange"), remembered: saved.mode, rcm: tableOn, scoped: !!root, classes: scopedClasses });
+  const mode = arrangementFor({ param: params.get("arrange"), remembered: saved.mode, rcm: !!arrangeLock, scoped: !!root, classes: scopedClasses });
   const notPlaced = mode === "positions" && params.get("place") === "none";
   const title = titleProp || EXPLORER_LABEL;
   // Inside a product's page (its own h1), the picked row's name is an h2.
@@ -2529,7 +2531,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   };
 
   const onMode = (m) => {
-    if (m === mode) return;
+    if (m === mode || arrangeLock) return;
     if (pinKey) skipPinOpen.current = true; // the pin stays with the arrangement it was made in
     const keep = carryOver(focus != null ? display.rows.get(focus) : null, m);
     const nextSelected = keep ? { ...selected, [m]: keep } : selected;
@@ -3666,11 +3668,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
         } : null}
         branchNote={pinNote}
         focused={focusOn ? { name: focusOn.name, onClear: clearFocus } : null}
-        arrangeLocked={opsOn ? `A duty is set on a position, so ${tabPlace("operations")} shows the positions tree`
-          : measOn ? `Measurements hang under their positions, so ${tabPlace("measurements")} shows the positions tree`
-          : modelsOn ? `Models and their missions hang under their positions, so ${tabPlace("models")} shows the positions tree`
-          : missionTabOn ? `Missions belong to positions, so ${tabPlace("missions")} shows the positions tree`
-          : rcmOn ? `${what} is by position, so the ${what} tab shows the positions tree` : null}
+        arrangeLocked={arrangeLock}
       />
       {phone && (mergeSide || sheetSide || (paneSide ? null : summary))}
       <div className="sr-only" role="status" aria-live="polite">{spoken}</div>

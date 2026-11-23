@@ -2,8 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   DEFAULT_TAB, EXPLORER_LSA_TAB, EXPLORER_PARTS_CLASSES_TABS, EXPLORER_SIGNALS_TAB, TABS, forecastRedirect, maintenanceRedirect, sparesForecastLink, branchOf, classesInBranch, isDesignRow, isProductRow, partsInBranch, rowKind, shownTab, tabParam, tabsFor,
-  addressTab, hasTabBar, tabCarried, tabForArrangement,
+  addressTab, hasTabBar, tabCarried, tabForArrangement, TREE_TABLE_TABS, positionsTreeLock,
 } from "./explorerTabs.js";
+import { arrangementFor } from "./assetTree.js";
 
 const pos = { type: "pos" };
 const item = { type: "item" };
@@ -511,4 +512,27 @@ test("?tab=missions opens the Missions tab again, after Models (23 Nov 2026); Mo
   assert.ok(tabsFor({ type: "pos", ref: { design: true } }).some((t) => t.id === "missions"));
   assert.ok(!tabsFor({ type: "loc", ref: {} }).some((t) => t.id === "missions"));
   assert.ok(!tabsFor({ type: "item", ref: {} }).some((t) => t.id === "missions"));
+});
+
+// A tab that forces the positions tree locks the switch, saying why; every other tab leaves it
+// live. The Maintenance tab once forced positions with the switch live, so clicking Locations
+// (or Classes) there changed nothing.
+test("every tree-table tab locks the arrangement switch, and only those tabs force the positions tree", () => {
+  for (const tab of ["rcm", "fmea", "measurements", "models", "missions", "maintenance", "operations"]) {
+    assert.ok(TREE_TABLE_TABS.has(tab), tab);
+    assert.match(positionsTreeLock(tab), /positions tree$/, tab);
+  }
+  assert.match(positionsTreeLock("maintenance"), /^Tasks hang under their positions/);
+  for (const tab of TABS.map((t) => t.id)) {
+    const lock = positionsTreeLock(tab);
+    assert.equal(!!lock, TREE_TABLE_TABS.has(tab), tab);
+    // The arrangement the tree takes and the switch agree: locked means positions; unlocked, the
+    // address's choice stands, scoped to one asset or not.
+    for (const scoped of [false, true]) {
+      const shown = arrangementFor({ param: "locations", rcm: !!lock, scoped });
+      assert.equal(shown, lock ? "positions" : "locations", `${tab} scoped=${scoped}`);
+    }
+  }
+  assert.equal(positionsTreeLock("summary"), null);
+  assert.equal(positionsTreeLock("history"), null);
 });
