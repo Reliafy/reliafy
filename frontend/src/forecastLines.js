@@ -5,7 +5,21 @@
 // (worked out, with ranges), a total, and what's not counted with where to fix it. Pure parts,
 // tested in forecastLines.test.js; drawn by views/ForecastTool.jsx.
 
-const sig = (v, n = 3) => Number(v).toLocaleString("en-GB", { maximumSignificantDigits: n });
+import { formatNumber } from "./format.js";
+
+// A number to n significant figures through the shared formatter (never a long float).
+const sig = (v, n = 3) => formatNumber(v, { sig: n });
+
+// An expected count of events: 3 significant figures; a very small count reads "≈ 0.002" (to one
+// figure), and one under a thousandth "< 0.001", never a long decimal or "2.13e-4".
+export function countText(v) {
+  if (v == null || v === "" || !Number.isFinite(Number(v))) return "—";
+  const n = Number(v);
+  if (n <= 0) return "0";
+  if (n < 0.001) return "< 0.001";
+  if (n < 0.01) return `≈ ${Number(n.toPrecision(1)).toFixed(3).replace(/0+$/, "")}`;
+  return sig(n);
+}
 
 const KIND_LABEL = { follow_on: "Follow-on: found at an inspection", corrective: "Corrective: after a failure" };
 const NUMBER_WORDS = { certain: "Certain", "worked out": "Worked out", simulated: "Simulated" };
@@ -39,14 +53,14 @@ export function cells(line, money = (v) => `$${sig(v, 4)}`) {
   const t = line.times || {};
   const chance = line.number !== "certain";
   const times = t.expected == null ? "—" : chance
-    ? `${sig(t.expected)}${t.interval ? ` (${sig(t.interval[0])} to ${sig(t.interval[1])})` : ""}` : sig(t.expected);
+    ? `${countText(t.expected)}${t.interval ? ` (${countText(t.interval[0])} to ${countText(t.interval[1])})` : ""}` : countText(t.expected);
   const gap = (view) => (line.gaps || []).find((g) => g.view === view)?.text || null;
   const amount = (b, fmt, view) => {
     if (line.kind === "failures") return { text: "", gap: null };
     if (b == null) return { text: null, gap: gap(view) };
     return { text: fmt(b.expected), gap: null };
   };
-  const spares = (line.spares || []).map((s) => `${sig(s.expected)} × ${s.name}`).join("; ");
+  const spares = (line.spares || []).map((s) => `${countText(s.expected)} × ${s.name}`).join("; ");
   return {
     times,
     hours: amount(line.hours, (v) => `${sig(v)} h`, "hours"),
@@ -67,8 +81,8 @@ export function headline(out, view, money = (v) => `$${sig(v, 4)}`) {
     const likes = sp.like_items;
     const certain = (sp.items || []).filter((x) => x.certain);
     const parts = [];
-    if (likes) parts.push(`${sig(likes.expected)} like items to replace failures (${sig(likes.interval[0])} to ${sig(likes.interval[1])}, 90% two-sided)`);
-    for (const c of certain) parts.push(`${sig(c.expected)} × ${c.name}`);
+    if (likes) parts.push(`${countText(likes.expected)} like items to replace failures (${countText(likes.interval[0])} to ${countText(likes.interval[1])}, 90% two-sided)`);
+    for (const c of certain) parts.push(`${countText(c.expected)} × ${c.name}`);
     return { lead: parts.length ? `${parts.join("; ")} in ${when}.` : `No spares recorded for this work in ${when}.`,
       tiles: [], known: sp.known !== false, leavesOut: sp.leaves_out || [] };
   }

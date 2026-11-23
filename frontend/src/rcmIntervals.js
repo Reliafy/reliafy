@@ -158,10 +158,21 @@ export const isUseUnit = (unit) => {
 };
 
 // The P-F interval's units in the dialog: the calendar ones, and the task's own when it's done by use.
-export function pfUnits(task) {
+// `saved`: the unit a saved calculation was worked out in ("flight hours" on a task kept in hours),
+// kept in the list so the dialog opens showing it.
+export function pfUnits(task, saved = null) {
   const own = taskUnit(task?.unit);
-  return isUseUnit(own) ? [...TIME_UNITS, own] : TIME_UNITS;
+  const units = isUseUnit(own) ? [...TIME_UNITS, own] : [...TIME_UNITS];
+  const kept = String(saved || "").trim();
+  if (kept && !units.includes(kept)) units.push(kept);
+  return units;
 }
+
+// The P-F interval's unit a dialog starts in: the task's own interval unit, else weeks.
+export const pfStartUnit = (task) => {
+  const own = taskUnit(task?.unit);
+  return own && (TIME_UNITS.includes(own) || isUseUnit(own)) ? own : "weeks";
+};
 
 // Which unit the answer comes in, in words, under the dialog's inputs.
 export function answerUnitWords(key, form) {

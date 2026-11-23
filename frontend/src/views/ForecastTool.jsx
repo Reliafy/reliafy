@@ -26,7 +26,8 @@ import {
   BLANK, BLANK_WORK, EFFECTS, HORIZON_OPTIONS, ON_REPLACE, PART_UNITS, RUNNING, WHATIFS, WORK_UNITS, answerOf, boundText, changeText,
   horizonWords, isCalendar, isHours, kindWords, lineCells, problems, requestOf, seriesOf, viewKey,
 } from "../quickForecast.js";
-import { cells, headline, metaLine, tableRows } from "../forecastLines.js";
+import { formatNumber } from "../format.js";
+import { cells, countText, headline, metaLine, tableRows } from "../forecastLines.js";
 import "./ForecastTool.css";
 
 // Decisions › Forecasts › Spares, Hours and Cost forecast: one quick forecast tool (forecast plan step 1,
@@ -40,7 +41,7 @@ import "./ForecastTool.css";
 // (Open in ›, ?from=) it shows that node's forecast by owner instead.
 
 const HELP = { guide: "forecast-tools" };
-const sig3 = (v) => Number(v).toLocaleString("en-GB", { maximumSignificantDigits: 3 });
+const sig3 = (v) => formatNumber(v, { sig: 3 });
 const today = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -167,7 +168,7 @@ function WhatIf({ out, view, money }) {
           <b>{alt.plan.drop ? "Not done" : `Every ${alt.plan.interval.toLocaleString("en-GB")}`}:</b>{" "}
           {change ? <>{change.changed} against {change.planned} as planned ({change.diff}). </> : null}
           {fails(alt.lines) != null && fails(out.lines) != null
-            ? <>Failures {sig3(fails(alt.lines))} against {sig3(fails(out.lines))}. </> : null}
+            ? <>Failures {countText(fails(alt.lines))} against {countText(fails(out.lines))}. </> : null}
           The failure rate × {Number(alt.ratio.mult).toLocaleString("en-GB", { maximumSignificantDigits: 3 })} on average
           {alt.ratio.overdue_share > 0 && alt.ratio.overdue_share < 1 ? ` (overdue ${Math.round(alt.ratio.overdue_share * 100)}% of the time)` : ""}.
           {alt.approximate && <> <Chip tone="warning" title="The interval is more than a fifth of the part's mean life: the averaged ratio is a rough guide here">Approximate</Chip></>}
@@ -331,8 +332,8 @@ function FromRecords({ view, from, root }) {
                 <thead><tr><th scope="col">From</th><th scope="col" className="num">Tasks</th><th scope="col" className="num">Labour hours</th>
                   <th scope="col" className="num">Planned</th><th scope="col" className="num">Failures</th><th scope="col" className="num">Unplanned</th></tr></thead>
                 <tbody>{(out.rows || []).map((r) => (
-                  <tr key={r.start}><td>{r.start}</td><td className="num">{r.tasks}</td><td className="num">{sig3(r.labour_hours || 0)} h</td>
-                    <td className="num">{money(r.planned_cost || 0)}</td><td className="num">{r.failures == null ? "—" : sig3(r.failures)}</td>
+                  <tr key={r.start}><td>{r.start}</td><td className="num">{sig3(r.tasks)}</td><td className="num">{sig3(r.labour_hours || 0)} h</td>
+                    <td className="num">{money(r.planned_cost || 0)}</td><td className="num">{r.failures == null ? "—" : countText(r.failures)}</td>
                     <td className="num">{r.unplanned_cost == null ? "—" : money(r.unplanned_cost)}</td></tr>
                 ))}</tbody>
               </table>
@@ -368,7 +369,7 @@ function SupportWhatIf({ worth, changes, setChanges, alt, busy }) {
           return (
             <li key={w.task_id}>
               <span className="ft-owner">{w.name}</span>
-              <span className="ft-owner-meta">Every {w.interval} {w.unit} (its life assumes every {w.reference} {w.unit}) · {w.words}{w.avoids_cost != null ? " in the horizon" : ""} (failure rate × {w.k} if it isn&apos;t done).</span>
+              <span className="ft-owner-meta">Every {sig3(w.interval)} {w.unit} (its life assumes every {sig3(w.reference)} {w.unit}) · {w.words}{w.avoids_cost != null ? " in the horizon" : ""} (failure rate × {sig3(w.k)} if it isn&apos;t done).</span>
               <div className="ft-clause">
                 <Select ariaLabel={`What if: ${w.name}`} value={c.mode} options={WHATIFS} onChange={(v) => set(w.task_id, { mode: v })} />
                 {c.mode === "stretch" && (

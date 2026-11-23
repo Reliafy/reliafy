@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { PANE, TREE_FIT, buildDisplay, fitTreeWidth, loadTreeState, saveTreeState, treeColumnWidth } from "./assetTree.js";
 import { cellRow, failureSummary, graftRcm, modeReportsLink } from "./explorerRcm.js";
 import { COLUMN, decidedWords, insideWords, modeCounts, phoneLine } from "./rcmWorksheet.js";
-import { answerUnitWords, isUseUnit, pfUnits } from "./rcmIntervals.js";
+import { answerUnitWords, isUseUnit, pfStartUnit, pfUnits } from "./rcmIntervals.js";
 
 const DATA = {
   positions: [
@@ -122,6 +122,14 @@ test("the calculators take a unit of use and say which unit the answer is in", (
   assert.equal(isUseUnit(""), false);
   assert.deepEqual(pfUnits({ unit: "flight hours" }).slice(-1), ["flight hours"]);
   assert.equal(pfUnits({ unit: "months" }).length, 5);
+  // A saved calculation in flight hours, on a task kept in hours: its unit stays in the list.
+  assert.deepEqual(pfUnits({ unit: "hours" }, "flight hours").slice(-1), ["flight hours"]);
+  assert.equal(pfUnits({ unit: "hours" }, "weeks").length, 5);
+  // The dialog starts in the task's own interval unit, else weeks.
+  assert.equal(pfStartUnit({ unit: "Hours" }), "hours");
+  assert.equal(pfStartUnit({ unit: "flight hours" }), "flight hours");
+  assert.equal(pfStartUnit({ unit: "" }), "weeks");
+  assert.equal(pfStartUnit(null), "weeks");
   assert.match(answerUnitWords("pf", { pf_unit: "cycles" }), /in cycles, the P-F interval's unit/);
   assert.match(answerUnitWords("pf", { pf_unit: "weeks" }), /calendar time/);
   assert.match(answerUnitWords("ff", { device: "model", model: { unit: "flight hours" } }), /in flight hours, the model's unit/);
