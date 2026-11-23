@@ -232,14 +232,16 @@ test("a package lives at the lowest point all its tasks meet, worked out from wh
   assert.equal(packageHomes(mowerTree, tasks, [{ ...svc, task_count: 5 }]).get("s50").outside, 2);
 });
 
-test("a package's row sits at the meeting point with its tasks under it; they stay under their own positions too", () => {
+test("a package's row sits at the meeting point, one row with nothing under it; its tasks stay under their own positions only", () => {
   const tasks = [task("oil", "en", inPkg(svc)), task("blade", "dk", inPkg(svc)), task("plug", "en", inPkg(eng))];
   const out = graftTasks(mowerTree, tasks, { packages: [{ ...svc, task_count: 2 }, { ...eng, task_count: 1 }] });
   const p = out.rows.get(packageKey("s50"));
   assert.equal(p.type, PKG_TYPE);
   assert.equal(p.parent, "mw");
-  assert.deepEqual(p.kids.map((k) => out.rows.get(k).ref.task.id), ["oil", "blade"]);
-  assert.ok(p.kids.every((k) => out.rows.get(k).type === PKG_REF_TYPE));
+  // No double up (Derryn, 23 Nov 2026): the package is a leaf, and no task shows twice.
+  assert.deepEqual(p.kids, []);
+  assert.ok(![...out.rows.values()].some((r) => r.type === PKG_REF_TYPE));
+  assert.deepEqual(p.ref.tasks.map((t) => t.id), ["oil", "blade"]);
   // The level's own tasks first, then its packages, then the positions inside it.
   assert.deepEqual(out.rows.get("en").kids, [taskKey("oil"), taskKey("plug"), packageKey("e"), "ac"]);
   assert.deepEqual(out.rows.get("mw").kids, [packageKey("s50"), "en", "dk"]);
@@ -259,7 +261,10 @@ test("a filter never moves a package, and keeps only its tasks that match", () =
   const out = graftTasks(mowerTree, tasks.filter((t) => t.trade === "Fitter"), { packages: [svc], all: tasks, prune: true });
   const p = out.rows.get(packageKey("s50"));
   assert.equal(p.parent, "mw");
-  assert.deepEqual(p.kids.map((k) => out.rows.get(k).ref.task.id), ["oil"]);
+  assert.deepEqual(p.kids, []);
+  // Its matching task shows under its own position; the one that doesn't match isn't in the tree.
+  assert.ok(out.rows.get("en").kids.includes(taskKey("oil")));
+  assert.equal(out.rows.get("dk").kids.includes(taskKey("blade")), false);
   // No task of it matching: the package leaves the tree.
   const none = graftTasks(mowerTree, [], { packages: [svc], all: tasks, prune: true });
   assert.equal(none.rows.get("mw").kids.includes(packageKey("s50")), false);
@@ -271,8 +276,7 @@ test("no Forecast rows under tasks or packages", () => {
   const tasks = [task("oil", "en", inPkg(svc)), task("blade", "dk", inPkg(svc))];
   const out = graftTasks(mowerTree, tasks, { packages: [svc] });
   assert.deepEqual(out.rows.get(taskKey("oil")).kids, []);
-  const p = out.rows.get(packageKey("s50"));
-  assert.ok(p.kids.every((k) => out.rows.get(k).type === PKG_REF_TYPE));
+  assert.deepEqual(out.rows.get(packageKey("s50")).kids, []);
   assert.ok(![...out.rows.values()].some((r) => r.type === "mfc" || r.type === "mfcl"));
 });
 

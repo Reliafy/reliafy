@@ -94,8 +94,11 @@ test("right-click opens the app's menu on every row kind and area, never the bro
   await esc();
   await open(page, `/asset-register/explorer?arrange=classes&sel=${motor.id}`);
   await watchContextMenu(page);
+  // A heading row has no menu of its own (never a list of greyed items): the tree's menu opens.
   menu = await rightClick(page, page.locator(".tp-row.grp, .tp-row", { hasText: "No class" }).first());
-  expect((await shape(menu)).slice(0, 6)).toEqual(GENERAL);
+  expect(await shape(menu)).not.toContain("Rename…");
+  await expect(menu.getByRole("menuitem", { name: "Open to a level" })).toBeVisible();
+  await expect(menu.locator(".off")).toHaveCount(0);
   await expect(menu.locator(".danger")).toHaveCount(0);
   await esc();
 

@@ -92,30 +92,42 @@ export const isAdd = (it) => !!it && !it.separator && (it.add === true
 const off = (reason) => ({ disabled: true, reason });
 const greyed = (slot, reason) => ({ id: GENERAL_ID[slot], label: GENERAL_LABEL[slot], slot, ...off(reason || GENERAL_REASON[slot]) });
 
-// Focus ›: one entry. Its submenu holds "Focus <what the tab shows>", the depths (flattened from
-// "Focus to a depth ›"), Focus on incomplete rows, then a line and Clear focus.
+// Focus ›: one entry. Its submenu has two sections, each under a small label (a `heading` item:
+// not chosen, the arrow keys pass over it): What (Focus <what the tab shows>: Focus tasks, Focus
+// failure modes…, Focus on incomplete rows) and Depth (1 level, 2 levels…, from "Focus to a
+// depth ›" or items with `section: "depth"`), then a line and Clear focus. A row with nothing
+// inside it has no depths: its one item, no labels.
+export const FOCUS_SECTIONS = { what: "What", depth: "Depth" };
 export function focusMenu(items) {
   const flat = [];
   for (const it of items || []) {
-    if (!it || it.separator) continue;
-    if (it.items) flat.push(...it.items.filter((s) => !s.separator));
+    if (!it || it.separator || it.heading) continue;
+    if (it.items) flat.push(...it.items.filter((s) => !s.separator && !s.heading).map((s) => ({ section: "depth", ...s })));
     else flat.push(it);
   }
-  const clear = flat.filter((it) => it.id === "focus-clear");
+  const strip = ({ section, ...it }) => it; // eslint-disable-line no-unused-vars
+  const clear = flat.filter((it) => it.id === "focus-clear").map(strip);
   const rest = flat.filter((it) => it.id !== "focus-clear");
-  const sub = [...rest, ...(rest.length && clear.length ? [{ separator: true }] : []), ...clear];
+  const depth = rest.filter((it) => it.section === "depth").map(strip);
+  const what = rest.filter((it) => it.section !== "depth").map(strip);
+  const body = depth.length
+    ? [...(what.length ? [{ heading: true, label: FOCUS_SECTIONS.what }, ...what, { separator: true }] : []), { heading: true, label: FOCUS_SECTIONS.depth }, ...depth]
+    : what;
+  const sub = [...body, ...(body.length && clear.length ? [{ separator: true }] : []), ...clear];
   return sub.length ? { id: GENERAL_ID.focus, label: GENERAL_LABEL.focus, slot: "focus", items: sub } : null;
 }
 
 // Drop a line at either end, and two in a row.
+// A section's label (`heading`) with nothing after it before a line goes too.
 export function tidy(items) {
   const out = [];
   for (const it of items) {
     if (!it) continue;
+    if (it.separator && out.length && out[out.length - 1].heading) out.pop();
     if (it.separator && (!out.length || out[out.length - 1].separator)) continue;
     out.push(it);
   }
-  while (out.length && out[out.length - 1].separator) out.pop();
+  while (out.length && (out[out.length - 1].separator || out[out.length - 1].heading)) out.pop();
   return out;
 }
 
@@ -219,14 +231,16 @@ export function standardMenu(items, { reasons = {}, general: given = {}, skip = 
 //   - at most `max` items at each level;
 //   - a disabled item says why (`reason`, not `title` alone);
 //   - at most one danger item, last, after a line;
-//   - no line at either end or two in a row.
+//   - no line at either end or two in a row;
+//   - a section label (`heading`) has an item under it.
 export function menuProblems(items, { max = MAX_ITEMS } = {}) {
   const out = [];
   const level = (list, where) => {
-    const real = list.filter((it) => !it.separator);
+    const real = list.filter((it) => !it.separator && !it.heading);
     if (real.length > max) out.push(`${where}: ${real.length} items (at most ${max})`);
     list.forEach((it, i) => {
       if (it.separator && (i === 0 || i === list.length - 1 || list[i - 1]?.separator)) out.push(`${where}: a stray line at ${i}`);
+      if (it.heading && (!list[i + 1] || list[i + 1].separator || list[i + 1].heading)) out.push(`${where}: the label “${it.label}” has nothing under it`);
       if (!it.separator && it.disabled && !it.reason) out.push(`${where}: “${it.label}” is greyed with no reason`);
       if (it.items) level(it.items, `${where} › ${it.label}`);
     });

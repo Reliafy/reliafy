@@ -53,7 +53,7 @@ const blank = () => ({ tasks: 0, overdue: 0 });
 // rows stay. The rows left out stay in `rows` (a row picked keeps its place for when the filter
 // goes), only unreachable.
 // `packages` (the work packages on this asset, listPackages): each shows as a row at the meeting
-// point of its tasks (packageHomes), its tasks listed under it as references; `all`: every task
+// point of its tasks (packageHomes), a leaf (its tasks are in its details); `all`: every task
 // (the filter's `tasks` aside), so a filter never moves a package. Each level's `tall.next` is the
 // soonest known next due at and below it (a task's or a package's), or null.
 export function graftTasks(display, tasks = [], { prune = false, packages = null, all = null } = {}) {
@@ -90,8 +90,9 @@ export function graftTasks(display, tasks = [], { prune = false, packages = null
     p.kids = [...keys, ...p.kids];
   }
   // The packages, each at the lowest position (or place) all its tasks sit under, after that
-  // level's own tasks; under it, a reference to each of its tasks (they stay under their own
-  // positions too, their Packaged cell naming it).
+  // level's own tasks: one row each, with nothing under it (Derryn, 23 Nov 2026: listing its
+  // tasks under it too was "an unnecessary double up"). Its tasks stay under their own positions,
+  // their Packaged cell naming it; the package's details list them.
   if (packages?.length) {
     const shown = new Set(tasks.map((t) => t.id));
     for (const home of packageHomes(display, all || tasks, packages).values()) {
@@ -101,16 +102,8 @@ export function graftTasks(display, tasks = [], { prune = false, packages = null
       const members = home.tasks.filter((t) => shown.has(t.id) && rows.has(taskKey(t.id)));
       // A filter on: a package none of whose tasks match isn't on the way to a match.
       if (prune && !members.length) continue;
-      const refs = members.map((t) => {
-        const key = `${PKG_REF_TYPE}:${home.pkg.id}:${t.id}`;
-        rows.set(key, {
-          key, type: PKG_REF_TYPE, parent: pkey, kids: [], depth: h.depth + 2, own: noStatus(), sum: noStatus(),
-          ref: { name: t.name, task: t, task_key: taskKey(t.id), on: t.subject?.name || "", position_id: h.key, task_position: t.subject?.id, package_id: home.pkg.id },
-        });
-        return key;
-      });
       rows.set(pkey, {
-        key: pkey, type: PKG_TYPE, parent: h.key, kids: refs, depth: h.depth + 1, own: noStatus(), sum: noStatus(),
+        key: pkey, type: PKG_TYPE, parent: h.key, kids: [], depth: h.depth + 1, own: noStatus(), sum: noStatus(),
         ref: {
           name: home.pkg.name, pkg: home.pkg, tasks: home.tasks, outside: home.outside, position_id: h.key,
           search: [home.pkg.name, home.pkg.trade, "package"].filter(Boolean).join(" ").toLowerCase(),
@@ -148,7 +141,7 @@ export function graftTasks(display, tasks = [], { prune = false, packages = null
       if (keep.has(k)) return keep.get(k);
       const r = rows.get(k);
       keep.set(k, false);
-      let y = r?.type === TASK_TYPE || r?.type === PKG_REF_TYPE;
+      let y = r?.type === TASK_TYPE || r?.type === PKG_TYPE || r?.type === PKG_REF_TYPE;
       for (const c of r?.kids || []) if (has(c)) y = true;
       keep.set(k, y);
       return y;
@@ -486,7 +479,7 @@ export function packageCell(r, col) {
       const more = r.ref.outside ? ` · ${r.ref.outside.toLocaleString("en-AU")} on other assets` : "";
       return { text: `${count(n, "task")}${more}`, title: r.ref.outside
         ? `${count(n, "task")} on this asset; ${count(r.ref.outside, "more task")} on other assets, not shown here (the tree shows one asset)`
-        : `${count(n, "task")}, listed under it` };
+        : `${count(n, "task")}: open the package to see them` };
     }
     case "from": return { text: p.parent ? `A layer on ${p.parent.name}` : "Work package" };
     case "kind": return { text: p.status === "paused" ? "Paused" : "" };

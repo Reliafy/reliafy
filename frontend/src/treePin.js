@@ -18,6 +18,8 @@ import { levelSet } from "./outlineTree.js";
 export function canPin(row) {
   if (!row) return false;
   if (row.type === "pos" || row.type === "loc") return true;
+  // A position shown above a place's positions (assetTree.js VIA) is a position all the same.
+  if (row.type === "group" && row.ref?.via) return true;
   if (row.type === "item") return row.kids.length > 0;
   // By Classes: a class with something under it.
   if (row.type === "cls") return row.kids.length > 0;

@@ -748,7 +748,15 @@ export const opensItem = (r) => !!r && ITEM_KINDS.has(r.type);
 // A double-click on the table also opens a position's own panel (its operating
 // context and functions, or its criticality matrix), expanded like the rest.
 // Its menu has no "Open…" (opensItem): a position is picked, not an item.
-export const opensPanel = (r) => opensItem(r) || r?.type === "pos";
+// A position shown above a place's positions (assetTree.js VIA) is a position all the same.
+export const opensPanel = (r) => opensItem(r) || r?.type === "pos" || (r?.type === "group" && !!r.ref?.via);
+// The one rule for a double-click on a tree-table row (a wide screen), every tab: a row whose
+// details open beside the table opens them across it (the tree kept beside), as Enter and Open do;
+// Esc or Back to table puts them beside it again. The RCM's rows and positions (opensPanel), a
+// measuring point, a model and its missions' rows, a maintenance task and a work package.
+// A cell edited in place keeps its own double-click (TreePane skips those).
+export const WIDE_KINDS = new Set(["meas", "pmodel", "mission", "phase", "mcov", "mrule", "mtask", "mpkg"]);
+export const opensWide = (r) => opensPanel(r) || WIDE_KINDS.has(r?.type);
 
 // A standard's structured limit, condition and source (its text is "name").
 export const STANDARD_FIELDS = ["parameter", "comparator", "value", "unit", "when", "source"];

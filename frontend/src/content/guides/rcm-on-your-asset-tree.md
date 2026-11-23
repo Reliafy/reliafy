@@ -91,14 +91,15 @@ To find your way around a big tree:
   in that row's menu.
 - The search box filters the tree and its RCM: descriptions, effects, tasks
   and notes, keeping the rows each match sits inside.
-- **Focus › Focus failure modes** in any row's menu (a position, function, performance standard, functional
-  failure, failure mode or task) closes every other branch of the tree and opens
-  that row at every level below it, or pick **1 level**,
-  **2 levels** or **3 levels**. On the RCM tab, where a row can go five levels
-  deep, **4 levels** and **5 levels** are offered too where the rows
-  go that deep: from a position, **4 levels** shows its failure modes'
-  tasks. The other rows stay on show, closed, so you
-  can still see where you are; open and close rows by hand after as usual.
+- **Focus ›** in any row's menu (a position at any level, function, performance
+  standard, functional failure, failure mode or task) closes every other branch
+  of the tree. Under **What**, pick what to see inside that row: **Focus
+  functions**, **Focus failure modes** or **Focus tasks** opens the way down to
+  them, or **Focus on incomplete rows**. Under **Depth**, pick **1 level**,
+  **2 levels** and so on, as deep as that row goes (up to 5 on the RCM tab):
+  from a position, **4 levels** shows its failure modes' tasks. The other rows
+  stay on show, closed, so you can still see where you are; open and close rows
+  by hand after as usual.
 - **Pin this branch** in a position's row menu shows that position and what's
   inside it on its own; **Show whole tree** brings the rest back.
 - **Delete…** in a position's or location's menu (on the Summary tab, and a

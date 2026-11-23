@@ -78,7 +78,9 @@ test("isolate at 1, 2, 3 levels and everything: the rest closed but on show, the
   await expect(menu.getByRole("menuitem", { name: "Focus", exact: true })).toHaveAttribute("aria-haspopup", "menu");
   await menu.getByRole("menuitem", { name: "Focus", exact: true }).hover();
   const sub = page.getByRole("menu", { name: "Focus", exact: true });
-  await expect(sub.getByRole("menuitem")).toHaveText(["Focus here", "1 level", "2 levels", "3 levels"]);
+  // Only as deep as line A goes (its pump, then the seal): no "3 levels".
+  await expect(sub.getByRole("menuitem")).toHaveText(["Focus here", "1 level", "2 levels"]);
+  await expect(sub.locator(".row-menu-heading")).toHaveText(["What", "Depth"]);
   const mb = await menu.boundingBox();
   expect((await sub.boundingBox()).x).toBeGreaterThanOrEqual(mb.x + mb.width - 10);
   await shot(page, "v2-1-row-menu-isolate-submenu-1280");
@@ -230,7 +232,9 @@ test("the RCM tab goes five levels deep: a position's Isolate offers 4 levels, w
   await pumpRow.locator(".tt-tree").click({ button: "right" });
   await page.getByRole("menu").first().getByRole("menuitem", { name: "Focus", exact: true }).hover();
   const sub = page.getByRole("menu", { name: "Focus", exact: true });
-  await expect(sub.getByRole("menuitem")).toHaveText(["Focus failure modes", "1 level", "2 levels", "3 levels", "4 levels", "Focus on incomplete rows"]);
+  // What (the RCM's kinds inside it) and Depth, each under its label.
+  await expect(sub.getByRole("menuitem")).toHaveText(["Focus functions", "Focus failure modes", "Focus tasks", "Focus on incomplete rows", "1 level", "2 levels", "3 levels", "4 levels"]);
+  await expect(sub.locator(".row-menu-heading")).toHaveText(["What", "Depth"]);
   await sub.getByRole("menuitem", { name: "4 levels" }).click();
   await expect(trow(`^Task: Check the seal ${tag}`)).toBeVisible();
   await expect(trow(`^Failure mode: Seal leaks ${tag}`)).toHaveAttribute("aria-expanded", "true");
@@ -242,7 +246,7 @@ test("the RCM tab goes five levels deep: a position's Isolate offers 4 levels, w
   // The function goes four deep (standards aside): no fifth level offered on it.
   await trow(`^Function: Pump water ${tag}`).locator(".tt-tree").click({ button: "right" });
   await page.getByRole("menu").first().getByRole("menuitem", { name: "Focus", exact: true }).hover();
-  await expect(page.getByRole("menu", { name: "Focus", exact: true }).getByRole("menuitem")).toHaveText(["Focus failure modes", "1 level", "2 levels", "3 levels", "Focus on incomplete rows", "Clear focus"]); // a focus is on
+  await expect(page.getByRole("menu", { name: "Focus", exact: true }).getByRole("menuitem")).toHaveText(["Focus failure modes", "Focus tasks", "Focus on incomplete rows", "1 level", "2 levels", "3 levels", "Clear focus"]); // a focus is on
   await page.keyboard.press("Escape");
   await expectHealthy(page, problems, { label: "isolate five levels", root: ".tx" });
 });
@@ -263,7 +267,8 @@ test("at 400 px: Isolate opens in place in the ⋯ menu; the rest closes; the RC
   await menu.getByRole("menuitem", { name: "Focus", exact: true }).click();
   await expect(menu.getByRole("menuitem", { name: "Focus", exact: true })).toHaveAttribute("aria-expanded", "true");
   const group = menu.getByRole("group", { name: "Focus", exact: true });
-  await expect(group.getByRole("menuitem")).toHaveText(["Focus here", "1 level", "2 levels", "3 levels"]);
+  await expect(group.getByRole("menuitem")).toHaveText(["Focus here", "1 level", "2 levels"]);
+  await expect(group.locator(".row-menu-heading")).toHaveText(["What", "Depth"]);
   const mb = await menu.boundingBox();
   expect(mb.x + mb.width).toBeLessThanOrEqual(400);
   await shot(page, "v2-5-phone-400px-isolate-menu");

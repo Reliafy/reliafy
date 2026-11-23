@@ -42,7 +42,7 @@ test("at most ten at the top level: the middle's overflow folds into More ›, a
   assert.deepEqual(labels(m), ["Open", "Rename…", "Move to…", "Focus", "Pin this branch", "Copy link", "———", "Life model", "RBD", "More", "———", "Delete…"]);
   const more = m.find((it) => it.id === "more");
   assert.deepEqual(labels(more.items), ["Add a prediction (parts count)…", "———", "Add a mission…"]);
-  assert.deepEqual(labels(m.find((it) => it.id === "focus").items), ["Focus models", "1 level"]);
+  assert.deepEqual(labels(m.find((it) => it.id === "focus").items), ["What", "Focus models", "———", "Depth", "1 level"]);
   assert.ok(m.filter((it) => !it.separator).length <= MAX_ITEMS);
   assert.deepEqual(menuProblems(m), []);
 });

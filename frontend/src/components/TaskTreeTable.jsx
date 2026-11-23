@@ -162,24 +162,29 @@ export function TaskSide({ holder, taskId = null, taskName = "", rates = false, 
 
 // A package opened (its row, or a task's Packaged cell): its tasks, visits, what each visit needs
 // and the parts for its next visit, beside the table (?mpkg=). The head is the other panels'.
-export function PackageSide({ id, name = "", where = "", at = null, today, phone, headingRef, onClose, onOpen, onChanged }) {
+export function PackageSide({ id, name = "", where = "", at = null, today, phone, expanded = false, onExpand = null, onCollapse = null, headingRef, onClose, onOpen, onChanged, onTask = null }) {
   return (
-    <aside className={"rw-panel mt-panel mt-task-panel" + (phone ? " sheet" : "")} aria-label={name || "Work package"}
+    <aside className={"rw-panel mt-panel mt-task-panel" + (phone ? " sheet" : "") + (expanded ? " is-expanded" : "")} aria-label={name || "Work package"}
            onKeyDown={(e) => {
              if (e.key !== "Escape" || e.defaultPrevented || e.target.closest("input, textarea, select")) return;
              e.stopPropagation();
-             onClose();
+             if (expanded && onCollapse) onCollapse(); else onClose();
            }}>
       <div className="rw-panel-top">
         <div className="rw-panel-head">
           <div className="rw-panel-kind" title={where || undefined}>Work package</div>
           <div className="rw-panel-btns">
+            {!phone && onExpand && (expanded ? (
+              <button type="button" className="ghost sm rw-x" onClick={onCollapse} title="Show the table again, with these details beside it (Esc)" aria-label="Back to table"><ShrinkIcon /></button>
+            ) : (
+              <button type="button" className="ghost sm rw-x" onClick={onExpand} title="Show these details across the table, the tree kept beside them" aria-label="Expand the details"><ExpandIcon /></button>
+            ))}
             <button type="button" className="ghost sm rw-x" onClick={onClose} aria-label="Close the package" title="Close (Esc)"><CloseIcon /></button>
           </div>
         </div>
       </div>
       <div className="rw-pbody pk-panel">
-        <PackageView key={id} id={id} today={today} onOpen={onOpen} onChanged={onChanged} headingRef={headingRef} at={at} where={where} />
+        <PackageView key={id} id={id} today={today} onOpen={onOpen} onChanged={onChanged} onTask={onTask} headingRef={headingRef} at={at} where={where} />
       </div>
     </aside>
   );

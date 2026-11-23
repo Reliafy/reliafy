@@ -5,10 +5,21 @@
 // Pure functions, tested in explorerMenu.test.js.
 import { COPY_LINK, OPEN, standardMenu } from "./menuStandard.js";
 
-const HEADING = "A heading for the rows under it.";
-// A row with no record of its own: a group ("No class", "… (not at this place)"), the RCM's
-// placeholders.
+// A row with no record of its own: a group ("No class", "No home yet"), the RCM's placeholders.
+// Its menu holds only what it can do (the RCM placeholders' adds), and none at all when that's
+// nothing: never a list of greyed general slots (Derryn, 23 Nov 2026). A position shown above a
+// place's positions (assetTree.js VIA, a "group" row with `ref.via`) isn't one of these: it's a
+// position, with a position's menu (asPositionRow).
 export const HEADING_TYPES = new Set(["group", "nostd", "unassigned", "nofail"]);
+const isVia = (r) => r?.type === "group" && !!r.ref?.via;
+export const isHeadingRow = (r) => !!r && HEADING_TYPES.has(r.type) && !isVia(r);
+// The row as its menu sees it: a via row is the position it is (the same menu as every position).
+export function asPositionRow(r) {
+  return isVia(r) ? { ...r, type: "pos" } : r;
+}
+// A position above the place opened: only the place's own positions are sent, so the move picker
+// couldn't list where it might go.
+export const VIA_MOVE = "It sits above the place opened: open its whole asset to move it.";
 
 // Why a slot is greyed, by row type (the slot's general reason where a type has none).
 export const REASONS = {
@@ -40,9 +51,6 @@ export const REASONS = {
 const reasonsFor = (type) => {
   const out = {};
   for (const slot of Object.keys(REASONS)) if (REASONS[slot][type]) out[slot] = REASONS[slot][type];
-  if (HEADING_TYPES.has(type)) {
-    for (const slot of ["open", "rename", "move", "copy"]) out[slot] = HEADING;
-  }
   return out;
 };
 
@@ -63,13 +71,19 @@ export function withTreeChanges(items, r, tree = []) {
 // A row's menu, to the standard. `items`: what the tab's builder gave; `tree`: the Summary list for
 // the row (for Rename…, Move to…, Delete… on positions and places); `canOpen`: false where Open has
 // nothing to show.
-export function explorerRowMenu(r, items, { tree = [], canOpen = true, canLink = true } = {}) {
-  if (!r) return [];
-  const list = withTreeChanges(items || [], r, tree);
-  const heading = HEADING_TYPES.has(r.type);
+export function explorerRowMenu(row, items, { tree = [], canOpen = true, canLink = true } = {}) {
+  if (!row) return [];
+  // A heading row: its own actions only (an RCM placeholder's add), else no menu at all.
+  if (isHeadingRow(row)) {
+    const own = (items || []).filter((it) => it && !it.separator && !it.disabled);
+    return own.length ? standardMenu(own, { skip: ["open", "rename", "move", "focus", "pin", "copy"] }) : [];
+  }
+  const r = asPositionRow(row);
+  let list = withTreeChanges(items || [], r, tree);
+  if (isVia(row)) list = list.map((it) => (it?.id === "tree-move" && !it.disabled ? { ...it, disabled: true, reason: VIA_MOVE } : it));
   const general = {};
-  if (!heading && canOpen) general.open = { id: OPEN, label: "Open" };
-  if (!heading && canLink) general.copy = { id: COPY_LINK, label: "Copy link" };
+  if (canOpen) general.open = { id: OPEN, label: "Open" };
+  if (canLink) general.copy = { id: COPY_LINK, label: "Copy link" };
   return standardMenu(list, { reasons: reasonsFor(r.type), general, group: MEAS_ADD_GROUP });
 }
 

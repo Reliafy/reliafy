@@ -81,9 +81,11 @@ column then names each task's package; click it to open the package.
 
 A package shows as a row in the tree **at the lowest level all its tasks sit
 under**: a 50 h service with engine and deck tasks sits at the mower; one with
-only engine tasks sits at the engine. Its tasks are listed under it (each says
-which position it's on), and they still show under their own positions too,
-their **Packaged** cell naming the package. Where it sits is worked out from
+only engine tasks sits at the engine. It's one row: its tasks show under their
+own positions, each one's **Packaged** cell naming the package (click it to open
+the package). Open the package (click its row, or double-click it to see its
+details across the table) to see its tasks listed; a task's name there picks it
+in the tree. Where it sits is worked out from
 its tasks each time, so adding a task to it, or taking one out, moves it to the
 new meeting point. A package with none of its tasks on this asset yet sits
 where it was made. Only the asset you opened is shown: a package that also

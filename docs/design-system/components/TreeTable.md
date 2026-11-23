@@ -7,7 +7,8 @@ The tree pane and a tab's table are the same tree, not two: what's open, the row
 ## Rows
 
 - Each position (or place) has the tab's own rows under it: its functions and failure modes, its tasks, its measuring points, its models, its missions. Each level rolls up what's at and below it.
-- A click picks a row and opens its details beside the table; a double-click (or Enter) opens them across the table, with "Back to table" and Esc to return (`expanded`, `onExpand`, `onCollapse`).
+- A click picks a row and opens its details beside the table; a double-click (or Enter) opens them across the table, with "Back to table" and Esc to return (`expanded`, `onExpand`, `onCollapse`). Which rows do is one rule, `opensWide` (`explorerRcm.js`): see `TablePane`.
+- A work package's row (Maintenance) is a leaf: its tasks show under their own positions only (their Packaged cell names it), and its details list them, each name picking the task in the tree.
 - No forecasts in the tree (Derryn, 23 Nov 2026): quick one-off work lives in the left menu's tools, the saved work in the Explorer. A row's **Open in ›** opens a tool filled in from it (see `ContextMenu`).
 - A parent row's roll-up runs across the columns (`rollupOf`). `rollupLead` names columns it keeps as cells before the roll-up, drawn by `renderLead`: the Maintenance tab's **Next due** comes first, and a level shows the soonest next due at and below it.
 - A column with `sort` sorts from its header: a button, with ▲ or ▼ and `aria-sort`. `sortWords` names its two orders (Next due: "soonest first", "latest first"); a third click goes back to the tree's order. Each level's rows sort among themselves (tasks, then packages, then positions), blanks last either way.
@@ -18,10 +19,11 @@ The tree pane and a tab's table are the same tree, not two: what's open, the row
 
 Two different things, in every row's menu (`ContextMenu`) on every tab, with the same words. Both sit in the menu's general section: **Focus ›** (one entry; its submenu holds the items below and Clear focus) then **Pin this branch**.
 
-- **Focus here** — this row opened at every level below it, so everything in it shows (every task, failure mode, measuring point or model in that branch), and every other branch closed. The closed branches stay on show: nothing is hidden.
-- **The words** name what the open tab shows: Focus tasks (Maintenance), Focus failure modes (RCM, FME(C)A), Focus measurements, Focus models, Focus missions; Focus here on the plain tree or a tab with no table of its own. Focus to a depth › is the same on every tab.
-- **Focus to a depth ›** — a submenu, the same on every tab: opened only 1, 2 or 3 levels ("1 level", "2 levels", …; on the RCM tab 4 and 5 too where the rows go that deep). A row with nothing inside it has only Focus here.
-- **Pin this branch** — the tree starts at this row: everything above and beside it leaves the tree, the address says so (`?pin=`), and Back undoes it. "Show whole tree" undoes it too.
+- **Two sections, each under a small label** (a `heading` item in the submenu: not an item, the arrow keys pass over it), a line between them:
+  - **What** — the kinds of row the open tab's table has inside this row, one item each, opening the way down to them and leaving them closed: Focus tasks, Focus packages (Maintenance); Focus functions, Focus failure modes, Focus tasks, then Focus on incomplete rows (RCM); Focus functions, Focus failure modes (FME(C)A); Focus measurements (Monitoring); Focus models, Focus missions (Models). Only the kinds that are inside the row. A tab with no kinds (Summary, Operations, the plain tree) has **Focus here**: everything in the row opened. (`treeIsolate.js` `FOCUS_KINDS`, `focusKinds`, `isolateKindOpen`.)
+  - **Depth** — "1 level", "2 levels", … only as deep as the row goes (`levelsBelow`; 5 at most).
+- A row with nothing inside it has only **Focus here**, with no labels.
+- The other branches stay on show, closed: nothing is hidden.
 
 Focus never pins, and never changes the address. After a focus, rows open and close by hand as usual.
 
