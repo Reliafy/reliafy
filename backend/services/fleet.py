@@ -1504,3 +1504,62 @@ def headline(fleet: Fleet, forecast: dict) -> str:
         f"≈ {forecast.get('expected', 0):.1f} failures expected over "
         f"{forecast.get('periods', 0)} {label} ({unit_count(fleet.items)} items)"
     )
+
+
+# ---- A quick spares forecast (unsaved) ---------------------------------------------
+# Decisions › Forecasts › Spares forecast (Derryn, 23 Nov 2026: quick one-off work lives in the
+# left menu's tools; the saved work for an asset lives in the Explorer). The same engine as a
+# saved fleet's forecast (_compute_life, the spares answer), on a model picked or typed, a number
+# of units at one age or a list of ages, a use rate and a replacement policy. Nothing is stored.
+
+MAX_SCRATCH_UNITS = 2000
+
+
+def scratch_forecast(body: dict) -> dict:
+    """{distribution_id, params, extras?, unit?, name?, units?, ages (one or a list), rate (use per
+    period, in the model's unit), periods, period_label, strategy (run_to_failure | age),
+    replace_at?, failure_cost?, planned_cost?, spares?}: the forecast a fleet with those items and
+    settings would show, worked out once and not saved."""
+    body = body or {}
+    distribution_id = body.get("distribution_id")
+    if not distribution_id or not body.get("params"):
+        raise FleetValidationError("Pick a saved model, or choose a distribution and type its parameters.")
+    raw_ages = body.get("ages")
+    if raw_ages in (None, "", []):
+        raise FleetValidationError("Give the units' age now: one age for them all, or one per unit.")
+    ages = raw_ages if isinstance(raw_ages, list) else [raw_ages]
+    try:
+        ages = [float(a) for a in ages]
+    except (TypeError, ValueError):
+        raise FleetValidationError("Each age must be a number, in the model's unit.") from None
+    if any(not math.isfinite(a) or a < 0 for a in ages):
+        raise FleetValidationError("An age can't be negative.")
+    if len(ages) == 1:
+        try:
+            raw = body.get("units")
+            units = 1 if raw in (None, "") else int(raw)
+        except (TypeError, ValueError):
+            raise FleetValidationError("The number of units must be a whole number.") from None
+        if units < 1:
+            raise FleetValidationError("The number of units must be at least 1.")
+        items = [{"name": "Each unit", "current_use": ages[0], "count": units}] if units > 1 else [
+            {"name": "Unit 1", "current_use": ages[0]}]
+    else:
+        items = [{"name": f"Unit {i + 1}", "current_use": a} for i, a in enumerate(ages)]
+    items = _clean_items(items)
+    if unit_count(items) > MAX_SCRATCH_UNITS:
+        raise FleetValidationError(f"A quick forecast takes up to {MAX_SCRATCH_UNITS:,} units: save a fleet for more.")
+    settings = _clean_settings({
+        "periods": body.get("periods", 12), "period_label": body.get("period_label") or "months",
+        "default_rate": body.get("rate", 0), "method": "renewals",
+        "strategy": body.get("strategy") or "run_to_failure", "replace_at": body.get("replace_at"),
+        "failure_cost": body.get("failure_cost"), "planned_cost": body.get("planned_cost"),
+        "spares": body.get("spares")})
+    results = {"params": body.get("params"), "distribution_id": distribution_id,
+               "extras": body.get("extras") or None, "unit": body.get("unit") or ""}
+    units_list = [it for it in items for _ in range(item_count(it))]
+    inputs = _LifeInputs(None, str(body.get("name") or "Typed parameters")[:120], results, settings, units_list,
+                         False, settings.get("spares"))
+    out = _LIFE_MEMO.get_or_compute(inputs.key(), lambda: _compute_life(inputs))
+    out = _collapse_units(out, items)
+    return {**out, "settings": settings, "items": items, "saved": False}

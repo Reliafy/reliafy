@@ -58,6 +58,7 @@ from backend.services import time_zones
 from backend.maintenance import fmea, rcm_decisions
 from backend.maintenance.rcm_decisions import norm_unit as _norm_unit
 from backend.maintenance import how_often
+from backend.maintenance import next_due as _next_due
 from backend.maintenance.schedule import Cadence, Season
 from backend.maintenance.signals import PROJECTORS as _SIGNAL_PROJECTORS
 from backend.maintenance.products import PROJECTORS as _PRODUCT_PROJECTORS
@@ -7085,6 +7086,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             # A hypothetical plan has no to-do: its next date is planned, never overdue.
             out["overdue"] = False
             out.pop("overdue_before_package", None)
+        if entry and entry["root"].get("unit") == "hours" and out.get("package"):
+            # A package by hours dates its visits from a duty or readings, or assumes all day.
+            basis = self._cadence(entry["root"]).basis or {}
+            out["package"] = {**out["package"], "dated": basis.get("kind") in _next_due.DATED_BASES}
+        # When it's next due, only when that's known (blank otherwise, never from "now").
+        out["next"] = _next_due.task_next(task, out, self.today(), work_management_on())
         return out
 
     @staticmethod
@@ -11035,7 +11042,18 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             out["next_visit"] = found and found.isoformat()
         if pkg["unit"] == "hours" and out["next_visit"]:
             out["next_visit_hours"] = self._cadence(pkg).hours_on(out["next_visit"])
+        out["next"] = self._package_next(pkg, out)
         return out
+
+    def _package_next(self, pkg: dict, out: dict) -> dict:
+        """A package's next visit, only when that's known (next_due.package_next)."""
+        kind = None
+        if pkg["unit"] == "hours":
+            cad = self._cadence(pkg)
+            if out.get("next_visit"):
+                cad.on_or_after(self.today())
+            kind = (cad.basis or {}).get("kind")
+        return _next_due.package_next(out, kind)
 
     def _hours_view(self, pkg: dict) -> dict:
         """A package by operating hours: the counter it goes by, the reading it counts from,
@@ -11150,6 +11168,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                          "trigger": self._trigger_view(task.get("trigger")) if task.get("trigger") else None,
                          "on_event": _on_event_only(task), "trade": task.get("trade", ""),
                          "next_due": view["next_due"], "overdue": bool(view["overdue"]), "package": pkg,
+                         # Next due only when it's known: {on, at_reading, unit, basis, why, overdue}.
+                         "next": view["next"],
                          # Where a date by use came from (the operating plan, or the meter's recent rate).
                          "due_basis": next((lim["basis"]["text"] for lim in view["limits"]
                                             if lim.get("basis") and lim.get("next_due") == view["next_due"]), None),

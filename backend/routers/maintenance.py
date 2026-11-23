@@ -3089,6 +3089,20 @@ def get_operating_plan(kind: str, target_id: str, root: str | None = None,
     return _run(m.operating_plan, target_id, root or None)
 
 
+@router.get("/positions/{position_id}/spares-forecast-start")
+def spares_forecast_start(position_id: str, task_id: str | None = None, root: str | None = None,
+                          session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                          m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """What the quick spares forecast (Decisions › Forecasts › Spares forecast) takes from a position
+    (and one of its tasks, task_id): its model in use, hours a day from its duty and the task's
+    interval as the replacement age, only where recorded."""
+    from backend.maintenance import position_models as pm
+    from backend.maintenance.spares_start import spares_start
+
+    fetch = pm.fetcher(session, ctx.read_owners, ctx.hidden)
+    return _run(spares_start, m, fetch, position_id, task_id or None, root or None)
+
+
 @router.get("/positions/{position_id}/forecast")
 def position_forecast(position_id: str, root: str | None = None, period: str = "month", periods: int = 12,
                       end: str | None = None, strict: bool = False,
