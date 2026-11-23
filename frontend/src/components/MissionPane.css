@@ -73,3 +73,23 @@
 .mission-simple-input, .mission-simple-age { display: inline-flex; align-items: center; gap: var(--space-1-5); font-weight: 400; }
 .mission-simple-input input, .mission-simple-age input { width: 8rem; min-width: 0; }
 .mission-simple-start { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-width: 0; }
+
+/* The Missions tab's heading with no missions here or below: what it is, and New mission… */
+.mt-empty { display: inline-flex; flex-direction: column; gap: var(--space-1); white-space: normal; }
+.mt-empty-why { color: var(--text-secondary); font-size: var(--fs-13); line-height: var(--lh-13); max-width: 68ch; }
+
+/* A mission's setup (MissionSetup): its fields stacked, each row's controls side by side. */
+.mission-setup { display: flex; flex-direction: column; gap: var(--space-3); }
+.mission-setup-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.mission-setup .ctl-group { width: auto; max-width: 16rem; }
+.mission-setup-sec { margin-block: var(--space-2) var(--space-4); }
+
+/* Its two answers (MissionAnswers): two cards side by side, one under the other on a phone. */
+.mission-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: var(--space-4); }
+.mission-card { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); }
+.mission-figure { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); margin: 0; }
+.mission-figure b { font-size: var(--fs-24); line-height: var(--lh-24); font-weight: 600; font-variant-numeric: tabular-nums; }
+.mission-figure-sub { color: var(--text-secondary); font-size: var(--fs-13); line-height: var(--lh-13); }
+.mission-assumed { margin: var(--space-3) 0 0; padding-left: var(--space-4); color: var(--text-secondary); font-size: var(--fs-13); line-height: var(--lh-13); }
+.mission-plan { margin-top: var(--space-2); font-size: var(--fs-13); line-height: var(--lh-13); }
+.mission-blocked-list { margin: 0; padding-left: var(--space-4); }

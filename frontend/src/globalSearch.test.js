@@ -82,8 +82,8 @@ test("a feature is found by the words people use for it", () => {
   assert.equal(top("FMECA").tab, "fmea");
   assert.equal(top("rcm").tier, 0);
   assert.equal(top("fleet forecast").tier, 0);
-  // Missions are rows of the Models tab (under the model each is flown on), and RBDs carry them.
-  assert.deepEqual(searchFeatures(features, "missions").results.slice(0, 2).map((r) => r.id).sort(), ["/systems/rbds", "tab:models"]);
+  // Missions have their own tab (23 Nov 2026), and RBDs carry them.
+  assert.deepEqual(searchFeatures(features, "missions").results.slice(0, 2).map((r) => r.id).sort(), ["/systems/rbds", "tab:missions"]);
   assert.equal(top("condition monitoring").tier, 0);
   assert.equal(top("bom import").path, "/products");
   assert.equal(top("api keys").path, "/settings?tab=api");

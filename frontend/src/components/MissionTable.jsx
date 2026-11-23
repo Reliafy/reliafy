@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { listPositionMissions } from "../api.js";
 import Chip from "./ui/Chip.jsx";
 import {
-  completesText, covStatus, feedsList, isCovRow, isPhaseRow, isRuleRow, latestOnly, lengthText, pct, phaseLengthText, phaseOfText, phasesText,
+  canAddMission, noMissionWhy, completesText, covStatus, feedsList, isCovRow, isPhaseRow, isRuleRow, latestOnly, lengthText, pct, phaseLengthText, phaseOfText, phasesText,
   placeholderTitle, placeholderTone, ruleText,
 } from "../explorerMissions.js";
 
@@ -31,14 +31,31 @@ export function useTreeMissions({ on, within = null }) {
 
 // A position's roll-up on the Missions tab, with "Add a mission" a real button wherever one can be
 // added (it was plain words, the action only in the row's menu). `text`: rollupText's words.
-export function MissionRollup({ text, onAdd = null }) {
+// `label`: the button's words ("New mission…" on the Missions tab).
+export function MissionRollup({ text, onAdd = null, label = "Add a mission" }) {
   const tail = " · Add a mission";
-  if (!onAdd || !String(text || "").endsWith(tail)) return text || "";
+  if (!String(text || "").endsWith(tail)) return text || "";
+  if (!onAdd) return text.slice(0, -tail.length);
   // One inline span, so a flex parent (the heading's roll-up) keeps the space before the button.
   return (
     <span>
       {text.slice(0, -tail.length)}{" · "}
-      <button type="button" className="link mt-add-mission" onClick={(e) => { e.stopPropagation(); onAdd(); }}>Add a mission</button>
+      <button type="button" className="link mt-add-mission" onClick={(e) => { e.stopPropagation(); onAdd(); }}>{label}</button>
+    </span>
+  );
+}
+
+// The Missions tab's heading for a position with no missions here or below: says so, offers New
+// mission… (where one can be added; else why not), and one line on what a mission is for.
+export function MissionsEmpty({ row, onAdd = null }) {
+  const can = canAddMission(row);
+  return (
+    <span className="mt-empty">
+      <span>No missions here{can && onAdd ? <>{" · "}<button type="button" className="link mt-add-mission" onClick={onAdd}>New mission…</button></>
+        : !can ? ` · ${noMissionWhy(row, true)}` : ""}</span>
+      <span className="mt-empty-why">
+        A mission is a saved what-if: this system run through phases over a stretch of time, for the chance it completes and the failures to expect.
+      </span>
     </span>
   );
 }

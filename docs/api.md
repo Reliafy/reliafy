@@ -415,6 +415,27 @@ it through standby phases, a failed block stays failed, and the notes open with
 "As of now" (such a result isn't kept for the lists). A phase missing a value waits: `reliability` is null,
 `through` says how far the mission was worked out and `needs` which blocks need
 what. Over MCP: `analyse rbd_mission` and `change rbd_mission`.
+
+The Explorer's Missions tab adds, on `POST /api/maintenance/positions/{id}/missions`:
+`link_id` may be an RBD on a position inside this one; `tree: true` builds it
+from the positions inside even where the position has an RBD of its own;
+`setup: {start: "now" | "YYYY-MM-DD", calendar: {linked: true} | {hours_per_day,
+days_per_week}, from: "new" | "today"}` is kept as `graph.mission_setup`; and
+`length: {value, unit}` (`hours` of running, or `days`, `months`, `years`
+through the calendar) becomes its one first phase, in running time. `PUT
+/api/rbds/{id}/missions/mission {setup}` changes the setup (a mission's own
+RBD only); a list's mission carries `setup`. `POST
+/api/rbds/{id}/missions/{mission}/answers` gives its two answers over the whole
+phased mission: `chance {value, lower_bound {lower, confidence: 0.9, side:
+"lower"} | null, bound_note}` (one-sided; a mission of several phases has no
+bound yet) and `failures {expected, system, method (exact | simulated), range
+{lower, upper, level: 0.9, side: "two-sided"} | null, pro?, note}`: the part
+failures with each failed block replaced like new, the range from 2,000 seeded
+simulated missions (Pro). With them `calendar {start, end, days, clock}`,
+`setup`, `plan` (the tasks on its positions, read only), `assumed` and
+`length`/`phases`; or `blocked: [{id, label, why}]` while a block some phase
+needs has no model or a placeholder. Over MCP: `analyse rbd_mission
+answers=true` and `change rbd_mission setup`.
 `fit: true` with `data` (`position`, `class`, or `both`: the position's history
 with its class's other positions' history as the prior) and `method` (`mle`:
 a plain fit with 95% confidence bounds; `bayes`: with a `prior`, 90% credible

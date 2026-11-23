@@ -4154,11 +4154,19 @@ export function createMission(rbdId, { name = null, phases = null } = {}) {
 }
 // A new mission on a position with an RBD of its own, built from what's inside it: {rbd, mission, notes, placeholders}.
 // linkId: one of the position's model rows to fly it on (an RBD copied, or its model in use as the one block).
-export function createPositionMission(positionId, { name = null, linkId = null } = {}) {
+// The Missions tab's form adds: `tree` (built from the positions inside, in series where nothing
+// says what's redundant), `setup` ({start, calendar, from}) and `length` ({value, unit}: its first phase).
+export function createPositionMission(positionId, { name = null, linkId = null, tree = false, setup = null, length = null } = {}) {
   return request(`/api/maintenance/positions/${encodeURIComponent(positionId)}/missions`,
-    asJson("POST", { ...(name ? { name } : {}), ...(linkId ? { link_id: linkId } : {}) }));
+    asJson("POST", { ...(name ? { name } : {}), ...(linkId ? { link_id: linkId } : {}), ...(tree ? { tree: true } : {}),
+      ...(setup ? { setup } : {}), ...(length ? { length } : {}) }));
 }
-// {name?, phases?, expected_updated_at?}
+// A mission's two answers over its whole phased length (the chance of completing it, the failures
+// to expect), its calendar, starting state, plan and what it assumed (mission_answers.py).
+export function missionAnswers(rbdId, missionId) {
+  return request(`${missionPath(rbdId, missionId)}/answers`, { method: "POST" });
+}
+// {name?, phases?, setup?, expected_updated_at?}
 export function updateMission(rbdId, missionId, body) {
   return request(missionPath(rbdId, missionId), asJson("PUT", body));
 }

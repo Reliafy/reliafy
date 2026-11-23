@@ -17,7 +17,7 @@ const conveyor = async (request) => {
 };
 const at = (id, extra = "") => `/asset-register/explorer?arrange=positions&root=${id}&sel=${id}${extra}`;
 const bar = (page) => page.getByRole("tablist", { name: "What to show for this row" });
-const ALL = ["Summary", "Operations", "Maintenance", "Monitoring", "RCM", "FME(C)A", "Models", "History"];
+const ALL = ["Summary", "Operations", "Maintenance", "Monitoring", "RCM", "FME(C)A", "Models", "Missions", "History"];
 
 test.skip(!EXPLORER_PANEL_TABS, "the panel tabs are switched off");
 
@@ -51,9 +51,9 @@ test("panel tabs: the flat row, inner views, an old address", async ({ page, req
   await expect(bar(page).getByRole("tab", { name: "Monitoring" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("radiogroup", { name: "Monitoring: what to show" }).getByRole("radio", { name: "Life left" }))
     .toHaveAttribute("aria-checked", "true");
-  // ?tab=missions (the old Missions view) is the Models tab: missions are rows under their models.
+  // ?tab=missions is the Missions tab again (23 Nov 2026).
   await open(page, at(id, "&tab=missions"));
-  await expect(bar(page).getByRole("tab", { name: "Models" })).toHaveAttribute("aria-selected", "true");
+  await expect(bar(page).getByRole("tab", { name: "Missions" })).toHaveAttribute("aria-selected", "true");
 });
 
 test("panel tabs overflow: ⋯ N folds what doesn't fit; picking one swaps it in; the keyboard reaches it", async ({ page, request }) => {

@@ -1,5 +1,9 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
-import { calculateMission, getMission, getRbd, updateMission } from "../api.js";
+import { calculateMission, getMission, getRbd, missionAnswers, updateMission } from "../api.js";
+import MissionSetup from "./MissionSetup.jsx";
+import MissionAnswers from "./MissionAnswers.jsx";
+import { DEFAULT_SETUP, NEW_LENGTH, runsOnBody, sameSetup, setupBody, setupErrors, setupForm } from "../missionSetup.js";
+import Field from "./ui/Field.jsx";
 import TablePane from "./TablePane.jsx";
 import CovariateInputs from "./CovariateInputs.jsx";
 import MissionBlockGrid from "./MissionBlockGrid.jsx";
@@ -42,7 +46,9 @@ const RbdDiagramView = lazy(() => import("./RbdDiagramView.jsx"));
 
 const valueText = (v, unit) => (v == null ? "—" : `${typeof v === "number" ? fmt(v) : v}${unit ? (unit === "%" ? "%" : ` ${unit}`) : ""}`);
 
-export default function MissionPane({ rbdId, missionId, position, phase = null, phone = false, headingRef = null, onClose, onSaved, onDirty, onDelete, onOpenRbd }) {
+// `answersMode` (the Missions tab): the mission's setup (start, calendar, starting state) above its
+// phases, and its two answers as cards (MissionAnswers) in place of the chance alone.
+export default function MissionPane({ rbdId, missionId, position, phase = null, phone = false, headingRef = null, onClose, onSaved, onDirty, onDelete, onOpenRbd, answersMode = false }) {
   const [detail, setDetail] = useState(null);
   const [error, setError] = useState(null);
   const [name, setName] = useState("");
@@ -60,6 +66,10 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
   // A plain life model's mission (no covariates): its starting age, "new", "now" or "age" (with `age`).
   const [start, setStart] = useState({ mode: "new", age: "" });
   const [startDirty, setStartDirty] = useState(false);
+  // The Missions tab: its setup, as saved and as edited, and its two answers.
+  const [setup, setSetup] = useState(() => setupForm(null));
+  const [savedSetup, setSavedSetup] = useState(() => setupForm(null));
+  const [ans, setAns] = useState({ data: null, busy: false, error: null });
 
   const load = () => getMission(rbdId, missionId).then((d) => {
     setDetail(d);
@@ -72,8 +82,17 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
     const st = d.summary?.start || {};
     setStart(st.now ? { mode: "now", age: "" } : st.age != null ? { mode: "age", age: String(st.age) } : { mode: "new", age: "" });
     setStartDirty(false);
+    setSetup(setupForm(d.summary?.setup));
+    setSavedSetup(setupForm(d.summary?.setup));
     setError(null);
   }, (e) => setError(e));
+  // The two answers, for the mission as saved (the Missions tab).
+  const loadAnswers = () => {
+    if (!answersMode) return Promise.resolve();
+    setAns((a) => ({ ...a, busy: true, error: null }));
+    return missionAnswers(rbdId, missionId).then((data) => setAns({ data, busy: false, error: null }),
+      (e) => setAns({ data: null, busy: false, error: e.message }));
+  };
   useEffect(() => { load(); }, [rbdId, missionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Opened on a phase (from the tree): its name field focused, ready to be named.
@@ -103,6 +122,16 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
   const covRows = detail?.covariates || [];
   const byPhase = useMemo(() => rows.map((r) => phaseCovariates(covRows, r)), [rows, covRows]);
   const total = phases.reduce((t, p) => t + (Number.isFinite(p.duration) ? p.duration : 0), 0);
+  // A mission with an RBD of its own takes a setup (start, calendar, starting state).
+  const ownRbd = !!detail?.rbd?.mission_rbd;
+  const setupOn = answersMode && ownRbd;
+  const setupChanged = setupOn && !sameSetup(setup, savedSetup);
+  const setupBad = setupOn && Object.keys(setupErrors(setup)).length > 0;
+  const editSetup = (next) => {
+    setSetup(next);
+    setDirty(true);
+    onDirty?.(true);
+  };
 
   const change = (fn) => {
     setRows(fn);
@@ -138,16 +167,18 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
     if (!detail || !first.current) return;
     first.current = false;
     if ((detail.mission.phases || []).length) calculate();
+    loadAnswers();
   }, [detail]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = async () => {
     setTried(true);
-    if (errors.length) return;
+    if (errors.length || setupBad) return;
     setSaving(true);
     setSaveError(null);
     try {
       await updateMission(rbdId, missionId, { name: name.trim() || detail.mission.name, phases, expected_updated_at: detail.rbd.updated_at,
-        ...(simple ? { start: startBody } : {}) });
+        ...(simple ? { start: startBody } : {}), ...(setupChanged ? { setup: setupBody(setup) } : {}) });
+      setSavedSetup(setup);
       setDirty(false);
       setStartDirty(false);
       onDirty?.(false);
@@ -160,6 +191,7 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
         setResult(got);
         onSaved?.(null);
       }, () => {});
+      await loadAnswers();
     } catch (e) {
       setSaveError(saveErrorText(e, { offline: navigator.onLine === false }));
     } finally {
@@ -219,6 +251,11 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
               </p>
               )}
             </div>
+            {setupOn && (
+              <section className="mission-setup-sec" aria-label="Start, calendar and starting state">
+                <MissionSetup value={setup} onChange={editSetup} withFrom={!simple} tried={tried} disabled={readOnly} />
+              </section>
+            )}
             {simple && (
               <section className="mission-simple" aria-label="Length and starting age">
                 {lengthOnly && (
@@ -267,6 +304,11 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
             {calc.needs?.length && !calc.stale ? (
               <MissionNeedsModels blocks={calc.needs} readOnly={readOnly} onOpenRbd={onOpenRbd}
                                   onLeaveOut={(ids) => change((rs) => leaveOut(rs, ids))} />
+            ) : answersMode ? (
+              <>
+                <MissionAnswers answers={dirty ? null : ans.data} busy={ans.busy} error={dirty ? null : ans.error} onOpenRbd={onOpenRbd} />
+                {!dirty && result && !calc.stale && <MissionCurve result={result} unit={unit} name={title} />}
+              </>
             ) : (
               <MissionAnswer result={calc.stale ? null : result} busy={calc.busy} error={calc.error} pro={calc.pro}
                              stale={calc.stale} total={total} unit={unit} name={title} simple={simple} />
@@ -418,27 +460,35 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
 // never fills with "Mission 1"s. `taken`: the position's mission names (a clash is said as typed).
 //   position {id, name}   onCreate(name) a promise (a refusal's message shows here)   onClose()
 // `on`: the model it's flown on, when added from a model row's menu (that RBD's name, or the model in use).
-export function NewMissionPane({ position, taken = [], on = null, phone = false, headingRef = null, onCreate, onClose }) {
+export function NewMissionPane({ position, taken = [], on = null, phone = false, headingRef = null, onCreate, onClose, runsOn = null }) {
+  // `runsOn` (the Missions tab): what it can run on (missionSetup.js runsOnOptions); with it, the
+  // form asks for the setup too: start, length (its first phase), calendar and starting state.
+  const full = Array.isArray(runsOn);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null);
   const [tried, setTried] = useState(false);
+  const [pick, setPick] = useState(() => (full && runsOn.length ? runsOn[0].value : ""));
+  const [setup, setSetup] = useState(() => ({ ...DEFAULT_SETUP, length: { ...NEW_LENGTH } }));
   const clean = name.trim().replace(/\s+/g, " ");
   const clash = clean && taken.some((t) => String(t || "").trim().toLowerCase() === clean.toLowerCase());
-  const why = !clean ? "Give the mission a name." : clash ? `${position.name} already has a mission named “${clean}”.` : null;
+  const setupBad = full && Object.keys(setupErrors(setup, { withLength: true })).length > 0;
+  const why = !clean ? "Give the mission a name." : clash ? `${position.name} already has a mission named “${clean}”.`
+    : full && !runsOn.length ? `${position.name} has nothing a mission can run on: give it a model, an RBD or positions inside.` : null;
   const save = async (e) => {
     e?.preventDefault();
     setTried(true);
-    if (why || busy) return;
+    if (why || setupBad || busy) return;
     setBusy(true);
     setFailed(null);
     try {
-      await onCreate(clean);
+      await onCreate(clean, full ? { ...runsOnBody(pick), setup: setupBody(setup), length: { value: Number(setup.length.value), unit: setup.length.unit } } : undefined);
     } catch (err) {
       setFailed(err.message);
       setBusy(false);
     }
   };
+  const picked = full ? runsOn.find((o) => o.value === pick) : null;
   return (
     <TablePane title="New mission" subject={position.name} phone={phone} busy={busy} headingRef={headingRef} onClose={onClose}
                className="mission-pane">
@@ -448,12 +498,30 @@ export function NewMissionPane({ position, taken = [], on = null, phone = false,
           <input value={name} maxLength={80} autoFocus disabled={busy} placeholder="e.g. Summer peak, Survey run"
                  aria-invalid={tried && why ? "true" : undefined} onChange={(e) => setName(e.target.value)} />
         </label>
+        {full ? (
+          <>
+            <Field label="Runs on" help={picked?.value === "tree" ? "Placed in series: the tree doesn't say which positions back each other up. Rewire its RBD where some do."
+              : picked ? `${picked.hint}. The mission gets an RBD of its own, a copy, so changing it never changes the original.` : ""}>
+              <Select value={pick} disabled={busy || !runsOn.length} onChange={(e) => setPick(e.target.value)}>
+                {runsOn.map((o) => <option key={o.value} value={o.value}>{o.label}{o.value.startsWith("rbd:") ? ` (${o.hint.toLowerCase()})` : ""}</option>)}
+              </Select>
+            </Field>
+            <MissionSetup value={setup} onChange={setSetup} withLength tried={tried} disabled={busy} />
+            <p className="rim-tquiet">
+              A mission is a saved what-if: this system run through phases over a stretch of time. It starts with one phase of
+              this length; add phases, their covariates and the blocks each needs once it&apos;s made. The maintenance plan is
+              the current one, read only.{" "}
+              <ShowMe help={{ guide: "missions" }}>Read the guide</ShowMe>
+            </p>
+          </>
+        ) : (
         <p className="rim-tquiet">
           A mission is the system run through phases, each with its own length and the blocks it needs.{" "}
           {on ? <>Adding it makes an RBD of its own from {on}, named after the mission; you then give it its phases.</>
             : <>Adding it builds an RBD of its own from what&apos;s inside {position.name}, named after the mission; you then give it its phases.</>}{" "}
           <ShowMe help={{ guide: "missions-and-phases" }}>Read the guide</ShowMe>
         </p>
+        )}
         {tried && why && <p className="field-error" role="alert">{why}</p>}
         {failed && <p className="field-error" role="alert">{failed}</p>}
         <div className="mission-foot">

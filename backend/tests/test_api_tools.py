@@ -659,6 +659,13 @@ def test_missions_over_the_tools(env):
     bad = env.post("/api/v1/change/rbd_mission", {"rbd_id": rid, "mission_id": mid,
                                                   "phases": [{"name": "X", "duration": -1}]})
     assert bad.status_code in (400, 422)
+    # The Missions tab's two answers, over the whole phased mission.
+    two = env.post("/api/v1/analyse/rbd_mission", {"rbd_id": rid, "mission_id": mid, "answers": True}).json()
+    assert two["answers"]["chance"]["value"] == pytest.approx(got["result"]["mission_reliability"], rel=1e-9)
+    assert two["answers"]["phases"] == 2 and "failures" in two["answers"]
+    # A setup is for a mission with an RBD of its own: refused in words on a shared diagram.
+    no = env.post("/api/v1/change/rbd_mission", {"rbd_id": rid, "mission_id": mid, "setup": {"from": "today"}})
+    assert no.status_code >= 400 and "RBD of its own" in no.text
     gone = env.post("/api/v1/change/rbd_mission", {"rbd_id": rid, "mission_id": mid, "delete": True}).json()
     assert gone["deleted"] == mid and gone["missions"] == []
 

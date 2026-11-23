@@ -3,7 +3,7 @@
 What fills the Explorer's table area, the tree kept beside it. Two things use that room, by one mechanism in `views/AssetExplorer.jsx` (`expanded` / `wideDetails`: the table's columns give way and the details or the pane take their room):
 
 - **A row's details, across the table** — the panel that opens beside the table on a click (a task, a work package, a measuring point, a model, an RCM or FME(C)A row, a position's RCM or criticality panel), widened. Its head carries **Expand the details** (⤢) beside, and **Back to table** (⤡) across; `is-expanded` on the panel.
-- **Work in the table's room** — `components/TablePane.jsx`: Fit a life model…, Add a prediction…, the RBD builder, Optimise…, Package the tasks…. A heading saying what it does and for which position, × to go back (Esc does the same). On a phone it takes the screen, with ‹ Back.
+- **Work in the table's room** — `components/TablePane.jsx`: Fit a life model…, Add a prediction…, the RBD builder, Optimise…, Package the tasks…, New mission… and a mission (its setup, phases and answers). A heading saying what it does and for which position, × to go back (Esc does the same). On a phone it takes the screen, with ‹ Back.
 
 ## Double-click opens it across the table, everywhere (Derryn, 23 Nov 2026)
 
@@ -14,7 +14,7 @@ What fills the Explorer's table area, the tree kept beside it. Two things use th
 - **A cell edited in place keeps its double-click** (an RCM worksheet cell, a name being edited, a measurement input): `TreePane` skips fields, buttons, links, the chevron and `.rw-c` cells, so the row's double-click applies on the rest of the row.
 - **A phone has no "across"**: the details are a sheet that takes the screen.
 
-Rows that open nothing beside the table have no double-click: a position on the Maintenance, Monitoring, Models and Operations tabs (it's picked; its tabs above the table are its details), a heading row. The Summary tab is the plain tree, not a table: its panel is beside the tree, with no table to cover.
+Rows that open nothing beside the table have no double-click: a position on the Maintenance, Monitoring, Models, Missions and Operations tabs (it's picked; its tabs above the table are its details), a heading row. The Summary tab is the plain tree, not a table: its panel is beside the tree, with no table to cover.
 
 ## Props (TablePane.jsx)
 

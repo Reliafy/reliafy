@@ -118,6 +118,9 @@ def carry(graph: dict, out: dict) -> None:
     start = parse_start(graph.get(START_KEY)) if owner else None
     if start:
         out[START_KEY] = start
+    setup = parse_setup(graph.get(SETUP_KEY)) if owner else None
+    if setup:
+        out[SETUP_KEY] = setup
 
 
 def mission_of(graph: dict) -> Optional[dict]:
@@ -173,6 +176,71 @@ def parse_start(raw) -> Optional[dict]:
     if not age >= 0 or age == float("inf"):
         raise MissionError("The starting age must be a number of 0 or more, or “now”.")
     return {"age": age} if age > 0 else None
+
+
+# ---- a mission's start, calendar and starting state (Missions tab, 23 Nov 2026) -------------------
+#
+# A mission is its phases (above); its own RBD also keeps, in ``graph["mission_setup"]``, what the
+# Missions tab adds around them: when it starts (a date, or "now"), the calendar its running time
+# meets the dates through (the position's duty from Operations, or a simple duty of its own), the
+# state its blocks start in (new, or as today: each block's item at its age now) and the length as
+# it was entered (a new mission's one phase is that length in running time). The phases rule: the
+# mission's length is always their sum.
+
+SETUP_KEY = "mission_setup"
+LENGTH_UNITS = ("hours", "days", "months", "years")
+
+
+def parse_setup(raw) -> Optional[dict]:
+    """A mission's setup in its stored shape, or None for none: {start: "now" | "YYYY-MM-DD",
+    calendar: {linked: true} | {hours_per_day, days_per_week}, from: "new" | "today", length?:
+    {value, unit}}. Raises :class:`MissionError`."""
+    from datetime import date
+
+    if raw is None or raw == {}:
+        return None
+    if not isinstance(raw, dict):
+        raise MissionError("A mission's setup is an object: start, calendar, from and length.")
+    start = raw.get("start") or "now"
+    if start != "now":
+        try:
+            start = date.fromisoformat(str(start)).isoformat()
+        except ValueError:
+            raise MissionError("The mission's start is a date (YYYY-MM-DD) or “now”.") from None
+    cal = raw.get("calendar") or {"linked": True}
+    if not isinstance(cal, dict):
+        raise MissionError("The calendar is {linked: true} or {hours_per_day, days_per_week}.")
+    if cal.get("linked", "hours_per_day" not in cal) is True:
+        cal = {"linked": True}
+    else:
+        try:
+            h, d = float(cal.get("hours_per_day")), float(cal.get("days_per_week"))
+        except (TypeError, ValueError):
+            raise MissionError("Its own duty needs hours a day (0 to 24) and days a week (1 to 7).") from None
+        if not (0 < h <= 24 and 1 <= d <= 7) or d != int(d):
+            raise MissionError("Its own duty needs hours a day (more than 0, up to 24) and days a week (1 to 7).")
+        cal = {"hours_per_day": h, "days_per_week": int(d)}
+    frm = raw.get("from") or "new"
+    if frm not in ("new", "today"):
+        raise MissionError("The starting state is “new” or “today” (each block at its item's age now).")
+    out = {"start": start, "calendar": cal, "from": frm}
+    length = raw.get("length")
+    if isinstance(length, dict) and length.get("value") not in (None, ""):
+        try:
+            v = float(length.get("value"))
+        except (TypeError, ValueError):
+            v = float("nan")
+        if not (v > 0 and v != float("inf")) or length.get("unit") not in LENGTH_UNITS:
+            raise MissionError("The length is a number more than 0 in hours, days, months or years.")
+        out["length"] = {"value": v, "unit": length["unit"]}
+    return out
+
+
+def setup_of(graph: dict) -> Optional[dict]:
+    try:
+        return parse_setup((graph or {}).get(SETUP_KEY))
+    except MissionError:
+        return None
 
 
 def start_of(graph: dict) -> Optional[dict]:
@@ -371,13 +439,21 @@ _UNSET = object()
 
 
 def save(graph: dict, mission_id: Optional[str] = None, name: Optional[str] = None,
-         phases: Optional[list] = None, start=_UNSET) -> tuple[dict, dict]:
+         phases: Optional[list] = None, start=_UNSET, setup=_UNSET) -> tuple[dict, dict]:
     """A new mission (no ``mission_id``) or changes to one: ``(graph, mission)``, the graph a new
     dict. A new one is named "Mission N" unless named. The diagram's own mission keeps living in
     ``phases`` (its name in ``mission_name``); giving it no phases removes it. ``start``: a plain
     mission's starting age (:func:`parse_start`: a number, "now", or None for new). Raises
     :class:`MissionError`."""
     graph = dict(graph or {})
+    if setup is not _UNSET:
+        if mission_id != LEGACY_ID or not mission_of(graph):
+            raise MissionError("A start, calendar and starting state are set on a mission with an RBD of its own.")
+        clean_setup = parse_setup(setup)
+        if clean_setup:
+            graph[SETUP_KEY] = clean_setup
+        else:
+            graph.pop(SETUP_KEY, None)
     if start is not _UNSET:
         if mission_id != LEGACY_ID or not is_simple(graph):
             raise MissionError("A starting age is set on a mission flown on a life model with no covariates; "
@@ -513,6 +589,8 @@ def summary(graph: dict, mission: dict, results: Optional[dict] = None) -> dict:
            "phases": len(phases), "phase_names": [p["name"] for p in phases],
            "phase_durations": [float(p.get("duration") or 0) for p in phases],
            "duration": duration(phases), "unit": (graph or {}).get("unit") or ""}
+    if mission.get("own") and setup_of(graph):
+        out["setup"] = setup_of(graph)
     if is_simple(graph, mission):
         # A plain life model's mission: a length from a starting age (phases optional).
         out["simple"] = True
@@ -879,16 +957,13 @@ def analyze(db, owner_id, graph: dict, phases, covariates: Optional[dict] = None
     return out
 
 
-def _analyze(db, owner_id, graph: dict, phases, covariates: Optional[dict] = None,
-             inputs_for: Optional[Callable[[dict], list]] = None, weakest: bool = True,
-             current_state: Optional[dict] = None) -> dict:
-    """A mission over ``graph``: rbd_phases.analyze_phases's result (the chance of completing it,
-    each phase's failure probability, reliability at its end and weakest block), its phases' values
-    reaching the blocks. A phase still missing a value: the mission is worked out up to it,
-    ``reliability`` is None and ``through`` says how far it got ({phase, reliability}), each waiting
-    phase is a row with ``waiting`` true, and ``needs`` says which blocks need what in each phase."""
-    from backend.services import rbds as rbds_service
-
+def bind(db, owner_id, graph: dict, phases, covariates: Optional[dict] = None,
+         inputs_for: Optional[Callable[[dict], list]] = None) -> dict:
+    """A mission's phases with their covariates bound to the blocks: {phases (clean), starts (each
+    phase's start on the mission's clock), gap (how many phases, from the first, have every value
+    they need), needs (what the rest wait for), bound / covs / step_starts (each step's bound
+    diagram, its covariates and its start, for :func:`combine`)}. The one binding the chance of
+    completing and the mission's other answers (mission_answers.py) both use. Raises AnalysisError."""
     try:
         clean = rbd_phases.parse_phases(phases or [])
     except rbd_phases.PhaseError as exc:
@@ -929,6 +1004,23 @@ def _analyze(db, owner_id, graph: dict, phases, covariates: Optional[dict] = Non
             bound.append(g)
             covs.append(c)
             step_starts.append(at)
+    return {"phases": clean, "starts": starts, "gap": gap, "needs": needs, "bound": bound, "covs": covs,
+            "step_starts": step_starts}
+
+
+def _analyze(db, owner_id, graph: dict, phases, covariates: Optional[dict] = None,
+             inputs_for: Optional[Callable[[dict], list]] = None, weakest: bool = True,
+             current_state: Optional[dict] = None) -> dict:
+    """A mission over ``graph``: rbd_phases.analyze_phases's result (the chance of completing it,
+    each phase's failure probability, reliability at its end and weakest block), its phases' values
+    reaching the blocks. A phase still missing a value: the mission is worked out up to it,
+    ``reliability`` is None and ``through`` says how far it got ({phase, reliability}), each waiting
+    phase is a row with ``waiting`` true, and ``needs`` says which blocks need what in each phase."""
+    from backend.services import rbds as rbds_service
+
+    got = bind(db, owner_id, graph, phases, covariates, inputs_for)
+    clean, starts, gap, needs = got["phases"], got["starts"], got["gap"], got["needs"]
+    bound, covs, step_starts = got["bound"], got["covs"], got["step_starts"]
     if gap == 0:
         return {"unit": (graph.get("unit") or "").strip(), "method": None, "reliability": None,
                 "unreliability": None, "duration": duration(clean), "riskiest": None, "through": None,

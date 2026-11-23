@@ -2099,7 +2099,8 @@ def _mission_copy(graph: dict) -> tuple[dict, bool]:
 
 
 def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, name: str | None = None,
-                      link_id: str | None = None) -> dict:
+                      link_id: str | None = None, tree: bool = False, setup: dict | None = None,
+                      length: dict | None = None) -> dict:
     """A new mission on a position, with an RBD of its own (one RBD per mission). It starts from a
     copy of the position's own RBD where it has one (wired as drawn there: parallel trains, standby
     and k-of-n stay as they are; a repairable one loses only its repairs and planned work), else is
@@ -2110,8 +2111,13 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
     Saved once as "<position> — <mission>", marked ``mission_of`` the position (not linked as one
     of its models). ``link_id``: one of the position's model rows to fly it on (Add a mission on a
     model's row): an RBD is copied, the model in use is the one block. The mission remembers it
-    (``mission_of.on_link``), so it shows under that model. {rbd: {id, name}, mission: summary,
-    notes, placeholders}."""
+    (``mission_of.on_link``), so it shows under that model. ``link_id`` may also be an RBD on a
+    position inside this one (the Missions tab's "Runs on": a saved RBD at or below). ``tree``: built
+    from the positions inside, in series where nothing says what's redundant, even where the
+    position has an RBD of its own. ``setup`` (rbd_missions.parse_setup: start, calendar, starting
+    state) and ``length`` ({value, unit}: hours of running, or days, months or years through the
+    calendar): the mission starts with one phase of that length, in the RBD's unit.
+    {rbd: {id, name}, mission: summary, notes, placeholders}."""
     from backend.services import rbd_missions
     from backend.services import rbds as rbds_service
     from backend.services.rbd_graph import GraphError, normalize_graph
@@ -2140,7 +2146,11 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
     if link_id:
         on = next((x for x in m.position_models(position_id) if x.get("id") == link_id), None)
         if on is None:
-            raise sv.Invalid("That model isn't on this position any more: read the models again.")
+            # An RBD on a position inside this one (Runs on: a saved RBD at or below).
+            on = next((x for x in m.all_position_models() if x.get("id") == link_id and x.get("model_type") == "rbd"
+                       and _inside(m, x.get("position_id"), position_id)), None)
+        if on is None:
+            raise sv.Invalid("That model isn't on this position or inside it any more: read the models again.")
         if on.get("model_type") == "rbd":
             src = fetcher(db, owners, hidden)("rbd", on.get("model_id"))
             if src is None:
@@ -2152,8 +2162,18 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
             src = None
             kids = []  # flown on the position's own model: one block, whatever is inside it
         owner["on_link"] = on["id"]
+    elif tree:
+        src = None
+        if not kids:
+            raise sv.Invalid(f"{p['name']} has no positions inside to build the mission from: run it on its model "
+                             "or an RBD instead.")
     else:
         src = _mission_source_rbd(m, fetcher(db, owners, hidden), position_id)
+    try:
+        clean_setup = rbd_missions.parse_setup({**(setup or {}), **({"length": length} if length else {})}) \
+            if (setup or length) else None
+    except rbd_missions.MissionError as exc:
+        raise sv.Invalid(str(exc)) from None
     if src is not None:
         graph, was_repairable = _mission_copy(src.graph or {})
         notes = [f"Started from a copy of {src.name}, wired as it is there"
@@ -2172,6 +2192,19 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
         notes = [note] if note else []
     owner["built_from"] = source
     graph = {**graph, "mission_of": owner, "mission_name": name}
+    if clean_setup:
+        graph[rbd_missions.SETUP_KEY] = clean_setup
+    if clean_setup and clean_setup.get("length"):
+        # One phase covering its whole length, in the RBD's running time (through its calendar).
+        from backend.services import mission_answers
+        from backend.services.rbd_analysis import AnalysisError
+
+        try:
+            run = mission_answers.running_length(clean_setup["length"], graph.get("unit") or "",
+                                                 mission_answers.clock_for(m, position_id, clean_setup))
+        except AnalysisError as exc:
+            raise sv.Invalid(str(exc)) from None
+        graph["phases"] = [{"name": "Whole mission", "duration": round(run, 6)}]
     if source == "model" and rbd_missions.simple_block(graph) is not None:
         # A plain life model's mission is a length from a starting age: the item's age now when one is
         # fitted (read each time it's worked out, as the Calculator's "As of now"), else new.
@@ -2187,6 +2220,18 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
             "mission": rbd_missions.summary(rbd.graph or graph, mission), "position_id": position_id,
             "notes": notes[:20], "placeholders": placeholders, "built_from": source,
             "series_warning": rbd_missions.series_warning(rbd.graph or graph)}
+
+
+def _inside(m, position_id: str | None, top_id: str) -> bool:
+    """Is ``position_id`` the position ``top_id`` or one inside it (up its PART_OF chain)?"""
+    seen, at = set(), position_id
+    while at and at not in seen:
+        if at == top_id:
+            return True
+        seen.add(at)
+        up = [x for x in m.s.out(m.org, at, "PART_OF") if x.get("label") == "Position"]
+        at = up[0]["id"] if up else None
+    return False
 
 
 def _one_block_graph(m, db, owners, hidden, p: dict, link: dict | None = None) -> tuple[dict, str | None]:
