@@ -19,7 +19,7 @@ import pandas as pd
 
 from backend.fitting import DISTRIBUTIONS, FitError, nonparametric_range_message, param_values, surpyval_extras
 from backend.services import model_units
-from backend.units import unit_in_text, with_unit
+from backend.units import singular_unit, unit_in_text, with_unit
 from repyability.non_repairable import NonRepairable
 from surpyval import KaplanMeier, logrank
 
@@ -52,6 +52,17 @@ def fmt_num(value) -> str:
     if abs(float(f"{v:.3g}")) >= 1000:
         return f"{v:,.0f}"
     return f"{v:.3g}"
+
+
+def _plain(value: float, sig: int = 3) -> str:
+    """A number in plain figures at any size, never scientific notation: 2.01e-7 → "0.000000201",
+    50000 → "50,000"."""
+    v = float(value)
+    if not np.isfinite(v) or v == 0:
+        return f"{v:g}"
+    digits = max(0, sig - 1 - int(math.floor(math.log10(abs(v)))))
+    text = f"{round(v, digits):,.{digits}f}"
+    return text.rstrip("0").rstrip(".") if "." in text else text
 
 
 def _scalar(value) -> Optional[float]:
@@ -714,25 +725,46 @@ def _difference_tests(spec_a: dict, spec_b: dict, la: str, lb: str) -> dict:
     primary = next((r for r in results if r["id"] == "log-rank"), results[0])
     p = primary["p_value"]
     significant = p < _ALPHA
+    failures = {"a": int(np.sum(ca == 0)), "b": int(np.sum(cb == 0))}
     if significant:
         summary = (
-            f"The difference is statistically significant "
-            f"(log-rank p = {p:.3g} < {_ALPHA}). The reliability gap between "
-            f"{la} and {lb} is unlikely to be due to chance."
+            f"The difference is statistically significant (log-rank p = {p:.3g} < {_ALPHA}): "
+            f"a gap this large would be unusual if {la} and {lb} had the same reliability."
         )
     else:
         summary = (
             f"No statistically significant difference (log-rank p = {p:.3g} "
             f"≥ {_ALPHA}). The data don't establish that {la} and {lb} differ."
         )
+    caveat = _few_failures_caveat(failures, la, lb, significant)
+    if caveat:
+        summary += " " + caveat
     return {
         "available": True,
         "alpha": _ALPHA,
         "primary": "log-rank",
         "significant": significant,
         "summary": summary,
+        "failures": failures,
+        "caveat": caveat,
         "results": results,
     }
+
+
+#: Below this many failures on a side, one failure more or fewer can move a test's p across 0.05.
+_FEW_FAILURES = 5
+
+
+def _few_failures_caveat(failures: dict, la: str, lb: str, significant: bool) -> str | None:
+    """A plain caveat when either side has only a few failures: the test rests on them."""
+    few = [(n, lab) for n, lab in ((failures["a"], la), (failures["b"], lb)) if n < _FEW_FAILURES]
+    if not few:
+        return None
+    n, lab = min(few)
+    what = f"{n} failure{'s' if n != 1 else ''}"
+    if significant:
+        return f"This is based on {what} in {lab}: one more or fewer could change this."
+    return f"This is based on {what} in {lab}: with so few, a real difference can go undetected."
 
 
 def verdict_words(more, cross, la, lb, da, db, unit, early_a: bool = True) -> str:
@@ -999,12 +1031,25 @@ def failure_finding(
     target_text = f"{availability * 100:.10g}%"
     renewal_text = ("each test renews the device (bench-tested and overhauled, or replaced)" if renewed else
                     "a test leaves a working device as it was; only a failed one is renewed")
-    note = (f"Check the hidden function about every {fmt_num(interval)}{unit_s} to keep its average availability "
+    note = (f"Check the hidden function about every {_plain(interval)}{unit_s} to keep its average availability "
             f"near {target_text}. Worked out from the model's curve: the share of each interval the device sits "
             f"failed and unnoticed, assuming {renewal_text}.")
     if duration:
         note += f" Each test takes it off-line for {fmt_num(duration)}{unit_s}, counted as unavailable."
     warnings_out = []
+    if mttf < 1.0:
+        # A mean life under one time unit is almost always a mean life typed as a rate (#4): say so
+        # first, in plain figures, so "test every 0.0000002 hours" isn't read as an answer.
+        per = f"per {singular_unit(unit_in_text(unit))}" if unit_s else "per unit of time"
+        one = f"one {singular_unit(unit_in_text(unit))}" if unit_s else "one unit of time"
+        text = f"The mean life is {_plain(mttf)}{unit_s}, under {one}."
+        if exponential:
+            lam = 1.0 / mttf
+            text += (f" If {_plain(lam)} is an MTBF, the failure rate is 1 ÷ MTBF = {_plain(1.0 / lam)} {per}; "
+                     "enter that, or enter the MTBF as the mean life.")
+        else:
+            text += " Check the parameters are in the model's time unit."
+        warnings_out.append(text)
     if not exponential and abs(shortcut - interval) > 0.05 * interval:
         warnings_out.append(
             f"The shortcut 2 × (1 − A) × MTTF gives {fmt_num(shortcut)}{unit_s}: it assumes a constant failure "

@@ -59,10 +59,23 @@ export function overhaulReplaceBody(model, f, unit) {
   return model.source === "saved" && model.modelId ? { ...inputs, recurrent_model_id: model.modelId } : inputs;
 }
 
-// "12%", "costs 3% more" — the best plan against another.
-export function savingWords(pct) {
+// Another plan's cost rate against the best plan's, as a % of the best plan's: 37.34 against
+// 39.31 is -5.0 (5.0% less). null when either is missing.
+export function vsBestPct(other, best) {
+  if (other == null || best == null || !Number.isFinite(other) || !(best > 0)) return null;
+  return ((other - best) / best) * 100;
+}
+
+const pctText = (a) => (a >= 10 ? String(Math.round(a)) : a.toPrecision(2));
+
+// "costs 5.0% less", "costs 12% more", "the same": another plan against the best plan.
+export function vsBestWords(pct) {
   if (pct === null || pct === undefined || !Number.isFinite(pct)) return "—";
   if (Math.abs(pct) < 0.05) return "the same";
-  const p = Math.abs(pct) >= 10 ? Math.round(Math.abs(pct)) : Number(Math.abs(pct).toPrecision(2));
-  return pct > 0 ? `${p}%` : `costs ${p}% more`;
+  return `costs ${pctText(Math.abs(pct))}% ${pct < 0 ? "less" : "more"}`;
+}
+
+// The best plan's saving against another, as a % of the other: "That costs 12% less than …".
+export function savingPctText(pct) {
+  return pctText(Math.abs(pct));
 }
