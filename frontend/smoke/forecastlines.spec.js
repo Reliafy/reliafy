@@ -87,6 +87,8 @@ test("Not counted · Add opens If it fails anyway; recorded, the failure line co
   await row.getByLabel("Cost each time").fill("900");
   await row.getByLabel("Cost each time").press("Enter");
   await expect(row).toContainText("Each time: 4 h, $900.", { timeout: 15_000 });
+  // The spindle has an on-condition check: "If an inspection finds it" is there too, a visible gap until filled.
+  await expect(page.locator(".mresp[data-kind=found]").first()).toContainText("Nothing recorded");
   await shot(page, "rcm-if-it-fails-anyway-1440");
   await open(page, `/forecasts/hours?from=position%3A${top.id}&root=${top.id}`);
   const table = page.locator(".ft-lines");
