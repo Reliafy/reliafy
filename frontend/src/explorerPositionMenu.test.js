@@ -142,7 +142,7 @@ test("focusKinds: the tab's kinds inside the row; isolateKindOpen opens the way 
 test("a double-click on a work package opens its details across the table, with Back to table", () => {
   assert.equal(opensWide({ type: "mpkg" }), true);
   const src = readFileSync(new URL("./views/AssetExplorer.jsx", import.meta.url), "utf8");
-  assert.match(src, /if \(isPackageRow\(r\)\) return openPackageView\(r\.ref\.pkg, \{ wide: true \}\)/);
+  assert.match(src, /if \(isPackageRow\(r\)( \|\| isPackageExtra\(r\))?\) return openPackageView\(r\.ref\.pkg, \{ wide: true \}\)/);
   assert.match(src, /<PackageSide [^>]*\n\s*expanded=\{wideDetails\} onExpand=\{expandDetails\} onCollapse=\{collapseDetails\}/);
   const side = readFileSync(new URL("./components/TaskTreeTable.jsx", import.meta.url), "utf8");
   const pkg = side.slice(side.indexOf("export function PackageSide"));

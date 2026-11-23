@@ -547,7 +547,7 @@ export function Details({
   const chips = isTask
     ? [
       taskKindText(r) ? { text: taskKindText(r), tone: "accent" } : { text: "Not in a decision yet", tone: "warning" },
-      everyText(r.ref.task) ? { text: everyText(r.ref.task), tone: "neutral" } : null,
+      // How often is the Interval row's (not a chip again).
       taskSharedText(r.ref.task) ? { text: taskSharedText(r.ref.task), tone: "neutral", title: taskServesTip(r.ref.task) } : null,
       r.ref.task?.package ? { text: `In: ${r.ref.task.package.name}`, tone: "neutral", title: "Done on this work package's visits" } : null,
     ].filter(Boolean)
@@ -1312,13 +1312,15 @@ function TaskLogistics({ taskId, positionId }) {
   const here = state.id === taskId;
   const task = here ? state.data?.task || null : null;
   const res = task?.resources || {};
-  const go = (section) => explorerHere(location.pathname, location.search, { sel: positionId, tab: "maintenance", mtask: taskId, ...(section ? { msec: section } : {}) });
+  const go = (section) => explorerHere(location.pathname, location.search, { sel: positionId, tab: "maintenance", mtask: taskId,
+    ...(section === "needs" ? { needs: "1" } : section ? { msec: section } : {}) });
   const change = (section, words) => <Link className="rim-quietgo" to={go(section)}>{words} in Maintenance ›</Link>;
   const lsaCost = task?.cost?.lsa?.amount;
   const costSum = costWords(task?.cost?.typed) || (lsaCost != null ? `${money(lsaCost)} each time, from its LSA` : "");
   const method = String(res.method || "").split("\n").map((l) => l.trim()).find(Boolean) || "";
   const tools = (res.tools || []).length;
-  const rest = [tools ? n(tools, "tool") : null, method ? `Method: ${method}` : null].filter(Boolean);
+  const rest = [tools ? n(tools, "tool") : null, (res.consumables || []).length ? n(res.consumables.length, "consumable") : null,
+    method ? `Method: ${method}` : null].filter(Boolean);
   return (
     <section className="rw-sg rw-logistics" aria-label="Cost and needs">
       <StepLabel>Cost and needs</StepLabel>
@@ -1337,12 +1339,10 @@ function TaskLogistics({ taskId, positionId }) {
               { key: "parts", title: "Parts", summary: partWords(res.spares), body: (
                 <p className="rim-tline rim-tquiet">{partWords(res.spares) || "None set yet."} {change("parts", partWords(res.spares) ? "Change" : "Add")}</p>
               ) },
+              { key: "needs", title: "Tools and method", summary: rest.join(" · "), body: (
+                <p className="rim-tline rim-tquiet">{rest.length ? rest.join(" · ") : "None set yet."} {change("needs", rest.length ? "Change" : "Add")}</p>
+              ) },
             ]} />
-            <p className="rim-tline rim-tquiet">
-              {rest.length ? `${rest.join(" · ")} · ` : ""}
-              <Link className="rim-quietgo" to={explorerHere(location.pathname, location.search, { sel: positionId, tab: "maintenance", mtask: taskId, needs: "1" })}
-                    title="How it's done: its instructions, tools, consumables and method (its LSA), on the Maintenance tab">What it needs</Link>
-            </p>
           </>
         )}
       </div>

@@ -189,9 +189,9 @@ fields, then the quieter things at the foot:
   measurement…** (the measuring point it reads, one line: *Reads: Belt
   deflection, mm*); **Serves**, the failure modes it serves here, each a link
   with **Remove** at its right, and **Link to another failure mode…**; and
-  **Cost and needs**: its **Cost**, **Labour** and **Parts**, the same fold-outs
-  as its details on the Maintenance tab, each with the way to change them there,
-  and **What it needs** for the rest of its LSA. How it's done (its
+  **Cost and needs**: its **Cost**, **Labour**, **Parts** and **Tools and
+  method**, the same fold-outs as its details on the Maintenance tab, each with
+  the way to change them there. How it's done (its
   instructions) belongs to the LSA, not here. Raising a task on an event is set
   on the Maintenance tab. At its foot, **Retire the task** (when it serves only this failure
   mode) or **Remove from this failure mode** (when it serves others too).
@@ -372,7 +372,7 @@ many other failure modes share it.
   one interval for all of them: change it on the task (its **Interval** row),
   not in the decision dialog, which shows it read-only.
 - A task by use (hours, cycles, km) says what it counts under its **Interval**
-  row, in one line (*Counts: Engine hours on Truck 12*). **Change…** shows the
+  row, in one line (*Counted on: Engine hours on Truck 12*; with none, **Set one…**). **Change…** shows the
   latest reading and the reading when it was last done, and picks another in the same unit, on the position,
   above or below it, or on the item fitted there, and asks for the last-done
   reading on the new one (or works it out from the date, marked as an

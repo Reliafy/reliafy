@@ -51,6 +51,7 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse, inli
   // costs: the cost inputs wait behind "Show costs" (Derryn, 9 Nov 2026).
   const safety = ["safety", "environmental"].includes(modeAnswers(r.ref).consequence);
   const [showCosts, setShowCosts] = useState(!safety);
+  const [why, setWhy] = useState(false);
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
   // Inline, from a saved calculation: work it out once its inputs are in.
@@ -250,11 +251,15 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse, inli
   );
   const content = (
     <>
-      <p className="ivc-what">{WHAT[calc.key]}</p>
+      <p className="ivc-what">
+        {LEAD[calc.key]}{" "}
+        <button type="button" className="link ivc-why" aria-expanded={why} onClick={() => setWhy((o) => !o)}>{why ? "Less" : "Why?"}</button>
+      </p>
+      {why && <p className="ivc-what ivc-whytext">{WHAT[calc.key]}</p>}
       <form className="ivc-form" onSubmit={(e) => { e.preventDefault(); work(); }}>
         {calc.key === "pf" && (
           <>
-            <Field label="P-F interval" help={from.pf_interval || "From the first sign you can detect (a noise, a rise in temperature) to the failure."} as="fieldset">
+            <Field label="P-F interval" help={from.pf_interval || "First sign to failure."} as="fieldset">
               <InputGroup label="P-F interval">
                 <TextInput type="number" inputMode="decimal" min="0" step="any" value={form.pf_interval} onChange={set("pf_interval")} aria-label="P-F interval" placeholder="e.g. 10" />
                 <Select value={form.pf_unit} onChange={set("pf_unit")} aria-label="P-F interval unit">
@@ -263,16 +268,16 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse, inli
               </InputGroup>
             </Field>
             <Field label="Time needed to act" optional as="fieldset"
-                   help="From finding the warning to the fix being done (ordering the part, planning the shutdown), in the P-F interval's unit. When the P-F interval less this is shorter than half of it, that's the limit.">
+                   help="Warning found to fix done, same unit.">
               <TextInput type="number" inputMode="decimal" min="0" step="any" value={form.act_time} onChange={set("act_time")} aria-label="Time needed to act" placeholder="0" />
             </Field>
             {!isUseUnit(form.pf_unit) && (
               <CostsToggle safety={safety} show={showCosts} onShow={() => { setShowCosts(true); setResult(null); }}
-                           words="Costs only matter for whether the check pays for itself, not for the P-F interval; add them to see the cost-optimal interval." />
+                           words="Optional: add costs for the cheapest interval too." />
             )}
             {showCosts && !isUseUnit(form.pf_unit) && (
               <>
-                <Field label="Failures a year, if nothing is done" optional help={from.onset_rate || "How often the warning (and so the failure) starts, e.g. 0.5 for once in two years. Needed with the costs."}>
+                <Field label="Failures a year, if nothing is done" optional help={from.onset_rate || "E.g. 0.5: once in two years."}>
                   <TextInput type="number" inputMode="decimal" min="0" step="any" value={form.onset_rate} onChange={set("onset_rate")} placeholder="e.g. 0.5" />
                 </Field>
                 <div className="ivc-row">
@@ -282,7 +287,7 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse, inli
                 </div>
               </>
             )}
-            <Field label="Chance a check finds the warning (%)" help={Number(form.detection_probability) === 100 ? "Assumed: every check finds a warning that's there. Lower it for a check that can miss." : null}>
+            <Field label="Chance a check finds the warning (%)" help={Number(form.detection_probability) === 100 ? "Assumed: every check finds it." : null}>
               <TextInput type="number" inputMode="decimal" min="1" max="100" step="any" value={form.detection_probability} onChange={set("detection_probability")} />
             </Field>
           </>
@@ -297,7 +302,7 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse, inli
                 </p>
               </Field>
             ) : (
-              <Field label="The device's failure rate (failures a year)" help={from.failure_rate || "Its hidden failures, e.g. 0.1 for one in ten years."}>
+              <Field label="The device's failure rate (failures a year)" help={from.failure_rate || "E.g. 0.1: one in ten years."}>
                 <TextInput type="number" inputMode="decimal" min="0" step="any" value={form.failure_rate} onChange={set("failure_rate")} placeholder="e.g. 0.1" />
               </Field>
             )}
@@ -313,13 +318,13 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse, inli
             )}
             <Field label="Target unavailability (%)" optional
                    help={form.targetAssumed && Number(form.target) === 1
-                     ? "Assumed: 1% (failed when needed at most 1 time in 100) is a common starting point for safety. Clear it to find the cheapest interval instead."
-                     : "The most it may be failed when needed. Blank: the cheapest interval, from the costs."}>
+                     ? "Assumed: 1%, common for safety. Clear it for the cheapest."
+                     : "Most it may be failed when needed. Blank: cheapest."}>
               <TextInput type="number" inputMode="decimal" min="0" max="100" step="any" value={form.target}
                          onChange={(e) => { const v = e.target.value; setForm((f) => ({ ...f, target: v, targetAssumed: false })); setResult(null); }} />
             </Field>
             <CostsToggle safety={safety} show={showCosts} onShow={() => { setShowCosts(true); setResult(null); }}
-                         words="Costs are optional: the target alone gives the interval. Add them to see the cheapest interval too." />
+                         words="Optional: add costs for the cheapest interval too." />
             {showCosts && (
               <>
                 <div className="ivc-row">
@@ -327,7 +332,7 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse, inli
                   <Field label="Cost of a repair ($)" optional><TextInput type="number" inputMode="decimal" min="0" step="any" value={form.repair_cost} onChange={set("repair_cost")} /></Field>
                 </div>
                 <div className="ivc-row">
-                  <Field label="Demands a year" optional help="How often it's needed (the trip, the relief)."><TextInput type="number" inputMode="decimal" min="0" step="any" value={form.demand_rate} onChange={set("demand_rate")} /></Field>
+                  <Field label="Demands a year" optional help="How often it's needed."><TextInput type="number" inputMode="decimal" min="0" step="any" value={form.demand_rate} onChange={set("demand_rate")} /></Field>
                   <Field label="Cost of a demand on a failed device ($)" optional><TextInput type="number" inputMode="decimal" min="0" step="any" value={form.consequence_cost} onChange={set("consequence_cost")} /></Field>
                 </div>
               </>
@@ -336,7 +341,7 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse, inli
         )}
         {calc.key === "fixed" && (
           <>
-            <Field label="The part's life" help={from.model || (form.model ? null : "A non-repairable model fitted to its failures.")}>
+            <Field label="The part's life" help={from.model || (form.model ? null : "A non-repairable model of its failures.")}>
               {models === null && !form.model ? <p className="ivc-model">Reading your models…</p> : (
                 <Select value={form.model?.model_id || (form.model ? "__given" : "")}
                         onChange={(e) => pick(e.target.value, (model) => setForm((f) => ({ ...f, model })))}>
@@ -376,6 +381,12 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse, inli
   );
 }
 
+// What it works out: one sentence, then the why behind "Why?" (Derryn, 23 Nov 2026: "too long").
+const LEAD = {
+  pf: "Check at least every half P-F interval to catch the warning in time.",
+  ff: "Test often enough that it's rarely failed when it's needed.",
+  fixed: "Replace at the age that costs least over time, if that beats running to failure.",
+};
 const WHAT = {
   pf: "A failure often gives a warning first: a noise, a leak, a rise in temperature. The time from that first sign to the failure is the P-F interval. "
     + "Checking at least every half P-F interval finds the warning with time to act; that's all this needs.",

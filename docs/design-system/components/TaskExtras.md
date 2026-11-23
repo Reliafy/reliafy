@@ -1,6 +1,6 @@
 # TaskExtras
 
-A task's optional extras, **Cost**, **Labour** and **Parts**, each a `Fold` with one line saying what's set ("$40 each time", "1.5 h mechanic", "Spindle kit × 1"). One component for both tabs (Derryn, 23 Nov 2026): the Maintenance tab's task panel edits them (with a corrective response's "Cost of the failure itself" as a fourth); the RCM tab's task panel reads them under **Cost and needs**, each with the way to change it on the Maintenance tab (`?msec=`). The file is `frontend/src/components/TaskExtras.jsx`; the words come from `taskExtras.js`, the same as the tree's rows under a task.
+A task's optional extras, **Cost**, **Labour**, **Parts** and **Tools and method** (tools, consumables, access, method and instructions), each a `Fold` with one line saying what's set ("$40 each time", "1.5 h mechanic", "Spindle kit × 1"). One component for both tabs (Derryn, 23 Nov 2026): the Maintenance tab's task panel edits them (with a corrective response's "Cost of the failure itself" as a fourth); the RCM tab's task panel reads them under **Cost and needs**, each with the way to change it on the Maintenance tab (`?msec=`). The file is `frontend/src/components/TaskExtras.jsx`; the words come from `taskExtras.js`, the same as the tree's rows under a task.
 
 ## Props
 
