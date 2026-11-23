@@ -1141,11 +1141,10 @@ def _item_fitted(s: GraphStore, org: str, p: dict) -> None:
                | ({"from_precision": p["from_precision"]} if p.get("from_precision") else {}))
     s.put_edge(org, "IN", p["item_id"], p["fitment_id"])
     s.put_edge(org, "AT", p["fitment_id"], p["position_id"])
-    # A new item is a renewal: the position's tasks count from the day it went in (a task set to keep its
-    # schedule reads its last real doing back: restart.py).
+    # A new item is a renewal: the position's tasks count from the day it went in.
     for task in s.inn(org, p["position_id"], "ON"):
         if task["label"] == "Task":
-            _renew_task(s, org, task, p["on"], (p.get("task_readings") or {}).get(task["id"]), by="fit")
+            _renew_task(s, org, task, p["on"], (p.get("task_readings") or {}).get(task["id"]))
 
 
 def _item_removed(s: GraphStore, org: str, p: dict) -> None:
@@ -2267,23 +2266,13 @@ def _item_usage(s: GraphStore, org: str, item_id: str, unit: str, read) -> dict 
     return {"rows": rows, "points": points, "uncounted": uncounted}
 
 
-def _renew_task(s: GraphStore, org: str, task: dict, day: str, reading=None, by: str = "done") -> None:
+def _renew_task(s: GraphStore, org: str, task: dict, day: str, reading=None) -> None:
     """The task was done (or its item renewed) on ``day``: record the date, and the
     counter reading then if it goes by use. A feed's reading comes in the event (the
-    projector can't read the time-series store); a manual one is read here.
-
-    ``by`` (Nov 2026, restart.py): "fit" when a new item was fitted, else "done". A fitting keeps
-    the task's last real doing in ``done_before_fit``, so a task set to keep its schedule when the
-    item is replaced counts from that, not from the fitting."""
+    projector can't read the time-series store); a manual one is read here."""
     if task.get("last_done") and task["last_done"] >= day:
         return
-    changes = {"last_done": day, "renewed_by": by}
-    if by == "fit":
-        if task.get("renewed_by") != "fit":
-            changes["done_before_fit"] = {"last_done": task.get("last_done"),
-                                          "last_done_reading": task.get("last_done_reading")}
-    else:
-        changes["done_before_fit"] = None
+    changes = {"last_done": day}
     if task.get("last_done_reading_estimated"):
         changes["last_done_reading_estimated"] = False  # read when it was done, not worked out
     if reading is not None:
@@ -4000,6 +3989,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                           "then fit the new one.")
         day, precision = dated(on, from_precision, "fitted date", today=self.today())
         iid = self._item_from(item_id, new_item)
+        self.note_done_before_fit(position_id, day)  # keep tasks read it back (restart.py)
         self._emit("item.fitted", {"fitment_id": new_id(), "item_id": iid, "position_id": position_id, "on": day,
                                    "task_readings": self._renewal_readings(position_id, day)}
                    | ({"from_precision": precision} if precision != "exact" else {}))
@@ -9033,6 +9023,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 if a.get("item_id") or (a.get("new_item") or {}).get("name"):
                     iid = self._item_from(a.get("item_id"), a.get("new_item"))
                     starts = new_id()
+                    self.note_done_before_fit(at, day)  # keep tasks read it back (restart.py)
                     self._emit("item.fitted", {"fitment_id": starts, "item_id": iid,
                                                "position_id": at, "on": day,
                                                "task_readings": self._renewal_readings(at, day)})
@@ -9358,6 +9349,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 raise Invalid("It can't move before it was fitted where it is.")
             self._emit("item.removed", {"fitment_id": current["id"], "on": day, "reason": "planned",
                                         "failure_mode_id": None})
+        self.note_done_before_fit(to_position_id, day)  # keep tasks read it back (restart.py)
         self._emit("item.fitted", {"fitment_id": new_id(), "item_id": item_id,
                                    "position_id": to_position_id, "on": day,
                                    "task_readings": self._renewal_readings(to_position_id, day)})
@@ -17001,6 +16993,4 @@ PROJECTORS.update({
 # content goes, and the projector does nothing.
 PROJECTORS.update(_purge.PROJECTORS)
 
-# 6 (Nov 2026, restart.py): a task renewed by a fitting keeps its last real doing (renewed_by,
-# done_before_fit), so "keep the schedule when the item is replaced" can count from it.
-PROJECTION_VERSION = 6
+PROJECTION_VERSION = 5

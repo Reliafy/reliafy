@@ -106,6 +106,34 @@ def test_next_due_moves_when_the_item_is_replaced(monkeypatch):
     assert view["next_due"] == "2026-12-24" and view["on_replace"]["restarted_on"] == "2026-11-24"
 
 
+def test_keep_reads_its_last_real_doing_back_without_changing_the_projection(monkeypatch):
+    """No projection changes shape (PROJECTION_VERSION stays 5): a fitting notes each task's last real doing
+    in a new event first (task.done_before_fit). A fitting logged before that event existed: the latest
+    closed work order for the task stands in."""
+    from backend.maintenance.service import PROJECTION_VERSION
+    from backend.services import time_zones
+
+    assert PROJECTION_VERSION == 5
+    monkeypatch.setattr(time_zones, "_now", lambda: datetime(2026, 11, 24, 8, tzinfo=timezone.utc))
+    m = _m("org-restart-keep-log")
+    m.today = lambda: "2026-11-24"
+    pump = m.create_position("Pump")["id"]
+    m.fit(pump, new_item={"name": "Pump SN1"}, on="2026-01-01")
+    task = m.create_task(pump, "Clean the strainer", 30, "days", last_done="2026-11-01")["id"]
+    m.set_task_on_replace(task, "keep")
+    m.remove(pump, on="2026-11-20", reason="planned")
+    m.fit(pump, new_item={"name": "Pump SN2"}, on="2026-11-20")
+    types = [e["type"] for e in m.s.log.events(m.org)] if hasattr(m.s.log, "events") else []
+    if types:
+        assert types.index("task.done_before_fit") < len(types) - 1
+    assert m._task_view(m._get(task, "Task"))["next_due"] == "2026-12-01"
+    _rebuilds_the_same(m)
+    # As an older log would leave it (no note): the latest closed work order, else not placed.
+    m.s.patch_node(m.org, task, {"done_before_fit": None})
+    node = m._get(task, "Task")
+    assert m.restarted(node)["last_done"] is None
+
+
 def test_3_3_restart_is_age_replacement_and_keep_is_block_replacement(setting):
     m, db, fetch = setting
     top, task = _mower(m, db)

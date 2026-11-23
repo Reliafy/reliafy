@@ -19,8 +19,15 @@ Where it matters:
   interval, about half a task. The forecast shows the scheduled count with a note on how much
   smaller it may be: about interval ÷ (2 × the mean life).
 
-New event (older logs replay unchanged): ``task.on_replace_set {id, on_replace}`` (restart, keep, or
-None: back to the default). The projector reads only the payload and writes through the store.
+New events (older logs replay unchanged; no projection changes shape):
+
+* ``task.on_replace_set {id, on_replace}``: restart, keep, or None (back to the default);
+* ``task.done_before_fit {id, fit_on, last_done, last_done_reading}``: emitted just before an item is
+  fitted, for each task there it renews (item.fitted counts them from the fitting, as it always has),
+  so a keep task can count from its last real doing. A fitting logged before this event existed falls
+  back to the task's latest closed work order.
+
+The projectors read only the payload and write through the store.
 """
 
 from __future__ import annotations
@@ -37,7 +44,12 @@ def _task_on_replace_set(s: GraphStore, org: str, p: dict) -> None:
     s.patch_node(org, p["id"], {"on_replace": p.get("on_replace")})
 
 
-PROJECTORS = {"task.on_replace_set": _task_on_replace_set}
+def _task_done_before_fit(s: GraphStore, org: str, p: dict) -> None:
+    s.patch_node(org, p["id"], {"done_before_fit": {"fit_on": p["fit_on"], "last_done": p.get("last_done"),
+                                                    "last_done_reading": p.get("last_done_reading")}})
+
+
+PROJECTORS = {"task.on_replace_set": _task_on_replace_set, "task.done_before_fit": _task_done_before_fit}
 
 
 def shortfall(interval_in_life_unit: float, mean_life: float | None) -> float | None:
@@ -96,18 +108,51 @@ class RestartOps:
                 days.append(str(fit["from"])[:10])
         return max(days) if days else None
 
+    def note_done_before_fit(self, position_id: str, day: str) -> None:
+        """Before an item is fitted at ``position_id`` on ``day``: each task there it will renew keeps
+        its last real doing (task.done_before_fit)."""
+        for task in self._tasks_on(position_id):
+            if task.get("last_done") and task["last_done"] >= day:
+                continue
+            self._emit("task.done_before_fit", {"id": task["id"], "fit_on": day, "last_done": task.get("last_done"),
+                                                "last_done_reading": task.get("last_done_reading")})
+
+    def _renewed_by_fit(self, task: dict) -> bool:
+        """Its last done is a fitting at its own position (item.fitted renews them), not a real doing."""
+        from backend.maintenance import service as sv
+
+        done = task.get("last_done")
+        if not done:
+            return False
+        if (task.get("done_before_fit") or {}).get("fit_on") == done:
+            return True
+        subject = sv._subject(self.s, self.org, task)
+        if subject is None or subject.get("label") != "Position":
+            return False
+        return any(str(f.get("from"))[:10] == done for f in self._fitments_at(subject["id"]) if not f.get("voided"))
+
+    def _last_real_doing(self, task: dict) -> tuple[str | None, float | None]:
+        """When it was last really done, before the fitting that renewed it: from task.done_before_fit,
+        else (a fitting logged before that event) its latest closed work order on or before then."""
+        before = task.get("done_before_fit") or {}
+        if before.get("fit_on") == task.get("last_done"):
+            return before.get("last_done"), before.get("last_done_reading")
+        closed = [w.get("closed") for w in self.s.inn(self.org, task["id"], "FOR")
+                  if w.get("label") == "WorkOrder" and w.get("status") == "closed" and w.get("closed")
+                  and w["closed"] <= task["last_done"]]
+        return (max(closed) if closed else None), None
+
     def restarted(self, task: dict) -> dict:
         """The task as its schedule counts it: a restart task with an item fitted since it was last done
         (here or above) counts from the fitting (its last done reading then read from the counter at that
         day); a keep task renewed by a fitting counts from its last real doing."""
         if self.task_on_replace(task)["value"] == "keep":
-            if task.get("renewed_by") == "fit":
-                before = task.get("done_before_fit") or {}
-                return {**task, "last_done": before.get("last_done"),
-                        "last_done_reading": before.get("last_done_reading"), "kept_from": before.get("last_done")}
+            if self._renewed_by_fit(task):
+                done, reading = self._last_real_doing(task)
+                return {**task, "last_done": done, "last_done_reading": reading, "kept_from": done}
             return task
         day = self.restart_from(task)
         if not day or day <= (task.get("last_done") or task.get("start") or ""):
-            # Renewed by a fitting at its own position already (the projection does that): say so.
-            return {**task, "restarted_on": task["last_done"]} if task.get("renewed_by") == "fit" else task
+            # Renewed by a fitting at its own position already (item.fitted does that): say so.
+            return {**task, "restarted_on": task["last_done"]} if self._renewed_by_fit(task) else task
         return {**task, "last_done": day, "last_done_reading": None, "restarted_on": day}
