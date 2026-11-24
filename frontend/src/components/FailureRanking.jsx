@@ -39,7 +39,8 @@ function Pareto({ data }) {
       ]}
       layout={{
         height: 300, showlegend: true,
-        xaxis: { type: "category", automargin: true, tickvals: s.x, ticktext: s.labels },
+        xaxis: { type: "category", automargin: true, tickvals: s.x, ticktext: s.labels,
+          tickangle: s.labels.some((l) => l.length > 12) ? -30 : 0 },
         yaxis: { title: { text: axis }, rangemode: "tozero" },
         yaxis2: { title: { text: "Cumulative share (%)" }, overlaying: "y", side: "right", range: [0, 105],
           showgrid: false, ticksuffix: "%" },
@@ -145,7 +146,7 @@ export default function FailureRanking({ positionId, version, onOpenReports, onS
                 return (
                   <tr key={r.key}>
                     <td className="num">{r.rank}</td>
-                    <td>
+                    <td className="fr-rank-name">
                       {pos && pos !== positionId && onSelect
                         ? <button type="button" className="link" onClick={() => onSelect(pos)}>{r.name}</button>
                         : r.name}

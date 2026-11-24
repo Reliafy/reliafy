@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  DEFAULT_RANKING, GROUP_BY, RANK_BY, VIEWS, groupHeading, paretoSeries, rangeText, rankingCsv, rankingParams, reportsFilter,
+  DEFAULT_RANKING, GROUP_BY, tickLabels, RANK_BY, VIEWS, groupHeading, paretoSeries, rangeText, rankingCsv, rankingParams, reportsFilter,
   totalsLine,
 } from "./failureRanking.js";
 import { queryParams } from "./failureReports.js";
@@ -54,4 +54,11 @@ test("the Pareto series and the CSV", () => {
   assert.equal(csv[0][0], "Position");
   assert.deepEqual(csv[1].slice(0, 6), ["A", 1, 6, 1, 2400, 2.5]);
   assert.equal(csv.length, 4);
+});
+
+test("chart labels drop the words every name starts with, then fit", () => {
+  assert.deepEqual(tickLabels(["Power module on today's plan (serial 1)", "Power module on the RCM plan"]),
+    ["today's plan (serial …", "the RCM plan"]);
+  assert.deepEqual(tickLabels(["Generator belt worn or cracked", "Muffler cracked"]), ["Generator belt worn o…", "Muffler cracked"]);
+  assert.deepEqual(tickLabels(["Only one name here"]), ["Only one name here"]);
 });

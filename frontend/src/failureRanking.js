@@ -83,11 +83,26 @@ export function paretoSeries(data, max = 15) {
   const rows = (data?.rows || []).filter((r) => r.value != null && r.value > 0).slice(0, max);
   return {
     x: rows.map((r) => r.name),
-    // Tick labels cut to fit a phone; the full name is in the hover.
-    labels: rows.map((r) => (r.name.length > 22 ? `${r.name.slice(0, 21)}…` : r.name)),
+    // Tick labels: the words every name shares at the start left out (three units "Power module on …"),
+    // then cut to fit a phone; the full name is in the hover.
+    labels: tickLabels(rows.map((r) => r.name)),
     y: rows.map((r) => r.value),
     cumulative: rows.map((r) => (r.cumulative_share == null ? null : r.cumulative_share * 100)),
   };
+}
+
+// Names as short chart labels: a word prefix they all share dropped (when two or more), then each cut
+// to `max` characters with "…".
+export function tickLabels(names, max = 22) {
+  let cut = 0;
+  if (names.length > 1) {
+    const words = names.map((n) => n.split(" "));
+    while (words.every((w) => w.length > cut + 1 && w[cut] === words[0][cut])) cut += 1;
+  }
+  return names.map((n) => {
+    const t = n.split(" ").slice(cut).join(" ");
+    return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+  });
 }
 
 export const METRIC_AXIS = {
