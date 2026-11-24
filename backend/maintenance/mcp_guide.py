@@ -870,6 +870,12 @@ work: add another action and verify again, or reject the report.
 position_id (below true: everything inside it; each row's level names the way down), by location_id, by \
 item_id or by part_id, with status (open by default in the app; all here), consequence, failure_mode_id, \
 since / until, q and sort. counts gives how many each status has.
+- Ranking (FRACAS): maintenance list.fracas (position_id; group_by position, part or failure_mode; rank_by \
+failures, rate, downtime or cost; window 12m, all or range with since / until). Each row: failures, operating \
+hours (duty, else the hours readings' rate, else 24 h a day), rate per 1,000 h with a 90% two-sided exact Poisson \
+range, expected at the pooled rate, the p-value and a sentence. Report the numbers and what they mean; never call \
+a group a "bad actor". No fault found is counted apart; a logged failure within 14 days of a report at the same \
+position and mode is the same one.
 - Photos go on a report like on a work order (maintenance attachments, target_id = the report's id)."""),
     "products": ("Products: design trees, building items from them by serial, and the design roll-up.", """\
 Products: for a user who designs and builds things (a drone, a pump skid) rather than only running a plant.

@@ -7,6 +7,9 @@ import {
 import { isDesignRow } from "../explorerTabs.js";
 import { PRODUCTS_GUIDE } from "../products.js";
 import FailureReportDetail from "./FailureReportDetail.jsx";
+import FailureRanking from "./FailureRanking.jsx";
+import { VIEWS } from "../failureRanking.js";
+import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { Field, FormModal, PositionPicker, fmtDate } from "./MaintenanceParts.jsx";
 import { ShowMe } from "./SectionPage.jsx";
 import { usePanelMenu } from "../panelMenu.js";
@@ -116,7 +119,7 @@ function Row({ r, scopeKind, onOpen }) {
   );
 }
 
-export default function FailureReportsPanel({ row, display, today, version, reports, onMenu = null }) {
+export default function FailureReportsPanel({ row, display, today, version, reports, onMenu = null, onSelect = null }) {
   const scope = scopeOf(row);
   const scopeKey = scope ? `${row.type}:${row.key}` : "";
   const design = isDesignRow(row);
@@ -134,6 +137,10 @@ export default function FailureReportsPanel({ row, display, today, version, repo
   // The failure modes seen in this scope's reports, for the filter.
   const [modes, setModes] = useState(new Map());
   const seq = useRef(0);
+  // Reports (the list) or Ranking (FRACAS: the failures below, ranked), on a position's row.
+  const [view, setView] = useState("reports");
+  const [partLabel, setPartLabel] = useState("");
+  const canRank = row?.type === "pos";
 
   // The search box waits for typing to settle; the rest filters at once.
   useEffect(() => {
@@ -147,6 +154,7 @@ export default function FailureReportsPanel({ row, display, today, version, repo
     setQ("");
     setModes(new Map());
     setData(null);
+    setPartLabel("");
   }, [scopeKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     setBuilt(null);
@@ -201,6 +209,16 @@ export default function FailureReportsPanel({ row, display, today, version, repo
     : row.type !== "pos" && !positions.length
       ? (row.type === "item" ? "This item isn't fitted to a position; a report sits at a position." : "No positions here to report a failure at.") : undefined);
   usePanelMenu(onMenu, [{ id: "report-new", label: design ? "Report a failure…" : "Add failure report…", onSelect: addHere, disabled: !canAdd, title: addTitle }]);
+
+  const openReports = (filter, name) => {
+    if (filter.failure_mode_id) setModes((m) => new Map(m).set(filter.failure_mode_id, name));
+    setPartLabel(filter.part_id ? name : "");
+    setFilters({ ...defaults, ...filter });
+    setView("reports");
+  };
+  const switcher = canRank && (
+    <SegmentedControl options={VIEWS} value={view} onChange={setView} label="Failure reports or ranking" size="sm" />
+  );
 
   if (reports.id) {
     return (
@@ -261,6 +279,16 @@ export default function FailureReportsPanel({ row, display, today, version, repo
     );
   }
 
+  if (canRank && view === "ranking") {
+    return (
+      <div className="fr-panel">
+        <div className="fr-head">{switcher}</div>
+        <FailureRanking positionId={row.key} version={version} onOpenReports={openReports} onSelect={onSelect}
+                        onAdd={canAdd ? addHere : null} />
+      </div>
+    );
+  }
+
   // A design with nothing built from it: one line, and how to build an item.
   if (design && built && !built.length && !error && (!data || total === 0)) {
     return (
@@ -285,6 +313,7 @@ export default function FailureReportsPanel({ row, display, today, version, repo
 
   return (
     <div className="fr-panel">
+      {switcher && <div className="fr-head">{switcher}</div>}
       <div className="fr-head">
         <p className="fr-counts">{data ? countsSentence(counts, data.scope, { kind: row.type }) : " "}</p>
         {designAdd}
@@ -314,6 +343,10 @@ export default function FailureReportsPanel({ row, display, today, version, repo
           </Select>
           <label className="fr-date"><span>Since</span><DateInput value={filters.since} max={filters.until || undefined} onChange={(e) => set("since", e.target.value)} /></label>
           <label className="fr-date"><span>Until</span><DateInput value={filters.until} min={filters.since || undefined} onChange={(e) => set("until", e.target.value)} /></label>
+          {filters.part_id && (
+            <button type="button" className="chip chip-accent" aria-label={`Part ${partLabel}: clear`}
+                    onClick={() => { set("part_id", ""); setPartLabel(""); }}>Part: {partLabel || "chosen"} ✕</button>
+          )}
           <Select value={filters.sort} aria-label="Order" onChange={(e) => set("sort", e.target.value)}>
             {SORTS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
           </Select>

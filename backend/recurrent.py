@@ -320,9 +320,11 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str = "crow_amsaa", unit: str
         spans = extra.windows_from(df, mapping, windows)
         if spans:
             inputs, gaps = extra.apply_windows(inputs, spans)
-    # The nonparametric MCF estimator doesn't support right truncation (tr) —
-    # the parametric fitter does. Give each what it accepts.
-    np_inputs = {k: v for k, v in inputs.items() if k != "tr"}
+    # Each system's end of record (tr) goes to the nonparametric MCF as an
+    # end-of-observation (c = 1) row, as it does to the parametric fit. Dropping
+    # it ended every system at its last failure, so the risk set shrank too
+    # early and the observed MCF curved upwards at the end.
+    np_inputs = extra.observed(inputs)[0]
 
     try:
         with np.errstate(all="ignore"):
@@ -585,15 +587,9 @@ def _build_payload(np_model, para, inputs: dict, model_id: str, unit: str, gof_t
     n_events = int(len(x))
 
     # Nonparametric MCF step (observed) with a 90% confidence band.
-    nx = np.asarray(np_model.x, dtype=float)
-    mcf_obs = np.asarray(np_model.mcf_hat, dtype=float)
-    try:
-        cb = np.asarray(np_model.mcf_cb(nx, alpha_ci=1 - CI_LEVEL), dtype=float)
-        # Order-proof: SurPyval 0.22 returns (lower, upper); earlier releases
-        # returned (upper, lower).
-        lower, upper = np.minimum(cb[:, 0], cb[:, 1]).tolist(), np.maximum(cb[:, 0], cb[:, 1]).tolist()
-    except Exception:  # pragma: no cover - bounds are optional
-        upper = lower = None
+    from backend.recurrent_models import _observed
+    obs = _observed(np_model, x if inputs.get("tr") is not None else None)
+    nx, mcf_obs, lower, upper = obs["x"], obs["mcf"], obs["lower"], obs["upper"]
 
     # Parametric fit + fitted MCF over a smooth grid to the last observation.
     params_arr = np.asarray(para.params, dtype=float)
@@ -634,7 +630,7 @@ def _build_payload(np_model, para, inputs: dict, model_id: str, unit: str, gof_t
         "mtbf": mtbf,
         **rate_bounds(model_id, para, t_end),
         "mcf": {
-            "observed": {"x": nx.tolist(), "mcf": mcf_obs.tolist(), "lower": lower, "upper": upper},
+            "observed": {"x": nx, "mcf": mcf_obs, "lower": lower, "upper": upper},
             "fitted": {"x": grid.tolist(), "mcf": fitted.tolist()},
         },
         # ``trend`` (Laplace) is kept for older readers; ``trend_tests`` has both.

@@ -143,3 +143,24 @@ def test_from_now_works_after_the_saved_model_is_restored(monkeypatch):
         assert again.json()["expected"] == pytest.approx(first.json()["expected"], rel=1e-9)
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize("model_id", ["crow_amsaa", "ara"])
+def test_observed_mcf_keeps_each_systems_record_end(model_id):
+    """Nelson's MCF with unequal record ends: a system stays in the risk set
+    to its own end of record, not to its last failure. A ends at 10 (failures
+    at 2, 6), B at 4 (failure at 1), C at 10 (failure at 8). By hand: 1/3 at
+    1, 2/3 at 2, then B has left: 2/3 + 1/2 at 6 and 5/3 at 8. Ending each
+    system at its last failure instead gives 5/6 at 2 and 7/3 at 8."""
+    df = pd.DataFrame({"unit": ["A", "A", "B", "C"], "t": [2.0, 6.0, 1.0, 8.0],
+                       "end": [10.0, 10.0, 4.0, 10.0]})
+    mapping = {"i": "unit", "x": "t", "tr": "end"}
+    payload, _ = rec.fit(df, mapping, model_id=model_id, gof_test=False)
+    obs = payload["mcf"]["observed"]
+    by_x = dict(zip(obs["x"], obs["mcf"]))
+    assert by_x[1.0] == pytest.approx(1 / 3)
+    assert by_x[2.0] == pytest.approx(2 / 3)
+    assert by_x[6.0] == pytest.approx(2 / 3 + 1 / 2)
+    assert by_x[8.0] == pytest.approx(5 / 3)
+    assert sorted(obs["x"]) == [1.0, 2.0, 6.0, 8.0]  # a point per failure, none at the record ends
+    assert len(obs["lower"]) == len(obs["upper"]) == 4

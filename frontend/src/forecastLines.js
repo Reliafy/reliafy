@@ -11,14 +11,34 @@ import { formatNumber } from "./format.js";
 const sig = (v, n = 3) => formatNumber(v, { sig: n });
 
 // An expected count of events: 3 significant figures; a very small count reads "≈ 0.002" (to one
-// figure), and one under a thousandth "< 0.001", never a long decimal or "2.13e-4".
+// figure), and one under 0.0005 "≈ 0", never a long decimal or "6.79e-12" (the server's
+// sentences say it the same way: forecast_lines.count_words).
 export function countText(v) {
   if (v == null || v === "" || !Number.isFinite(Number(v))) return "—";
   const n = Number(v);
   if (n <= 0) return "0";
-  if (n < 0.001) return "< 0.001";
+  if (n < 0.0005) return "≈ 0";
   if (n < 0.01) return `≈ ${Number(n.toPrecision(1)).toFixed(3).replace(/0+$/, "")}`;
   return sig(n);
+}
+
+// Hours and money on a line that's almost nothing (a failure so unlikely it costs a fraction of
+// a cent) read "≈ 0 h" and "≈ $0", never "6.79e-12 h".
+export const hoursText = (v) => {
+  const n = Number(v);
+  return `${Number.isFinite(n) && n > 0 && n < 0.01 ? countText(n) : sig(v)} h`;
+};
+export const tidyMoney = (money) => (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) && n !== 0 && Math.abs(n) < 0.0005 ? `≈ ${money(0)}` : money(v);
+};
+
+// The failures expected over the horizon, from a forecast's lines: the corrective lines added
+// up (the failures the checks miss), or null when there are none.
+export function failuresExpected(lines) {
+  const corr = (lines?.lines || []).filter((l) => l.kind === "corrective" && l.times?.expected != null);
+  if (!corr.length) return null;
+  return corr.reduce((a, l) => a + Number(l.times.expected || 0), 0);
 }
 
 const KIND_LABEL = { follow_on: "Follow-on: found at an inspection", corrective: "Corrective: after a failure" };
@@ -49,7 +69,8 @@ export function tableRows(lines) {
 }
 
 // A line's cells: times (a range for a chance), hours, cost and spares, or why one isn't known.
-export function cells(line, money = (v) => `$${sig(v, 4)}`) {
+export function cells(line, given = (v) => `$${sig(v, 4)}`) {
+  const money = tidyMoney(given);
   const t = line.times || {};
   const chance = line.number !== "certain";
   const times = t.expected == null ? "—" : chance
@@ -63,7 +84,7 @@ export function cells(line, money = (v) => `$${sig(v, 4)}`) {
   const spares = (line.spares || []).map((s) => `${countText(s.expected)} × ${s.name}`).join("; ");
   return {
     times,
-    hours: amount(line.hours, (v) => `${sig(v)} h`, "hours"),
+    hours: amount(line.hours, hoursText, "hours"),
     cost: amount(line.cost, money, "cost"),
     spares: line.kind === "failures" ? "" : spares || "—",
     number: NUMBER_WORDS[line.number] || line.number,
@@ -73,7 +94,8 @@ export function cells(line, money = (v) => `$${sig(v, 4)}`) {
 const horizon = (months) => (Number(months) > 12 && Number(months) % 12 === 0 ? `the next ${Number(months) / 12} years` : `the next ${months} months`);
 
 // The answer first, for a view: {lead, tiles [{label, value}], known, leavesOut}.
-export function headline(out, view, money = (v) => `$${sig(v, 4)}`) {
+export function headline(out, view, given = (v) => `$${sig(v, 4)}`) {
+  const money = tidyMoney(given);
   const tot = out.lines?.totals || {};
   const when = horizon(out.of?.months || 12);
   if (view === "spares") {
@@ -88,7 +110,7 @@ export function headline(out, view, money = (v) => `$${sig(v, 4)}`) {
   }
   const key = view === "hours" ? "hours" : "cost";
   const t = tot[key] || {};
-  const fmt = key === "hours" ? (v) => `${sig(v)} h` : money;
+  const fmt = key === "hours" ? hoursText : money;
   const known = t.known !== false;
   const word = key === "hours" ? "known hours" : "known costs";
   const range = t.interval ? `${fmt(t.interval[0])} to ${fmt(t.interval[1])}` : null;
@@ -99,6 +121,9 @@ export function headline(out, view, money = (v) => `$${sig(v, 4)}`) {
     if (out.lines.lines.some((l) => l.kind === "follow_on")) tiles.push({ label: "Follow-on", value: t.by_kind.follow_on ? money(t.by_kind.follow_on) : "not known" });
     if (out.lines.lines.some((l) => l.kind === "corrective")) tiles.push({ label: "Corrective", value: money(t.by_kind.corrective || 0) });
   }
+  // The one failures figure (the run-sheet's "≈ 0.002 per plan"): the corrective lines added up.
+  const failures = failuresExpected(out.lines);
+  if (failures != null) tiles.push({ label: "Failures expected", value: countText(failures), hint: "missed by the checks" });
   return { lead, tiles, known, leavesOut: t.leaves_out || [] };
 }
 

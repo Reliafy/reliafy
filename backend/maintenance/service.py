@@ -16635,7 +16635,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             return self._report_brief(r, root_id, cache)
 
         if failure_mode_id:
-            reports = [r for r in reports if r.get("failure_mode_id") == failure_mode_id]
+            # One id, or several joined by commas (the ranking's group of modes of the same name).
+            wanted_modes = {x.strip() for x in str(failure_mode_id).split(",") if x.strip()}
+            reports = [r for r in reports if r.get("failure_mode_id") in wanted_modes]
         if part_id:
             reports = [r for r in reports if r.get("part_id") == part_id]
         if consequence:

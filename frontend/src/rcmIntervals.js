@@ -160,12 +160,48 @@ export const isUseUnit = (unit) => {
 // The P-F interval's units in the dialog: the calendar ones, and the task's own when it's done by use.
 // `saved`: the unit a saved calculation was worked out in ("flight hours" on a task kept in hours),
 // kept in the list so the dialog opens showing it.
-export function pfUnits(task, saved = null) {
+// `meter`: the unit of the counter the task is done by ("flight hours" on a task every 25 hours of
+// its Flight hours counter, meterUnit), listed too.
+export function pfUnits(task, saved = null, meter = null) {
   const own = taskUnit(task?.unit);
   const units = isUseUnit(own) ? [...TIME_UNITS, own] : [...TIME_UNITS];
-  const kept = String(saved || "").trim();
-  if (kept && !units.includes(kept)) units.push(kept);
+  for (const extra of [meter, saved]) {
+    const kept = String(extra || "").trim();
+    if (kept && !units.includes(kept)) units.push(kept);
+  }
   return units;
+}
+
+// The unit of the counter a task is done by, from GET /tasks/<id>/measurement, when it names a
+// unit of use beyond the task's ("Flight hours" → "flight hours"); null for a task on the calendar
+// or a counter called just "Hours".
+export function meterUnit(view) {
+  if (!view?.by_use) return null;
+  const name = String(view.measurement?.name || "").trim().toLowerCase();
+  if (!name || !isUseUnit(name) || name === taskUnit(view.unit)) return null;
+  return name;
+}
+
+// The task's interval now for the P-F calculator to compare, in the P-F interval's unit: a task by
+// its hours counter (`meter`, "flight hours") is in that counter's unit; one on the calendar in its
+// own; none when they can't meet (cycles against weeks).
+export function currentOf(task, pfUnit, meter = null) {
+  if (!task?.interval) return {};
+  const own = taskUnit(task.unit);
+  const pf = taskUnit(pfUnit);
+  if (meter && own === "hours" && pf === taskUnit(meter)) return { current_interval: task.interval, current_unit: meter };
+  if (TIME_UNITS.includes(own) || own === pf) return { current_interval: task.interval, current_unit: own };
+  return {};
+}
+
+// The share of warnings found in time, as people read it near 100%: 99.99%, 99.4%, 99%, 72%.
+export function foundPct(p) {
+  const v = 100 * Number(p);
+  if (!Number.isFinite(v)) return "–";
+  if (v >= 100) return "100%";
+  if (v >= 99.9) return `${Math.floor(v * 100) / 100}%`;
+  if (v >= 10) return `${Number(v.toPrecision(3))}%`;
+  return pct(p);
 }
 
 // The P-F interval's unit a dialog starts in: the task's own interval unit, else weeks.

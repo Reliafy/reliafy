@@ -504,6 +504,18 @@ def list_failure_reports(position_id: str | None = None, below: str = "1", locat
                 offset=offset)
 
 
+@router.get("/failure-ranking")
+def failure_ranking(position_id: str, group_by: str = "position", rank_by: str = "failures",
+                    window: str | None = None, since: str | None = None, until: str | None = None,
+                    m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The failures below a position ranked (FRACAS): by position, part or failure mode; by
+    failures, rate, downtime or cost; over the last 12 months, all, or since / until."""
+    from backend.maintenance import failure_ranking as fr
+
+    return _run(fr.failure_ranking, m, position_id, group_by or "position", rank_by or "failures",
+                window or None, since or None, until or None)
+
+
 @router.post("/failure-reports")
 def file_failure_report(body: dict = Body(...), ctx: AccessCtx = Depends(get_access),
                         m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
@@ -1162,7 +1174,8 @@ def failure_mode_interval_inputs(mode_id: str, task_id: str | None = None, sessi
         _, position = m._live_mode(mode_id)
         rows = m.life_data(position["id"]) if position else []
         fetch = rcm_decisions.evidence_fetcher(session, ctx.read_owners, ctx.hidden)
-        out = rcm_intervals.starting_inputs(mode, rows, fetch, _attached_models(m, session, ctx, position, mode_id))
+        out = rcm_intervals.starting_inputs(mode, rows, fetch, _attached_models(m, session, ctx, position, mode_id),
+                                             task_id=task_id)
         # The task's own cost per occurrence (its position's figure, typed or from its LSA): what a
         # check, a test or a planned replacement costs, so the calculator doesn't ask for it again.
         out["task_cost"] = m.task_cost(task_id) if task_id else None

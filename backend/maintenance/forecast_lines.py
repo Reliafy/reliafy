@@ -40,6 +40,22 @@ def _r(v, digits: int = 9):
     return float(f"{v:.{digits}g}") if np.isfinite(v) else None
 
 
+def count_words(v) -> str:
+    """An expected count of events for a sentence, as the forecast's table shows it
+    (frontend/src/forecastLines.js countText): 3 significant figures; under 0.01 to one
+    figure ("≈ 0.002"), and under 0.0005 "≈ 0", never a long decimal or "6.79e-12"."""
+    if v is None or not np.isfinite(float(v)):
+        return "—"
+    n = float(v)
+    if n <= 0:
+        return "0"
+    if n < 0.0005:
+        return "≈ 0"
+    if n < 0.01:
+        return f"≈ {float(f'{n:.1g}'):.3f}".rstrip("0")
+    return f"{float(f'{n:.3g}'):,.10g}"
+
+
 def _pmf(fc) -> list[float] | None:
     """The chance of 0, 1, 2… failures over the horizon (if nothing found them), or None."""
     base = getattr(fc, "base", fc)
@@ -385,7 +401,7 @@ def build(m, fc: dict, model_rows: list[dict], tree, root) -> dict:
                 gaps["cost"].append(f"{owner} on {on}: found at an inspection (nothing recorded for what's done then)")
                 not_counted.append({"kind": "no_follow_on", "position": where,
                                     "text": f"{owner}: nothing recorded for when an inspection finds it, so what "
-                                            f"{_r(found_n, 3):g} finds need is unknown", "fix": "Add",
+                                            f"{count_words(found_n)} finds need is unknown", "fix": "Add",
                                     "link": found_link})
             else:
                 if fr.get("hours_each") is not None:
@@ -552,7 +568,7 @@ def worth(base: dict, dropped: dict, task: dict) -> dict:
                         f"Worth: avoids about ${c1 - c0:,.0f} of failures for ${own:,.0f}: it costs more than it saves "
                         "here")
     else:
-        out["words"] = (f"Worth: avoids about {n1 - n0:.2g} failures; their cost is unknown, so not in money"
+        out["words"] = (f"Worth: avoids about {count_words(n1 - n0)} failures; their cost is unknown, so not in money"
                         if not known else f"Worth: avoids about ${c1 - c0:,.0f} of failures; its own cost isn't known")
     return out
 

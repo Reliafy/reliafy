@@ -53,7 +53,7 @@ The same menu lists the tabs folded into a tab row's "⋯ N" (`Tabs` with `overf
 
 ## On a list row
 
-Every saved-item list (Data, models, RBDs, fault trees, forecasts, strategy, RCM studies, the registers) ends each row with one ⋯ button: `RowActions` in `components/LibRows.jsx`, which opens this menu through `MoreMenu`.
+Every saved-item list (Data, models, RBDs, fault trees, forecasts, strategy, RCM studies, the registers) ends each row with one ⋯ button: `RowActions` in `components/LibRows.jsx`, which opens this menu through `MoreMenu`. A `MoreMenu` item may carry `items`, a submenu (the failure ranking's **Open in › Failure reports**); choosing a submenu item runs its own `onSelect`.
 
 - Pass `to` (or `onOpen`) for Open, `actions` for the row's own actions (`[{id, label, onSelect, disabled?, reason?}]`; falsy entries are skipped, so `!r.read_only && {…}` works), and `onDelete`.
 - The menu reads: Open, the actions, a line, then "Delete…" (or "Remove from my view" for a shared sample or an item shared with you).

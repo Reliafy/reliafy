@@ -553,7 +553,7 @@ def fit(df: pd.DataFrame, mapping: dict, model_id: str, unit: str = "", gof_test
     opts = clean_options(model_id, options)
     inputs = build_inputs(df, mapping)
     keep = keep_mask(df, mapping)
-    np_inputs = {k: v for k, v in inputs.items() if k != "tr"}
+    np_inputs = observed(inputs)[0]  # each system's end of record as a c = 1 row, as in by_cause
     try:
         # An unverified maximum (UserWarning) is reported in the payload.
         with ignore_warnings(RuntimeWarning, UserWarning), np.errstate(all="ignore"):
@@ -600,15 +600,21 @@ def _fit_renewal(model_id: str, inputs: dict, opts: dict, unit: str | None = Non
     return ARI.fit(ins["x"], m=_memory(opts), baseline=BASELINES[opts["baseline"]], **kw)
 
 
-def _observed(np_model) -> dict:
+def _observed(np_model, data_x=None) -> dict:
+    """The observed MCF step with its 90% band, at the data's own times
+    (``data_x``): the end-of-record rows :func:`observed` adds keep each
+    system in the risk set to its end but aren't points of their own."""
     nx = np.asarray(np_model.x, dtype=float)
+    est = np.asarray(np_model.mcf_hat, dtype=float)
     try:
         cb = np.asarray(np_model.mcf_cb(nx, alpha_ci=1 - CI_LEVEL), dtype=float)
-        lower, upper = np.minimum(cb[:, 0], cb[:, 1]).tolist(), np.maximum(cb[:, 0], cb[:, 1]).tolist()
+        lower, upper = np.minimum(cb[:, 0], cb[:, 1]), np.maximum(cb[:, 0], cb[:, 1])
     except Exception:  # pragma: no cover - bounds are optional
         lower = upper = None
-    return {"x": nx.tolist(), "mcf": np.asarray(np_model.mcf_hat, dtype=float).tolist(), "lower": lower,
-            "upper": upper}
+    keep = np.isin(nx, np.asarray(data_x, dtype=float)) if data_x is not None else np.ones(nx.size, dtype=bool)
+    return {"x": nx[keep].tolist(), "mcf": est[keep].tolist(),
+            "lower": None if lower is None else lower[keep].tolist(),
+            "upper": None if upper is None else upper[keep].tolist()}
 
 
 def _diagnostics(live, n_events: int, n_systems: int, gof_test: bool, slow: bool) -> dict:
@@ -662,7 +668,7 @@ def _base(np_model, inputs: dict, model_id: str, opts: dict, unit: str) -> dict:
         "model": {"id": model_id, "name": model_name(model_id, opts)},
         "options": opts,
         "end_of_observation": end_of_observation(inputs),
-        "mcf": {"observed": _observed(np_model)},
+        "mcf": {"observed": _observed(np_model, x if inputs.get("tr") is not None else None)},
     }
 
 

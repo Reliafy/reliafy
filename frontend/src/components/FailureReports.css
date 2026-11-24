@@ -154,3 +154,22 @@ button.fr-step-btn:focus-visible {  }
   .fr-row-3 { grid-template-columns: minmax(0, 1fr); }
   .fr-step-btn { line-height: 24px; }
 }
+
+/* ---- Ranking (FailureRanking): the failures below the row, ranked ------- */
+.fr-rank-controls label.fr-date { gap: var(--space-1-5); }
+/* The wide table scrolls inside its own box: nothing here may widen the panel past the screen. */
+.fr-rank-scroll { overflow-x: auto; }
+.fr-rank, .fr-rank > *, .fr-panel:has(> .fr-rank) { min-width: 0; max-width: 100%; }
+.fr-rank-answer { margin: 0; font-size: var(--fs-16); line-height: var(--lh-16); color: var(--text); }
+.fr-rank-table { width: 100%; border-collapse: collapse; font-size: var(--fs-13); line-height: var(--lh-13); }
+.fr-rank-table th,
+.fr-rank-table td { padding: var(--space-1-5) var(--space-2); border-bottom: 1px solid var(--border-subtle); text-align: left; vertical-align: top; }
+.fr-rank-table th { font-size: var(--fs-12); line-height: var(--lh-12); font-weight: 500; color: var(--text-secondary); background: var(--bg-subtle); white-space: nowrap; }
+.fr-rank-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fr-rank-sub { display: block; font-size: var(--fs-12); line-height: var(--lh-12); font-weight: 400; color: var(--text-secondary); }
+.fr-rank-name { min-width: 12rem; }
+.fr-rank-means { color: var(--text-secondary); white-space: normal; }
+/* A group's numbers and the sentence under them read as one row: the line goes under the sentence. */
+.fr-rank-table .fr-rank-group tr:first-child td { border-bottom: 0; padding-bottom: 0; }
+.fr-rank-table .fr-rank-means-row td { padding-top: var(--space-1); }
+.fr-rank-notes { margin: 0; padding-left: var(--space-4); font-size: var(--fs-13); line-height: var(--lh-13); color: var(--text-secondary); }

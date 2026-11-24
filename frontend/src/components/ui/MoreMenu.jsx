@@ -7,7 +7,7 @@ import { MoreIcon } from "../icons.jsx";
 // opened under the button; the focus goes back to the button after.
 //
 //   label   what it's for: "Actions for pH 7.4–7.6" (the button's name)
-//   items   [{id, label, danger?, disabled?, reason?, onSelect}]
+//   items   [{id, label, danger?, disabled?, reason?, onSelect, items?}] (items: a submenu, "Open in ›")
 export default function MoreMenu({ label, items, className = "", disabled = false }) {
   const btn = useRef(null);
   // The menu closes when a scroll moves its button (not on any scroll nearby).
@@ -26,7 +26,7 @@ export default function MoreMenu({ label, items, className = "", disabled = fals
       {at && (
         <RowMenu items={items} at={at} label={label} anchorId={id}
                  onClose={() => { setAt(null); btn.current?.focus({ preventScroll: true }); }}
-                 onChoose={(id) => items.find((it) => it.id === id)?.onSelect?.()} />
+                 onChoose={(id) => items.flatMap((it) => [it, ...(it.items || [])]).find((it) => it.id === id)?.onSelect?.()} />
       )}
     </>
   );
