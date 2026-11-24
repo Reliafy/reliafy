@@ -46,10 +46,12 @@ test("Failure ranking: switch views, rank by unit and mode, open the reports beh
   const table = panel.locator(".fr-rank-table");
   await expect(table).toBeVisible();
   // Unit A first: 7 failures; the sentence says what it means, never a verdict.
-  const first = table.locator("tbody tr").first();
+  const first = table.locator("tbody").first();
   await expect(first).toContainText(`Rank unit A ${tag}`);
   await expect(first.locator("td").nth(2)).toHaveText("7");
   await expect(first).toContainText("would be expected at the rate of everything here pooled");
+  // Nothing clipped at 1680 px: the table fits its card.
+  expect(await table.evaluate((t) => t.scrollWidth <= t.parentElement.clientWidth + 1)).toBe(true);
   await expect(panel).not.toContainText(/bad actor|deteriorating/i);
   await expect(panel.locator(".fr-rank-answer")).toContainText("8 failures in the last 12 months");
   await expect(panel.getByRole("button", { name: "Export CSV" })).toBeVisible();
