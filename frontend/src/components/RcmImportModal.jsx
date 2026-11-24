@@ -95,7 +95,10 @@ export default function RcmImportModal({ position, onClose, onImported }) {
     extra_columns: extrasOn ? extras : [],
   }), [mapping, consequenceMap, outcomeMap, extras, extrasOn]);
 
-  const ready = table && mappingComplete(table.fields, mapping);
+  // Failure mode isn't required here: a plain plan (a task on each row, no failure modes yet)
+  // imports as tasks on the position, to link to failure modes later. One of the two is.
+  const fields = useMemo(() => (table?.fields || []).map((f) => (f.id === "mode" ? { ...f, required: false } : f)), [table]);
+  const ready = table && mappingComplete(fields, mapping, ["mode", "task", "causes"]);
 
   // Live preview from the server (debounced) whenever the mapping changes.
   useEffect(() => {
@@ -169,7 +172,8 @@ export default function RcmImportModal({ position, onClose, onImported }) {
           <p className="muted-line mt-0">
             An FMEA or RCM worksheet with one row per failure mode — columns like Function,
             Functional failure, Failure mode, Effects, Consequence, Task and Interval. Blank
-            function / failure cells carry down from the row above, as in most worksheets.
+            function / failure cells carry down from the row above, as in most worksheets. Or an
+            existing maintenance plan, one task per row with no failure modes yet.
           </p>
           <p className="muted-line">
             It's added to {clip(position.name)}'s RCM. Nothing there is changed or removed: a function or
@@ -200,10 +204,11 @@ export default function RcmImportModal({ position, onClose, onImported }) {
       {step === "map" && table && (
         <div className="fit-step">
           <p className="muted-line m-0">
-            <b>{table.sheet}</b> · {table.n_rows.toLocaleString("en-AU")} rows. Only Failure mode is
-            required; a missing Function or Functional failure column puts everything under “Imported”.
+            <b>{table.sheet}</b> · {table.n_rows.toLocaleString("en-AU")} rows. Map Failure mode, or Task for
+            a plain maintenance plan: a row with a task and no failure mode becomes a task on {clip(position.name)},
+            ready to link to a failure mode. A missing Function or Functional failure column puts everything under “Imported”.
           </p>
-          <SheetColumnMapper fields={table.fields} columns={table.columns} mapping={mapping}
+          <SheetColumnMapper fields={fields} columns={table.columns} mapping={mapping}
                              onChange={setMapping} rows={table.rows} />
 
           {unmapped.length > 0 && (
@@ -309,6 +314,20 @@ function PositionResult({ preview, summary, name }) {
           ))}
           {preview.functions.length > 4 && <li className="xl-dim">+ {preview.functions.length - 4} more functions</li>}
         </ul>
+      )}
+      {preview.tasks?.length > 0 && (
+        <>
+          <p className="m-0">Tasks with no failure mode (link each to one on the RCM tab):</p>
+          <ul className="xl-tree" data-testid="rcm-import-tasks">
+            {preview.tasks.slice(0, 6).map((t) => (
+              <li key={t.row}>
+                {t.reference ? <span className="xl-dim">{t.reference} · </span> : null}{t.name}
+                <span className="xl-dim"> — every {t.interval.toLocaleString("en-AU")} {t.unit}{t.new ? "" : " (there already)"}</span>
+              </li>
+            ))}
+            {preview.tasks.length > 6 && <li className="xl-dim">+ {preview.tasks.length - 6} more</li>}
+          </ul>
+        </>
       )}
       {preview.errors?.length > 0 && (
         <div className="error" role="alert">

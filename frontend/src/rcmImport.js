@@ -25,8 +25,9 @@ export function importSummary(counts) {
   const adds = [
     c.functions ? n(c.functions, "function") : null,
     c.failures ? n(c.failures, "functional failure") : null,
-    c.modes ? n(c.modes, "failure mode") : null,
-    c.tasks ? n(c.tasks, "task") : null,
+    // A plain plan (tasks with no failure mode): "6 tasks · 0 failure modes".
+    c.modes || c.plain_tasks ? n(c.modes || 0, "failure mode") : null,
+    c.tasks || c.plain_tasks ? n((c.tasks || 0) + (c.plain_tasks || 0), "task") : null,
     c.combinations ? n(c.combinations, "combination of tasks", "combinations of tasks") : null,
     c.links ? n(c.links, "link between functional failures", "links between functional failures") : null,
   ].filter(Boolean);
@@ -34,9 +35,10 @@ export function importSummary(counts) {
     c.functions_existing ? n(c.functions_existing, "function") : null,
     c.failures_existing ? n(c.failures_existing, "functional failure") : null,
     c.modes_existing ? n(c.modes_existing, "failure mode") : null,
+    c.plain_tasks_existing ? n(c.plain_tasks_existing, "task") : null,
     c.links_existing ? n(c.links_existing, "link between functional failures", "links between functional failures") : null,
   ].filter(Boolean);
-  return { adds, there, nothing: !c.functions && !c.failures && !c.modes && !c.links };
+  return { adds, there, nothing: !c.functions && !c.failures && !c.modes && !c.links && !c.plain_tasks };
 }
 
 // The FME(C)A's columns come after Consequence, named as the import reads

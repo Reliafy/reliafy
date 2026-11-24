@@ -123,3 +123,36 @@ test("a phone: the row's ⋯ menu imports a workbook, and the dialog fits 400 px
   await shot(page, "rcm-import-6-rows-400");
   await expectHealthy(page, problems, { label: "rcm worksheet import on a phone", root: ".tx" });
 });
+
+// A plain maintenance plan (tasks only, no failure modes): each row a task on the position. The
+// RCM heading's chip counts the tasks that serve no failure mode, and opens them on the
+// Maintenance tab, its From filter on "Added directly: no failure mode".
+const PLAN = { name: "plan.csv", mimeType: "text/csv", buffer: Buffer.from(
+  "Task ID,Task,Task type,Interval,Interval unit,Labour hours,Trade,Failure mode\n"
+  + "PM-01,Inspect muffler for cracks,On condition,25,hours,0.3,Technician,\n"
+  + "PM-02,Measure belt tension,On condition,50,hours,0.4,Technician,\n"
+  + "PM-03,Replace spark plugs,Fixed interval,100,hours,0.5,Technician,\n") };
+
+test("a plain plan imports as tasks, and the RCM heading counts those with no failure mode", async ({ page, request, problems }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const name = `Plan module ${Date.now()}`;
+  const pos = await postOk(request, `${M}/positions`, { name });
+  await open(page, `/asset-register/explorer?arrange=positions&root=${pos.id}&sel=${pos.id}&tab=rcm`);
+  await expect(table(page)).toBeVisible();
+  await (await headItem(page, "Import worksheet…")).click();
+  const d = await chooseFile(page, name, PLAN);
+  const result = d.getByTestId("rcm-import-result");
+  await expect(result).toContainText("Adds 0 failure modes · 3 tasks");
+  await expect(d.getByTestId("rcm-import-tasks")).toContainText("PM-01 · Inspect muffler for cracks");
+  await shot(page, "rcm-import-7-plain-plan-1280");
+  await d.getByRole("button", { name: `Add to “${name}”` }).click();
+  await expect(d).toHaveCount(0);
+  const gap = page.getByTestId("rcm-gap-chip");
+  await expect(gap).toHaveText("3 tasks not linked to a failure mode");
+  await gap.click();
+  await expect(page).toHaveURL(/tab=maintenance/);
+  const tasks = page.getByRole("treegrid");
+  await expect(tasks.getByRole("row", { name: /Inspect muffler for cracks/ })).toBeVisible();
+  await expect(tasks.getByRole("row", { name: /Replace spark plugs/ })).toBeVisible();
+  await expectHealthy(page, problems, { label: "plain plan import", root: ".tx" });
+});
