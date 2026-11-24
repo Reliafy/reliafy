@@ -108,6 +108,15 @@ export function maintenanceResponses(r, { viewOnly = null } = {}) {
   return [write(MAINT_ADD_RESPONSE, viewOnly), write(MAINT_ADD_FOLLOW_ON, viewOnly)];
 }
 
+// The plan a position has already (a spreadsheet, one task per row), imported onto it as tasks:
+// the Maintenance tab's, as the RCM tab's Import worksheet… is the FMEA / RCM worksheet's.
+export const MAINT_IMPORT_PLAN = { id: "maint-import-plan", label: "Import maintenance plan…", title: "Add the tasks of a plan you have (Excel or CSV, one task per row)" };
+// A position's (a location holds no tasks of its own to import onto). After Package the tasks…:
+// Add task… and Open in › stay at the top of the menu, and this folds under More › with it
+// (ten items a level; Open in › folded would lose its own submenu).
+export function maintenanceImport(r, { viewOnly = null } = {}) {
+  return r?.type === "pos" ? [write(MAINT_IMPORT_PLAN, viewOnly)] : [];
+}
 export function maintenanceLead(r, { viewOnly = null } = {}) {
   if (!r || (r.type !== "pos" && r.type !== "loc")) return [];
   return [write(MAINT_ADD_TASK, viewOnly)];

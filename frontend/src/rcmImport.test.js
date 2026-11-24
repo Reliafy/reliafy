@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { EXPORT_HEADER, FMEA_HEADER, causedBy, exportFilename, importSummary, isCsvFile, positionRcmCsv, positionRcmRows } from "./rcmImport.js";
+import { EXPORT_HEADER, FMEA_HEADER, PLAN_FIELDS, causedBy, exportFilename, importSummary, isCsvFile, planFields, planImportedText, planMapping, planSummary, positionRcmCsv, positionRcmRows } from "./rcmImport.js";
 
 const F = FMEA_HEADER.length;
 // A row's cells by column name.
@@ -216,4 +216,37 @@ test("every row kind's notes have a column: the function's and the failure's on 
   ]);
   assert.ok(positionRcmCsv({ positions: [{ id: "p", name: "Pool", depth: 0, unassigned: [], functions: [
     { id: "f", text: "Dose", notes: "Line one\nLine two", failures: [] }] }] }).includes('"Line one\nLine two"'));
+});
+
+// The Maintenance tab's Import maintenance plan…: the same import, a task's columns only.
+const SERVER_FIELDS = [
+  { id: "function", label: "Function" }, { id: "mode", label: "Failure mode", required: true },
+  { id: "consequence", label: "Consequence" }, { id: "outcome", label: "Decision / task type", help: "x" },
+  { id: "task", label: "Task", help: "The proposed RCM task" }, { id: "interval", label: "Interval" },
+  { id: "interval_unit", label: "Interval unit" }, { id: "task_ref", label: "Task ID" },
+  { id: "labour_hours", label: "Labour hours" }, { id: "trade", label: "Trade" }, { id: "notes", label: "Notes" },
+];
+
+test("a plan maps a task's own columns only: Task and Interval required, the decision column is the task type", () => {
+  const f = planFields(SERVER_FIELDS);
+  assert.deepEqual(f.map((x) => x.id), ["task", "interval", "interval_unit", "outcome", "task_ref", "trade", "labour_hours"]);
+  assert.deepEqual(f.filter((x) => x.required).map((x) => x.id), ["task", "interval"]);
+  assert.equal(f.find((x) => x.id === "outcome").label, "Task type");
+  assert.ok(!f.some((x) => ["mode", "function", "consequence", "notes"].includes(x.id)));
+  assert.deepEqual(planFields(null), []);
+  assert.deepEqual(PLAN_FIELDS.length, 7);
+});
+
+test("a plan keeps only the guessed task columns (a Failure mode column in the file is left out)", () => {
+  assert.deepEqual(planMapping({ mode: "Failure mode", function: "Function", task: "Task", interval: "Every", trade: "Craft" }),
+    { task: "Task", interval: "Every", trade: "Craft" });
+  assert.deepEqual(planMapping(null), {});
+});
+
+test("a plan's preview and result say tasks only", () => {
+  assert.deepEqual(planSummary({ plain_tasks: 6, modes: 0, plain_tasks_existing: 2 }), { adds: ["6 tasks"], there: ["2 tasks"], nothing: false });
+  assert.deepEqual(planSummary({ plain_tasks: 0, plain_tasks_existing: 6 }), { adds: [], there: ["6 tasks"], nothing: true });
+  assert.equal(planImportedText({ plain_tasks: 1 }, "Pump 1"), "Added 1 task to “Pump 1”.");
+  assert.equal(planImportedText({ plain_tasks: 1200 }, "Pump 1"), "Added 1,200 tasks to “Pump 1”.");
+  assert.equal(planImportedText({ plain_tasks: 0 }, "Pump 1"), "Nothing new to add to “Pump 1”.");
 });

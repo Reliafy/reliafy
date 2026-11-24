@@ -64,6 +64,24 @@ task at that part. They aren't tasks: no count includes them.
 **Add task…** on a row's **More actions (…)** adds one to that position.
 **Trade rates…** in the heading's **…** prices every task's labour.
 
+### Import the plan you have
+
+If the position's maintenance plan already lives in a spreadsheet, one task per
+row, choose **Import maintenance plan…** in the position's **…** menu (under
+**More**), or in the heading's **…**. Drop in the workbook or CSV, pick the
+sheet and header row for a workbook, and map the task's columns: **Task** and
+**Interval** (required), then **Interval unit**, **Task type**, **Task ID**,
+**Trade** and **Labour hours** if the sheet has them. An interval can be a
+number with a unit column, or text such as *6 months* or *weekly*; a row with no
+interval is left out and the preview says which.
+
+The preview lists the tasks it adds before you press **Add to “…”**. The
+import only adds: a task with the same **Task ID** (or, without one, the same
+name) is left as it is, so importing the same plan again adds nothing. The
+tasks prevent no failure mode yet; link each to the failure modes it prevents
+on the RCM tab. An FMEA or RCM worksheet (functions, failures and failure
+modes) is imported on the RCM tab with **Import worksheet…**.
+
 ### What's done if it fails, or when it's found
 
 What's done when a failure mode happens anyway (*replace the drive belt*), and

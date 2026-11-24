@@ -6,7 +6,7 @@ import { focusMenu, menuProblems } from "./menuStandard.js";
 import { buildDisplay, panelRow } from "./assetTree.js";
 import { canPin } from "./treePin.js";
 import { canIsolate, focusKinds, isolateKindOpen, levelsBelow } from "./treeIsolate.js";
-import { isolateItems, maintenanceLead, summaryActions, withPin } from "./treeRowMenu.js";
+import { isolateItems, maintenanceImport, maintenanceLead, summaryActions, withPin } from "./treeRowMenu.js";
 import { openInItem } from "./explorerTasks.js";
 import { rowActions as rcmRowActions, opensWide } from "./explorerRcm.js";
 import { rowActions as fmeaRowActions } from "./explorerFmea.js";
@@ -48,7 +48,7 @@ const TABS = {
   summary: (r) => withPin(summaryActions(r, { mode: "positions" }), [...focus(r, "summary"), ...pin(r)]),
   operations: (r) => [{ id: "plan-open", label: "Operating plan…" }, { separator: true },
     ...summaryActions(r, { mode: "positions" }).filter((it) => MODEL_POSITION_ITEMS.includes(it.id)), ...focus(r, "operations"), ...pin(r)],
-  maintenance: (r) => [...maintenanceLead(r), ...openInItem(r), { id: "mtask-draft", label: "Package the tasks…" }, { separator: true },
+  maintenance: (r) => [...maintenanceLead(r), ...openInItem(r), { id: "mtask-draft", label: "Package the tasks…" }, ...maintenanceImport(r), { separator: true },
     ...summaryActions(r, { mode: "positions" }).filter((it) => MODEL_POSITION_ITEMS.includes(it.id)), ...focus(r, "maintenance"), ...pin(r)],
   measurements: (r) => withPin([...measAddActions(r), { separator: true }, ...summaryActions(r, { mode: "positions" })], [...focus(r, "measurements"), ...pin(r)]),
   rcm: (r) => withPin(rcmRowActions(r, {}), [...focus(r, "rcm"), ...pin(r)]),
@@ -84,10 +84,38 @@ for (const tab of Object.keys(TABS)) {
   });
 }
 
-test("Maintenance: a higher position keeps Add task…, Open in › and Package the tasks…", () => {
+test("Maintenance: a higher position keeps Add task… and Open in ›; Package the tasks… and Import maintenance plan… under More ›", () => {
   const m = menuOn("maintenance", d.rows.get("house"));
-  assert.deepEqual(labels(m), [...GENERAL, "———", "Add task…", "Open in", "Package the tasks…", "———", "Delete…"]);
+  assert.deepEqual(labels(m), [...GENERAL, "———", "Add task…", "Open in", "More", "———", "Delete…"]);
+  const more = m.find((it) => it.label === "More");
+  assert.deepEqual(labels(more.items), ["Package the tasks…", "Import maintenance plan…"]);
+  assert.equal(more.items[1].id, "maint-import-plan");
+  // Open in › keeps its own submenu (it isn't folded into More ›).
+  assert.ok(m.find((it) => it.label === "Open in").items?.length > 0);
   assert.ok(m.every((it) => !it.disabled || it.label === "Move to…"));
+});
+
+test("Import maintenance plan… is a position's only: a location has no tasks of its own to import onto; view only greys it", () => {
+  assert.deepEqual(maintenanceImport({ type: "loc", key: "L" }), []);
+  assert.deepEqual(maintenanceImport(null), []);
+  const [it] = maintenanceImport({ type: "pos", key: "p" }, { viewOnly: "View only" });
+  assert.equal(it.label, "Import maintenance plan…");
+  assert.equal(it.disabled, true);
+  assert.equal(it.reason, "View only");
+});
+
+test("the Maintenance tab opens the shared import in plan mode, and says how many tasks it added", () => {
+  const src = readFileSync(new URL("./views/AssetExplorer.jsx", import.meta.url), "utf8");
+  assert.match(src, /id === "maint-import-plan"\) return setSheetFor\(\{ id: r\.key, name: r\.ref\.name, mode: "plan" \}\)/);
+  assert.match(src, /<RcmImportModal position=\{sheetFor\} mode=\{sheetFor\.mode \|\| "rcm"\}/);
+  assert.match(src, /pos\.mode === "plan"\) \{\s*ptasks\.load\(\);\s*say\(planImportedText\(/);
+  // The RCM tab keeps Import worksheet… (the FMEA / RCM worksheet), in the RCM mode.
+  assert.match(src, /id: "import-sheet", label: "Import worksheet…", onSelect: \(\) => setSheetFor\(\{ id: posRow\.key, name: posRow\.ref\.name \}\)/);
+  const modal = readFileSync(new URL("./components/RcmImportModal.jsx", import.meta.url), "utf8");
+  assert.match(modal, /Import maintenance plan onto/);
+  // A plan maps a task's columns only, with no consequence or decision values to map.
+  assert.match(modal, /plan \? planFields\(table\?\.fields\)/);
+  assert.match(modal, /\{preview && !plan && \(\s*<>\s*<ValueMap/);
 });
 
 test("a position above the place opened: Move to… greyed with why (its other branches aren't sent); one in the place: enabled", () => {

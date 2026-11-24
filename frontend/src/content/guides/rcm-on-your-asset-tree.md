@@ -669,7 +669,7 @@ you map the decision values. Each
 level's notes and rationale has its own column: **Function notes**,
 **Standard notes** (for the performance standard on the same row),
 **Functional failure notes** and **Notes** (or **Failure mode notes**) for
-the failure mode. Map **Failure mode** or **Task**; without a Function or
+the failure mode. Only **Failure mode** is required; without a Function or
 Functional failure column everything goes under *Imported*. Blank function and failure cells carry down
 from the row above, as most worksheets expect.
 
@@ -690,13 +690,14 @@ in the same layout the import reads.
 
 ### Start from the plan you have
 
-An existing maintenance plan, one task per row with no failure modes yet,
-imports the same way. Each row with a task and a blank **Failure mode** becomes
-a task on the position, with its interval, unit, task type, **Task ID**,
-**Trade** and **Labour hours**. The preview counts both (*6 tasks · 0 failure
-modes*), and a mixed sheet works too: rows with a failure mode go into the RCM
-as above. A task with the same Task ID (or, without one, the same name) is left
-as it is, so importing the plan again adds nothing.
+An existing maintenance plan, one task per row with no failure modes yet, is
+imported on the **Maintenance** tab, not here: choose **Import maintenance
+plan…** in the position's **⋯** menu there (under **More**). Each row becomes a
+task on the position, with its interval, unit, task type, **Task ID**,
+**Trade** and **Labour hours**, matched by Task ID (or name) so importing it
+again adds nothing. (A worksheet here with a row that
+has a task and a blank **Failure mode** still adds that row as a task on the
+position, as before.)
 
 Then do the RCM and link each task to the failure modes it prevents: in a
 failure mode's **Task(s) worth doing**, pick **Existing task** and **Link task**.

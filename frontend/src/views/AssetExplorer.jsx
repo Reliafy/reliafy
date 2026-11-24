@@ -75,7 +75,7 @@ import useRcmDrag from "../components/useRcmDrag.js";
 import {
   answerNotes, dragBlock, dragSource, moveItems, planDrop, refusalText, shownAfter, stepTarget, undoBatch,
 } from "../rcmDrag.js";
-import { exportFilename, importSummary, positionRcmCsv } from "../rcmImport.js";
+import { exportFilename, importSummary, planImportedText, positionRcmCsv } from "../rcmImport.js";
 import { saveText } from "../sparesPlan.js";
 import { lsaCsv } from "../lsaTab.js";
 import { RollupBadges } from "../components/RcmStatusBadge.jsx";
@@ -123,7 +123,7 @@ import { EXPLORER_LABEL } from "../navigation.js";
 import { ASSETS_LIST_PATH, explorerCarry } from "../maintenanceAssets.js";
 import { explorerRowMenu } from "../explorerMenu.js";
 import { COPY_LINK, OPEN, copyLink, rowLink } from "../menuStandard.js";
-import { addsFirst, focusNoun, isolateItems, liveKids, lsaLead, maintenanceLead, maintenanceResponses, moveTargets, showsAddRow, summaryActions, tabMenu as menuOnTab, viewOnlyReason, withAssetMoves, withPin } from "../treeRowMenu.js";
+import { addsFirst, focusNoun, isolateItems, liveKids, lsaLead, maintenanceImport, maintenanceLead, maintenanceResponses, moveTargets, showsAddRow, summaryActions, tabMenu as menuOnTab, viewOnlyReason, withAssetMoves, withPin } from "../treeRowMenu.js";
 import { canIsolate, depthWords, focusFrom, focusKind, focusKinds, focusShown, isolateIncompleteItem, isolateIncompleteOpen, isolateKindOpen, isolateOpen, levelsBelow } from "../treeIsolate.js";
 import { removeTaskFromMode } from "../components/RcmModeTasks.jsx";
 import { MoveModal, RenameModal } from "../components/TreeRowModals.jsx";
@@ -183,8 +183,10 @@ const TOP = "\u0000top";
 // gives the tree and the panel the whole screen, as the RBD editor's.
 //
 // The panel's heading has the same two controls on every tab: the "…" menu
-// (the tab's own items that aren't a row's: the RCM's Import worksheet…,
-// Export CSV and Columns…; Open the full page last) and Full screen. Adding,
+// (the tab's own items that aren't a row's: the RCM's Import worksheet… (an
+// FMEA / RCM worksheet), Export CSV and Columns…; the Maintenance tab's Import
+// maintenance plan… (the plan a position has, one task per row); Open the full
+// page last) and Full screen. Adding,
 // pinning and the row's other changes are in the tree's row menu.
 //
 // "Pin this branch" (a row's menu, or its right-click) shows
@@ -2265,7 +2267,9 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
       if (tasksOn && isPackageExtra(r)) return [{ id: PKG_OPEN, label: "Open", title: `Open ${r.ref.pkg.name}` }];
       if (tasksOn && (r.type === "pos" || r.type === "loc")) {
         const own = summaryActions(r, { mode, viewOnly }).filter((it) => MODEL_POSITION_ITEMS.includes(it.id));
-        return [...maintenanceLead(r, { viewOnly }), ...openInItem(r, { design: !!designScope }), ...draftItem(r), { separator: true }, ...own, ...isolateItem(r), ...pinItem(r)];
+        // Import maintenance plan…: the plan the position has, as tasks on it (the RCM tab's Import
+        // worksheet… is the FMEA / RCM worksheet's).
+        return [...maintenanceLead(r, { viewOnly }), ...openInItem(r, { design: !!designScope }), ...draftItem(r), ...maintenanceImport(r, { viewOnly }), { separator: true }, ...own, ...isolateItem(r), ...pinItem(r)];
       }
       // The Operations tab: a position's operating plan (its details), then the position items that
       // make sense here, Focus and Pin. An item runs as its position: Focus and Pin only.
@@ -2316,6 +2320,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
           { query: opsOn ? null : (q) => { q.set(tabKey, "operations"); q.set("arrange", "positions"); } }));
       }
       if (id === "maint-add-task") return addTaskAt(r);
+      if (id === "maint-import-plan") return setSheetFor({ id: r.key, name: r.ref.name, mode: "plan" });
       if (id === "maint-add-response") return addResponseAt(r.key, "failure");
       if (id === "maint-add-follow-on") return addResponseAt(r.key, "found");
       if (id === TASK_OPEN) return openTaskRow(r);
@@ -2428,9 +2433,15 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   }, [fmeaOn, excel, selPos]);
   // After an import: the RCM and the tree read again, the position opened down
   // to its failure modes, and a few words on what was added.
+  // A maintenance plan (the Maintenance tab's): the tasks read again, and how many it added.
   const sheetImported = (result) => {
     const pos = sheetFor;
     setSheetFor(null);
+    if (pos.mode === "plan") {
+      ptasks.load();
+      say(planImportedText(result.counts, pos.name));
+      return;
+    }
     const { adds, nothing } = importSummary(result.counts);
     openAfter.current = pos.id;
     pending.current = pos.id;
@@ -3148,7 +3159,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     <ColumnChooser open cols={modelCols} usual={MODEL_USUAL} columns={MODEL_COLUMNS}
                    onCols={(next) => setModelCols(next)} onClose={() => setColsOpen(false)} returnFocus={moreButton} />
   );
-  // The Maintenance tab's "…": Add task…, Package the tasks…, Export CSV, Trade rates….
+  // The Maintenance tab's "…": the row's own (Add task…, Open in ›, Package the tasks…, Import maintenance
+  // plan…), then Add response…, Export CSV, Trade rates….
   const taskHolder = tasksOn && posRow && (posRow.type === "pos" || posRow.type === "loc") ? (display.rows.get(posRow.key) || posRow) : null;
   const taskMenu = taskHolder ? [
     ...maintenanceLead(taskHolder, { viewOnly }).map((it) => ({ ...it, onSelect: () => addTaskAt(taskHolder) })),
@@ -3921,7 +3933,7 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
                        onClose={() => setEventFor(null)} onDone={eventLogged} />
       )}
       {buildFor && <BuildItemModal product={buildFor} onClose={() => setBuildFor(null)} onDone={built} />}
-      {sheetFor && <RcmImportModal position={sheetFor} onClose={() => setSheetFor(null)} onImported={sheetImported} />}
+      {sheetFor && <RcmImportModal position={sheetFor} mode={sheetFor.mode || "rcm"} onClose={() => setSheetFor(null)} onImported={sheetImported} />}
       {assigning && (
         // A "No functional failure yet" row's modes, under one of the function's functional failures.
         <AssignFailureModal row={assigning} failures={fmeaFailuresOn(rcm, assigning.ref.position_id).filter((f) => f.function_id === assigning.ref.function_id)}
