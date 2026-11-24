@@ -88,7 +88,7 @@ function ListField({ f, v, onChange, disabled, placeholder, broadcast, bad }) {
 // ``withMeasurements``: also offer the dataset's measurements (readings on
 // the same units), added to the dataset right after it is created. ``open``
 // starts with that section open (the condition and life page). ``onSplit``:
-// offer "Split into datasets by" for an uploaded file (the Data section), and
+// offer "Group by" for an uploaded file (the Data section), and
 // call it once the datasets are saved (the modal then lists them).
 // ``initialFile``: a file (or pasted values made a file) to start from, as a
 // fit flow's upload or paste does: saved as a dataset here, then the flow goes
@@ -176,7 +176,7 @@ export default function NewDatasetModal({
   );
   const preview = useMemo(() => parsePreview(text, { noHeader }), [text, noHeader]);
 
-  // "Split into datasets by": an uploaded file only (DatasetSplit.jsx).
+  // "Group by": an uploaded file only (DatasetSplit.jsx).
   const split = useDatasetSplit({
     enabled: !!onSplit && step === "upload" && !!picked,
     text: picked?.excel ? sheetCsv?.text ?? null : picked?.text ?? null,

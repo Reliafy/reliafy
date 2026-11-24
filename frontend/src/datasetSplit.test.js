@@ -1,5 +1,5 @@
 // Run with: node --test src/
-// The Data section's upload: "Split into datasets by" a column, one sheet
+// The Data section's upload: "Group by" a column, one sheet
 // saved as several datasets. Rows counted per dataset, blank values left out,
 // and names that don't clash with saved datasets. No column reading happens
 // here (that's at fit time), so there are no per-dataset x/c checks.

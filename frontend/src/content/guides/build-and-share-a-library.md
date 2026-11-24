@@ -32,7 +32,7 @@ these later.
 On your library's page, choose **Add…** › **Upload data…**. It opens the same
 **New dataset** screen as [Data](/data): pick the file (and the sheet), check how
 the columns are read (x, c, n and the rest), and, if one column names each
-group, choose it under **Split into datasets by** to make one dataset per value.
+group, choose it under **Group by** to make one dataset per value.
 The library is already chosen under **Also add to library**, so saving makes
 every dataset and adds each one to the library in the same step: all of them,
 or, if anything stops it, none. You land back on the library with the new

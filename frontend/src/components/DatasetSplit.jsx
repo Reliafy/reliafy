@@ -7,7 +7,7 @@ import { useAppConfig } from "../ConfigProvider.jsx";
 import { addedToLibraryWords } from "../libraries.js";
 import { blankWarning, readSheet, splitPlan, splitRoom } from "../datasetSplit.js";
 
-// The Data section's upload (New dataset): "Split into datasets by [column]",
+// The Data section's upload (New dataset): "Group by [column]",
 // one sheet saved as several datasets, each value its own dataset named by the
 // value. Off by default; with it off, the upload is exactly as before.
 // Every part keeps the one reading set on the upload screen (less the split
@@ -56,7 +56,7 @@ export function useDatasetSplit({ text, noHeader = false, source = "", enabled =
   const room = plan ? splitRoom(billing, n) : null;
   const canSave = active && n > 0 && !room && !saving;
   const saveLabel = saving ? "Saving…" : `Save ${n} dataset${n === 1 ? "" : "s"}`;
-  const waitingFor = !active ? null : n === 0 ? `Column “${column}” has no values to split by.` : room ? room.text : null;
+  const waitingFor = !active ? null : n === 0 ? `Column “${column}” has no values to group by.` : room ? room.text : null;
 
   const save = async (upload) => {
     if (!canSave) return;
@@ -75,12 +75,12 @@ export function useDatasetSplit({ text, noHeader = false, source = "", enabled =
   const picker = offered ? (
     <div className="ds-split">
       <div className="ds-split-pick">
-        <span>Split into datasets by</span>
-        <Select value={column} onChange={setColumn} ariaLabel="Split into datasets by"
-                options={[{ value: "", label: "— no split: one dataset —" }, ...columns]} />
+        <span>Group by</span>
+        <Select value={column} onChange={setColumn} ariaLabel="Group by"
+                options={[{ value: "", label: "— no grouping: one dataset —" }, ...columns]} />
       </div>
       <span className="hint m-0">
-        Optional. Each value of the column becomes its own dataset, named by the value.
+        Optional. Each group (a value of the column) becomes its own dataset, named by the value.
       </span>
     </div>
   ) : null;
