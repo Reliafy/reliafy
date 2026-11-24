@@ -669,9 +669,8 @@ you map the decision values. Each
 level's notes and rationale has its own column: **Function notes**,
 **Standard notes** (for the performance standard on the same row),
 **Functional failure notes** and **Notes** (or **Failure mode notes**) for
-the failure mode. Only
-**Failure mode** is required; without a Function or Functional failure column
-everything goes under *Imported*. Blank function and failure cells carry down
+the failure mode. Map **Failure mode** or **Task**; without a Function or
+Functional failure column everything goes under *Imported*. Blank function and failure cells carry down
 from the row above, as most worksheets expect.
 
 Reliafy lists the distinct values it finds in the consequence and decision
@@ -688,6 +687,27 @@ notes takes the file's; one with notes of its own keeps them. **Export CSV**, be
 worksheet…**, downloads a position's RCM (and everything inside it) one row per
 failure mode, with each decision's evidence and status and every row's notes,
 in the same layout the import reads.
+
+### Start from the plan you have
+
+An existing maintenance plan, one task per row with no failure modes yet,
+imports the same way. Each row with a task and a blank **Failure mode** becomes
+a task on the position, with its interval, unit, task type, **Task ID**,
+**Trade** and **Labour hours**. The preview counts both (*6 tasks · 0 failure
+modes*), and a mixed sheet works too: rows with a failure mode go into the RCM
+as above. A task with the same Task ID (or, without one, the same name) is left
+as it is, so importing the plan again adds nothing.
+
+Then do the RCM and link each task to the failure modes it prevents: in a
+failure mode's **Task(s) worth doing**, pick **Existing task** and **Link task**.
+The chips beside the position's name count **tasks not linked to a failure
+mode**: every task here and below that prevents none (tasks raised by a failure
+or a find aren't counted). Click the chip to open the Maintenance tab filtered
+to them. There, the **From** column's filter splits tasks added directly into
+*Added directly: linked to a failure mode* and *Added directly: no failure
+mode*. Beside the evidence chips (*supported*, *interval differs*), that's the
+gap between the plan and its RCM: which tasks have a reason, which intervals
+differ from their evidence, and which tasks have no failure mode recorded.
 
 ## Several performance standards on one function
 

@@ -758,3 +758,70 @@ def test_task_id_labour_hours_and_trade_go_on_the_tasks(m):
     bad = rcm_sheet.run(m, m.create_position("Mower 2")["id"], rcm_sheet.read_table(_csv(header, rows), "plan.csv"),
                         options, dry_run=True)
     assert not bad["ok"] and any("Labour hours" in e and "half an hour" in e for e in bad["errors"])
+
+
+PLAN_HEADER = ["Task ID", "Component", "Task", "Task type", "Interval", "Interval unit", "Labour hours", "Trade",
+               "Function", "Functional failure", "Failure mode", "Consequence", "Notes"]
+PLAN_ROWS = [
+    ["PM-25-01", "Exhaust muffler", "Inspect muffler for cracks", "On condition", 25, "hours", 0.3, "Technician",
+     "", "", "", "", "Set after early weld cracking."],
+    ["PM-50-01", "Generator belt", "Measure generator belt tension", "On condition", 50, "hours", 0.4, "Technician",
+     "", "", "", "", ""],
+    ["PM-100-01", "Spark plug", "Replace spark plugs", "Fixed interval", 100, "hours", 0.5, "Technician",
+     "", "", "", "", ""],
+]
+
+
+def test_a_plain_plan_with_no_failure_modes_imports_as_tasks(m):
+    """A maintenance plan exported from another system: tasks only, the failure-mode cells
+    blank. Each row becomes a plain task on the position (serving no failure mode yet), with
+    its interval, unit, task type, Task ID, trade and labour; the same plan again adds nothing."""
+    table = rcm_sheet.read_table(_csv(PLAN_HEADER, PLAN_ROWS), "plan.csv")
+    options = rcm_sheet.default_options(table)
+    pid = m.create_position("Power module")["id"]
+    preview = rcm_sheet.run(m, pid, table, options, dry_run=True)
+    assert preview["ok"], preview["errors"]
+    assert (preview["counts"]["plain_tasks"], preview["counts"]["modes"]) == (3, 0)
+    assert [t["reference"] for t in preview["tasks"]] == ["PM-25-01", "PM-50-01", "PM-100-01"]
+    assert not m._tasks_on(pid)
+    out = rcm_sheet.run(m, pid, table, options, dry_run=False)
+    assert out["ok"] and out["counts"]["plain_tasks"] == 3
+    tasks = {t["reference"]: m.explain_task(t["id"])["task"] for t in m._tasks_on(pid)}
+    muffler = tasks["PM-25-01"]
+    assert (muffler["name"], muffler["interval"], muffler["unit"], muffler["outcome"]) == (
+        "Inspect muffler for cracks", 25, "hours", "on_condition")
+    assert muffler["trade"] == "Technician" and muffler["resources"]["labour"][0]["hours"] == 0.3
+    assert tasks["PM-100-01"]["outcome"] == "fixed_interval"
+    assert not any(t["modes"] for t in m.task_table(pid)["tasks"])
+    assert not _rcm(m, pid)["functions"]
+    _rebuilds_the_same(m)
+
+    events = m.s.event_count(ORG)
+    again = rcm_sheet.run(m, pid, table, options, dry_run=False)
+    assert again["ok"] and m.s.event_count(ORG) == events
+    assert (again["counts"]["plain_tasks"], again["counts"]["plain_tasks_existing"]) == (0, 3)
+
+
+def test_a_mixed_sheet_imports_modes_and_plain_tasks(m):
+    rows = [list(r) for r in PLAN_ROWS]
+    rows[2][8:12] = ["Provide power", "No spark", "Plug electrodes worn", "Operational"]
+    table = rcm_sheet.read_table(_csv(PLAN_HEADER, rows), "mixed.csv")
+    pid = m.create_position("Power module")["id"]
+    out = rcm_sheet.run(m, pid, table, rcm_sheet.default_options(table), dry_run=False)
+    assert out["ok"], out["errors"]
+    assert (out["counts"]["plain_tasks"], out["counts"]["modes"], out["counts"]["tasks"]) == (2, 1, 1)
+    linked = {t["name"]: bool(t["modes"]) for t in m.task_table(pid)["tasks"]}
+    assert linked == {"Inspect muffler for cracks": False, "Measure generator belt tension": False,
+                      "Replace spark plugs": True}
+
+
+def test_a_plan_with_no_failure_mode_column_needs_a_task_column(m):
+    header = ["Task ID", "Task", "Interval", "Interval unit"]
+    table = rcm_sheet.read_table(_csv(header, [["A-1", "Grease the bearings", 3, "months"], ["A-2", "Look", "", ""]]),
+                                 "p.csv")
+    pid = m.create_position("Fan")["id"]
+    out = rcm_sheet.run(m, pid, table, rcm_sheet.default_options(table), dry_run=False)
+    assert out["ok"] and out["counts"]["plain_tasks"] == 1
+    assert any("no interval" in w and "row 3" in w for w in out["warnings"])
+    with pytest.raises(Invalid):
+        rcm_sheet.run(m, pid, table, {"mapping": {"interval": "Interval"}}, dry_run=True)

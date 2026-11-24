@@ -406,6 +406,36 @@ def _lsa_words(lsa: dict, mapping: dict) -> str:
                       for key, field in named if key in lsa)
 
 
+def _plain_task(r, rnum, cell, col, mapping, outcome_map, outcome_col, clip,
+                errors: list[str], no_interval: list[int]) -> Optional[dict]:
+    """A row with a task and no failure mode, as a plain task: ``{row, name, interval, unit,
+    outcome, reference, trade, hours}`` (outcome: its task type when the row says one, else None).
+    None (and the row listed in ``no_interval``) when it has no interval."""
+    raw_interval = r[col["interval"]] if col["interval"] is not None else None
+    interval, text_unit = parse_interval(raw_interval)
+    if interval is None:
+        no_interval.append(rnum)
+        return None
+    outcome = None
+    if col["outcome"] is not None:  # a task type column (a Task column alone says nothing of the type)
+        outcome = _choice(r[outcome_col], outcome_map, guess_outcome)
+    task = {"row": rnum, "name": clip(cell(r, "task")), "interval": interval,
+            "unit": cell(r, "interval_unit") or text_unit or "",
+            "outcome": outcome if outcome in SCHEDULED else None}
+    if cell(r, "task_ref"):
+        task["reference"] = clip(cell(r, "task_ref"))
+    if cell(r, "trade"):
+        task["trade"] = clip(cell(r, "trade"))
+    if cell(r, "labour_hours"):
+        hours = _hours(cell(r, "labour_hours"))
+        if hours is None:
+            errors.append(f"Row {rnum}, {mapping['labour_hours']} “{cell(r, 'labour_hours')[:40]}”: labour hours "
+                          f"are a number of hours, 0 to {MAX_LABOUR_HOURS:,}.")
+        else:
+            task["hours"] = hours
+    return task
+
+
 def _choice(raw: Any, explicit: dict, guess) -> Optional[str]:
     key = _text(raw)
     if not key:
@@ -471,7 +501,8 @@ def build_tree(header: list[str], rows: list[list], options: dict,
             raise RcmImportError(f"The sheet has no column “{col}” (mapped to {field_id}).")
     # A sheet imported onto a position may have no failure modes at all, only
     # the lower failures that cause each functional failure (keep_rows).
-    if "mode" not in mapping and not (keep_rows and "causes" in mapping):
+    # ... or only tasks (a maintenance plan with no failure modes yet: each row a plain task).
+    if "mode" not in mapping and not (keep_rows and ("causes" in mapping or "task" in mapping)):
         raise RcmImportError("Map a column to Failure mode — it's the one required column.")
     extra = [c for c in (options.get("extra_columns") or []) if c in index and c not in mapping.values()]
 
@@ -498,6 +529,10 @@ def build_tree(header: list[str], rows: list[list], options: dict,
     # (not one carried down), when the function has more than one.
     n_modes = n_decisions = n_links = 0
     stashed_tasks = 0
+    # Rows with a task and no failure mode (keep_rows: the import onto a position): plain tasks
+    # on that position, serving no failure mode yet (an existing plan, before its RCM).
+    plain_tasks: list[dict] = []
+    no_interval: list[int] = []
 
     def clip(text: str, limit: int = MAX_TEXT) -> str:
         nonlocal truncated
@@ -547,6 +582,12 @@ def build_tree(header: list[str], rows: list[list], options: dict,
                                      clip(cell(r, "failure_notes"), MAX_NOTES))
         mode_text = cell(r, "mode")
         cause_text = cell(r, "causes") if keep_rows else ""
+        if not mode_text and not cause_text and keep_rows and cell(r, "task"):
+            plain_tasks.append(_plain_task(r, rnum, cell, col, mapping, outcome_map, outcome_col, clip,
+                                           errors, no_interval))
+            if plain_tasks[-1] is None:
+                plain_tasks.pop()
+            continue
         if not mode_text and not cause_text:
             structural = {"function", "standard", "standard_basis", "failure", "causes", "function_notes",
                           "standard_notes", "failure_notes"}
@@ -722,7 +763,7 @@ def build_tree(header: list[str], rows: list[list], options: dict,
                     if named and named.lower() in [x.lower() for x in listed]:
                         failure["breaches"] = clip(named)
 
-    if n_modes == 0 and not n_links:
+    if n_modes == 0 and not n_links and not plain_tasks and not no_interval:
         raise RcmImportError(
             f"No failure modes found — the “{mapping.get('mode', 'Failure mode')}” column is empty. Check the "
             "header row and the column mapped to Failure mode.")
@@ -731,6 +772,12 @@ def build_tree(header: list[str], rows: list[list], options: dict,
         warnings.append(
             f"{len(skipped)} row{'s' if len(skipped) != 1 else ''} with no failure mode "
             f"{'were' if len(skipped) != 1 else 'was'} skipped (row{'s' if len(skipped) != 1 else ''} {listed}).")
+    if no_interval:
+        warnings.append(
+            f"{len(no_interval)} task{'s have' if len(no_interval) != 1 else ' has'} no interval, so "
+            f"{'they were' if len(no_interval) != 1 else 'it was'} left out ({'rows' if len(no_interval) != 1 else 'row'} "
+            f"{', '.join(str(n) for n in no_interval[:8])}{' …' if len(no_interval) > 8 else ''}). "
+            "Give each an interval in the sheet to import it.")
     if stashed_tasks:
         warnings.append(
             f"{stashed_tasks} failure mode{'s have' if stashed_tasks != 1 else ' has'} no decision type "
@@ -807,7 +854,9 @@ def build_tree(header: list[str], rows: list[list], options: dict,
             "modes": n_modes,
             "decisions": n_decisions,
             "skipped_rows": len(skipped),
+            "plain_tasks": len(plain_tasks),
         },
+        "tasks": plain_tasks,
         "warnings": warnings,
         "errors": errors,
         "values": values,

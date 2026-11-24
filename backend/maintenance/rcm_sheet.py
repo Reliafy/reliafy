@@ -369,6 +369,9 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
         counts["functions_existing" if match else "functions"] += 1
         functions.append(fn_plan)
     counts["modes_existing"] = len(already)
+    plain = _plan_plain_tasks(m, position_id, built.get("tasks") or [], live_tasks, sheet_tasks, errors, no_unit)
+    counts["plain_tasks"] = sum(1 for t in plain if not t["existing"])
+    counts["plain_tasks_existing"] = sum(1 for t in plain if t["existing"])
     if counts["modes"] > MAX_MODES:
         raise Invalid(f"The sheet would add {counts['modes']:,} failure modes; one import adds at most {MAX_MODES:,} "
                       "to a position. Split the sheet (by system or function) and import each part.")
@@ -404,13 +407,43 @@ def plan(m: Maintenance, position_id: str, table, options: dict | None) -> dict:
 
     if m.limited:
         events = counts["functions"] + counts["failures"] + 4 * counts["modes"] + counts["tasks"] + counts["links"] \
-            + counts["standards"] + counts["scored"]
+            + counts["standards"] + counts["scored"] + 3 * counts["plain_tasks"]
         if m.s.event_count(m.org) + events > MAX_EVENTS:
             raise LimitReached(f"This maintenance workspace can't take {events:,} more recorded changes "
                                f"(its limit is {MAX_EVENTS:,}).")
-        m._quota("Task", MAX_TASKS, adding=counts["tasks"])
-    return {"position": {"id": position_id, "name": name}, "functions": functions, "counts": counts,
+        m._quota("Task", MAX_TASKS, adding=counts["tasks"] + counts["plain_tasks"])
+    return {"position": {"id": position_id, "name": name}, "functions": functions, "counts": counts, "plain": plain,
             "built": built, "errors": errors, "warnings": warnings}
+
+
+def _plan_plain_tasks(m: Maintenance, position_id: str, tasks: list[dict], live_tasks: dict, sheet_tasks: dict,
+                      errors: list[str], no_unit: list[int]) -> list[dict]:
+    """The sheet's plain tasks (rows with a task and no failure mode) as the import adds them:
+    each ``{row, name, interval, unit, outcome, reference, trade, hours, existing}``. One already
+    on the position (the same Task ID, else the same name), or made by an earlier row, is
+    ``existing`` and left as it is, so importing the same plan again adds nothing."""
+    refs = {_norm(t.get("reference")) for t in m._tasks_on(position_id) if t.get("reference")}
+    out: list[dict] = []
+    for t in tasks:
+        row = t["row"]
+        unit = _norm_unit(t.get("unit")) or "days"
+        if not t.get("unit"):
+            no_unit.append(row)
+        try:
+            interval = _interval(t["interval"], unit, "interval")
+        except Invalid as err:
+            errors.append(f"Row {row}: {err} Change it in the sheet and try again.")
+            continue
+        name = shortened(t["name"], SHORT_TEXT)[0]
+        ref = _norm(t.get("reference"))
+        key = _norm(name)
+        existing = (ref and ref in refs) or key in live_tasks or key in sheet_tasks
+        if not existing:
+            sheet_tasks[key] = {"name": name, "interval": interval, "unit": unit, "row": row}
+            if ref:
+                refs.add(ref)
+        out.append({**t, "name": name, "interval": interval, "unit": unit, "existing": bool(existing)})
+    return out
 
 
 def _shared_task(decision: dict, live_tasks: dict, sheet_tasks: dict, row: int, errors: list[str]) -> bool:
@@ -625,6 +658,14 @@ def run(m: Maintenance, position_id: str, table, options: dict | None, dry_run: 
     write = not dry_run and not p["errors"]
     if write:
         _write(m, position_id, p["functions"])
+        for t in p["plain"]:
+            if t["existing"]:
+                continue
+            made = m.create_task(position_id, t["name"], t["interval"], t["unit"], outcome=t.get("outcome"),
+                                 reference=shortened(t.get("reference") or "", SHORT_TEXT)[0],
+                                 trade=shortened(t.get("trade") or "", SHORT_TEXT)[0])
+            if t.get("hours") is not None:
+                _put_task_lsa(m, made["id"], {"hours": t["hours"], "trade": t.get("trade") or ""})
     built = p["built"]
     counts = {**p["counts"], "rows": len(table.rows), "skipped_rows": built["counts"]["skipped_rows"],
               "errors": len(p["errors"])}
@@ -636,6 +677,9 @@ def run(m: Maintenance, position_id: str, table, options: dict | None, dry_run: 
         "dry_run": not write, "ok": not p["errors"], "position": p["position"],
         "sheet": table.sheet, "header_row": table.header_row,
         "counts": counts, "functions": preview,
+        # The plain tasks (rows with a task and no failure mode): what each adds, or that it's there.
+        "tasks": [{"row": t["row"], "name": t["name"], "interval": t["interval"], "unit": t["unit"],
+                   "reference": t.get("reference") or "", "new": not t["existing"]} for t in p["plain"][:SHOWN]],
         "errors": p["errors"][:SHOWN], "warnings": p["warnings"], "notes": table.notes,
         "values": built["values"], "outcome_source": built["outcome_source"],
     }

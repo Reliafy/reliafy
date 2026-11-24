@@ -35,6 +35,7 @@ import {
   anyFilter, commonHolder, dueOrder, facetValues, facetsOf, filterTasks, filterWords, nextDueSort,
   graftTasks, isExtraRow, isMaintRow, isPackageExtra, isOpenIn, openInItem, openInLink, isPackageRef, isPackageRow, isTaskRow, keepShown, openForTasks, packageKey, packageRowActions,
   packageWhere, pickTasks, refRowActions, rollupText as taskRollup, shownTasks, taskKey, taskRowActions,
+  NO_MODE_FILTER, tasksWithoutMode,
 } from "../explorerTasks.js";
 import CovariateBindPane from "../components/CovariateBindPane.jsx";
 import AdjustModelPane from "../components/AdjustModelPane.jsx";
@@ -662,8 +663,15 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   }, [root, base, selected, mode]);
   // A product's design has no packages or forecasts (no due dates there: they're the built items').
   const tasksDesign = isDesignScope(data, root);
-  const tasksKind = base?.rows?.get(tasksWithin)?.type || (data?.scope?.kind === "place" ? "loc" : "pos");
-  const ptasks = useTreeTasks({ on: tasksOn && !!data, within: tasksWithin, kind: tasksKind, packages: !tasksDesign });
+  // The asset opened is what its scope says (a place opened by Positions draws its row as a
+  // position's heading); any other top row is what its row says.
+  const tasksKind = tasksWithin && data?.scope?.id === tasksWithin ? (data.scope.kind === "place" ? "loc" : "pos")
+    : base?.rows?.get(tasksWithin)?.type || (data?.scope?.kind === "place" ? "loc" : "pos");
+  // The RCM tab reads them too: its header counts the tasks that serve no failure mode (the gap).
+  const ptasks = useTreeTasks({ on: (tasksOn || (rcmOn && !fmeaOn)) && !!data, within: tasksWithin, kind: tasksKind, packages: !tasksDesign });
+  // A change on the RCM tab (a task linked to a failure mode) changes the gap: read the tasks again.
+  const ptasksLoad = ptasks.load;
+  useEffect(() => { if (rcmOn && !fmeaOn && rcm) ptasksLoad(); }, [rcm]); // eslint-disable-line react-hooks/exhaustive-deps
   const whole = useMemo(() => (rcmOn && rcm ? (fmeaOn ? graftFmea(base, rcm) : graftRcm(base, rcm))
     : measOn && meas.data ? graftMeasurements(base, meas.data, data?.today || new Date().toISOString().slice(0, 10), meas.fittedAt)
       : modelsOn && pmodels.links ? (pmissions.links ? nestMissions(graftModels(base, pmodels.links, strategies), pmissions.links, pmissions.hasModel, pmissions.otherModel, pmissions.flyable)
@@ -3209,7 +3217,11 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   ) : rcmOn ? posRow && posRow.type === "pos" && (
     <SlimHeader display={whole} row={posRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
                 headingRef={headingRef} fullScreenButton={fullButton} message={msg} heading={heading}
-                meta={rcm?.positions ? <span className="tt-rollup"><RollupBadges rollup={rollupOf(rcm, posRow.key, whole)} /></span> : null}
+                meta={rcm?.positions ? <span className="tt-rollup"><RollupBadges rollup={rollupOf(rcm, posRow.key, whole)} gap={fmeaOn ? null : {
+                  // Hidden (0) when the tasks can't be read: the chip never puts an error on the page.
+                  n: ptasks.error ? 0 : tasksWithoutMode(base?.rows, posRow.key, ptasks.tasks || []),
+                  onClick: () => { setTfilters(NO_MODE_FILTER); setTab("maintenance"); },
+                }} /></span> : null}
                 menu={headMenu(posRow, rcmMenu)} popover={columns} />
   ) : summaryRow && (
     <SlimHeader display={whole} row={summaryRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}

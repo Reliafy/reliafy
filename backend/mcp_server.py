@@ -9280,7 +9280,7 @@ def import_rcm(
         "The worksheet as CSV text, a header row then one row per failure mode. Or upload_id instead."))] = None,
     sheet: Annotated[Optional[str], Field(description="A workbook's sheet to read (get kind upload lists them).")] = None,
     mapping: Annotated[Optional[dict[str, Any]], Field(description=(
-        "As change import_excel target rcm: {field: column} (mode required), or {mapping, consequence_map, "
+        "As change import_excel target rcm: {field: column} (mode or task required), or {mapping, consequence_map, "
         "outcome_map, extra_columns}. Omit to use the guess from the headers."))] = None,
     header_row: Annotated[Optional[int], Field(ge=0, description=(
         "The row holding the column names (1-based; 0 = none). Default: guessed."))] = None,
@@ -9288,8 +9288,9 @@ def import_rcm(
                        ] = False,
 ) -> dict[str, Any]:
     """Add an RCM or FMEA worksheet, or a task plan (one row per failure mode, with its task and interval), to a
-    position's RCM from CSV text or an uploaded CSV / .xlsx, as the position's RCM import does in the app.
-    Only adds: importing it again adds nothing."""
+    position's RCM from CSV text or an uploaded CSV / .xlsx, as the position's RCM import does in the app. A row
+    with a task and no failure mode is a plain task on the position (counts.plain_tasks).
+    Only adds: importing it again adds nothing (a plain task matches by Task ID, else name)."""
     if (upload_id is None) == (csv is None):
         raise ToolError("Give exactly one of upload_id (a file from change upload_create) or csv (the text).")
     user, db = _caller(ctx), _db()

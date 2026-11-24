@@ -67,7 +67,7 @@ test("a position shown above a place's positions (a via row) counts the tasks un
 
 import {
   TASK_ADD_TO, TASK_CLEAR, TASK_PACKAGE, TASK_COLUMNS, anyFilter, commonHolder, facetValues, filterTasks, filterWords, keepShown,
-  packageMisfit, pickTasks, rankPackages, shownTasks, taskRowActions, visitFor,
+  packageMisfit, pickTasks, rankPackages, shownTasks, taskRowActions, visitFor, TASK_FACETS, NO_MODE_FILTER, tasksWithoutMode,
 } from "./explorerTasks.js";
 import { flatten } from "./outlineTree.js";
 
@@ -114,7 +114,25 @@ test("a filter's values come from the tasks on show in the open tree, counted ag
   const units = facetValues("unit", all, {});
   assert.deepEqual(units.map((v) => v.label), ["Operating hours", "Months"]);
   assert.deepEqual(facetValues("due", all, {}).map((v) => v.label), ["Overdue", "Not known"]);
-  assert.deepEqual(facetValues("from", all, {}).map((v) => v.label), ["RCM", "Added directly: law, regulation or standard"]);
+  assert.deepEqual(facetValues("from", all, {}).map((v) => v.label), ["RCM", "Added directly: no failure mode"]);
+});
+
+test("tasks added directly split by whether they serve a failure mode; the gap counts those that don't, below a row", () => {
+  const plan = [
+    task("a", "p1", { source: "manual" }),
+    task("b", "m1", { source: "oem", modes: [{ id: "fm1", text: "Belt worn" }] }),
+    task("c", "m1", { source: "manual" }),
+    task("d", "m1", { source: "manual", trigger: { kind: "failure", failure_mode: { text: "Belt snaps" } } }),
+    task("e", "st", { modes: [{ id: "fm2", text: "Oil oxidised" }] }),
+  ];
+  const labels = plan.map((t) => TASK_FACETS.find((f) => f.id === "from").of(t).label);
+  assert.deepEqual(labels, ["Added directly: no failure mode", "Added directly: linked to a failure mode",
+    "Added directly: no failure mode", "Added directly: linked to a failure mode", "RCM"]);
+  assert.deepEqual(filterTasks(plan, NO_MODE_FILTER).map((t) => t.id), ["a", "c"]);
+  const out = graftTasks(withRoots, plan);
+  assert.equal(tasksWithoutMode(out.rows, "st", plan), 2);
+  assert.equal(tasksWithoutMode(out.rows, "m1", plan), 1);
+  assert.equal(tasksWithoutMode(out.rows, "p2", plan), 0);
 });
 
 test("click picks one task, Shift-click a range of tasks as drawn, Ctrl-click one more; positions aren't picked", () => {
