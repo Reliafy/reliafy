@@ -126,10 +126,8 @@ export default function FailureReportsPanel({ row, display, today, version, repo
   const design = isDesignRow(row);
   const defaults = design ? DESIGN_FILTERS : DEFAULT_FILTERS;
   // ?status=<chip> (urlAsks.js): the reports a link asks for, e.g. all of them.
-  const [filters, setFilters] = useState(() => {
-    const status = choiceAsk("status", STATUS_CHIPS.map((c) => c.id));
-    return status ? { ...defaults, status } : defaults;
-  });
+  const askedStatus = useRef(choiceAsk("status", STATUS_CHIPS.map((c) => c.id)));
+  const [filters, setFilters] = useState(() => (askedStatus.current ? { ...defaults, status: askedStatus.current } : defaults));
   const [q, setQ] = useState("");
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -155,7 +153,9 @@ export default function FailureReportsPanel({ row, display, today, version, repo
   // Another row: back to the usual filters, its list read afresh (the last
   // row's isn't shown meanwhile).
   useEffect(() => {
-    setFilters((f) => (f === defaults ? f : defaults));
+    // The first row's filters are the ones its address asked for (?status=), once.
+    if (askedStatus.current) askedStatus.current = null;
+    else setFilters((f) => (f === defaults ? f : defaults));
     setQ("");
     setModes(new Map());
     setData(null);
