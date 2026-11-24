@@ -108,6 +108,8 @@ def test_group_by_failure_mode_and_part(m):
     # Seal worn: 5 at A + 1 at B; it is on both pumps (4,800 h). Bearing seized: 1, on A's pump only.
     assert by["Seal worn"]["failures"] == 6 and by["Seal worn"]["hours"] == pytest.approx(4800)
     assert by["Bearing seized"]["failures"] == 1 and by["Bearing seized"]["hours"] == pytest.approx(2400)
+    # The modes' hours overlap (both modes on A's pump), so no total hours or rate by mode.
+    assert modes["totals"]["hours"] is None and modes["totals"]["rate_per_1000h"] is None
     assert modes["rows"][0]["name"] == "Seal worn"
     # Open in › Failure reports: both pumps' "Seal worn" modes, so the list shows all six (and the no-fault-found
     # report has no mode).

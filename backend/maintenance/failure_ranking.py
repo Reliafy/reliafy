@@ -550,7 +550,10 @@ def failure_ranking(m: Maintenance, position_id, group_by="position", rank_by="f
         "totals": {"failures": n_all, "no_fault_found": len(nff),
                    "reports": sum(1 for f in failures if f["source"] == "report"),
                    "logged": sum(1 for f in failures if f["source"] != "report"), "merged": merged,
-                   "hours": pooled_h or None, "rate_per_1000h": poisson_range(pooled_n, pooled_h),
+                   # By part or failure mode the groups' hours overlap (a position's hours count for each of
+                   # its modes), so their sum isn't the fleet's: totals give hours and a rate by position only.
+                   "hours": (pooled_h or None) if group_by == "position" else None,
+                   "rate_per_1000h": poisson_range(pooled_n, pooled_h) if group_by == "position" else None,
                    "downtime_hours": sum(r["downtime_hours"] or 0 for r in rows),
                    "cost": sum(r["cost"] or 0 for r in rows), "cost_missing": missing_cost},
         "basis": {"counts": basis_counts, "text": "Operating hours: " + ("; ".join(bits) if bits else "none")},
