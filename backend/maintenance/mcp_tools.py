@@ -1095,7 +1095,7 @@ def rcm_apply_interval(m, failure_mode_id: str, task_id, action: str, inputs: di
     one line on how it was worked out goes at the end of the mode's notes and
     rationale; the calculation is saved as a strategy analysis and linked as
     evidence where the decision has none (a combination: on the task's member,
-    when it has none of its own). Inside a maintenance apply batch's dry pass
+    when it has none of its own; every other member keeps its own). Inside a maintenance apply batch's dry pass
     nothing is saved outside the graph (the analysis is only named)."""
     from backend.maintenance.service import Invalid
     from backend.services import strategy_store
@@ -1139,13 +1139,12 @@ def rcm_apply_interval(m, failure_mode_id: str, task_id, action: str, inputs: di
         members = decision.get("outcomes") or []
         body, adopt = None, None
         if members:
+            from backend.maintenance.rcm_decisions import task_evidence, with_task_evidence
+
             mine = next((o for o in members if o.get("task_id") == task["id"]), None)
-            if mine is not None and not mine.get("evidence") and not decision.get("evidence"):
-                body = {"outcome": members[0]["outcome"], "evidence": None,
-                        "outcomes": [{"outcome": o["outcome"]} | ({"task_id": o["task_id"]} if o.get("task_id") else {})
-                                     | ({"evidence": evidence} if o is mine else
-                                        {"evidence": o["evidence"]} if o.get("evidence") else {})
-                                     for o in members]}
+            # The task's own working (an older record's decision-level one is its first task's only).
+            if mine is not None and not task_evidence(decision, task["id"]):
+                body = with_task_evidence(decision, task["id"], evidence)
         elif decision.get("outcome") and not decision.get("evidence") and decision.get("task_id") == task["id"]:
             body = {"outcome": decision["outcome"], "evidence": evidence}
             adopt = task["id"]  # the decision's own task, named so decide keeps it

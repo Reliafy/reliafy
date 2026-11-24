@@ -725,6 +725,36 @@ export function decisionBody(d, patch = {}) {
   return out;
 }
 
+// The evidence one task's interval rests on: a combination member's own; else the decision's, for a
+// plain decision or the decision's own (first) task. Records from before each task kept its own
+// working hold the first task's on the decision, so another member never reads it as its own
+// (rcm_decisions.task_evidence).
+export function taskEvidence(d, taskId) {
+  if (!d) return null;
+  const has = (e) => !!(e?.type && e?.id);
+  if (!isCombination(d) || !taskId) return has(d.evidence) ? d.evidence : null;
+  const mine = d.outcomes.find((o) => o.task_id === taskId);
+  if (!mine) return null;
+  if (has(mine.evidence)) return mine.evidence;
+  const own = d.task_id || d.outcomes[0]?.task_id;
+  return taskId === own && has(d.evidence) ? d.evidence : null;
+}
+
+// The decision body that makes `evidence` one task's own: a plain decision's, or the combination
+// member's whose task is `taskId`, every other member keeping its own (an older record's evidence on
+// the decision moves onto its own task's member). Never another task's working replaced.
+export function decisionWithTaskEvidence(d, taskId, evidence) {
+  if (!isCombination(d)) return decisionBody(d, { evidence });
+  const ref = (e) => (e?.type && e?.id ? { type: e.type, id: e.id, ...(e.window ? { window: e.window } : {}) } : null);
+  const body = decisionBody(d, { evidence: null });
+  body.outcomes = body.outcomes.map((o, i) => {
+    const ev = o.task_id === taskId ? evidence : ref(taskEvidence(d, d.outcomes[i].task_id));
+    const { evidence: _drop, ...rest } = o;
+    return ev ? { ...rest, evidence: ev } : rest;
+  });
+  return body;
+}
+
 // A row's text (the node's description).
 export const nameOf = (r) => r.ref.text || r.ref.name || "";
 

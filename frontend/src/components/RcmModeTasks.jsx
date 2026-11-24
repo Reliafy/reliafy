@@ -7,11 +7,11 @@ import { saveErrorText } from "../confirm.js";
 import { DEFAULT_OUTCOMES, INTERVAL_UNITS, TASK_ORDER, allowedChoices, modeAnswers, startUnit, worthLine } from "../decisionCheck.js";
 import {
   FOUND_EMPTY, OUTCOME_LABEL, ROLE, addableOutcomes, decisionCardLines, decisionRows, decisionWithKind, decisionWithMember, decisionWithNewFirst, isMemberTask, decisionWithoutMember,
-  decisionBody, decisionWithOnFound, decisionWithOutcome, everyText, findsSomething, isCombination, onEventOnly, onlyOnEvent, roleLine, tasksDropped, tasksOf, taskServesTip, taskSharedText, triggerText,
+  decisionWithOnFound, decisionWithTaskEvidence, taskEvidence, decisionWithOutcome, everyText, findsSomething, isCombination, onEventOnly, onlyOnEvent, roleLine, tasksDropped, tasksOf, taskServesTip, taskSharedText, triggerText,
 } from "../rcmWorksheet.js";
 import { getFailureModeIntervalInputs, getStrategyAnalysis, getTaskLsa, saveStrategyAnalysis, updateMaintenanceTask } from "../api.js";
 import { basisAction, basisLine } from "../intervalBasis.js";
-import { appendNotes, calculatorFor, linksEvidence } from "../rcmIntervals.js";
+import { appendNotes, calculatorFor } from "../rcmIntervals.js";
 import IntervalCalculator from "./IntervalCalculator.jsx";
 import { asksInterval, triggerBody, triggerState, triggerWhy } from "../taskTrigger.js";
 import TriggerFields from "./TriggerFields.jsx";
@@ -140,14 +140,17 @@ export async function removeTaskFromMode({ confirm, ops, mode, task, onSaid }) {
 // the calculation as a strategy analysis linked as its evidence.
 // Using a worked-out interval (the calculator's "Use N unit", in a dialog or in place): the interval
 // on the task (or into a form: `fill`), how it was worked out added to the failure mode's notes, and
-// the calculation saved as the decision's evidence when it has none, or when its evidence is an
-// earlier calculation (the new one replaces it: the calculation is kept with the task).
+// the calculation saved as this task's evidence when it has none, or when its evidence is an
+// earlier calculation (the new one replaces it: the calculation is kept with the task). Each task
+// keeps its own: a combination's other tasks keep theirs (decisionWithTaskEvidence).
 export async function applyInterval({ r, ops, task, fill = null, onSaid }, { value, unit, line, analysis }) {
   const d = r.ref.decision || null;
+  const mine = d ? taskEvidence(d, task?.id) : null;
+  const member = !isCombination(d) || d.outcomes.some((o) => o.task_id === task?.id);
   let linked = false;
-  if (d && (linksEvidence(d) || d.evidence?.type === "strategy_analysis")) {
+  if (d && member && (!mine || mine.type === "strategy_analysis")) {
     const kept = await saveStrategyAnalysis(analysis.name, analysis.kind, analysis.inputs);
-    await ops.decide(r, { consequence: r.ref.consequence || null, decision: decisionBody(d, { evidence: { type: "strategy_analysis", id: kept.id } }) });
+    await ops.decide(r, { consequence: r.ref.consequence || null, decision: decisionWithTaskEvidence(d, task?.id, { type: "strategy_analysis", id: kept.id }) });
     linked = true;
   }
   if (fill) fill(value, unit);
@@ -1210,9 +1213,10 @@ export function IntervalBasis({ mode, task, kind, ops, can, status = null, saved
     if (!mode?.ref?.id || !task?.id) return undefined;
     getFailureModeIntervalInputs(mode.ref.id, task.id).then((x) => on && setGot(x), () => on && setGot({}));
     return () => { on = false; };
-  }, [mode?.ref?.id, task?.id, tick, mode?.ref?.decision?.evidence?.id]);
-  // A saved calculation's own answer ("Check every 60 hours"), read with it.
-  const analysisId = mode?.ref?.decision?.evidence?.type === "strategy_analysis" ? mode.ref.decision.evidence.id : null;
+  }, [mode?.ref?.id, task?.id, tick, taskEvidence(mode?.ref?.decision, task?.id)?.id]);
+  // This task's saved calculation's own answer ("Check every 60 hours"), read with it.
+  const own = taskEvidence(mode?.ref?.decision, task?.id);
+  const analysisId = own?.type === "strategy_analysis" ? own.id : null;
   const [headline, setHeadline] = useState(null);
   useEffect(() => {
     let on = true;
