@@ -764,13 +764,19 @@ def build_tree(header: list[str], rows: list[list], options: dict,
                         failure["breaches"] = clip(named)
 
     if n_modes == 0 and not n_links and not plain_tasks and not no_interval:
+        if "mode" not in mapping and "causes" not in mapping and "task" in mapping:
+            # A plain plan (the Maintenance tab's import: only a task's columns mapped).
+            raise RcmImportError(
+                f"No tasks found — the “{mapping['task']}” column is empty. Check the header row and the "
+                "column mapped to Task.")
         raise RcmImportError(
             f"No failure modes found — the “{mapping.get('mode', 'Failure mode')}” column is empty. Check the "
             "header row and the column mapped to Failure mode.")
     if skipped:
         listed = ", ".join(str(n) for n in skipped[:8]) + (" …" if len(skipped) > 8 else "")
+        lacking = "task" if "mode" not in mapping and "causes" not in mapping and "task" in mapping else "failure mode"
         warnings.append(
-            f"{len(skipped)} row{'s' if len(skipped) != 1 else ''} with no failure mode "
+            f"{len(skipped)} row{'s' if len(skipped) != 1 else ''} with no {lacking} "
             f"{'were' if len(skipped) != 1 else 'was'} skipped (row{'s' if len(skipped) != 1 else ''} {listed}).")
     if no_interval:
         warnings.append(

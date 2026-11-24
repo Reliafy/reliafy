@@ -41,6 +41,49 @@ export function importSummary(counts) {
   return { adds, there, nothing: !c.functions && !c.failures && !c.modes && !c.links && !c.plain_tasks };
 }
 
+// The Maintenance tab's Import maintenance plan…: the same import, reading only a
+// task's own columns (each row a task on the position, no failure modes). The
+// columns the plain-task path reads, in the order the mapper shows them: Task
+// and Interval required, the rest optional; the decision column is the task's type.
+export const PLAN_FIELDS = ["task", "interval", "interval_unit", "outcome", "task_ref", "trade", "labour_hours"];
+const PLAN_REQUIRED = new Set(["task", "interval"]);
+const PLAN_LABEL = { outcome: "Task type", task: "Task" };
+const PLAN_HELP = {
+  task: "What's done (“Grease the bearings”): one task per row.",
+  outcome: "Optional: fixed interval, on condition or failure finding. Left out, it's read from the task's words.",
+};
+
+// The import's fields (the server's, for an RCM worksheet) cut to a plan's.
+export function planFields(fields) {
+  const byId = new Map((fields || []).map((f) => [f.id, f]));
+  return PLAN_FIELDS.filter((id) => byId.has(id)).map((id) => ({
+    ...byId.get(id), required: PLAN_REQUIRED.has(id),
+    ...(PLAN_LABEL[id] ? { label: PLAN_LABEL[id] } : {}), ...(PLAN_HELP[id] ? { help: PLAN_HELP[id] } : {}),
+  }));
+}
+
+// The server's guessed mapping, with only a plan's columns kept (a Failure mode or
+// Function column in the file is left out: each row becomes a task).
+export function planMapping(guess) {
+  return Object.fromEntries(Object.entries(guess || {}).filter(([id]) => PLAN_FIELDS.includes(id)));
+}
+
+// What a plan adds and leaves, from the preview's counts: tasks only.
+export function planSummary(counts) {
+  const c = counts || {};
+  return {
+    adds: c.plain_tasks ? [n(c.plain_tasks, "task")] : [],
+    there: c.plain_tasks_existing ? [n(c.plain_tasks_existing, "task")] : [],
+    nothing: !c.plain_tasks,
+  };
+}
+
+// The words once a plan is imported onto a position.
+export function planImportedText(counts, name) {
+  const added = counts?.plain_tasks || 0;
+  return added ? `Added ${n(added, "task")} to “${name}”.` : `Nothing new to add to “${name}”.`;
+}
+
 // The FME(C)A's columns come after Consequence, named as the import reads
 // them (Owner and Due date are its synonyms for the action's owner and due
 // date); RPN, Action priority and Mode criticality are worked out, never
