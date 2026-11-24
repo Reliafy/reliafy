@@ -205,6 +205,27 @@ def test_task_table_route(api):
     assert [r["name"] for r in whole["tasks"]] == ["Skim"]
 
 
+def test_task_table_and_packages_forgive_which_id_names_a_place(api):
+    # The Explorer opened on a place names it as position_id: read as the place it is.
+    yard = api.post(f"{M}/locations", json={"name": "Yard"}).json()
+    pump = api.post(f"{M}/positions", json={"name": "Pump", "location_id": yard["id"]}).json()
+    api.post(f"{M}/positions/{pump['id']}/tasks", json={"name": "Skim", "interval": 1, "unit": "weeks"})
+    as_pos = api.get(f"{M}/task-table", params={"position_id": yard["id"], "within": yard["id"]})
+    assert as_pos.status_code == 200, as_pos.text
+    assert [r["name"] for r in as_pos.json()["tasks"]] == ["Skim"]
+    assert api.get(f"{M}/task-table", params={"position_id": yard["id"], "within": yard["id"]}).json() == \
+        api.get(f"{M}/task-table", params={"location_id": yard["id"], "within": yard["id"]}).json()
+    assert api.get(f"{M}/packages", params={"position_id": yard["id"]}).status_code == 200
+    # A place with nothing at it: an empty table, not an error.
+    empty = api.post(f"{M}/locations", json={"name": "Shed"}).json()
+    got = api.get(f"{M}/task-table", params={"position_id": empty["id"], "within": empty["id"]})
+    assert got.status_code == 200 and got.json()["total"] == 0
+    # An id nothing has is still not found.
+    assert api.get(f"{M}/task-table", params={"position_id": "nope"}).status_code == 404
+    assert api.get(f"{M}/task-table", params={"within": "nope"}).status_code == 404
+    assert api.get(f"{M}/packages", params={"position_id": "nope"}).status_code == 404
+
+
 def test_over_mcp_a_package_by_operating_hours(env):
     async def flow(client):
         mower = _ok(await _do(client, "maintenance", "positions.create", name="Mower"))
