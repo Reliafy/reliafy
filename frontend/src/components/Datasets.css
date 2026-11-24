@@ -175,6 +175,8 @@
 }
 .ds-file-line .ds-file-name { font-weight: 600; overflow-wrap: anywhere; }
 .ds-file-line .muted { color: var(--text-secondary); }
+/* How number columns with thousands separators or decimal commas were read (under the preview). */
+.ds-number-notes { margin: var(--space-2) 0 0; padding-left: var(--space-4); }
 /* Form entry: a plain label over each list, its count on the right. */
 .ds-flabel {
   display: flex;
@@ -240,3 +242,24 @@
 
 /* The dataset page's reading (how the columns are read), with Change, above the rows. */
 .ds-reading { display: flex; flex-direction: column; gap: var(--space-2); margin-bottom: var(--space-3); min-width: 0; }
+
+/* New dataset's "Type it in": the text box, what can be typed, and the live reading. */
+.ds-notation { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.ds-notation-text { font-family: var(--font-mono); min-height: calc(4 * var(--control-md)); }
+.ds-notation-rules { display: flex; flex-direction: column; gap: var(--space-1); margin: 0; }
+.ds-notation-rule { display: grid; grid-template-columns: minmax(9em, auto) 1fr; gap: var(--space-3); }
+.ds-notation-rule dt, .ds-notation-rule dd { margin: 0; }
+.ds-notation-rule dd { color: var(--text-secondary); }
+.ds-notation-read { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.ds-notation-summary { font-size: var(--fs-16); line-height: var(--lh-16); }
+@media (max-width: 480px) {
+  .ds-notation-rule { grid-template-columns: 1fr; gap: 0; }
+}
+
+/* The dataset page's "Show as text". */
+.ds-astext { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-3); }
+.ds-astext textarea { font-family: var(--font-mono); min-height: calc(3 * var(--control-md)); }
+.ds-astext-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.ds-preview-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+.ds-preview-actions:empty { display: none; }
+.ds-preview-actions .ds-allrows-open { margin-top: 0; }

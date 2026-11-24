@@ -15,6 +15,7 @@ from backend.services import rbd_capacity
 from backend.services.access import AccessCtx, get_access
 from backend.services.rbd_analysis import AnalysisError
 from backend.errors import client_message
+from backend.services import rbd_live_models
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -31,6 +32,7 @@ def rbd_production(
     the long run and over its period (repairable), or at ``t``
     (non-repairable). ``{"production": null}`` when no block has a
     capacity."""
+    graph = rbd_live_models.refresh(session, graph, ctx.read_owners)  # linked blocks on their model's fit
     try:
         result = rbd_capacity.production_for_owner(session, graph, ctx.read_owners, t=t)
     except (rbd_capacity.CapacityError, AnalysisError) as exc:

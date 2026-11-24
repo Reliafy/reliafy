@@ -98,7 +98,7 @@ export function PriorFields({ state, set, kind, kinds = null, onKind, trust = tr
       {kind === "model" && (
         <Select aria-label="Prior model" value={state.modelId || ""} onChange={(e) => set("modelId", e.target.value || null)}>
           <option value="">{models === null ? "Loading models…" : "Pick a Weibull, exponential or lognormal model"}</option>
-          {(models || []).map((m) => <option key={m.id} value={m.id}>{m.name}{m.is_sample && !/\(sample\)\s*$/i.test(m.name || "") ? " (sample)" : ""}</option>)}
+          {(models || []).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           {modelFallback}
         </Select>
       )}

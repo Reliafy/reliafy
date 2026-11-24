@@ -181,3 +181,21 @@
 .mt-needs-sub { margin-top: var(--space-3); }
 .mt-needs .lsa-total { margin: 0; font-weight: 600; }
 .mt-needs .lsa-duration { margin-top: var(--space-2); }
+/* Keeps it on its life (MaintenanceTask.jsx SupportFields): the Assumed chip by the heading. */
+.mt-support .mt-modes { margin-top: var(--space-2); }
+/* Fit the impact from history (SupportFit): the answer in words, then Use. */
+.mt-support .mt-fit { margin: var(--space-3) 0; display: grid; gap: var(--space-2); justify-items: start; }
+.mt-support .mt-fit-out p { margin: 0 0 var(--space-1); }
+.mt-support .mt-fit-gap { color: var(--warning-text); }
+
+/* The task panel (Derryn, 23 Nov 2026): a fixed fact as quiet text (a response's kind, its trigger),
+   the line under the title (From RCM … · Open in RCM ›), and the optional extras as fold-outs. */
+.mt-fixed { margin: 0; font-size: var(--fs-14); line-height: var(--lh-14); color: var(--text); }
+.mt-from { overflow-wrap: anywhere; }
+.mt-rcm-link { text-decoration: none; white-space: nowrap; }
+.mt-rcm-link:hover { text-decoration: underline; }
+.mt-extras { display: flex; flex-direction: column; gap: var(--space-1); }
+.mt-extras > .field-help { margin: var(--space-1) 0 0; }
+.task-schedule .mt-more-sched { margin-top: var(--space-1); }
+.task-schedule .mt-more-sched .fold-body .sel-trigger { width: auto; max-width: 100%; }
+.mt-form .mt-due-line { margin: 0; }

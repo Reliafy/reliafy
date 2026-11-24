@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listPositionMissions } from "../api.js";
 import Chip from "./ui/Chip.jsx";
+import { ShowMe } from "./SectionPage.jsx";
 import {
-  completesText, covStatus, feedsList, isCovRow, isPhaseRow, isRuleRow, latestOnly, lengthText, pct, phaseLengthText, phaseOfText, phasesText,
+  canAddMission, noMissionWhy, completesText, covStatus, feedsList, isCovRow, isPhaseRow, isRuleRow, latestOnly, lengthText, pct, phaseLengthText, phaseOfText, phasesText,
   placeholderTitle, placeholderTone, ruleText,
 } from "../explorerMissions.js";
 
@@ -31,15 +32,35 @@ export function useTreeMissions({ on, within = null }) {
 
 // A position's roll-up on the Missions tab, with "Add a mission" a real button wherever one can be
 // added (it was plain words, the action only in the row's menu). `text`: rollupText's words.
-export function MissionRollup({ text, onAdd = null }) {
+// `label`: the button's words ("New mission…" on the Missions tab).
+export function MissionRollup({ text, onAdd = null, label = "Add a mission" }) {
   const tail = " · Add a mission";
-  if (!onAdd || !String(text || "").endsWith(tail)) return text || "";
+  if (!String(text || "").endsWith(tail)) return text || "";
+  if (!onAdd) return text.slice(0, -tail.length);
   // One inline span, so a flex parent (the heading's roll-up) keeps the space before the button.
   return (
     <span>
       {text.slice(0, -tail.length)}{" · "}
-      <button type="button" className="link mt-add-mission" onClick={(e) => { e.stopPropagation(); onAdd(); }}>Add a mission</button>
+      <button type="button" className="link mt-add-mission" onClick={(e) => { e.stopPropagation(); onAdd(); }}>{label}</button>
     </span>
+  );
+}
+
+// The Missions tab's landing state for a position with no missions here or below, in the table area:
+// says so, one line on what a mission is for, New mission… (where one can be added; else why not)
+// and Read the guide.
+export function MissionsLanding({ row, onAdd = null }) {
+  const can = canAddMission(row);
+  return (
+    <section className="card missions-landing" aria-labelledby="missions-landing-h">
+      <h3 id="missions-landing-h">No missions here</h3>
+      <p>A mission is a saved what-if: this system run through phases over a stretch of time (a 10-hour sortie, a year of use), for the chance it completes and the failures to expect.</p>
+      <div className="missions-landing-actions">
+        {can && onAdd ? <button type="button" onClick={onAdd}>New mission…</button>
+          : !can ? <span className="rim-tquiet">None can be added here yet: {noMissionWhy(row, true)}.</span> : null}
+        <ShowMe help={{ guide: "missions" }}>Read the guide</ShowMe>
+      </div>
+    </section>
   );
 }
 

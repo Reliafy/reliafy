@@ -6,7 +6,7 @@ import { optimumMarker } from "../plotTheme.js";
 import { unitInText } from "./unitText.js";
 import { useCurrency } from "../WorkspaceProvider.jsx";
 import { formatCostRate } from "../money.js";
-import { savingWords } from "../overhaulReplace.js";
+import { savingPctText, vsBestPct, vsBestWords } from "../overhaulReplace.js";
 
 // An overhaul-and-replace answer (POST /api/strategy/overhaul-replace, or a saved analysis's
 // stored results): the plan in a sentence, the cost rate against X for a few N, the comparisons,
@@ -33,6 +33,9 @@ export default function OverhaulReplaceResult({ result, name = null, actions = n
 
   const cheaper = (result.comparisons || []).find((c) => c.id === result.cheaper) || null;
   const runner = (result.comparisons || []).find((c) => c.id === result.runner_up) || null;
+  // Every other plan against this one, as a % of this plan's cost rate (from the rates, so a saved
+  // analysis from before reads the same way).
+  const vsBest = (c) => vsBestPct(c?.cost_rate, best.cost_rate);
   const traces = (result.curve?.series || []).map((s) => ({
     type: "scatter", mode: "lines", x: result.curve.t, y: s.cost_rate, connectgaps: false,
     name: s.overhauls === 0 ? "Replace only (N = 0)" : `N = ${s.overhauls}`,
@@ -51,8 +54,9 @@ export default function OverhaulReplaceResult({ result, name = null, actions = n
     <>
       <ResultSummary
         tone={cheaper ? "caveat" : "good"}
-        sentence={<><PlanWords best={best} ut={ut} />{runner && !cheaper && runner.saving_pct > 0.05
-          ? <>. That costs <b>{formatNumber(runner.saving_pct, { sig: 2 })}%</b> less than the next best plan ({runner.label.toLowerCase()})</> : null}.</>}
+        sentence={<><PlanWords best={best} ut={ut} />{cheaper ? ": the cheapest overhaul-and-replace plan searched" : null}
+          {runner && !cheaper && runner.saving_pct > 0.05
+          ? <>. That costs <b>{savingPctText(runner.saving_pct)}%</b> less than the next best plan ({runner.label.toLowerCase()})</> : null}.</>}
         stats={[
           { label: "Overhaul every", value: best.overhauls ? formatWithUnit(best.interval, ut) : "—",
             hint: best.overhauls ? undefined : "Overhauls don't pay" },
@@ -62,7 +66,7 @@ export default function OverhaulReplaceResult({ result, name = null, actions = n
           { label: "Repairs per replacement cycle", value: `≈ ${formatNumber(best.repairs_per_cycle)}` },
         ]}
       >
-        {cheaper ? <>{cheaper.label} costs {formatNumber(-cheaper.saving_pct, { sig: 2 })}% less again: consider it, or search more overhauls.</> : null}
+        {cheaper ? <>{cheaper.label} {vsBestWords(vsBest(cheaper))} than this plan: consider it, or search more overhauls.</> : null}
       </ResultSummary>
       {(result.warnings || []).filter((w) => !cheaper || !w.includes(cheaper.label)).map((w) => (
         <p key={w} className="hint" role="note">! {w}</p>
@@ -74,7 +78,7 @@ export default function OverhaulReplaceResult({ result, name = null, actions = n
       <h3 className="heading-xs or-h">Against the other plans</h3>
       <div className="maint-scroll or-scroll">
         <table className="or-table">
-          <thead><tr><th scope="col">Plan</th><th scope="col">Interval{u}</th><th scope="col" className="num">Cost rate</th><th scope="col" className="num">Best plan saves</th></tr></thead>
+          <thead><tr><th scope="col">Plan</th><th scope="col">Interval{u}</th><th scope="col" className="num">Cost rate</th><th scope="col" className="num">Against this plan</th></tr></thead>
           <tbody>
             <tr className="or-best"><th scope="row">This plan: {best.overhauls ? `overhaul every X, replace after ${best.overhauls}` : "replace every X"}</th>
               <td>{formatNumber(best.interval)}</td><td className="num">{rate(best.cost_rate)}</td><td className="num">—</td></tr>
@@ -83,7 +87,7 @@ export default function OverhaulReplaceResult({ result, name = null, actions = n
                 <th scope="row">{c.label}{c.failure_count ? ` (at the ${ordinal(c.failure_count)} failure)` : ""}</th>
                 <td>{c.interval != null ? formatNumber(c.interval) : "—"}</td>
                 <td className="num">{c.cost_rate != null ? rate(c.cost_rate) : c.reason || "—"}</td>
-                <td className="num">{savingWords(c.saving_pct)}</td>
+                <td className="num">{vsBestWords(vsBest(c))}</td>
               </tr>
             ))}
           </tbody>

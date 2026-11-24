@@ -6,11 +6,11 @@
 // history, a saved model, the class's); picking a row opens its details beside the
 // table (the plot, the parameters with bounds, the data, what uses it); its ⋯ unlinks it.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
-import { headMenu } from "./explorer.js";
+import { headMenu, subItem } from "./explorer.js";
 import { choose, optionLabels } from "./select.js";
 
 const M = "/api/maintenance";
-const SAMPLE = "Bearing life — Weibull (sample)";
+const SAMPLE = "Bearing life — Weibull";
 const row = (page, key) => page.locator(`.tp-row[data-key="${key}"]`);
 const side = (page) => page.locator(".ml-panel");
 const sideways = (page) => page.evaluate(() => document.documentElement.scrollWidth);
@@ -33,10 +33,36 @@ async function saveFit(page, dialog, positionId) {
   await expect(dialog).toHaveCount(0);
 }
 
+// A heading or row menu's item: under its group (Life model ›, RBD ›) where the group is at the top,
+// else under More › (what didn't fit in the menu standard's ten), where a group's items sit inline.
+async function pickIn(page, menu, group, item) {
+  const phone = (page.viewportSize()?.width || 1000) <= 720;
+  // The menu can still be filling in from the row's data when it opens (an item arriving folds
+  // a group under More ›), so wait until its top level holds still before choosing where to look.
+  const top = menu.locator(":scope > [role='menuitem']");
+  await expect(top.first()).toBeVisible();
+  let before = "";
+  for (let i = 0; i < 20; i += 1) {
+    const now = (await top.allInnerTexts()).join("|");
+    if (now === before) break;
+    before = now;
+    await page.waitForTimeout(250);
+  }
+  const g = menu.locator(":scope > [role='menuitem']", { hasText: new RegExp(`^${group}$`) });
+  if (group && await g.count()) {
+    await g.first().click();
+    return (phone ? menu.getByRole("group", { name: group }) : page.getByRole("menu", { name: group })).getByRole("menuitem", { name: item }).click();
+  }
+  return (await subItem(page, menu, "More", item, { exact: false })).click();
+}
 async function headPick(page, group, item) {
-  await headMenu(page);
-  await page.getByRole("menuitem", { name: group, exact: true }).click();
-  await page.getByRole("menu", { name: group }).getByRole("menuitem", { name: item }).click();
+  await pickIn(page, await headMenu(page), group, item);
+}
+// A row menu's own item: at the top, or under More ›.
+async function rowItem(page, menu, item) {
+  const top = menu.locator(":scope > [role='menuitem']", { hasText: item });
+  if (await top.count()) return top.first();
+  return subItem(page, menu, "More", item, { exact: false });
 }
 
 test("attach a sample model to a position, see its row and its details, then unlink it", async ({ page, request, problems }) => {
@@ -50,7 +76,9 @@ test("attach a sample model to a position, see its row and its details, then unl
   // Assign a saved model… from the heading's "…": the library's samples, picked and attached.
   await headMenu(page);
   const top = page.getByRole("menu", { name: "More actions" });
-  await expect(top.locator(":scope > [role='menuitem']")).toContainText(["Life model", "RBD", "Prediction", "Columns…"]);
+  // The row's own menu (the menu standard): the general section, Life model ›, RBD ›, the rest
+  // (Prediction's items, Columns…) under More ›.
+  await expect(top.locator(":scope > [role='menuitem']")).toContainText(["Open", "Life model", "RBD", "More"]);
   await top.getByRole("menuitem", { name: "Life model", exact: true }).click();
   // (From the class… is off here, its reason under it: no class.)
   await expect(page.getByRole("menu", { name: "Life model" }).getByRole("menuitem")).toContainText(["Fit a life model…",
@@ -82,8 +110,10 @@ test("attach a sample model to a position, see its row and its details, then unl
   // Unlink… from the row's ⋯: it comes off; the model stays in Models.
   await page.keyboard.press("Escape");
   await model.locator(".tp-nm").click({ button: "right" });
-  await expect(page.getByRole("menu").last().getByRole("menuitem")).toContainText(["Open", "Open in Models", "Replace with…", "Unlink…"]);
-  await page.getByRole("menu").last().getByRole("menuitem", { name: "Unlink…" }).click();
+  const mmenu = page.getByRole("menu").last();
+  await expect(mmenu.locator(":scope > [role='menuitem']").first()).toHaveText("Open");
+  await expect(mmenu.locator(":scope > [role='menuitem']").last()).toHaveText("Unlink…"); // red, last, after a line
+  await mmenu.getByRole("menuitem", { name: "Unlink…" }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Unlink" }).click();
   await expect(model).toHaveCount(0);
   await expect(page.locator(".tt-headslot .mt-rollup")).toHaveText("No models here yet");
@@ -172,7 +202,7 @@ test("an ALT model attached as fitted, and a prediction row from the parts list"
   await expect(side(page)).toContainText(`Bypass capacitor ${tag}`);
   // Refresh the prediction…: in the table area (not a dialog), the part listed with its part type.
   await pred.locator(".tp-nm").click({ button: "right" });
-  await page.getByRole("menu").last().getByRole("menuitem", { name: "Refresh the prediction…" }).click();
+  await (await rowItem(page, page.getByRole("menu").last(), "Refresh the prediction…")).click();
   const pd = page.getByRole("region", { name: "Refresh the prediction" });
   await expect(page.getByRole("dialog", { name: "Refresh the prediction" })).toHaveCount(0);
   await expect(pd.locator(".table-pane-title")).toHaveText(`Refresh the prediction · Controller ${tag}`);
@@ -183,7 +213,7 @@ test("an ALT model attached as fitted, and a prediction row from the parts list"
   await expectHealthy(page, problems, { label: "ALT and prediction rows" });
 });
 
-// An RBD row: built from the two positions inside (one with a model, one a flagged placeholder).
+// An RBD row: built from the two positions inside (one with a model, one with none).
 // Build from what's inside… opens the RBD builder itself in the table area, beside the tree (no
 // dialog): what it made said over it, the canvas with a block per position. Esc goes back to the
 // table, the row still picked; the row's panel lists its blocks; Use this one makes it the model
@@ -269,27 +299,28 @@ test("build an RBD from what's inside: the builder in the table area, its row, a
   expect(again.existing).toBe(true);
   expect(again.model_id).toBe(first);
   await expect(rbd.locator(".mt-c-kind")).toContainText("RBD");
-  await expect(rbd.locator(".mt-c-source")).toHaveText("Built from 2 positions inside · 1 placeholder");
-  // A non-repairable RBD's headline is its mean life, never an MTBF (#815).
-  await expect(rbd.locator(".mt-c-numbers")).toContainText(/Mean life [\d,]+ hours/);
-  await expect(rbd.locator(".mt-c-quality")).toContainText("1 placeholder");
+  await expect(rbd.locator(".mt-c-source")).toHaveText("Built from 2 positions inside · 1 needs a model");
+  // One block has no model: no system figure is shown (nothing is invented for it).
+  await expect(rbd.locator(".mt-c-numbers")).not.toContainText(/Mean life [\d,]+ hours/);
+  await expect(rbd.locator(".mt-c-quality")).toContainText("1 needs a model");
   // Its own life model is in use by default.
   const life = page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: "Bearing life — Lognormal" }) });
   await expect(life.locator(".ml-inuse")).toHaveText("In use");
   await rbd.locator(".tp-nm").click();
   await expect(side(page).locator(".ml-blocks tbody tr")).toHaveCount(2);
-  await expect(side(page).locator(".ml-blocks")).toContainText("Placeholder");
+  await expect(side(page).locator(".ml-blocks")).toContainText("No model");
   await expect(side(page).locator(".ml-blocks")).toContainText(`Pump A ${tag}`);
   await expect(side(page).getByRole("link", { name: "Open full page" })).toBeVisible();
   // Use this one: the RBD becomes the model in use.
   await page.keyboard.press("Escape");
   await rbd.locator(".tp-nm").click({ button: "right" });
   const menu = page.getByRole("menu").last();
-  // An RBD's menu leads with its add (a mission flown on a copy of it), then Open in the pane.
-  await expect(menu.getByRole("menuitem").first()).toHaveText("Add a mission…");
-  await expect(menu.getByRole("menuitem").nth(1)).toHaveText("Open in the pane");
-  await expect(menu.getByRole("menuitem", { name: "Open full page" })).toBeVisible();
-  await menu.getByRole("menuitem", { name: "Use this one" }).click();
+  // An RBD's menu: Open (in the pane) first, then the middle leads with its add (a mission flown
+  // on a copy of it).
+  await expect(menu.getByRole("menuitem").first()).toHaveText("Open");
+  await expect(menu.locator(":scope > [role='menuitem']").nth(6)).toHaveText("Add a mission…");
+  await expect(await rowItem(page, menu, "Open full page")).toBeVisible();
+  await (await rowItem(page, menu, "Use this one")).click();
   await expect(rbd.locator(".ml-inuse")).toHaveText("In use");
   await expect(life.locator(".ml-inuse")).toHaveCount(0);
   await expect(row(page, st.id).locator(".tt-rollup-t")).toContainText("in use: RBD");
@@ -378,7 +409,7 @@ test("an RBD row opens in the table area: reload, edit and save, unsaved changes
   // Rebuild from what's inside…: the diagram opens and asks in the pane (no dialog). Cancel leaves
   // it as it is; Rebuild runs again into the same diagram, the saved edit kept.
   await rbd.locator(".tp-nm").click({ button: "right" });
-  await page.getByRole("menu").last().getByRole("menuitem", { name: "Rebuild from what's inside…" }).click();
+  await (await rowItem(page, page.getByRole("menu").last(), "Rebuild from what's inside…")).click();
   await expect(pane).toBeVisible();
   const ask = pane.getByRole("group", { name: "Rebuild from what's inside" });
   await expect(ask).toContainText(`Rebuild from what’s inside Station ${tag}?`);
@@ -402,7 +433,7 @@ test("an RBD row opens in the table area: reload, edit and save, unsaved changes
   await page.keyboard.press("Escape");
   await headPick(page, "RBD", "Link an existing RBD…");
   const picker = page.getByRole("dialog", { name: "Link an existing RBD" });
-  await picker.getByText("Pump station — 1 controller, 2 pumps (sample)").click();
+  await picker.getByText("Pump station — 1 controller, 2 pumps").click();
   await picker.getByRole("button", { name: "Link", exact: true }).click();
   await expect(picker).toHaveCount(0);
   await expect(pane).toBeVisible();
@@ -494,9 +525,11 @@ test("a position's row menu on the Modelling tab is two levels, and Enter parame
   await open(page, `/asset-register/explorer?arrange=positions&sel=${pump.id}&tab=models`);
   await row(page, pump.id).locator(".tp-nm").click({ button: "right" });
   const menu = page.getByRole("menu", { name: new RegExp(`^Actions for Menu pump ${tag}`) });
-  await expect(menu.locator(":scope > [role='menuitem']")).toHaveText(["Life model", "RBD", "Prediction", "Add a mission…", "Rename…", "Focus models", "Focus to a depth", "Pin this branch"]);
-  await expect(menu.getByRole("separator")).toHaveCount(1);
-  for (const gone of ["New position inside", "Add failure report…", "Log an event…", "Move to…", "Delete…"]) {
+  // The menu standard: the general section, the attach groups (Prediction's item and Add a mission…
+  // under More ›), then Delete… after a line.
+  await expect(menu.locator(":scope > [role='menuitem']")).toHaveText(["Open", "Rename…", "Move to…", "Focus", "Pin this branch", "Copy link", "Life model", "RBD", "More", "Delete…"]);
+  await expect(menu.locator(":scope > [role='separator']")).toHaveCount(2);
+  for (const gone of ["New position inside", "Add failure report…", "Log an event…"]) {
     await expect(menu.getByRole("menuitem", { name: gone })).toHaveCount(0);
   }
   // The keyboard: → opens a group.
@@ -526,8 +559,10 @@ test("the Modelling row menu at 400 px: groups open in place", async ({ page, re
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${pump.id}&tab=models`);
   await row(page, pump.id).locator(".tp-nm").click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Prediction", exact: true }).click();
-  await expect(page.getByRole("group", { name: "Prediction" }).getByRole("menuitem")).toHaveText(["Add a prediction (parts count)…"]);
+  const pmenu = page.getByRole("menu").first();
+  await pmenu.getByRole("menuitem", { name: "Life model", exact: true }).click();
+  await expect(pmenu.getByRole("group", { name: "Life model" })).toBeVisible();
+  await expect(await subItem(page, pmenu, "More", "Add a prediction (parts count)…")).toBeVisible();
   expect(await sideways(page)).toBeLessThanOrEqual(400);
 });
 
@@ -912,8 +947,7 @@ test("the prediction at 400 px takes the screen: the parts, then the result, not
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&sel=${ctl.id}&tab=models`);
   await row(page, ctl.id).locator(".tp-nm").click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Prediction", exact: true }).click();
-  await page.getByRole("group", { name: "Prediction" }).getByRole("menuitem", { name: "Add a prediction (parts count)…" }).click();
+  await pickIn(page, page.getByRole("menu").first(), "Prediction", "Add a prediction (parts count)…");
   const pane = page.getByRole("region", { name: "Add a prediction" });
   await expect(pane.locator(".pred2-table tbody tr")).toHaveCount(3);
   await expect(page.getByRole("dialog", { name: "Add a prediction" })).toHaveCount(0);
@@ -1040,7 +1074,8 @@ test("the prediction's lines: add a part on a child, leave one out and put it ba
   // 400 px: nothing sideways.
   await page.setViewportSize({ width: 400, height: 860 });
   await expect(rows).toHaveCount(2);
-  expect(await sideways(page)).toBeLessThanOrEqual(400);
+  // Polled: the table lays out again for the phone width a frame or two after the resize.
+  await expect.poll(() => sideways(page)).toBeLessThanOrEqual(400);
   await shot(page, "400-prediction-lines");
   await optoRow.getByRole("button", { name: `Actions for Opto-isolator ${tag}` }).click();
   await shot(page, "400-prediction-line-menu");

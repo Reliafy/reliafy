@@ -83,9 +83,12 @@ _KEPT = ("position_id", "model_type", "model_id", "role", "name", "note", "sourc
 
 
 def _model_linked(s: GraphStore, org: str, p: dict) -> None:
+    # The order it was linked in among the position's live links, so "the latest" holds between
+    # links made on the same day (ids are random); replays give the same numbers.
+    seq = 1 + max((x.get("linked_seq") or 0 for x in s.out(org, p["position_id"], "HAS_MODEL")), default=0)
     s.put_node(org, p["id"], "ModelLink", {k: p.get(k) for k in _KEPT}
                | {"failure_mode_ids": list(p.get("failure_mode_ids") or []), "linked_on": p.get("on"),
-                  "removed": False})
+                  "linked_seq": seq, "removed": False})
     s.put_edge(org, "HAS_MODEL", p["position_id"], p["id"])
 
 
@@ -131,7 +134,7 @@ class PositionModelOps:
 
     def _model_links(self, position_id: str) -> list[dict]:
         live = [x for x in self.s.out(self.org, position_id, "HAS_MODEL") if not x.get("removed")]
-        return sorted(live, key=lambda x: (x.get("linked_on") or "", x["id"]))
+        return sorted(live, key=lambda x: (x.get("linked_on") or "", x.get("linked_seq") or 0, x["id"]))
 
     def _model_link_view(self, link: dict) -> dict:
         modes = []
@@ -491,6 +494,13 @@ def summary(model_type: str, doc) -> dict:
         kind = getattr(doc, "kind", "distribution")
         dist = r.get("distribution_id") or getattr(doc, "distribution_id", "")
         out["path"] = f"/models/m/{doc.id}"
+        # "Adjust for conditions…" on its row (model_adjust.py): a single-distribution life model.
+        from backend.services import model_adjust
+
+        try:
+            out["adjustable"] = model_adjust.why_not(doc) is None
+        except Exception:  # noqa: BLE001 - an odd old document: not offered
+            out["adjustable"] = False
         split = r.get("split") or {}
         failed = split.get("failed")
         if failed is None and isinstance((r.get("plot") or {}).get("scatter"), dict):
@@ -578,7 +588,16 @@ def summary(model_type: str, doc) -> dict:
                               "why": bayes.get("label") or "A Bayesian update of a baseline with this history."}
             return out
         out["kind"] = label if kind == "distribution" else (r.get("distribution") or label)
-        if kind == "distribution" and dist == "weibull" and "alpha" in params and "beta" in params:
+        hr = _num((r.get("extras") or {}).get("hr"))
+        if kind == "distribution" and hr is not None and hr != 1:
+            # Adjusted for conditions (model_adjust.py): its scale isn't the parameter shown, so the
+            # row gives the ratio (and a Weibull's shape, which it keeps); mean and B10 follow, with hr.
+            out["adjusted"] = r.get("adjusted") or {"hazard_ratio": hr}
+            if dist == "weibull" and "beta" in params:
+                lo, hi = _ci(params["beta"])
+                out["numbers"].append(_number("shape", "Shape", params["beta"].get("value"), lo, hi))
+            out["numbers"].append(_number("hr", "Hazard ratio", hr, None, None, ""))
+        elif kind == "distribution" and dist == "weibull" and "alpha" in params and "beta" in params:
             lo, hi = _ci(params["alpha"])
             out["numbers"].append(_number("char_life", "Characteristic life", params["alpha"].get("value"), lo, hi, unit))
             lo, hi = _ci(params["beta"])
@@ -824,10 +843,13 @@ def _qty_name(x: dict) -> str:
 
 
 def _placeholders(graph: dict) -> list[str]:
+    """The blocks of a built diagram with no model (or, built before, a placeholder)."""
     out = []
     for n in (graph or {}).get("nodes") or []:
         d = n.get("data") or {}
-        if (d.get("model") or {}).get("placeholder"):
+        if (d.get("model") or {}).get("placeholder") or (
+                n.get("type") == "component" and not d.get("model") and not d.get("rbd")
+                and d.get("state") not in ("working", "failed")):
             out.append(d.get("label") or n.get("id"))
     return out
 
@@ -855,12 +877,11 @@ def rbd_summary(db, owners, doc, age: float | None = None) -> dict:
                       "basic_placeholders": t["placeholders"], "nested": rbd_placeholders.nested(t)},
            "placeholders": ph, "placeholder_blocks": rbd_placeholders.summary(t),
            "path": f"/systems/b/{doc.id}", "repairable": bool(graph.get("repairable")),
-           "quality": ({"word": f"{t['placeholders']:,} of {t['basic']:,} placeholders" if rbd_placeholders.nested(t)
-                        else f"{t['placeholders']} placeholder{'s' if t['placeholders'] != 1 else ''}",
+           "quality": ({"word": f"{t['placeholders']:,} of {t['basic']:,} need a model" if rbd_placeholders.nested(t)
+                        else f"{t['placeholders']} need{'s' if t['placeholders'] == 1 else ''} a model",
                         "tone": "danger" if most else "warning",
                         "why": (f"{rbd_placeholders.words(t).capitalize()} ({rbd_placeholders.names_text(t)}): "
-                                + ("most of the answer rests on invented lives, so " if most else "")
-                                + "the figures aren't real until they have models.")}
+                                "the figures aren't real until each has one.")}
                        if ph else {"word": "", "tone": "neutral", "why": ""})}
     if graph.get("repairable"):
         out["numbers"].append({"id": "reference", "label": "", "text": "a repairable diagram: open it to simulate "
@@ -895,15 +916,15 @@ def rbd_summary(db, owners, doc, age: float | None = None) -> dict:
 
 
 def rbd_source(link: dict, model: dict | None) -> str:
-    """An RBD row's Source: "Built from 5 positions inside · 2 placeholders" or "Linked: <name>"."""
+    """An RBD row's Source: "Built from 5 positions inside · 2 need a model" or "Linked: <name>"."""
     src = link.get("source") or {}
     counts = (model or {}).get("counts") or {}
     ph = counts.get("basic_placeholders", len((model or {}).get("placeholders") or []))
     basic = counts.get("basic_blocks") or 0
     if ph and basic > 1 and counts.get("nested"):
-        tail = f" · {ph:,} of {basic:,} basic blocks {'is a placeholder' if ph == 1 else 'are placeholders'}"
+        tail = f" · {ph:,} of {basic:,} basic blocks {'needs' if ph == 1 else 'need'} a model"
     else:
-        tail = f" · {ph} placeholder{'s' if ph != 1 else ''}" if ph else ""
+        tail = f" · {ph} {'needs' if ph == 1 else 'need'} a model" if ph else ""
     if src.get("built_from") is not None:
         n = int(src["built_from"])
         return f"Built from {n} position{'s' if n != 1 else ''} inside{tail}"
@@ -1066,13 +1087,23 @@ def source_text(link: dict, position_name: str = "") -> str:
         if src.get("design_role") == "prediction":
             return "From the product's design: its parts count"
         return "From the product's design"
-    if role == "library":
+    if role == "library" and not src.get("adjusted"):
         from backend.maintenance.library_models import source_text as library_source
 
         return library_source(src)
     if role == "prediction":
         env = src.get("environment_name") or src.get("environment") or ""
         return f"Predicted from its parts list (parts count{', ' + env if env else ''})"
+    if src.get("adjusted"):
+        adj = src["adjusted"]
+        base = src.get("library") and role == "library"
+        if base:
+            from backend.maintenance.library_models import source_text as library_source
+
+            start = library_source(src)
+        else:
+            start = f"From {adj.get('from_name') or 'a saved model'}"
+        return f"{start}, adjusted for conditions (×{float(adj.get('hazard_ratio') or 1):.4g} hazard)"
     return f"Assigned: {link.get('name') or 'a saved model'}"
 
 
@@ -1175,8 +1206,11 @@ def link_saved(m, db, owners, hidden, position_id: str, model_type: str, model_i
     doc = fetcher(db, owners, hidden)(model_type, str(model_id or ""))
     if doc is None:
         raise sv.NotFound(f"Model {model_id}")
+    adjusted = (getattr(doc, "spec", None) or {}).get("adjusted") if model_type == "model" else None
+    source = {"adjusted": {k: adjusted.get(k) for k in ("from_model_id", "from_name", "hazard_ratio")}} \
+        if adjusted else None
     return m.link_position_model(position_id, model_type, doc.id, "assigned", failure_mode_ids, doc.name, note,
-                                 None, replace_link_id)
+                                 source, replace_link_id)
 
 
 def cm_label(m, p: dict) -> str:
@@ -1674,7 +1708,8 @@ def rbd_blocks(m, link: dict, doc, resolve_subsystem=None) -> list[dict]:
         whole = bool(row) and row["basic"] > 0 and row["placeholders"] == row["basic"]
         out.append({"id": n.get("id"), "label": d.get("label") or n.get("id"), "type": n.get("type"),
                     "model": (f"RBD: {sub.get('name') or 'a sub-system'}" if sub else _model_words(model)) or "—",
-                    "placeholder": bool(model.get("placeholder")) or (bool(sub) and whole),
+                    "placeholder": bool(model.get("placeholder")) or (bool(sub) and whole) or (
+                        not sub and not model and n.get("type") == "component" and d.get("state") not in ("working", "failed")),
                     **({"inside": {"basic": row["basic"], "placeholders": row["placeholders"]}}
                        if sub and row else {}),
                     "source": d.get("model_source") or None,
@@ -1797,7 +1832,7 @@ def _tree_parts(m, db, owners, hidden, position_id: str, with_self: bool = False
         conv = _convert(r.get("distribution_id") or d.distribution_id, r.get("params") or [], f) if f and \
             d.kind == "distribution" else None
         if conv is None:
-            return None, f"{child['name']}'s model is in {r.get('unit')}, which can't be put in {unit}: a placeholder stands in."
+            return None, f"{child['name']}'s model is in {r.get('unit')}, which can't be put in {unit}: it has no model in this diagram yet."
         return ({"model": {"distribution_id": r.get("distribution_id") or d.distribution_id, "params": conv,
                            **({"extras": r["extras"]} if r.get("extras") else {})},
                  "data": {"model_source": f"{source}, put in {unit}"}},
@@ -1827,7 +1862,7 @@ def _tree_parts(m, db, owners, hidden, position_id: str, with_self: bool = False
             if inside and owner_id is not None and depth < MAX_NEST and child["id"] != position_id:
                 if _open_covariates_below(m, child["id"]):
                     return None, (f"{child['name']}'s parts have models with covariates left open, which a "
-                                  "sub-system's blocks can't take from this diagram yet: a placeholder stands in.")
+                                  "sub-system's blocks can't take from this diagram yet: it has no model in this diagram yet.")
                 sub = build_rbd(m, db, owners, hidden, child["id"], owner_id, _unit=unit, _depth=depth + 1)
                 nested_placeholders.extend(f"{child['name']} › {ph}" for ph in sub.get("placeholders") or [])
                 if sub.get("existing"):
@@ -1853,7 +1888,7 @@ def _tree_parts(m, db, owners, hidden, position_id: str, with_self: bool = False
             if rate.get("rate") is None or _factor((d.results or {}).get("unit") or unit, unit) != 1.0:
                 return None, (f"{child['name']}'s model in use ({d.name}) is on two clocks and "
                               + (f"needs its {per}" if rate.get("rate") is None
-                                 else f"is in {(d.results or {}).get('unit')}, not {unit}") + ": a placeholder stands in.")
+                                 else f"is in {(d.results or {}).get('unit')}, not {unit}") + ": it has no model in this diagram yet.")
             return ({"model": {"saved_model_id": d.id, "usage_rate": rate["rate"],
                                "usage_rate_source": rate.get("source")},
                      "data": {"model_source": f"Its model in use ({d.name}), at {rate['rate']:.4g} {per}: "
@@ -1973,7 +2008,7 @@ def build_rbd(m, db, owners, hidden, position_id: str, owner_id: str | None = No
     if was_in_use:
         m.use_position_model(position_id, link["id"])
     if nested:
-        built["notes"].append(f"Placeholders inside sub-systems: {', '.join(nested[:8])}"
+        built["notes"].append(f"No life model yet inside sub-systems: {', '.join(nested[:8])}"
                               f"{' …' if len(nested) > 8 else ''}. Give each a model on its Models tab and rebuild.")
     return {**link, "notes": built["notes"], "placeholders": built["placeholders"] + nested, "ask": built["ask"]}
 
@@ -2004,10 +2039,10 @@ def new_rbd(m, db, owners, hidden, position_id: str, owner_id: str, repairable: 
         if said:
             notes.append(said)
         if fields is None:
-            fields = {"model": dict(rbd_derive.PLACEHOLDER), "data": {"model_source": "A placeholder: no model in use"}}
+            fields = {"data": {"model_source": rbd_derive.NO_MODEL_SOURCE}}
             placeholders.append(p["name"])
-            notes.append(f"{p['name']} has no life model in use: a placeholder (flagged) stands in. Give it one on its "
-                         "Models tab, or set the block's model in the builder.")
+            notes.append(f"{p['name']} has no life model in use, so the diagram can't be worked out yet. Give it one "
+                         "on its Models tab, or set the block's model in the builder.")
         bid = rbd_derive._bid(p["id"])
         nodes.append({"id": bid, "type": "component", "label": p["name"], **fields})
         edges = [{"source": "in", "target": bid}, {"source": bid, "target": "out"}]
@@ -2067,7 +2102,8 @@ def _mission_copy(graph: dict) -> tuple[dict, bool]:
 
 
 def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, name: str | None = None,
-                      link_id: str | None = None) -> dict:
+                      link_id: str | None = None, tree: bool = False, setup: dict | None = None,
+                      length: dict | None = None) -> dict:
     """A new mission on a position, with an RBD of its own (one RBD per mission). It starts from a
     copy of the position's own RBD where it has one (wired as drawn there: parallel trains, standby
     and k-of-n stay as they are; a repairable one loses only its repairs and planned work), else is
@@ -2078,8 +2114,13 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
     Saved once as "<position> — <mission>", marked ``mission_of`` the position (not linked as one
     of its models). ``link_id``: one of the position's model rows to fly it on (Add a mission on a
     model's row): an RBD is copied, the model in use is the one block. The mission remembers it
-    (``mission_of.on_link``), so it shows under that model. {rbd: {id, name}, mission: summary,
-    notes, placeholders}."""
+    (``mission_of.on_link``), so it shows under that model. ``link_id`` may also be an RBD on a
+    position inside this one (the Missions tab's "Runs on": a saved RBD at or below). ``tree``: built
+    from the positions inside, in series where nothing says what's redundant, even where the
+    position has an RBD of its own. ``setup`` (rbd_missions.parse_setup: start, calendar, starting
+    state) and ``length`` ({value, unit}: hours of running, or days, months or years through the
+    calendar): the mission starts with one phase of that length, in the RBD's unit.
+    {rbd: {id, name}, mission: summary, notes, placeholders}."""
     from backend.services import rbd_missions
     from backend.services import rbds as rbds_service
     from backend.services.rbd_graph import GraphError, normalize_graph
@@ -2108,7 +2149,11 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
     if link_id:
         on = next((x for x in m.position_models(position_id) if x.get("id") == link_id), None)
         if on is None:
-            raise sv.Invalid("That model isn't on this position any more: read the models again.")
+            # An RBD on a position inside this one (Runs on: a saved RBD at or below).
+            on = next((x for x in m.all_position_models() if x.get("id") == link_id and x.get("model_type") == "rbd"
+                       and _inside(m, x.get("position_id"), position_id)), None)
+        if on is None:
+            raise sv.Invalid("That model isn't on this position or inside it any more: read the models again.")
         if on.get("model_type") == "rbd":
             src = fetcher(db, owners, hidden)("rbd", on.get("model_id"))
             if src is None:
@@ -2120,8 +2165,18 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
             src = None
             kids = []  # flown on the position's own model: one block, whatever is inside it
         owner["on_link"] = on["id"]
+    elif tree:
+        src = None
+        if not kids:
+            raise sv.Invalid(f"{p['name']} has no positions inside to build the mission from: run it on its model "
+                             "or an RBD instead.")
     else:
         src = _mission_source_rbd(m, fetcher(db, owners, hidden), position_id)
+    try:
+        clean_setup = rbd_missions.parse_setup({**(setup or {}), **({"length": length} if length else {})}) \
+            if (setup or length) else None
+    except rbd_missions.MissionError as exc:
+        raise sv.Invalid(str(exc)) from None
     if src is not None:
         graph, was_repairable = _mission_copy(src.graph or {})
         notes = [f"Started from a copy of {src.name}, wired as it is there"
@@ -2140,6 +2195,19 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
         notes = [note] if note else []
     owner["built_from"] = source
     graph = {**graph, "mission_of": owner, "mission_name": name}
+    if clean_setup:
+        graph[rbd_missions.SETUP_KEY] = clean_setup
+    if clean_setup and clean_setup.get("length"):
+        # One phase covering its whole length, in the RBD's running time (through its calendar).
+        from backend.services import mission_answers
+        from backend.services.rbd_analysis import AnalysisError
+
+        try:
+            run = mission_answers.running_length(clean_setup["length"], graph.get("unit") or "",
+                                                 mission_answers.clock_for(m, position_id, clean_setup))
+        except AnalysisError as exc:
+            raise sv.Invalid(str(exc)) from None
+        graph["phases"] = [{"name": "Whole mission", "duration": round(run, 6)}]
     if source == "model" and rbd_missions.simple_block(graph) is not None:
         # A plain life model's mission is a length from a starting age: the item's age now when one is
         # fitted (read each time it's worked out, as the Calculator's "As of now"), else new.
@@ -2155,6 +2223,18 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
             "mission": rbd_missions.summary(rbd.graph or graph, mission), "position_id": position_id,
             "notes": notes[:20], "placeholders": placeholders, "built_from": source,
             "series_warning": rbd_missions.series_warning(rbd.graph or graph)}
+
+
+def _inside(m, position_id: str | None, top_id: str) -> bool:
+    """Is ``position_id`` the position ``top_id`` or one inside it (up its PART_OF chain)?"""
+    seen, at = set(), position_id
+    while at and at not in seen:
+        if at == top_id:
+            return True
+        seen.add(at)
+        up = [x for x in m.s.out(m.org, at, "PART_OF") if x.get("label") == "Position"]
+        at = up[0]["id"] if up else None
+    return False
 
 
 def _one_block_graph(m, db, owners, hidden, p: dict, link: dict | None = None) -> tuple[dict, str | None]:
@@ -2276,15 +2356,17 @@ def _add_new_blocks(old: dict, fresh: dict, resolve) -> dict:
 
     have = {n.get("id") for n in old.get("nodes") or []}
     new = [n for n in fresh.get("nodes") or [] if n.get("type") == "component" and n["id"] not in have]
-    # A block still standing on a placeholder takes the model its position has now (nothing else
-    # about it changes); a block given a model by hand is left as it is.
-    found = {n["id"]: n for n in fresh.get("nodes") or [] if n.get("type") == "component"
-             and not (n.get("model") or {}).get("placeholder")}
+    # A block still with no model (or on a placeholder) takes the model its position has now
+    # (nothing else about it changes); a block given a model by hand, or marked as never failing
+    # (Status › Working), is left as it is.
+    found = {n["id"]: n for n in fresh.get("nodes") or [] if n.get("type") in ("component", "subsystem")
+             and ((n.get("model") and not n["model"].get("placeholder")) or (n.get("data") or {}).get("rbd"))}
     filled = []
     for n in old.get("nodes") or []:
         d = n.get("data") or {}
         f = found.get(n.get("id"))
-        if f is None or not (d.get("model") or {}).get("placeholder"):
+        bare = not d.get("model") and not d.get("rbd") and d.get("state") not in ("working", "failed")
+        if f is None or not (bare or (d.get("model") or {}).get("placeholder")):
             filled.append(n)
             continue
         d = {k: v for k, v in d.items() if k not in ("model", "rbd")}

@@ -91,14 +91,15 @@ To find your way around a big tree:
   in that row's menu.
 - The search box filters the tree and its RCM: descriptions, effects, tasks
   and notes, keeping the rows each match sits inside.
-- **Focus failure modes** in any row's menu (a position, function, performance standard, functional
-  failure, failure mode or task) closes every other branch of the tree and opens
-  that row at every level below it, or use **Focus to a depth** for **1 level**,
-  **2 levels** or **3 levels**. On the RCM tab, where a row can go five levels
-  deep, **4 levels** and **5 levels** are offered too where the rows
-  go that deep: from a position, **4 levels** shows its failure modes'
-  tasks. The other rows stay on show, closed, so you
-  can still see where you are; open and close rows by hand after as usual.
+- **Focus ›** in any row's menu (a position at any level, function, performance
+  standard, functional failure, failure mode or task) closes every other branch
+  of the tree. Under **What**, pick what to see inside that row: **Focus
+  functions**, **Focus failure modes** or **Focus tasks** opens the way down to
+  them, or **Focus on incomplete rows**. Under **Depth**, pick **1 level**,
+  **2 levels** and so on, as deep as that row goes (up to 5 on the RCM tab):
+  from a position, **4 levels** shows its failure modes' tasks. The other rows
+  stay on show, closed, so you can still see where you are; open and close rows
+  by hand after as usual.
 - **Pin this branch** in a position's row menu shows that position and what's
   inside it on its own; **Show whole tree** brings the rest back.
 - **Delete…** in a position's or location's menu (on the Summary tab, and a
@@ -178,15 +179,21 @@ fields, then the quieter things at the foot:
   several failure modes changes for all of them). Its rows read like a failure
   mode's, one line each: **Kind** (a chip, offering only the kinds the
   decision diagram allows); **Interval** (*every N unit*, typed where it's
-  shown and kept on Enter, with **Calculate…** to work it out and **Raise it on
-  an event instead…** for a reading past a limit or an event someone logs; a
-  task by use also says what it counts here); **Then, if found** (**Then, if
-  failed** for failure finding), what's done when the check finds something;
-  **Based on**, its evidence; **Serves**, the failure modes it serves here, each
-  a link with **Remove** at its right, and **Link to another failure mode…**;
-  and **Logistics**, its labour hours, tools and method from its LSA record,
-  with **What it needs**, which opens the task's details on the Maintenance tab with that section open. How it's done (its instructions) belongs to the LSA,
-  not here. At its foot, **Retire the task** (when it serves only this failure
+  shown and kept on Enter; a task by use also says what it counts, in one line
+  with **Change…**); **Interval based on**, what the interval rests on in one
+  line (*Check every 60 hours · from a P-F interval of 120 hours*) with its
+  evidence's status and **Work it out…** or **Change…**, which opens the
+  calculation in place (see Working out the interval); **Then, if found**
+  (**Then, if failed** for failure finding), what's done when the check finds
+  something; for a check, **Outcome**: pass or fail unless you **Add a
+  measurement…** (the measuring point it reads, one line: *Reads: Belt
+  deflection, mm*); **Serves**, the failure modes it serves here, each a link
+  with **Remove** at its right, and **Link to another failure mode…**; and
+  **Cost and needs**: its **Cost**, **Labour**, **Parts** and **Tools and
+  method**, the same fold-outs as its details on the Maintenance tab, each with
+  the way to change them there. How it's done (its
+  instructions) belongs to the LSA, not here. Raising a task on an event is set
+  on the Maintenance tab. At its foot, **Retire the task** (when it serves only this failure
   mode) or **Remove from this failure mode** (when it serves others too).
 
 Every row, whatever its level, opens its details with **Notes and rationale**,
@@ -202,10 +209,9 @@ shows a small note mark after its name in the table; hover over it to read the
 first line. On a phone the same section is in the Details sheet, and the
 FME(C)A tab's Details show a failure mode's notes the same way.
 
-**Edit description**
-(on a performance standard, **Edit text**) in a row's menu changes the text in the table
-itself. **Delete function…** (or performance standard, functional failure or
-failure mode) in a row's menu, or **Delete this …** at the foot of its Details,
+**Rename…** in a row's menu changes its text (a description, or a performance
+standard's text) in the table itself. **Delete…**, last in a row's menu, or
+**Delete this …** at the foot of its Details,
 deletes the row and everything under it. A function takes its performance
 standards, functional failures and failure modes; a performance standard takes
 the functional failures that breach it; a functional failure takes its failure
@@ -328,7 +334,7 @@ Each task of a combination needs its own evidence. The evidence you link in
 step 4 counts for every task it fits: a degradation model backs the
 inspection, a replacement analysis backs the fixed-interval task, and a report
 or a function's notes back any task. Where one piece can't cover them all,
-open the other task's row and link its own under **Based on**. Until
+open the other task's row and link its own under **Interval based on**. Until
 every task has some, the check reads *Partly evidenced*, and the Evidence card
 names the task that has none.
 
@@ -365,14 +371,13 @@ many other failure modes share it.
 - Each task shows how many other failure modes share it. A shared task keeps
   one interval for all of them: change it on the task (its **Interval** row),
   not in the decision dialog, which shows it read-only.
-- A task by use (hours, cycles, km) shows its **Measurement** under its
-  **Interval** row:
-  what it counts, the latest reading and the reading when it was last done.
-  **Change the measurement…** picks another in the same unit, on the position,
+- A task by use (hours, cycles, km) says what it counts under its **Interval**
+  row, in one line (*Counted on: Engine hours on Truck 12*; with none, **Set one…**). **Change…** shows the
+  latest reading and the reading when it was last done, and picks another in the same unit, on the position,
   above or below it, or on the item fitted there, and asks for the last-done
   reading on the new one (or works it out from the date, marked as an
   estimate); **Save what it counts** keeps it.
-- **Retire the task** at the foot of a task's details (or in its row's menu)
+- **Retire the task** at the foot of a task's details (or **Retire…** last in its row's menu)
   retires a task that serves only this failure mode; **Remove from this
   failure mode** (or **Remove** beside a failure mode under **Serves**) unlinks
   one that serves others too, and it stays with them. Choosing a
@@ -389,10 +394,10 @@ when it's first due…**; later, in the task's details, choose **Change…** bes
 then every interval after.
 
 Some work isn't done on a calendar: after 120 mm of rain in 24 hours, test and
-re-dose the pool; after a lightning strike, inspect the chlorinator. In the
-task's details, choose **Raise it on an event instead…** under **Interval**,
-then
-choose what happens: **A reading passes a limit** (pick a measuring point and
+re-dose the pool; after a lightning strike, inspect the chlorinator. On the
+**Maintenance** tab, open the task and under **How often** › **More scheduling
+options** set **When it falls due** to **When an event happens**, then choose
+what happens: **A reading passes a limit** (pick a measuring point and
 the limit, at or above 120 mm on the rain gauge) or **Someone logs an event**
 (type its name, *Lightning strike*). The decision stays as it is; the
 **Interval** column shows *on event: 120 mm on POOL-RAIN* for the task, and the
@@ -418,14 +423,84 @@ Make it, then come back. A saved analysis comes from the Strategy tools: run
 [failure-finding interval](/guides/failure-finding-interval), then press **Save
 analysis**.
 
+### Servicing and lubrication: tasks that keep it on its life
+
+Greasing a bearing, changing the oil or cleaning a screen doesn't renew the
+part. It keeps the part on the life its model describes, the life it had when
+the data was collected with the servicing done. Mark such a task as
+**supporting** so it reads *supports*, not *restores 0%*:
+
+- In the RCM, a task's details have a **Keeps it on its life** row for each
+  failure mode it serves: switch on **Supports this failure mode**. It saves at
+  once.
+- On the Maintenance tab, the task's details have a **Keeps it on its life**
+  section: tick **Supporting**, then say what it supports (the failure modes
+  it prevents, or none ticked for the part's whole life), the **reference
+  interval** (the interval the life model assumes; the task's own when you
+  mark it), and, if you know it, **If it isn't done: failure rate ×** (for
+  example × 2: twice as likely to fail in any hour while it isn't done). Blank
+  means *supports, no modelled impact*. **Grace** is how far overdue it may run,
+  as a % of its interval, before the impact applies (0% by default). **Where
+  the impact comes from** is *Assumed* (the default, shown as a chip wherever
+  the number appears), *From the maker* or *Fitted*, with a note.
+- Several supporting tasks on one part multiply: × 2 and × 1.5, both not
+  done, give × 3. The task's details say so when there's more than one.
+- In the Maintenance tasks table, a supporting task has a small marker beside
+  its kind: *Supports × 2*, or *Supports* with no modelled impact.
+
+Only routine work and replace-at-age tasks can be supporting; a check finds a
+failure on its way rather than holding it off. A replace-at-age task marked
+supporting restores none of the item's age. While the task is done as
+planned, it changes nothing in the forecast but its own cost and hours. Its
+impact counts when it isn't: in a forecast's **Supporting tasks: what if**
+(stretched or not done), and in the forecast itself when the task's own
+interval is longer than the reference interval its life assumes.
+
+**Fit the impact from history…** (in the task's details, under **Keeps it on
+its life**) estimates the impact from the records where the task holds the
+life up: each item's time since it went in, cut into on time and overdue by
+when the task was done (its closed work orders), and its failures. It gives
+the failure rate × k while overdue with its **90% two-sided** range, from a
+covariate fit (a Weibull with overdue as a time-varying covariate) and a plain
+comparison of failures per hour beside it. A range that includes 1 is **not
+shown to matter in this data**, offered as *supports, no modelled impact*. If
+service timing barely varies (almost always on time, or never), or there are
+fewer than five failures, it says the effect can't be estimated rather than
+give a number. **Use** fills the fields with the source **Fitted** and keeps
+the fit as the record's evidence; Save keeps it.
+
+### Responses: what's done if it fails, or when it's found
+
+Every failure mode can say what's done when it happens anyway, whatever its
+decision (replace the spindle, swap in the spare pump), and, on one a check
+serves, what's done when an inspection finds it early. Both are tasks on the
+**Maintenance** tab, raised by the event, and are edited there with their
+labour, parts, cost and the cost of the failure itself.
+
+In the failure mode's details, under its consequence, **Responses** says each
+in one line: *If it fails: Replace drive belt (1.5 h, $85) · Edit in
+Maintenance ›*, or *No response if it fails · Add in Maintenance ›*. **Add
+response if it fails…** and **Add follow-on…** in the failure mode's menu open
+the same form on the Maintenance tab. The decision itself stays here.
+
+The forecast takes their hours, spares and cost for each failure (or find) it
+expects. With nothing recorded, the failures are still counted, and the
+forecast lists the gap under **Not counted**, with **Add** opening the form. A
+failure's cost comes from the response unless a cost of the failure is typed on
+it; with no P-F interval on the check, the finds aren't counted (every failure
+goes to the corrective line) and the forecast says **Add the P-F interval**.
+
 ## Working out the interval
 
-Each scheduled task's details have **Calculate…** beside its *every N*, under
-**Interval**. It opens the calculator the kind of task
-calls for, says in a sentence or two what it works out, and starts from what
+Each scheduled task's details have **Interval based on**: **Work it out…** (or
+**Change…** once there's a calculation) opens the calculator the kind of task
+calls for in place, under the line, not in a dialog. It says in a sentence or
+two what it works out, and starts from what
 the failure mode already has: its linked model or analysis, and the failures
-recorded at the position. Anything it assumed says so; change any input and
-press **Work it out** again.
+recorded at the position, or the calculation saved with the task, which it
+works out again at once. Anything it assumed says so; change any input and
+press **Work it out** again. **Use** saves the interval with the calculation,
+which becomes (or replaces) the task's evidence.
 
 - **On condition: the P-F calculator.** A failure often gives a warning first
   (a noise, a leak, a rise in temperature). The time from that first sign to
@@ -439,7 +514,7 @@ press **Work it out** again.
   environmental failure the costs are tucked behind **Show costs**: the task
   must make the risk tolerable whatever it costs. A task done by use (cycles,
   flight hours) can give the P-F interval in its own unit: the answer is then
-  in that unit, without costs. The dialog says which unit the answer is in.
+  in that unit, without costs. It says which unit the answer is in.
 - **Failure finding: the test interval.** Give the protective device's failure
   rate (or pick its model) and the target: the most it may be failed when it's
   needed. 1% is filled in as a common starting point for safety, marked
@@ -495,6 +570,21 @@ rests on, and the model's row on the Modelling tab (and the model's own page)
 say *Sets the interval of: Replace spark plugs (every 96 h)*. When the model is
 refitted, the task's evidence says its optimum may have moved and offers
 **Re-optimise…**. The interval never changes by itself.
+
+### Optimise a supporting task: its break-even
+
+A supporting task with an impact (**If it isn't done: failure rate × k**) gets a
+**break-even** in **Optimise…**, not an interval: it pays for itself if one
+doing costs less than the failures one interval of it holds off. For an oil
+change the engine's life assumes every 250 h, at × 2.5 if it isn't done, with
+0.688 engine failures expected in 7,300 h at $180,000 each: $180,000 × (0.688 ÷
+7,300 h) × 1.5 × 250 h = about **$6,360** a change, against its $562.50. With
+an inspection finding some problems early, a problem costs the follow-on for
+the share found and the corrective response for the share missed, so the
+break-even is lower. A failure mode with no cost of a failure is left out and
+listed. One number can't place an interval: that needs a curve of how the
+failure rate changes with the interval, fitted from data on the time since
+service, and Optimise says so.
 
 ## Read the evidence check
 
@@ -725,7 +815,8 @@ you need to.
 **Move to…, without dragging:** every function, performance standard,
 functional failure and failure mode has **Move to…** in its row menu
 (right-click, its **⋯**, or Shift+F10) and in the **⋯** at the top of its
-Details; a failure mode with a task also has **Move a task…**. It opens the
+Details; a failure mode with a task also has **Move a task…** (under **More ›**
+in its row menu). It opens the
 tree, with a search box: the places it can go can be picked, and the rest are
 greyed, with the reason when you point at one or tap it (*A failure mode goes
 under a functional failure*). A function goes on a position; a performance
@@ -795,7 +886,7 @@ because the ground heaves links two functional failures on the same position.
   decide.
   Add failure modes at the higher level only for causes that belong to that
   position itself.
-- **Unlink** (in the row's menu, or in the failure's Details) takes a link
+- **Remove the link** (last in the row's menu), or **Unlink** in the failure's Details, takes a link
   off. If it was the only explanation of the higher failure, Reliafy asks first.
 - The **Caused by (below)** column in the exported CSV holds the links, written
   as *Position › Functional failure*. Importing a worksheet with that column

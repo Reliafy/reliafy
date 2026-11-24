@@ -672,8 +672,10 @@ export function moveItems(whole, r, { picked = null, steps = true } = {}) {
   const n = s.kind === "modes" ? s.keys.length : 1;
   const out = [{ id: "move-to", label: n > 1 ? `Move ${n} failure modes to…` : "Move to…" }];
   if (steps && s.kind !== "std" && !(r.type === "mode" && !r.ref.functional_failure_id)) {
-    out.push({ id: "step-up", label: "Move up", disabled: !stepTarget(whole, r.key, -1) });
-    out.push({ id: "step-down", label: "Move down", disabled: !stepTarget(whole, r.key, 1) });
+    const up = !stepTarget(whole, r.key, -1);
+    const down = !stepTarget(whole, r.key, 1);
+    out.push({ id: "step-up", label: "Move up", ...(up ? { disabled: true, reason: "It's first already." } : {}) });
+    out.push({ id: "step-down", label: "Move down", ...(down ? { disabled: true, reason: "It's last already." } : {}) });
   }
   if (r.type === "mode" && (r.ref.tasks || []).some((t) => t.id)) out.push({ id: "move-task", label: "Move a task…" });
   return out;

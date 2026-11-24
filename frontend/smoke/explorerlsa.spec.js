@@ -3,7 +3,7 @@
 // method) is a section of its details panel (folded; ?mtask=…&needs=1
 // opens it), saved with the task's Save; the old ?tab=lsa&task= address opens it there. Package the tasks…
 // on a level drafts packages from its tasks, in the table area, and the packages then sit at the
-// meeting point of their tasks. The RCM's Logistics links to What it needs and back. A product's
+// meeting point of their tasks. The RCM's Cost and needs links to What it needs and back. A product's
 // design has What it needs too (no packaging there), and its links stay on the product's page.
 // At 400 px nothing scrolls sideways. Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
@@ -83,11 +83,14 @@ test("What it needs is a section of the task's details: add a labour line and a 
   await nameRow(page, `Test water ${tag}`).first().locator(".tp-nm").click({ button: "right" });
   const menu = page.getByRole("menu");
   await expect(menu.getByRole("menuitem", { name: "What it needs…" })).toHaveCount(0); // no entry of its own
-  await menu.getByRole("menuitem", { name: "Open…" }).click();
-  const needs = side(page).getByRole("region", { name: "What it needs" });
+  await menu.getByRole("menuitem", { name: "Open", exact: true }).click();
+  // Labour, Parts and Tools and method are fold-outs (Derryn, 23 Nov 2026), folded until asked for.
+  const needs = side(page).getByRole("button", { name: /^Tools and method/ });
   await expect(needs).toBeVisible();
-  await expect(side(page).getByRole("region", { name: "Labour" })).toHaveCount(0); // folded until asked for
-  await needs.getByRole("button", { name: /^Show what/ }).click();
+  await expect(side(page).getByRole("region", { name: "What it needs" })).toHaveCount(0);
+  await expect(side(page).getByRole("region", { name: "Labour" })).toHaveCount(0);
+  await side(page).getByRole("button", { name: /^Labour/ }).click();
+  await needs.click();
   const labour = side(page).getByRole("region", { name: "Labour" });
   await labour.getByRole("button", { name: "+ Add labour" }).click();
   await labour.getByRole("textbox", { name: "Trade, line 1" }).fill("Pool technician");
@@ -101,7 +104,7 @@ test("What it needs is a section of the task's details: add a labour line and a 
   await expect.poll(() => query(page).get("mtask")).toBeNull();
   // The old address opens the task with the section open, and what was saved is there.
   await open(page, `/asset-register/explorer?arrange=positions&root=${p.pool.id}&sel=${p.pump.id}&tab=maintenance&mtask=${test.id}&needs=1`);
-  await expect(side(page).getByRole("region", { name: "What it needs" }).locator(".lsa-total")).toContainText("0.5 h labour");
+  await expect(side(page).getByRole("button", { name: /^Labour/ })).toContainText("0.5 h Pool technician");
   await expect(side(page).getByRole("textbox", { name: "Tool, line 1" })).toHaveValue("Photometer");
   await expect(side(page).getByRole("link", { name: "What it needs (LSA)" })).toHaveCount(0);
   await expectHealthy(page, problems, { label: "lsa task", root: ".tx" });
@@ -129,11 +132,12 @@ test("a task's LSA and its row on the RCM tab link to each other: Serves → the
   const table = page.getByRole("treegrid", { name: /and their RCM/ });
   const taskRow = table.getByRole("row", { name: new RegExp(`^Task: Look in the basket ${tag}`) });
   await expect(taskRow).toHaveAttribute("aria-selected", "true");
-  // Its details: Logistics, with What it needs back to the task's LSA.
+  // Its details: Cost and needs, with What it needs back to the task's LSA.
   await taskRow.locator(".tp-nm").dblclick();
-  const logistics = page.getByRole("complementary", { name: "Details" }).getByRole("region", { name: "Logistics" });
-  await expect(logistics).toContainText("No labour, tools or method set yet.");
-  await logistics.getByRole("link", { name: "What it needs" }).click();
+  const logistics = page.getByRole("complementary", { name: "Details" }).getByRole("region", { name: "Cost and needs" });
+  await expect(logistics.getByRole("button", { name: /^Labour/ })).toBeVisible();
+  await logistics.getByRole("button", { name: /^Tools and method/ }).click();
+  await logistics.getByRole("region", { name: "Tools and method" }).getByRole("link", { name: /in Maintenance ›/ }).click();
   await expect.poll(() => [query(page).get("tab"), query(page).get("mtask"), query(page).get("needs")]).toEqual(["maintenance", taskId, "1"]);
   await expect(side(page).getByRole("heading", { name: `Look in the basket ${tag}` })).toBeVisible();
   await expectHealthy(page, problems, { label: "lsa and rcm task links", root: ".tx" });
@@ -162,15 +166,17 @@ test("a product's design: What it needs on its tasks, no packaging or forecasts;
   await task.locator(".tp-nm").click({ button: "right" });
   const menu = page.getByRole("menu");
   await expect(menu.getByRole("menuitem", { name: "Package…" })).toHaveCount(0);
-  await menu.getByRole("menuitem", { name: "Open…" }).click();
+  await expect(menu.getByRole("menuitem", { name: /^Open in/ })).toHaveCount(0);
+  await menu.getByRole("menuitem", { name: "Open", exact: true }).click();
   await expect.poll(() => query(page).get("mtask")).toBe(taskId);
-  await side(page).getByRole("region", { name: "What it needs" }).getByRole("button", { name: /^Show what/ }).click();
+  await side(page).getByRole("button", { name: /^Labour/ }).click();
   const labour = side(page).getByRole("region", { name: "Labour" });
   await labour.getByRole("button", { name: "+ Add labour" }).click();
   await labour.getByRole("textbox", { name: "Trade, line 1" }).fill("Drone technician");
   await labour.getByRole("spinbutton", { name: "Hours each, line 1" }).fill("0.25");
   await shot(page, "lsa-design-task");
-  // Serves: the task's row on the design's RCM tab, still on the product's page.
+  // Serves (in What it needs): the task's row on the design's RCM tab, still on the product's page.
+  await side(page).getByRole("button", { name: /^Tools and method/ }).click();
   await side(page).locator(".lsa-modes").getByRole("link", { name: `Bearing wears ${tag}` }).click();
   await expect(page).toHaveURL(new RegExp(`/products/${product.id}\\?.*view=rcm`));
   await expectHealthy(page, problems, { label: "design lsa", root: ".tx" });
@@ -183,7 +189,8 @@ test("What it needs at 400 px: the task's LSA fits, nothing scrolls sideways", a
   const skim = tasks.tasks.find((t) => t.name === `Skim ${tag}`);
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&root=${p.pool.id}&sel=${p.pump.id}&tab=maintenance&mtask=${skim.id}&needs=1`);
-  await expect(side(page).getByRole("region", { name: "What it needs" })).toBeVisible();
+  await expect(side(page).getByRole("region", { name: "Tools and method" })).toBeVisible();
+  await side(page).getByRole("button", { name: /^Labour/ }).click();
   await side(page).getByRole("region", { name: "Labour" }).getByRole("button", { name: "+ Add labour" }).click();
   await side(page).getByRole("region", { name: "Tools and instruments" }).getByRole("button", { name: "+ Add a tool" }).click();
   await shot(page, "lsa-task-phone");

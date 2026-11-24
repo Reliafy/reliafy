@@ -17,6 +17,7 @@ from backend.services import rbd_compare
 from backend.services.access import AccessCtx, get_access
 from backend.services.rbd_analysis import AnalysisError
 from backend.errors import client_message
+from backend.services import rbd_live_models
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -38,6 +39,7 @@ def compare_rbds(
     saved or not): the simulated difference in availability over the window
     (B − A) with its confidence interval, from common random numbers, plus
     both exact long-run availabilities. ``t_max`` fixes the window."""
+    graph = rbd_live_models.refresh(session, graph, ctx.read_owners)  # linked blocks on their model's fit
     if not billing_service.premium_compute_allowed(session, ctx.user):
         return JSONResponse(status_code=402, content=AVAILABILITY_PRO_PAYLOAD)
 
@@ -51,6 +53,8 @@ def compare_rbds(
         owners_b = [*ctx.read_owners, other.owner_id]
     elif not isinstance(other_graph, dict):
         return JSONResponse(status_code=422, content={"detail": "Pick a diagram to compare with."})
+    else:
+        other_graph = rbd_live_models.refresh(session, other_graph, ctx.read_owners)
 
     try:
         result = rbd_compare.compare_graphs(

@@ -58,6 +58,7 @@ from backend.services import time_zones
 from backend.maintenance import fmea, rcm_decisions
 from backend.maintenance.rcm_decisions import norm_unit as _norm_unit
 from backend.maintenance import how_often
+from backend.maintenance import next_due as _next_due
 from backend.maintenance.schedule import Cadence, Season
 from backend.maintenance.signals import PROJECTORS as _SIGNAL_PROJECTORS
 from backend.maintenance.products import PROJECTORS as _PRODUCT_PROJECTORS
@@ -76,9 +77,14 @@ from backend.maintenance.captures import PROJECTORS as _CAPTURE_PROJECTORS
 from backend.maintenance import task_costs as _task_costs
 from backend.maintenance.captures import CaptureOps
 from backend.maintenance import restoration as _restoration
+from backend.maintenance import supporting as _supporting
 from backend.maintenance import failure_costs as _failure_costs
+from backend.maintenance import responses as _responses
+from backend.maintenance import restart as _restart
+from backend.maintenance import support_fit as _support_fit
 from backend.maintenance import visit_costs as _visit_costs
 from backend.maintenance import shutdowns as _shutdowns
+from backend.maintenance import operations as _operations
 from backend.maintenance import purge as _purge
 
 logger = logging.getLogger(__name__)
@@ -704,6 +710,52 @@ def _url(value) -> str:
     if "@" in parts.netloc:
         raise Invalid("The link can't carry a user name or password.")
     return text
+
+
+#: What a date by running hours rests on where the position has no duty: the order everywhere is
+#: the duty, then the rate its running-hours readings give, then running all the time (Derryn, 21
+#: and 23 Nov 2026). The forecast (position_forecast._hours_map) uses the same maps and words.
+CONTINUOUS_TEXT = "No duty or readings: assuming it runs all the time (24 h a day)"
+
+
+def rate_text(per_day: float) -> str:
+    return f"From its running-hours readings, about {per_day:,.3g} h a day (no duty set)"
+
+
+def reading_moment(r: dict) -> datetime:
+    """When a reading was taken (its time where it has one, else the start of its day), naive."""
+    return datetime.fromisoformat(r["at"][:16]) if r.get("at") else datetime.fromisoformat(r["on"][:10])
+
+
+def meter_usage(start, end, last: dict | None, per_day: float | None = None):
+    """RePyability's map between dates and an hours counter with no duty: at ``per_day`` hours a day
+    (the readings' rate), else all the time (``DutyPlan(Continuous())``), anchored on ``last`` (the
+    latest reading; None: 0 h at ``start``)."""
+    from backend.maintenance import schedule
+
+    plan = schedule.DutyPlan(schedule.Continuous() if per_day is None else schedule.Rate(per_day, per="day"))
+    value = float(last["value"]) if last else 0.0
+    read_at = reading_moment(last) if last else start
+    return plan.forecast(start, end, readings={"hours": value}, read_at=read_at)
+
+
+def _meter_map(last: dict, target: float, rate: float | None) -> dict | None:
+    """An hours counter with no operating plan, from its latest reading: at the readings' rate
+    (capped at 24 h a day) where they give one, else all the time: the ``mapped`` shape
+    ``_due_from`` reads. None when it's too far ahead to map (over 10 years)."""
+    per_day = min(float(rate), 24.0) if rate and rate > 0 else None
+    read_at = reading_moment(last)
+    days = max(0.0, (float(target) - float(last["value"])) / (per_day or 24.0))
+    if days > 3653:
+        return None
+    try:
+        usage = meter_usage(read_at, read_at + timedelta(days=days + 2), last, per_day)
+    except (ValueError, TypeError, OverflowError):
+        return None
+    kind, text = ("rate", rate_text(per_day)) if per_day else ("continuous", CONTINUOUS_TEXT)
+    return {"usage": usage, "meter": "hours",
+            "basis": {"kind": kind, "text": text, "ended": None, "exact": False, "rate_per_day": per_day,
+                      "reading": {"value": last["value"], "on": last["on"][:10]}}}
 
 
 class HourCadence:
@@ -1648,13 +1700,31 @@ def _task_rule_set(s: GraphStore, org: str, p: dict) -> None:
     s.patch_node(org, p["task_id"], {"rule": p.get("rule")})
 
 
-def _rule_due(task: dict) -> str | None:
+#: How far ahead a task at shutdowns looks for its shutdown (none in that time: no date).
+SHUTDOWN_LOOKAHEAD_DAYS = 10 * 366
+
+
+def _rule_due(task: dict, m=None) -> str | None:
     """A task's next date on its rule: the first after it was last done; else the date it
-    was set to fall due; else the first on or after the day it was made."""
+    was set to fall due; else the first on or after the day it was made. At shutdowns
+    (``m`` needed): the first planned shutdown of its position once its interval has passed
+    since it was last done (or made)."""
     rule = task["rule"]
-    cad = how_often.cadence(rule, task["start"])
     done = task.get("last_done")
     first = _first_due(task)
+    if rule["kind"] == "shutdowns":
+        from backend.maintenance.shutdowns import shutdown_dates
+
+        subject = _subject(m.s, m.org, task) if m is not None else None
+        if subject is None:
+            return None
+        ready = first or add_interval(done or task["start"], rule["every"], rule["unit"])
+        if ready is None:
+            return None
+        until = (date.fromisoformat(ready) + timedelta(days=SHUTDOWN_LOOKAHEAD_DAYS)).isoformat()
+        shuts = shutdown_dates(m, subject["id"], ready, until)
+        return shuts[0]["on"] if shuts else None
+    cad = how_often.cadence(rule, task["start"])
     if first:
         return first
     found = cad.after(done) if done else cad.on_or_after(task["start"])
@@ -3181,8 +3251,9 @@ def _walk_down(top: str, kids: dict) -> set[str]:
 
 
 class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDeleteOps, PositionModelOps,
-                  CaptureOps, AssetSearchOps, _restoration.RestorationOps, _shutdowns.ShutdownOps,
-                  _failure_costs.FailureCostOps, _visit_costs.VisitCostOps):
+                  CaptureOps, AssetSearchOps, _restoration.RestorationOps, _supporting.SupportOps, _shutdowns.ShutdownOps, _operations.OperationsOps,
+                  _failure_costs.FailureCostOps, _visit_costs.VisitCostOps, _responses.ResponseOps,
+                  _restart.RestartOps, _support_fit.SupportFitOps):
     """One organisation's maintenance graph, acted on by one person."""
 
     def __init__(self, store: GraphStore, org: str, actor: str | None = None, limited: bool = True,
@@ -3919,6 +3990,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                           "then fit the new one.")
         day, precision = dated(on, from_precision, "fitted date", today=self.today())
         iid = self._item_from(item_id, new_item)
+        self.note_done_before_fit(position_id, day)  # keep tasks read it back (restart.py)
         self._emit("item.fitted", {"fitment_id": new_id(), "item_id": iid, "position_id": position_id, "on": day,
                                    "task_readings": self._renewal_readings(position_id, day)}
                    | ({"from_precision": precision} if precision != "exact" else {}))
@@ -6211,6 +6283,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 # mode's decision's own, so the RCM can show and change one mode's.
                 | ({"restoration": t["restoration"]} if t.get("restoration") else {})
                 | ({"restorations": t["restorations"]} if t.get("restorations") else {})
+                # A supporting task (supporting.py): what it supports and its impact, for the RCM.
+                | ({"support": t["support"]} if t.get("support") else {})
                 | Maintenance._calendar_due(t) for t in tasks]
 
     @staticmethod
@@ -6542,7 +6616,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         return {"functions": functions, "unassigned": unassigned, "analysed": self._analysed(index, pid),
                 "fmea": fmea.position_summary(views)}
 
-    def rcm_all(self, within: str | None = None) -> dict:
+    def rcm_all(self, within: str | None = None, evidence_ids=None, shared: bool = False) -> dict:
         """The RCM of every live position that has any (functions or failure
         modes), for the asset tree's RCM tab: each position's functions ›
         functional failures › failure modes and its unassigned modes, read in
@@ -6554,7 +6628,20 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         ``within`` (one asset, as positions_inside reads it): that asset's
         positions alone, the parents stopping at its edge. names: {position id: its
         name} for every position in parents, so a list can say where each one is
-        (the RCM studies page's "Pumping station › Pump 1")."""
+        (the RCM studies page's "Pumping station › Pump 1").
+        evidence_ids (a set of model ids): only the positions with a failure mode whose decision
+        links one of them, each read exactly as without it (what
+        "What changed" needs); the parents and names then cover just those."""
+        # The graph alone: kept until it changes (read_cache.py).
+        from backend.maintenance.read_cache import cached
+
+        # shared: the kept read itself, not a copy, for a caller that only reads it
+        # (the rollup, What changed): never change what it returns.
+        ids = frozenset(evidence_ids) if evidence_ids is not None else None
+        return cached(self.s, ("rcm_all", self.org, within, ids), lambda: self._rcm_all(within, evidence_ids),
+                      frozen=shared)
+
+    def _rcm_all(self, within: str | None, evidence_ids) -> dict:
         keep = self.positions_inside(within) if within is not None else None
         index = self._rcm_index()
         out = []
@@ -6565,6 +6652,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 continue
             live[pid] = p
             if not (index["functions"].get(pid) or index["modes"].get(pid)):
+                continue
+            if evidence_ids is not None and not self._links_evidence(index["modes"].get(pid, []), evidence_ids):
                 continue
             # Lean: a working's preview, never its full text (that's per position, or function()).
             out.append({"id": pid, "name": p["name"], "depth": 0, **self._position_rcm(index, pid, full=False)})
@@ -6581,6 +6670,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 pid = parents[pid]
         names = {pid: live[pid]["name"] for pid in parents if pid in live}
         return {"positions": out, "parents": parents, "names": names}
+
+    @staticmethod
+    def _links_evidence(modes: list, evidence_ids) -> bool:
+        """Whether any of these failure modes is decided with the evidence of one of ``evidence_ids``
+        (the decision's own evidence, as _decision_of reads it from the mode)."""
+        for fm in modes:
+            ev = fm.get("evidence")
+            if fm.get("outcome") and isinstance(ev, dict) and ev.get("id") in evidence_ids:
+                return True
+        return False
 
     def rcm_worksheet(self, position_id: str, scope: str = "below", limit: int = 2000) -> dict:
         """A position's RCM, read from the graph: for the position (scope "this")
@@ -6684,14 +6783,21 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         counter of its own goes by the use it has had wherever it was fitted; an item's
         calendar task set to pause while stored doesn't count the days it spent out of
         a position."""
+        # Restart on a replacement (restart.py): counted from the item fitted since it was last done.
+        task = self.restarted(task)
         base = task.get("last_done") or task["start"]
         limit = f"{interval:g} {unit}"
         subject = _subject(self.s, self.org, task) or {}
         if subject.get("id") in self._design_ids():
             return {"limit": limit, "next_due": None, "note": "a design's task: due on the items built from it"}
         if rule and _is_calendar(unit):
-            # On a pattern (the first Saturday of every month): its dates, not an interval's.
-            return {"limit": how_often.describe(rule), "next_due": _rule_due(task)}
+            # On a pattern (the first Saturday of every month): its dates, not an interval's. At
+            # shutdowns: the first planned shutdown once its interval has passed.
+            due = _rule_due(task, self)
+            if due is None and rule["kind"] == "shutdowns":
+                return {"limit": how_often.describe(rule), "next_due": None,
+                        "note": "no planned shutdown here once it's due: add a shutdown on this position or above it"}
+            return {"limit": how_often.describe(rule), "next_due": due}
         if _is_calendar(unit):
             first = _first_due(task)
             if first:
@@ -6788,8 +6894,11 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         """A limit by use from a counter's readings: the reading it falls due at, and the
         day it was crossed or will be: through the position's operating plan where it has
         one (``mapped``: the moment the meter crosses it and the stop after), else from the
-        recent rate (not while ``accruing`` is False: an item out of service adds no use).
-        ``basis`` says which."""
+        recent rate the readings give; an hours counter with neither (one reading, or no rise)
+        runs all the time, 24 h a day from its latest reading (Derryn, 21 Nov 2026: "assume
+        continuous use unless there is a duty against that position"; basis kind
+        "continuous", the screens link it to Operations), rather than having no date. Not
+        while ``accruing`` is False: an item out of service adds no use. ``basis`` says which."""
         start = task.get("last_done_reading")
         if start is None:
             start = _reading_at(readings, base)
@@ -6805,6 +6914,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             return {**out, "next_due": crossed, "basis": {"kind": "readings", "text": "Already reached by the readings"}}
         if not accruing:
             return {**out, "next_due": None, "note": "not fitted anywhere: it adds no use until it's fitted again"}
+        if mapped is None and _norm_unit(counter.get("unit")) == "hours":
+            # No duty: the readings' rate, else running all the time (never "no date"), on the
+            # same RePyability map the forecast uses, so the two agree.
+            mapped = _meter_map(last, target, rate)
         if mapped is not None:
             crossing = mapped["usage"].when(**{mapped["meter"]: target})
             out["basis"] = mapped["basis"]
@@ -6935,6 +7048,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                               if p["label"] == "Proposal" and p.get("status") == "pending"), None),
             # What raises it besides (or instead of) the interval: null when only the interval does.
             "trigger": self._trigger_view(task.get("trigger")), "on_event": on_event,
+            "on_replace": {**self.task_on_replace(task), "restarted_on": self.restarted(task).get("restarted_on")},
             # What doing it needs (its LSA record: labour, tools, spares, consumables, access, method).
             "resources": self._resources_view(task),
         }
@@ -6943,6 +7057,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         # What it leaves the item as, how its interval is counted, its age limit at a shutdown
         # (restoration.py): what the RBD plan reads.
         out |= self._restoration_view(task, out["by_use"])
+        # Whether it keeps the item on its life (a supporting task, supporting.py): what it supports,
+        # its reference interval, the impact if it isn't done, grace and source.
+        out |= self._support_view(task)
         if on_event and not open_wo:
             out["status"] = "Waiting for the event"
         if subject and subject["label"] == "Item":
@@ -6983,6 +7100,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             # A hypothetical plan has no to-do: its next date is planned, never overdue.
             out["overdue"] = False
             out.pop("overdue_before_package", None)
+        if entry and entry["root"].get("unit") == "hours" and out.get("package"):
+            # A package by hours dates its visits from a duty or readings, or assumes all day.
+            basis = self._cadence(entry["root"]).basis or {}
+            out["package"] = {**out["package"], "dated": basis.get("kind") in _next_due.DATED_BASES}
+        # When it's next due, only when that's known (blank otherwise, never from "now").
+        out["next"] = _next_due.task_next(task, out, self.today(), work_management_on())
         return out
 
     @staticmethod
@@ -8901,6 +9024,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 if a.get("item_id") or (a.get("new_item") or {}).get("name"):
                     iid = self._item_from(a.get("item_id"), a.get("new_item"))
                     starts = new_id()
+                    self.note_done_before_fit(at, day)  # keep tasks read it back (restart.py)
                     self._emit("item.fitted", {"fitment_id": starts, "item_id": iid,
                                                "position_id": at, "on": day,
                                                "task_readings": self._renewal_readings(at, day)})
@@ -9226,6 +9350,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 raise Invalid("It can't move before it was fitted where it is.")
             self._emit("item.removed", {"fitment_id": current["id"], "on": day, "reason": "planned",
                                         "failure_mode_id": None})
+        self.note_done_before_fit(to_position_id, day)  # keep tasks read it back (restart.py)
         self._emit("item.fitted", {"fitment_id": new_id(), "item_id": item_id,
                                    "position_id": to_position_id, "on": day,
                                    "task_readings": self._renewal_readings(to_position_id, day)})
@@ -10198,6 +10323,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                           "by operating hours (unit hours) on its position, or leave it on its own.")
         if task.get("include_positions"):
             raise Invalid(f"{task['name']} is a round (a line for each position at its location): it stays on its own.")
+        if (task.get("rule") or {}).get("kind") == "shutdowns":
+            # Done at the shutdowns: only a shutdown's visits are those (how_often.py).
+            pkg = self.s.node(self.org, joining, "WorkPackage") if joining else None
+            if not (pkg and self._package_chain(pkg)[-1].get("shutdown")):
+                raise Invalid(f"{task['name']} is done at planned shutdowns: it joins a shutdown package only. Make "
+                              "the package a shutdown first, or give the task a calendar rule.")
         if area["label"] == "Position":
             # Any task on the same asset (Derryn, 22 Nov 2026): the package then lives where its
             # tasks meet (_package_subject), which moves up when a task from another branch joins.
@@ -10927,7 +11058,18 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             out["next_visit"] = found and found.isoformat()
         if pkg["unit"] == "hours" and out["next_visit"]:
             out["next_visit_hours"] = self._cadence(pkg).hours_on(out["next_visit"])
+        out["next"] = self._package_next(pkg, out)
         return out
+
+    def _package_next(self, pkg: dict, out: dict) -> dict:
+        """A package's next visit, only when that's known (next_due.package_next)."""
+        kind = None
+        if pkg["unit"] == "hours":
+            cad = self._cadence(pkg)
+            if out.get("next_visit"):
+                cad.on_or_after(self.today())
+            kind = (cad.basis or {}).get("kind")
+        return _next_due.package_next(out, kind)
 
     def _hours_view(self, pkg: dict) -> dict:
         """A package by operating hours: the counter it goes by, the reading it counts from,
@@ -11038,9 +11180,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             rows.append({"id": task["id"], "name": task["name"], "subject": brief,
                          "modes": modes, "kind": kind, "interval": task.get("interval"), "unit": task.get("unit"),
                          "rule_text": task.get("rule") and how_often.describe(task["rule"]),
+                         "rule_kind": (task.get("rule") or {}).get("kind"),
                          "trigger": self._trigger_view(task.get("trigger")) if task.get("trigger") else None,
                          "on_event": _on_event_only(task), "trade": task.get("trade", ""),
                          "next_due": view["next_due"], "overdue": bool(view["overdue"]), "package": pkg,
+                         # Next due only when it's known: {on, at_reading, unit, basis, why, overdue}.
+                         "next": view["next"],
                          # Where a date by use came from (the operating plan, or the meter's recent rate).
                          "due_basis": next((lim["basis"]["text"] for lim in view["limits"]
                                             if lim.get("basis") and lim.get("next_due") == view["next_due"]), None),
@@ -11049,7 +11194,9 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                          # Where it came from: an RCM decision's (no source of its own) or added
                          # directly (manual, oem, statutory, other, with its reference).
                          "source": view["source"], "reference": view["reference"],
-                         "cost": view["cost"]})
+                         "cost": view["cost"],
+                         # A supporting task's marker (supporting.py): "Supports × 2"; null otherwise.
+                         "support": (view.get("support") or {}).get("marker")})
         rows.sort(key=lambda r: (r["subject"]["name"].lower(), r["name"].lower(), r["id"]))
         # A product's design (or one of its design locations): its programme, packaged on the built items.
         return {"scope": self._subject_brief(scope), "tasks": rows[:limit], "total": len(rows),
@@ -11700,6 +11847,11 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             word = "" if trigger.get("above") is not None else "below "
             out["point"] = {"id": trigger["point_id"], "name": point.get("name", ""), "unit": point.get("unit", "")}
             out["text"] = f"{word}{limit:g}{unit} on {point.get('name') or 'its point'}"
+        elif trigger.get("kind") in ("failure", "found"):
+            fm = self.s.node(self.org, trigger.get("failure_mode_id") or "") or {}
+            what = fm.get("text") or "its failure mode"
+            out["text"] = f"if {what} fails" if trigger["kind"] == "failure" else f"when an inspection finds {what}"
+            out["failure_mode"] = {"id": fm.get("id"), "text": fm.get("text") or ""}
         else:
             out["text"] = trigger.get("event_type", "")
         return out
@@ -11710,8 +11862,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             return None
         if not isinstance(trigger, dict):
             raise Invalid("trigger is {kind: 'reading', point_id, above or below} or {kind: 'event', event_type, "
-                          "note?}, with with_interval true to keep the interval running too; null clears it.")
+                          "note?}, with with_interval true to keep the interval running too; or {kind: 'failure' | "
+                          "'found', failure_mode_id} (a failure mode's response); null clears it.")
         kind = trigger.get("kind")
+        if kind in ("failure", "found"):
+            # A failure mode's corrective response (failure) or follow-on (found): responses.py.
+            extra = sorted(set(trigger) - {"kind", "failure_mode_id"})
+            if extra:
+                raise Invalid(f"A {kind} trigger takes only failure_mode_id (not {', '.join(extra)}).")
+            fm, _pos = self._live_mode(trigger.get("failure_mode_id"))
+            return {"kind": kind, "failure_mode_id": fm["id"]}
         takes = {"reading": {"kind", "point_id", "above", "below", "with_interval"},
                  "event": {"kind", "event_type", "note", "with_interval"}}.get(kind)
         if takes is None:
@@ -12013,7 +12173,16 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         if not _is_calendar(task["unit"]):
             raise Invalid(f"This task goes by use ({task['unit']}): a calendar pattern goes on a task by days, "
                           "weeks, months or years.")
-        if checked["kind"] != "every" and "anchor" not in checked:
+        if checked["kind"] == "shutdowns":
+            subject = _subject(self.s, self.org, task) or {}
+            if subject.get("label") not in ("Position", "Item"):
+                raise Invalid("A task at shutdowns goes on a position (or an item on one): a shutdown takes a "
+                              "position off-line.")
+            home = self._package_index().get(task_id)
+            if home and not home["root"].get("shutdown"):
+                raise Invalid(f"{task['name']} is in {home['package']['name']}, which isn't a shutdown: its visits "
+                              "set its dates. Take it out first, or make that package a shutdown.")
+        if checked["kind"] not in ("every", "shutdowns") and "anchor" not in checked:
             # Weeks, months and years counted from when the task was made, unless the rule says.
             checked["anchor"] = task["start"]
         interval, unit = how_often.interval_of(checked)
@@ -15020,12 +15189,17 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         fitted_item: dict[str, str] = {}  # position -> item
         fitted_at: dict[str, str] = {}  # item -> position
         last_out: dict[str, str] = {}  # item -> the day it last came out of a position
+        fit_from: dict[str, str] = {}  # position -> the day what's fitted there now went in
+        fit_days: dict[str, set] = {}  # position -> every day something was fitted there
         for fid, f in fitments.items():
             item_id, pos_id = holder.get(fid), at.get(fid)
             if not item_id or not pos_id:
                 continue
+            if f.get("from"):
+                fit_days.setdefault(pos_id, set()).add(str(f["from"])[:10])
             if f.get("to") is None:
                 fitted_item[pos_id], fitted_at[item_id] = item_id, pos_id
+                fit_from[pos_id] = str(f.get("from") or "")[:10]
             elif f["to"] > last_out.get(item_id, ""):
                 last_out[item_id] = f["to"]
         open_placement: dict[str, dict] = {}
@@ -15113,6 +15287,22 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         for src, dst in s.pairs(org, "FOR"):
             if src in open_wos:
                 raised_for.setdefault(dst, []).append(open_wos[src])
+        def may_restart(t: dict) -> bool:
+            """Whether a fitting can move this task's schedule (restart.py's ``restarted``, from the
+            bulk read): an item fitted above it since it was made (restart), or its last done a
+            fitting at its own position (keep counts from its last real doing)."""
+            subject = on.get(t["id"])
+            done = t.get("last_done")
+            if done and ((t.get("done_before_fit") or {}).get("fit_on") == done or done in fit_days.get(subject, ())):
+                return True
+            node, seen = part_of.get(subject), set()
+            while node and node not in seen:
+                seen.add(node)
+                if fit_from.get(node) and fit_from[node] >= (t.get("start") or ""):
+                    return True
+                node = part_of.get(node)
+            return False
+
         for t in s.nodes(org, "Task"):
             subject = on.get(t["id"])
             if t.get("retired") or not subject:
@@ -15132,7 +15322,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                 by_package = self._package_due(t, packaged)
                 due, overdue = by_package["next_due"], by_package["overdue"]
             else:
-                due = self._tree_task_due(t, "Item" if subject in items else "")
+                due = self._tree_task_due(t, "Item" if subject in items else "", may_restart)
                 overdue = bool(due) and due < today
                 if not due and not _on_event_only(t):
                     # Can't be put on a date yet: by use with no counter (or no readings) to count from.
@@ -15215,7 +15405,7 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             kids.setdefault(r["parent_id"], []).append(pid)
         return _walk_down(root_id, kids)
 
-    def subtree_ids(self, node_id: str, within: str | None = None) -> set[str]:
+    def subtree_ids(self, node_id: str, within: str | None = None, to: str = "see") -> set[str]:
         """The Explorer's roll-up: a tree node and everything the tree shows below it, at any
         depth, as ids. For a position, it and every position nested inside it (one an item
         carries included); for a place (a location), it, the places inside it and every position
@@ -15242,22 +15432,38 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             # opened by Positions shows the positions its positions sit in): then what's inside the
             # asset below it.
             if node["label"] == "Position" and node["id"] not in allowed and not ids & allowed:
-                raise Invalid(f"{node.get('name') or node_id} isn't inside the asset opened.")
+                raise Invalid(f"{node.get('name') or node_id} isn't inside the asset opened. "
+                              f"Open the Explorer on the whole register to {to} it.")
             ids &= allowed
         return ids
 
-    def _tree_task_due(self, task: dict, subject_label: str) -> str | None:
+    def forecast_within(self, position_id: str, root: str | None) -> set[str] | None:
+        """The one isolation check for a position's forecast with an asset opened (?root=): the
+        ids it may count, as the Explorer shows that asset (positions nested through a fitted
+        item's position, a place's positions set or inherited, and the rows above a place's own
+        with only what's inside it below them). None with no asset opened (everything below
+        the position counts). A position outside the asset is refused, saying what to do."""
+        if root in (None, ""):
+            return None
+        return self.subtree_ids(position_id, within=root, to="forecast")
+
+    def _tree_task_due(self, task: dict, subject_label: str, may_restart=None) -> str | None:
         """A task's next due date, as _task_view gives it, without its store reads
         for a plain calendar limit."""
         if _on_event_only(task):
             return None
+        # Restart or keep on a replacement (restart.py), as _task_view's due counts it: the tree's
+        # overdue counts and next due agree with the task's own Next due. `may_restart` (from the tree's
+        # bulk read) says which tasks a fitting can move, so the others cost no store reads.
+        if may_restart is None or may_restart(task):
+            task = self.restarted(task)
         limits = [(task["interval"], task["unit"])]
         if task.get("also_interval") and task.get("also_unit"):
             limits.append((task["also_interval"], task["also_unit"]))
         dues = []
         for k, (interval, unit) in enumerate(limits):
             if k == 0 and task.get("rule") and _is_calendar(unit):
-                due = _rule_due(task)
+                due = _rule_due(task, self)
             elif _is_calendar(unit) and not (subject_label == "Item" and task.get("while_stored") == "pause"):
                 due = _first_due(task) or add_interval(task.get("last_done") or task["start"], interval, unit)
             else:
@@ -16806,7 +17012,10 @@ PROJECTORS.update(_task_costs.PROJECTORS)
 # its interval is counted, its age limit at a shutdown; and shutdown packages (Nov 2026,
 # restoration.py, shutdowns.py).
 PROJECTORS.update(_restoration.PROJECTORS)
+# A supporting task: it keeps the item on its life (Nov 2026, supporting.py).
+PROJECTORS.update(_supporting.PROJECTORS)
 PROJECTORS.update(_failure_costs.PROJECTORS)
+PROJECTORS.update(_restart.PROJECTORS)
 PROJECTORS.update(_visit_costs.PROJECTORS)
 PROJECTORS.update(_shutdowns.PROJECTORS)
 

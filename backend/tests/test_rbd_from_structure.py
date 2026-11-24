@@ -94,7 +94,8 @@ def test_either_pump_set_will_do_is_parallel(m, db):
     # The answer is on the tree: a redundancy set, used by every rebuild, and not asked again.
     [g] = m.groups_of(ids["Pump set 1"])
     assert (g["mode"], g["k"], g["n"]) == ("active", 1, 2)
-    assert rbd_derive.save(m, db, ids["top"], OWNERS, check=True) == {"ask": []}
+    again = rbd_derive.save(m, db, ids["top"], OWNERS, check=True)
+    assert again["ask"] == [] and again["existing"]["rbd_id"] == out["rbd_id"]
 
 
 def test_duty_and_standby_is_one_standby_block(m, db):
@@ -126,7 +127,8 @@ def test_a_coupling_inside_a_pump_set_keeps_its_model_and_only_nothing_is_a_plac
     graph = rbds_service.get_rbd(db, out["rbd_id"], ORG).graph
     by = {(n.get("data") or {}).get("label") or n.get("label"): n for n in graph["nodes"]}
     assert by["Pump set"]["type"] == "subsystem"
-    assert by["Control panel"]["data"]["model_source"].startswith("A placeholder")
+    assert by["Control panel"]["data"]["model_source"].startswith("No life model yet")
+    assert not by["Control panel"].get("data", {}).get("model")  # no life invented for it
     sub = rbds_service.get_rbd(db, by["Pump set"]["data"]["rbd"]["id"], ORG).graph
     [block] = [n for n in sub["nodes"] if ((n.get("data") or {}).get("label") or n.get("label")) == "Flexible coupling"]
     assert not (block.get("model") or {}).get("placeholder")

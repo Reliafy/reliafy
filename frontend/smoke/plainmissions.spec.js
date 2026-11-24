@@ -26,7 +26,8 @@ test("plain missions: a length from a starting age, with its bound; Add a missio
   const tvc = nameRow(page, "changing load").first();
   await expect(tvc).toBeVisible();
   await tvc.locator(".tp-nm").click({ button: "right" });
-  await expect(page.getByRole("menu").last().getByRole("menuitem").first()).toHaveText("Add a mission…");
+  // Its middle section leads with Add a mission… (after the general section).
+  await expect(page.getByRole("menu").last().locator(":scope > [role='separator'] + [role='menuitem']").first()).toHaveText("Add a mission…");
   await page.keyboard.press("Escape");
 
   // Add a mission… on the Weibull: named first, then its length and starting age.

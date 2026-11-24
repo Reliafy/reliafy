@@ -63,15 +63,11 @@ def _scope(m: Maintenance, scope: dict) -> tuple[str, dict, list[dict]]:
     if scope.get("position_id"):
         pid, root = scope["position_id"], scope.get("root") or None
         pos = m._get(pid, "Position")
-        if root:
-            if m.s.node(m.org, root) is None:
-                raise svc.NotFound(f"Position {root}")
-            if root != pid and root not in m._ancestor_ids(pid):
-                raise Invalid("That position isn't inside the asset opened.")
+        within = m.forecast_within(pos["id"], root)
         if pid in designs:
             top = m._design_root_of(pid)
             return _product_scope(m, top or pos, scope)
-        nodes = [n for n, _d in pf._subtree(m, pid)]
+        nodes = [n for n, _d in pf._subtree(m, pid, within)]
         return "position", {"id": pos["id"], "name": pos.get("name", "")}, nodes
     if scope.get("location_id"):
         loc = m._get(scope["location_id"], "Location")

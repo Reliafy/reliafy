@@ -319,17 +319,33 @@ WORK_ORDERS = [Depends(_work_management_on)]
 # ---- overview ----------------------------------------------------------------------
 
 @router.get("/overview")
-def overview(m: Maintenance = Depends(maintenance)) -> JSONResponse:
-    """late: the late work in the counts Home, Orders and Assets share (Maintenance.late_counts)."""
-    def read():
-        # Work management off: no to-do list (what's due, late, open work orders).
-        on = work_management_on()
-        due, wos = (m.due_tasks(30), m.work_orders("open")) if on else ([], [])
-        return {"summary": summary(m), "time_zone": m.time_zone, "today": m.today(), "tree": m.tree(),
-                "due": due, "open_work_orders": wos, "late": m.late_counts(wos, due),
-                "proposals": m.proposals("pending"), "critical_spares": m.critical_spares_short(),
-                "work_management": on}
-    return _run(read)
+def overview(tree: bool = True, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """late: the late work in the counts Home, Orders and Assets share (Maintenance.late_counts).
+    tree=false leaves the asset tree out (Home shows none of it: on a large workspace it is
+    most of the answer)."""
+    return _run(overview_payload, m, tree)
+
+
+def overview_payload(m: Maintenance, tree: bool = True) -> dict:
+    """The overview's answer (also Home's summary, ``backend/routers/home.py``). It
+    reads the graph, the workspace's today and the latest automated readings, so it's
+    kept per process until one of those changes (read_cache.py)."""
+    from backend.maintenance.read_cache import cached
+
+    on = work_management_on()
+    key = ("overview", m.org, m.actor, tree, on, m.today(), m.time_zone)
+    return cached(m.s, key, lambda: _overview(m, tree, on), series=True)
+
+
+def _overview(m: Maintenance, tree: bool, on: bool) -> dict:
+    # Work management off: no to-do list (what's due, late, open work orders).
+    due, wos = (m.due_tasks(30), m.work_orders("open")) if on else ([], [])
+    out = {"summary": summary(m), "time_zone": m.time_zone, "today": m.today()}
+    if tree:
+        out["tree"] = m.tree()
+    return {**out, "due": due, "open_work_orders": wos, "late": m.late_counts(wos, due),
+            "proposals": m.proposals("pending"), "critical_spares": m.critical_spares_short(),
+            "work_management": on}
 
 
 @router.get("/tree")
@@ -581,12 +597,26 @@ def _rcm_read(session, ctx: AccessCtx, fn, *args, m: Maintenance | None = None) 
 
 
 @router.get("/rcm")
-def workspace_rcm(within: str | None = None, session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
-                  m: Maintenance = Depends(maintenance)) -> JSONResponse:
+def workspace_rcm(within: str | None = None, rollup_only: bool = False, session=Depends(get_session),
+                  ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """Every position's RCM (those with any), for the asset tree's RCM tab, with each
     decision's evidence check as the reader sees it. within: one asset's alone (a
-    position, or a place: everything the Explorer opened on it shows)."""
+    position, or a place: everything the Explorer opened on it shows). rollup_only:
+    the whole rollup alone, {rollup} (Home's counts), the same numbers without every
+    position's worksheet."""
+    if rollup_only:
+        return _run(lambda: {"rollup": rcm_rollup(session, ctx, m, within or None)})
     return _rcm_read(session, ctx, m.rcm_all, within or None, m=m)
+
+
+def rcm_rollup(session, ctx: AccessCtx, m: Maintenance, within: str | None = None, rcm=None) -> dict:
+    """The whole RCM rollup alone (Home's counts, also its summary): every decision's
+    evidence check, without every position's worksheet. rcm: m.rcm_all(within) when
+    the caller has already read it."""
+    from backend.maintenance import rcm_graph
+
+    rcm = rcm if rcm is not None else m.rcm_all(within, shared=True)  # resolve only reads it
+    return rcm_graph.resolve(session, rcm, ctx.read_owners, ctx.hidden, m=m, rates=False)["rollup"]
 
 
 @router.get("/positions/{position_id}/rcm")
@@ -812,6 +842,25 @@ def link_task_failure_mode(task_id: str, mode_id: str, m: Maintenance = Depends(
 def unlink_task_failure_mode(task_id: str, mode_id: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """Take that one failure mode off the task (its other links stay)."""
     return _run(m.unlink_task, task_id, mode_id)
+
+
+@router.put("/failure-modes/{mode_id}/response/{kind}")
+def set_mode_response(mode_id: str, kind: str, body: dict = Body(default={}),
+                      m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """A failure mode's response: kind failure ("If it fails anyway", its corrective response) or found
+    ("If an inspection finds it", its follow-on). {name?, labour? [{trade, people, hours}], cost? (each
+    time; null: from its LSA), spares? [{name, qty, part_id?}]}; what's left out is kept. It's a task
+    raised by that event (trigger {kind, failure_mode_id}): also over MCP and the CLI as maintenance
+    tasks.create / tasks.update with that trigger."""
+    return _run(m.set_mode_response, mode_id, kind, body.get("name"),
+                body["labour"] if "labour" in body else ..., body["cost"] if "cost" in body else ...,
+                body["spares"] if "spares" in body else ...)
+
+
+@router.delete("/failure-modes/{mode_id}/response/{kind}")
+def clear_mode_response(mode_id: str, kind: str, m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
+    """No response of that kind any more (its task is retired, kept in the history)."""
+    return _run(m.clear_mode_response, mode_id, kind)
 
 
 @router.get("/failure-modes/{mode_id}/costs")
@@ -1158,11 +1207,24 @@ def optimise_task_use(task_id: str, body: dict = Body(default={}), session=Depen
                       ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
     """Optimise's "Use every N": the task takes the interval worked out for failure_mode_id (left out when
     it prevents one), the calculation is saved as a strategy analysis and linked as the mode's evidence,
-    and a line on it goes in the mode's notes. Takes the same inputs as /optimise."""
+    and a line on it goes in the mode's notes. Takes the same inputs as /optimise, and as_rule (a task on
+    a calendar rule keeps it, at the step nearest the answer: its use_rule)."""
     from backend.maintenance import task_optimise as to
 
+    body = dict(body or {})
+    as_rule = bool(body.pop("as_rule", False))
     return _run(lambda: to.use(m, session, ctx.read_owners, ctx.hidden, ctx.write_owner, task_id,
-                               **_optimise_args(body or {})))
+                               as_rule=as_rule, **_optimise_args(body)))
+
+
+@router.post("/schedule/dates")
+def schedule_dates(body: dict = Body(default={}), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The next dates a "how often" gives (the task panel's and a package's preview; nothing saved): rule
+    (a how-often rule; {kind: every, every, unit} for a plain interval, {kind: shutdowns, every, unit}
+    with position_id), start (default today), after (done that day: only later dates), also ({every,
+    unit}: whichever comes first) and count (default 5). The dates are RePyability's."""
+    return _run(m.schedule_dates, body.get("rule"), start=body.get("start"), count=body.get("count") or 5,
+                after=bool(body.get("after")), position_id=body.get("position_id"), also=body.get("also"))
 
 
 @router.get("/tasks/{task_id}/interval-basis")
@@ -1221,6 +1283,9 @@ def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(m
         if "cost" in body:
             # What it costs each time, typed (null: its LSA's figure again).
             view = m.set_task_cost(task_id, body["cost"])
+        if "on_replace" in body:
+            # When the item is replaced: restart the schedule or keep it (restart.py); null: the default.
+            view = m.set_task_on_replace(task_id, body["on_replace"])
         if "visit_cost" in body:
             # A task in no package: its call-out and setup each time (null: none; visit_costs.py).
             view = m.set_task_visit_cost(task_id, body["visit_cost"])
@@ -1229,6 +1294,10 @@ def update_task(task_id: str, body: dict = Body(...), m: Maintenance = Depends(m
             # that mode's decision only.
             given = dict(body["restoration"] or {})
             view = m.set_task_restoration(task_id, given or None, failure_mode_id=given.pop("failure_mode_id", None))
+        if "support" in body:
+            # Keeps the item on its life (a supporting task, supporting.py): {failure_mode_ids,
+            # reference, impact {form: hazard_ratio, k}, grace, source, note}; null clears it.
+            view = m.set_task_support(task_id, body["support"])
         if "basis" in body:
             # operating: its interval counts running hours; calendar or null: by its unit.
             view = m.set_task_basis(task_id, body["basis"])
@@ -1470,7 +1539,11 @@ def add_position_mission(position_id: str, body: dict = Body(default={}), sessio
     it has nothing inside; saved as "<position> — <mission>". name: the mission's (default
     "Mission N"); link_id: one of its model rows to fly it on (Add a mission on a model's row: an RBD,
     or any life or covariate model, in use or not). Its phases (or, on a life model with no
-    covariates, its length and starting age) are then set through /api/rbds/{rbd id}/missions/mission."""
+    covariates, its length and starting age) are then set through /api/rbds/{rbd id}/missions/mission.
+    The Missions tab's form: link_id may be an RBD on a position inside this one; tree: true builds
+    it from the positions inside (in series where nothing says what's redundant); setup: {start,
+    calendar, from} (rbd_missions.parse_setup); length: {value, unit (hours, days, months, years)},
+    its one first phase, through the calendar."""
     from backend.maintenance import position_models as pm
     from backend.services import billing as billing_service
 
@@ -1482,8 +1555,11 @@ def add_position_mission(position_id: str, body: dict = Body(default={}), sessio
     name = body.get("name") if isinstance(body, dict) else None
     # link_id: the position's model row to fly it on (an RBD copied, or its model in use as one block).
     link_id = body.get("link_id") if isinstance(body, dict) and isinstance(body.get("link_id"), str) else None
+    body = body if isinstance(body, dict) else {}
+    setup = body.get("setup") if isinstance(body.get("setup"), dict) else None
+    length = body.get("length") if isinstance(body.get("length"), dict) else None
     return _run(pm.build_mission_rbd, m, session, ctx.read_owners, ctx.hidden, position_id, ctx.write_owner, name,
-                link_id)
+                link_id, body.get("tree") is True, setup, length)
 
 
 @router.post("/rbd-tree-plan")
@@ -1556,7 +1632,8 @@ def link_position_model(position_id: str, body: dict = Body(...), session=Depend
     """Attach a model to a position: a saved one (model_id, model_type: model default, recurrent_model,
     degradation_model, alt_model), the position class's (from_class true) or a new fit from its failure
     history (fit true; distribution, scope auto | position | class). failure_mode_ids: the failure modes it's
-    for; replace_link_id: the model on the position it takes the place of; note. An RBD: rbd_id (an existing diagram, linked as
+    for; replace_link_id: the model on the position it takes the place of; note. With library_record_id,
+    hazard_ratio adjusts it for the conditions here (a new model with that hazard ratio). An RBD: rbd_id (an existing diagram, linked as
     it is), new_rbd {repairable, start: blank | self (one block, the position's own model in use)}, or
     build_rbd true (a new one from the positions inside, named ``name`` when given; with
     replace_link_id, rebuilt into the same diagram). use_link_id: make that row the position's model in use.
@@ -1571,13 +1648,14 @@ def link_position_model(position_id: str, body: dict = Body(...), session=Depend
 
         return _run(library_models.attach, m, session, ctx.write_owner, position_id, body["library_record_id"], modes, note,
                     replace, owners=ctx.read_owners, length_ft=body.get("length_ft"),
-                    covariates=body.get("covariates") if isinstance(body.get("covariates"), dict) else None)
+                    covariates=body.get("covariates") if isinstance(body.get("covariates"), dict) else None,
+                    hazard_ratio=body.get("hazard_ratio"))
     if isinstance(body.get("bind"), dict):
         # A covariate model (NSWC-11, ALT or PH) with some, all or none of its covariates fixed here.
         from backend.maintenance import covariate_positions
 
         return _run(covariate_positions.bind, m, session, ctx.write_owner, ctx.read_owners, position_id, body["bind"],
-                    modes, note, replace)
+                    modes, note, replace, body.get("hazard_ratio"))
     if body.get("use_link_id"):
         # Which of the position's rows is the model in use.
         return _run(m.use_position_model, position_id, str(body["use_link_id"]))
@@ -1728,6 +1806,38 @@ def class_forecast(position_class: str, period: str = "month", periods: int = 12
 
     return _run(forecast.class_forecast, m, position_class, period, periods, service_level, lead_time_days,
                 review_days)
+
+
+# The most classes one batched forecast read takes (the Forecasts page asks for every
+# class with a fitted model at once).
+MAX_CLASS_FORECASTS = 200
+
+
+@router.get("/classes/forecasts")
+def class_forecasts(request: Request, period: str = "month", periods: int = 12,
+                    m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """Several classes' forecasts in one read (position_class repeated): {forecasts: {class:
+    the same answer GET /classes/forecast gives, or {error, detail} when that one can't be
+    worked out}}. One read of the register serves them all, so the Forecasts page asks once
+    rather than once per class."""
+    from backend.maintenance import forecast
+
+    names = list(dict.fromkeys(v for v in request.query_params.getlist("position_class") if v))
+    if len(names) > MAX_CLASS_FORECASTS:
+        return JSONResponse(status_code=422,
+                            content={"detail": f"Ask for at most {MAX_CLASS_FORECASTS} classes at a time."})
+
+    def read():
+        out = {}
+        for name in names:
+            try:
+                out[name] = forecast.class_forecast(m, name, period, periods, None, None, None)
+            except NotFound:
+                out[name] = {"error": True, "detail": "Not found."}
+            except Invalid as err:
+                out[name] = {"error": True, "detail": client_message(err)}
+        return {"forecasts": out}
+    return _run(read)
 
 
 @router.get("/proposals")
@@ -2061,13 +2171,15 @@ def impact(position_id: str, m: Maintenance = Depends(maintenance)) -> JSONRespo
 @router.post("/positions/{position_id}/rbd")
 def generate_rbd(position_id: str, body: dict = Body(default={}), session=Depends(get_session),
                  ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance_write)) -> JSONResponse:
-    """Make (or remake) the position's RBD from the positions inside it. check true: only the
-    look-alike positions to ask about first ({ask}); arrangements [{position_ids, how: parallel |
-    standby | series, k?, standby?}]: the answers, recorded as redundancy sets before building."""
+    """Make the position's RBD from the positions inside it. check true: only the look-alike
+    positions to ask about first ({ask}) and the RBD made before ({existing}); arrangements
+    [{position_ids, how: parallel | standby | series, k?, standby?}]: the answers, recorded as
+    redundancy sets before building. existing open (default) | copy | rebuild: what to do when one
+    was made before (open returns it unchanged; rebuild replaces its edits)."""
     from backend.maintenance import rbd_derive
 
     return _run(rbd_derive.save, m, session, position_id, ctx.read_owners, ctx.hidden, body.get("arrangements"),
-                bool(body.get("check")))
+                bool(body.get("check")), body.get("existing"))
 
 
 # ---- graph queries in Cypher (#423): owner-only ------------------------------------------
@@ -2983,6 +3095,23 @@ def out_of_service(kind: str, target_id: str, body: dict = Body(...),
     return _run(m.take_out_of_service, target_id, body.get("reason"), body.get("until"), body.get("start"))
 
 
+@router.get("/operations")
+def operations(root: str | None = None, position_id: str | None = None,
+               m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The Explorer's Operations tab in one read: each position's duty (its own, or the one it
+    takes from above it), other use, shutdown and outage windows (own and inherited) and time
+    zone, inside root (the asset opened). Also over MCP and the CLI: maintenance get.operations."""
+    return _run(m.operations, root or None, position_id or None)
+
+
+@router.get("/positions/{position_id}/shutdown-windows")
+def shutdown_windows(position_id: str, start: str | None = None, end: str | None = None, root: str | None = None,
+                     m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The windows that take a position off-line (shutdowns and outages, its own and inherited)
+    from start to end (default the year from today)."""
+    return _run(m.operation_windows, position_id, start, end, root or None)
+
+
 @router.get("/{kind}/{target_id}/operating-plan")
 def get_operating_plan(kind: str, target_id: str, root: str | None = None,
                        m: Maintenance = Depends(maintenance)) -> JSONResponse:
@@ -2993,18 +3122,114 @@ def get_operating_plan(kind: str, target_id: str, root: str | None = None,
     return _run(m.operating_plan, target_id, root or None)
 
 
+@router.get("/positions/{position_id}/forecast-start")
+def position_forecast_start(position_id: str, root: str | None = None, session=Depends(get_session),
+                            ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """What the quick forecast tool (Decisions › Forecasts) and Optimal replacement take from a
+    position and everything below it (the Explorer's Open in ›): its model in use, the units with
+    their ages from fitments, hours a day from its duty, a task's interval, hours and cost, and a
+    failure's cost, only where recorded. Nothing is written."""
+    from backend.maintenance import position_models as pm
+    from backend.maintenance.forecast_start import position_start
+
+    return _run(position_start, m, pm.fetcher(session, ctx.read_owners, ctx.hidden), position_id, root or None)
+
+
+@router.get("/tasks/{task_id}/support-fit")
+def task_support_fit(task_id: str, m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """A supporting task's impact fitted from its history (support_fit.py): k with its 90% two-sided range,
+    "not shown to matter", or why it can't be estimated; ``use`` is what to send as its support. Reads only.
+    Also over MCP and the CLI: maintenance get.support_fit."""
+    return _run(m.fit_support, task_id)
+
+
+@router.get("/tasks/{task_id}/forecast-start")
+def task_forecast_start(task_id: str, root: str | None = None, session=Depends(get_session),
+                        ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The same from one task: the position it's on, with the task's interval, hours and cost."""
+    from backend.maintenance import position_models as pm
+    from backend.maintenance.forecast_start import task_start
+
+    return _run(task_start, m, pm.fetcher(session, ctx.read_owners, ctx.hidden), task_id, root or None)
+
+
+@router.get("/packages/{package_id}/forecast-start")
+def package_forecast_start(package_id: str, root: str | None = None, session=Depends(get_session),
+                           ctx: AccessCtx = Depends(get_access), m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The same from a work package: the positions its tasks are on, and its tasks."""
+    from backend.maintenance import position_models as pm
+    from backend.maintenance.forecast_start import package_start
+
+    return _run(package_start, m, pm.fetcher(session, ctx.read_owners, ctx.hidden), package_id, root or None)
+
+
+@router.get("/{kind}/{node_id}/forecast-lines")
+def node_forecast_lines(kind: str, node_id: str, root: str | None = None, months: int = 12, whatif: str | None = None,
+                        session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                        m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The forecast by owner for an Explorer node (Open in › in the quick forecast tool): a position
+    and everything below it, a task or a work package, from today for months (12, 24, 36 or 60).
+    Each task's line (certain), each failure mode's corrective and follow-on lines (worked out, with
+    90% two-sided ranges), totals and what's not counted; each supporting task's worth; with whatif
+    (JSON {task_id: {drop: true} | {interval: N}}), the same with those supporting tasks changed. Also
+    over MCP and the CLI: maintenance get.forecast with months and whatif."""
+    from backend.maintenance import forecast_lines
+    from backend.maintenance import position_models as pm
+
+    of = {"positions": "position", "tasks": "task", "packages": "package"}.get(kind)
+    if of is None:
+        raise HTTPException(status_code=404, detail="Not found.")
+    plan = None
+    if whatif:
+        # A what-if on supporting tasks (JSON): {task_id: {drop: true} | {interval: N}}. Nothing is written.
+        import json
+
+        try:
+            plan = json.loads(whatif)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="whatif is JSON: {task_id: {drop: true} or {interval: N}}.")
+    fetch = pm.fetcher(session, ctx.read_owners, ctx.hidden)
+    return _run(forecast_lines.node_forecast, m, fetch, of, node_id, root or None, months, plan)
+
+
 @router.get("/positions/{position_id}/forecast")
 def position_forecast(position_id: str, root: str | None = None, period: str = "month", periods: int = 12,
+                      end: str | None = None, strict: bool = False,
                       session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
                       m: Maintenance = Depends(maintenance)) -> JSONResponse:
     """The forecast for a position and everything inside it (inside root, the asset opened): tasks
     on dates, work per period, expected failures and cost per period with a 90% range, each saying
-    what it rests on. Also over MCP and the CLI: maintenance get.forecast."""
+    what it rests on. period: day, week, month, quarter or year; end (a date): the last day instead
+    of periods; strict: hours by a duty only (no meter rate, no running all day). Also over MCP and
+    the CLI: maintenance get.forecast."""
     from backend.maintenance import position_forecast as pf
     from backend.maintenance import position_models as pm
 
     fetch = pm.fetcher(session, ctx.read_owners, ctx.hidden)
-    return _run(pf.position_forecast, m, position_id, root or None, period, periods, fetch)
+    return _run(pf.position_forecast, m, position_id, root or None, period, periods, fetch, end or None, None, strict)
+
+
+@router.get("/positions/{position_id}/forecast/details")
+def position_forecast_details(position_id: str, root: str | None = None, basis: str | None = None,
+                              period: str = "month", end: str | None = None, months: int | None = None,
+                              hours: float | None = None,
+                              every: float | None = None, reading: float | None = None,
+                              task_id: str | None = None, package_id: str | None = None,
+                              session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+                              m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """A forecast's details (the Explorer's Forecast rows and Forecast…): the position and everything
+    inside it, or one task (task_id) or a package (package_id) there. basis calendar (period: day,
+    week, month, quarter or year; end: the last day, default a year on; or months: to the end of a month,
+    this one counted) or hours (hours ahead, grouped
+    every so many hours, from reading); left out, the calendar when there's a duty. Rows of counts and
+    costs, expected failures with their 90% range, each time it's done (occurrences) and what couldn't
+    be placed and why."""
+    from backend.maintenance import forecast_details as fd
+    from backend.maintenance import position_models as pm
+
+    fetch = pm.fetcher(session, ctx.read_owners, ctx.hidden)
+    return _run(fd.forecast_details, m, position_id, root or None, basis or None, period, end or None, hours,
+                every, reading, [task_id] if task_id else None, package_id or None, fetch, months)
 
 
 @router.put("/positions/{position_id}/operating-plan")

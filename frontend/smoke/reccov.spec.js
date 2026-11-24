@@ -4,7 +4,7 @@
 // position with some covariates fixed there and the rest set in the RBD; and the Fit dialog's record
 // prior, a pipe's rate for the pipe's length. Nothing scrolls the page sideways at 400 px.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
-import { headMenu } from "./explorer.js";
+import { headMenu, subItem } from "./explorer.js";
 import { choose } from "./select.js";
 
 const M = "/api/maintenance";
@@ -22,9 +22,16 @@ const noSideways = (page) => expect.poll(() => sideways(page), { timeout: 5_000 
 const re = (text) => new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
 
 async function headPick(page, group, item) {
-  await headMenu(page);
-  await page.getByRole("menuitem", { name: group, exact: true }).click();
-  await page.getByRole("menu", { name: group }).getByRole("menuitem", { name: item }).click();
+  // A group (Life model ›, RBD ›) at the top of the heading's menu, or folded into More › with its
+  // items in place (the menu standard keeps ten a level).
+  const menu = await headMenu(page);
+  const g = menu.getByRole("menuitem", { name: group, exact: true });
+  if (await g.count()) {
+    await g.click();
+    await page.getByRole("menu", { name: group }).getByRole("menuitem", { name: item }).click();
+    return;
+  }
+  await (await subItem(page, menu, "More", item, { exact: false })).click();
 }
 
 async function pickRecord(page, words, label) {

@@ -26,6 +26,7 @@ from backend.services import rbds as rbds_service
 from backend.services.access import AccessCtx, get_access
 from backend.services.rbd_analysis import AnalysisError, require_blocks
 from backend.units import unit_factor
+from backend.services import rbd_live_models
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -171,6 +172,7 @@ def repair_availability(
     own repair model, the diagram's outage history, or its position's maintainability prediction,
     and the answer says which; a block with none is listed and nothing is assumed. ``planned``
     (default true) adds the achieved figure with the planned work of the positions' tasks."""
+    graph = rbd_live_models.refresh(session, graph, ctx.read_owners)  # linked blocks on their model's fit
     owners = ctx.read_owners
     rbd = None
     if rbd_id:

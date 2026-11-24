@@ -10,13 +10,14 @@ import { Select } from "./ui/Controls.jsx";
 //
 //   blocks: [{id, label, placeholder}]   phases: the pane's editable phases ({key, name, standby, not_needed})
 //   readOnly                onChange(phaseKey, {standby, not_needed})
+//   title                   the heading (a phase's own details: "What runs in this phase")
 
 
-export default function MissionBlockGrid({ blocks = [], phases = [], readOnly = false, onChange }) {
+export default function MissionBlockGrid({ blocks = [], phases = [], readOnly = false, onChange, title = "Blocks in each phase" }) {
   if (!blocks.length) return null;
   return (
     <section className="mission-grid" aria-labelledby="mission-grid-h">
-      <h3 className="mission-k" id="mission-grid-h">Blocks in each phase</h3>
+      <h3 className="mission-k" id="mission-grid-h">{title}</h3>
       {phases.length === 0 ? (
         <p className="rim-tquiet">Add a phase to set which blocks run, stand by, are guaranteed or aren't needed in it.</p>
       ) : (
@@ -37,7 +38,7 @@ export default function MissionBlockGrid({ blocks = [], phases = [], readOnly = 
                 <tr key={b.id}>
                   <th scope="row">
                     {b.label}
-                    {b.placeholder && <> <Chip tone="warning" title="No model: a placeholder life stands in, so results that need this block aren't real figures">Placeholder</Chip></>}
+                    {b.placeholder && <> <Chip tone="warning" title="No life model: the mission has no answer while a phase needs this block">No model</Chip></>}
                   </th>
                   {phases.map((p, i) => {
                     const state = blockState(p, b.id);

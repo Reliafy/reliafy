@@ -1,8 +1,9 @@
 // The Explorer's Maintenance tab (Operate › Assets › Explorer, ?tab=maintenance): a tree-table, like
 // the Modelling and Missions tabs. Under each position hang its own maintenance tasks (from its RCM or
-// added directly) with how often, next due, what each costs, its package, where it came from and its
-// kind; each level's roll-up counts the tasks at and below it. A position's Forecast… opens the
-// forecast for that level and everything inside it in the table area; a task opens beside the table.
+// added directly) with when it's next due (only when known), how often, what each costs, its package,
+// where it came from and its kind; each level's roll-up counts the tasks at and below it. No
+// forecasts in the tree: a position's Open in › opens the left menu's forecast tool filled in from
+// it (Derryn, 23 Nov 2026); a task opens beside the table.
 // The RCM reads each task's cost. At 400 px nothing scrolls the page sideways. Each test makes its
 // own small plant through the API.
 //
@@ -40,7 +41,7 @@ const nameRow = (page, text) => page.locator(".tp-row", { has: page.locator(".tp
 const side = (page) => page.locator(".tt-side");
 const sideways = (page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 
-test("Maintenance: the tasks in the tree with a roll-up at each level; open one, add one, forecast a level", async ({ page, request, problems }) => {
+test("Maintenance: the tasks in the tree with a roll-up at each level; open one, add one, Open in › a forecast", async ({ page, request, problems }) => {
   const tag = `m${Date.now()}`;
   const p = await plant(request, tag);
   // Another asset: none of it may show while the pump is open.
@@ -59,7 +60,11 @@ test("Maintenance: the tasks in the tree with a roll-up at each level; open one,
   // The level's roll-up: its own and everything below it.
   await expect(page.locator(".mt-rollup")).toHaveText("2 here · 3 tasks at and below");
   // With work management off (SMOKE_WORK_MANAGEMENT=off) the column still reads Next due here.
-  await expect(page.getByRole("columnheader")).toHaveText([/Position, and its tasks/, "Interval", "Next due", "Cost each time", "Trade", "Packaged", "From", "Kind"]);
+  await expect(page.getByRole("columnheader")).toHaveText([/Position, and its tasks/, "Next due", "Interval", "Cost each time", "Trade", "Packaged", "From", "Kind"]);
+  // No record of when it was last done: Next due is a dash saying why, never a date from today.
+  const due = nameRow(page, `Inspect the guard ${tag}`).locator(".mt-c-due span");
+  await expect(due).toHaveText("—");
+  await expect(due).toHaveAttribute("title", "No record of when this was last done");
   await expect(nameRow(page, `Check the seal ${tag}`)).toContainText("$45");
   await expect(nameRow(page, `Inspect the guard ${tag}`)).toContainText("Added directly: law, regulation or standard (AS 4024)");
   await expect(nameRow(page, `Inspect the guard ${tag}`)).toContainText("Not set");
@@ -68,39 +73,77 @@ test("Maintenance: the tasks in the tree with a roll-up at each level; open one,
   // A task opened: its form beside the table; the cost typed shows in the row.
   await nameRow(page, `Inspect the guard ${tag}`).locator(".tp-nm").click();
   const edit = side(page).getByRole("form", { name: `Task: Inspect the guard ${tag}` });
+  // The order (Derryn, 23 Nov 2026): kind, what's done, how often (one line), then the extras folded.
+  const text = await edit.innerText();
+  expect(text.indexOf("Kind of task")).toBeGreaterThan(-1);
+  expect(text.indexOf("Kind of task")).toBeLessThan(text.indexOf("What's done"));
+  expect(text.indexOf("What's done")).toBeLessThan(text.indexOf("How often"));
+  await expect(edit.getByRole("radio", { name: "Running hours" })).toHaveCount(0); // no four-chip switch
+  // A task added directly edits why it's done here.
+  await expect(edit.getByRole("combobox", { name: "Kind of task" })).toBeVisible();
+  await expect(edit.getByRole("region", { name: "Why it's done" })).toBeVisible();
+  // Cost: folded, nothing set; opened, the box.
+  const cost = edit.getByRole("button", { name: "Cost", exact: true });
+  await expect(cost).toHaveAttribute("aria-expanded", "false");
+  await cost.click();
   await expect(edit).toContainText("Not set yet");
-  await edit.getByRole("spinbutton", { name: /Cost each time/ }).fill("60");
+  await edit.getByRole("spinbutton", { name: /Each time/ }).fill("60");
   await edit.getByRole("button", { name: "Save" }).click();
   await expect(nameRow(page, `Inspect the guard ${tag}`)).toContainText("$60");
   await shot(page, "maintenance-task-desktop");
+  // The cost typed is a row under the task (not a task: the counts don't change), opening the task at its Cost.
+  const guard = nameRow(page, `Inspect the guard ${tag}`);
+  await guard.locator(".tp-chev").click();
+  const costRow = nameRow(page, "Cost · $60 each time");
+  await expect(costRow).toBeVisible();
+  await expect(page.locator(".mt-rollup")).toHaveText("2 here · 3 tasks at and below");
+  await costRow.locator(".tp-nm").click();
+  await expect.poll(() => query(page).get("msec")).toBe("cost");
+  const reopened = side(page).getByRole("form", { name: `Task: Inspect the guard ${tag}` });
+  await expect(reopened.getByRole("button", { name: /^Cost/ })).toHaveAttribute("aria-expanded", "true");
+  await expect(reopened.getByRole("spinbutton", { name: /Each time/ })).toHaveValue("60");
+
+  // A task from an RCM decision: what the RCM owns is one read-only line, edited on the RCM tab only.
+  await nameRow(page, `Check the seal ${tag}`).locator(".tp-nm").click();
+  const fromRcm = side(page).getByRole("form", { name: `Task: Check the seal ${tag}` });
+  await expect(fromRcm.locator(".mt-from")).toContainText(`From RCM: Seal leaks ${tag} · Check condition · Open in RCM ›`);
+  await expect(fromRcm.getByRole("link", { name: "Open in RCM ›" })).toHaveAttribute("href", /tab=rcm/);
+  await expect(fromRcm.getByRole("combobox", { name: "Kind of task" })).toHaveCount(0);
+  await expect(fromRcm.getByRole("region", { name: "Why it's done" })).toHaveCount(0);
+  await expect(fromRcm.getByRole("checkbox", { name: `Seal leaks ${tag}` })).toHaveCount(0);
+  // Its labour is a row under it too, and its Labour fold says so while folded.
+  await expect(fromRcm.getByRole("button", { name: /^Labour/ })).toContainText(`0.5 h Fitter ${tag}`);
 
   // Add task… on the motor (its row menu): a form beside the table, never a dialog.
   await motor.locator(".tp-nm").click({ button: "right" });
   const menu = page.getByRole("menu", { name: new RegExp(`^Actions for Maint motor ${tag}`) });
-  await expect(menu.getByRole("menuitem").first()).toHaveText("Add task…");
-  await expect(menu.getByRole("menuitem", { name: "Forecast…" })).toBeVisible();
+  // The general section first (Open … Copy link), then the tab's add leads the middle.
+  await expect(menu.getByRole("menuitem").first()).toHaveText("Open");
+  await expect(menu.getByRole("menuitem").nth(6)).toHaveText("Add task…");
+  await expect(menu.getByRole("menuitem", { name: /^Open in/ })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Forecast…" })).toHaveCount(0);
+  await expect(menu.getByRole("menuitem", { name: /Spares for the year/ })).toHaveCount(0);
   await menu.getByRole("menuitem", { name: "Add task…" }).click();
   await expect.poll(() => query(page).get("addtask")).toBe(p.motor.id);
   const form = side(page).getByRole("form", { name: "Add a task" });
   await expect(form).toContainText(`Add a task to Maint motor ${tag}`);
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await form.getByRole("textbox", { name: /Task: the action only/ }).fill(`Check the coupling ${tag}`);
-  await form.getByRole("group", { name: "How often" }).getByRole("spinbutton", { name: "How many" }).fill("6");
+  await form.getByRole("textbox", { name: /What's done/ }).fill(`Check the coupling ${tag}`);
+  await form.getByRole("spinbutton", { name: "How many" }).fill("6");
   await form.getByRole("button", { name: "Add task" }).click();
   await expect(nameRow(page, `Check the coupling ${tag}`)).toBeVisible();
   await expect(motor).toContainText("2 tasks here");
 
-  // Forecast… on the motor: that level's forecast in the table area, the tree kept beside it.
+  // Open in › Spares forecast on the motor: the left menu's tool, filled in from it, saying where from.
   await motor.locator(".tp-nm").click({ button: "right" });
-  await page.getByRole("menu", { name: new RegExp(`^Actions for Maint motor ${tag}`) }).getByRole("menuitem", { name: "Forecast…" }).click();
-  await expect.poll(() => query(page).get("forecast")).toBe(p.motor.id);
-  const pane = page.locator("section.table-pane");
-  await expect(pane).toContainText(`Maint motor ${tag}`);
-  await expect(pane).toContainText(/tasks?/, { timeout: 30_000 });
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  await shot(page, "maintenance-forecast-desktop");
-  await pane.getByRole("button", { name: "Close the forecast" }).click();
-  await expect.poll(() => query(page).get("forecast")).toBe(null);
+  const again = page.getByRole("menu", { name: new RegExp(`^Actions for Maint motor ${tag}`) });
+  await again.getByRole("menuitem", { name: /^Open in/ }).click();
+  await expect(page.getByRole("menuitem", { name: "Hours forecast" })).toBeVisible();
+  await shot(page, "maintenance-open-in-desktop");
+  await page.getByRole("menuitem", { name: "Spares forecast" }).click();
+  await expect(page).toHaveURL(new RegExp(`/forecasts/spares\\?from=position%3A${p.motor.id}`));
+  await expect(page.locator(".ft-from")).toContainText(`Maint motor ${tag}`);
+  await expect(page.locator(".ft-from a")).toHaveAttribute("href", new RegExp(`sel=${p.motor.id}`));
   await expectHealthy(page, problems, { label: "maintenance tab" });
 
   // The RCM reads the cost: the P-F calculator starts from the task's $45.
@@ -108,7 +151,7 @@ test("Maintenance: the tasks in the tree with a roll-up at each level; open one,
   expect(inputs.task_cost.amount).toBe(45);
 });
 
-test("Maintenance at 400 px: the tree of tasks, a task opened, the forecast; nothing scrolls sideways", async ({ page, request, problems }) => {
+test("Maintenance at 400 px: the tree of tasks, a task opened, an old forecast address; nothing scrolls sideways", async ({ page, request, problems }) => {
   const tag = `n${Date.now()}`;
   const p = await plant(request, tag);
   await page.setViewportSize({ width: 400, height: 860 });
@@ -118,12 +161,29 @@ test("Maintenance at 400 px: the tree of tasks, a task opened, the forecast; not
   expect(await sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "maintenance-tree-phone");
   await nameRow(page, `Check the seal ${tag}`).locator(".tp-nm").click();
-  await expect(side(page).getByRole("form", { name: `Task: Check the seal ${tag}` })).toContainText("$45 each time");
+  // Its cost, folded, says what's in force: $45 from its LSA.
+  await expect(side(page).getByRole("form", { name: `Task: Check the seal ${tag}` }).getByRole("button", { name: /^Cost/ }))
+    .toContainText("$45 each time, from its LSA");
+  // When the item is replaced: under More scheduling options (folded, nothing set: no summary),
+  // restart or keep, the default named (a task on its own restarts).
+  const more = side(page).getByRole("button", { name: "More scheduling options" });
+  await expect(more).toHaveAttribute("aria-expanded", "false");
+  await more.click();
+  await expect(side(page).getByRole("combobox", { name: "When the item is replaced" })).toContainText("Restart (default)");
   expect(await sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "maintenance-task-phone");
-  await open(page, `/asset-register/explorer?arrange=positions&root=${p.pump.id}&sel=${p.pump.id}&tab=maintenance&forecast=${p.pump.id}`);
-  await expect(page.locator("section.table-pane")).toContainText(/tasks?/, { timeout: 30_000 });
+  // Open in from a task's ⋯ on a phone: Select keeps its place, so the tools are under More › (in place).
+  await open(page, `/asset-register/explorer?arrange=positions&root=${p.pump.id}&sel=${p.pump.id}&tab=maintenance`);
+  await nameRow(page, `Check the seal ${tag}`).getByRole("button", { name: /^Actions for/ }).click();
+  await page.getByRole("menu").first().getByRole("menuitem", { name: /^More/ }).click();
+  await expect(page.getByRole("menuitem", { name: "Cost forecast" })).toBeVisible();
   expect(await sideways(page)).toBeLessThanOrEqual(0);
-  await shot(page, "maintenance-forecast-phone");
+  await shot(page, "maintenance-open-in-phone");
+  await page.keyboard.press("Escape");
+  // An old Forecast… address opens the spares forecast, filled in from the pump.
+  await open(page, `/asset-register/explorer?arrange=positions&root=${p.pump.id}&sel=${p.pump.id}&tab=maintenance&forecast=${p.pump.id}`);
+  await expect(page).toHaveURL(/\/forecasts\/spares\?from=position/);
+  await expect(page.locator(".ft-from")).toContainText(`Maint pump ${tag}`);
+  expect(await sideways(page)).toBeLessThanOrEqual(0);
   await expectHealthy(page, problems, { label: "maintenance phone" });
 });

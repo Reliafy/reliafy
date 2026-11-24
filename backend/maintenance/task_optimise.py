@@ -207,7 +207,7 @@ def _task_info(m, task_id: str) -> dict:
     return {"id": task["id"], "name": task.get("name") or "", "interval": task.get("interval"), "unit": unit,
             "outcome": task.get("outcome"), "position_id": subject.get("id") if subject.get("kind") == "position" else None,
             "position_name": subject.get("name"), "modes": lsa.get("modes") or [],
-            "restoration": task.get("restoration") or {}}
+            "restoration": task.get("restoration") or {}, "rule": task.get("rule")}
 
 
 def _kind_for(task: dict, mode: dict) -> str | None:
@@ -570,8 +570,40 @@ def optimise(m, db, owners, hidden, task_id: str, *, failure_mode_id: str | None
                 "No life model is linked to this failure mode. Link one (one of this position's models, or one "
                 "from your models) or fit one from a dataset, and the interval is worked out from it.")
         out_modes.append(row)
-    return {"task": {k: task[k] for k in ("id", "name", "interval", "unit", "outcome", "position_id", "position_name")},
-            "modes": out_modes}
+    for row in out_modes:
+        # A task on a calendar rule (the first Saturday of every month): the answer as the nearest
+        # rule like it too, so "Use" can keep the pattern (as_rule) or take the plain interval.
+        near = _nearest_rule(task, row.get("use"))
+        if near:
+            row["use_rule"] = near
+    # A supporting task with a one-number impact: its break-even (forecast plan step 8), never an interval.
+    from backend.maintenance import support_whatif
+
+    support = support_whatif.break_even(m, fetch, task["id"])
+    return {"task": {k: task[k] for k in ("id", "name", "interval", "unit", "outcome", "position_id", "position_name")}
+            | {"rule_text": _rule_text(task)}, "modes": out_modes, "support": support}
+
+
+def _rule_text(task: dict) -> str | None:
+    from backend.maintenance import how_often
+
+    rule = task.get("rule")
+    return how_often.describe(rule) if rule else None
+
+
+def _nearest_rule(task: dict, use: dict | None) -> dict | None:
+    """{rule, words}: the task's rule with its step nearest the answer (None off a rule, or for an
+    answer in a unit of use)."""
+    from backend.maintenance import how_often
+
+    rule = task.get("rule")
+    if not rule or not use or rule.get("kind") == "every":
+        return None
+    try:
+        near = how_often.nearest_rule(rule, float(use["value"]), use["unit"])
+    except (ValueError, TypeError, KeyError):
+        return None
+    return near and {"rule": near, "words": how_often.describe(near)}
 
 
 # ---- using the answer ------------------------------------------------------------------
@@ -594,7 +626,8 @@ def _analysis_inputs(row: dict, task: dict, life: dict | None) -> dict:
     return sent | extra
 
 
-def use(m, db, owners, hidden, owner_id: str, task_id: str, failure_mode_id: str | None = None, **given) -> dict:
+def use(m, db, owners, hidden, owner_id: str, task_id: str, failure_mode_id: str | None = None, as_rule=False,
+        **given) -> dict:
     """Optimise's "Use every N": the task takes the interval worked out for its failure mode
     (``failure_mode_id``; may be left out when it serves one), the calculation is saved as a strategy
     analysis and linked as the mode's evidence (for its task), and one line on it goes in the mode's
@@ -617,7 +650,14 @@ def use(m, db, owners, hidden, owner_id: str, task_id: str, failure_mode_id: str
         raise OptimiseError(row.get("problem") or row.get("no_model") or row.get("none") or "No interval was worked out.")
     calc = CALCULATORS[row["kind"]]
     life = row.get("model")
-    m.update_task(task_id, interval=row["use"]["value"], unit=row["use"]["unit"])
+    if as_rule:
+        # Keep the task's calendar pattern, at the step nearest the answer (use_rule).
+        if not row.get("use_rule"):
+            raise OptimiseError("This task isn't on a calendar rule (or the answer isn't in days, weeks, months or "
+                                "years): use the interval itself.")
+        m.set_task_rule(task_id, row["use_rule"]["rule"])
+    else:
+        m.update_task(task_id, interval=row["use"]["value"], unit=row["use"]["unit"])
     mode = m.rcm_mode(failure_mode_id)
     text = str(mode.get("text") or "Failure mode").strip()
     word = calc["word"]
@@ -628,8 +668,9 @@ def use(m, db, owners, hidden, owner_id: str, task_id: str, failure_mode_id: str
         raise OptimiseError(str(exc)) from None
     on = date.fromisoformat(str(m.today())[:10])
     based = f" on “{life['name']}”" if life and life.get("name") else ""
-    line = (f"Interval from Optimise ({on.day} {on.strftime('%b %Y')}){based}: every "
-            f"{_with_unit(row['use']['value'], row['use']['unit'])}. {row.get('words') or ''}").strip()
+    set_to = row["use_rule"]["words"] if as_rule else f"every {_with_unit(row['use']['value'], row['use']['unit'])}"
+    line = (f"Interval from Optimise ({on.day} {on.strftime('%b %Y')}){based}: {set_to}. "
+            f"{row.get('words') or ''}").strip()
     notes = str(mode.get("notes") or "").rstrip()
     m.update_failure_mode(failure_mode_id, notes=f"{notes}\n\n{line}" if notes else line)
     linked, why = _link_evidence(m, failure_mode_id, task_id, {"type": "strategy_analysis", "id": saved.id}, Invalid)
@@ -643,6 +684,7 @@ def use(m, db, owners, hidden, owner_id: str, task_id: str, failure_mode_id: str
             status = rcm_decisions.resolve_decision(decision, evidence_fetcher(db, owners, hidden), clock).get("status")
     return {"task_id": task_id, "failure_mode_id": failure_mode_id, "interval": row["use"]["value"],
             "unit": row["use"]["unit"], "words": row.get("words"), "notes_added": line,
+            **({"rule": row["use_rule"]["rule"], "rule_text": row["use_rule"]["words"]} if as_rule else {}),
             "analysis": {"id": saved.id, "name": saved.name, "kind": saved.kind},
             "model": {k: life.get(k) for k in ("type", "id", "name", "path")} if life and life.get("id") else None,
             "evidence_linked": linked, **({"evidence_not_linked": why} if why else {}), "evidence_status": status}

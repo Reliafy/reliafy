@@ -109,7 +109,7 @@ many tasks it holds and whether it's active or paused. Open one to see its
 tasks, its next visits and its recent work orders. Packages are made from the
 tasks on the Explorer's **Maintenance** tab: select the tasks, then **Package…**
 in their right-click menu. There each package shows as a row where its tasks
-meet, with a **Forecast** row under it.
+meet, with its next visit in the **Next due** column.
 
 ## When work management is turned off
 

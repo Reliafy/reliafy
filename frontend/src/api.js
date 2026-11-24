@@ -128,6 +128,26 @@ async function readJson(res) {
   return data;
 }
 
+// The app frame's settings in one request (GET /api/me/bootstrap: the profile,
+// roles, time zone, currency, teams, invites, extension pages and Maintenance
+// access), read once a session. `shellRead(part, read)` answers a part from it
+// the first time the frame asks, and from the part's own route (`read`) every
+// time after (a refresh after a change, a workspace switch) or when the
+// bootstrap couldn't give it. resetBootstrap: on sign-in, sign-out or a new user.
+let bootstrap = null;
+const bootstrapUsed = new Set();
+export function resetBootstrap() {
+  bootstrap = null;
+  bootstrapUsed.clear();
+  maintenanceAccess = null;
+}
+export function shellRead(part, read) {
+  if (bootstrapUsed.has(part)) return read();
+  bootstrapUsed.add(part);
+  if (!bootstrap) bootstrap = request("/api/me/bootstrap").catch(() => null);
+  return bootstrap.then((b) => (b?.parts && part in b.parts ? b.parts[part] : read()));
+}
+
 // The signed-in user's profile (also upserts it on the backend).
 export function getMe() {
   return request("/api/me");
@@ -446,6 +466,18 @@ export function createPerDemandModel(name, source, confidence = 0.9) {
   );
 }
 
+// Adjust for conditions (backend/services/model_adjust.py): the model with a known hazard ratio
+// (``hazard_ratio``), or the ratio that makes it last ``life_scale`` times as long. Without ``save``:
+// B10 and mean life before and after, nothing saved; with it, the new model (its detail).
+export function adjustModel(id, { hazardRatio = null, lifeScale = null, name = null, save = false } = {}) {
+  const req = request(`/api/models/${encodeURIComponent(id)}/adjust`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ hazard_ratio: hazardRatio, life_scale: lifeScale, name: name || null, save }),
+  });
+  return save ? withEvent(req, "model_save") : req;
+}
+
 // Create a model from parameters alone (no data): functions & life metrics,
 // no probability plot. ``params`` is [{name, value}]; ``extras`` may hold
 // gamma/p/f0 for offset/LFP/zero-inflated models.
@@ -657,6 +689,37 @@ export function pasteDataset(name, content, noHeader = null, reading = null, lib
   );
 }
 
+// New dataset's "Type it in": what typed text (SurPyval's notation, "120, 310,
+// [400, 450], 1000+") says and the columns it would be saved with. Saves
+// nothing; a 422's err.data.where says where the reading stopped.
+// ``lifetimes``: also the Lifetimes view's payload for the unsaved data.
+export function readNotation(text, unit = null, { signal, lifetimes = false } = {}) {
+  return request("/api/datasets/notation/read", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: text || "", ...(unit ? { unit } : {}), ...(lifetimes ? { lifetimes: true } : {}) }),
+    signal,
+  });
+}
+
+// Save typed text as a dataset: the CSV the same data would be, with its reading.
+export function createNotationDataset(name, text, unit, libraryId = null) {
+  return withEvent(
+    request("/api/datasets/notation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name || "", text: text || "", unit: unit || "",
+                             ...(libraryId ? { library_id: libraryId } : {}) }),
+    }),
+    "dataset_upload"
+  );
+}
+
+// The dataset page's "Show as text": { text, kind, n_rows, unit } (up to 200 rows).
+export function getDatasetNotation(id) {
+  return request(`/api/datasets/${id}/notation`);
+}
+
 // The columns a new dataset would have (exactly as uploadDataset /
 // pasteDataset with the same fields would store them), their facts and the
 // server's guessed reading: New dataset's reading screen. Saves nothing.
@@ -692,6 +755,18 @@ export function setDatasetMeasurementsReading(id, measurements) {
 export function setDatasetReading(id, reading) {
   return request(`/api/datasets/${id}/reading`, {
     method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reading }),
+  });
+}
+
+// A dataset's lifetimes (the dataset page's Lifetimes view): one line per
+// unit, read with its saved reading, or with ``reading`` (a draft being
+// changed; nothing is kept).
+export function getDatasetLifetimes(id, reading = null) {
+  if (!reading) return request(`/api/datasets/${id}/lifetimes`);
+  return request(`/api/datasets/${id}/lifetimes`, {
+    method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ reading }),
   });
@@ -2339,6 +2414,34 @@ export function createFleet(name, modelId, modelKind = "life") {
   });
 }
 
+// A quick spares forecast, not saved (Decisions › Forecasts › Spares forecast): the saved-fleet
+// engine on {distribution_id, params, extras?, unit?, name?, units?, ages, rate, periods,
+// period_label, strategy, replace_at?, failure_cost?, planned_cost?, spares?}.
+export function sparesScratchForecast(body) {
+  return postJson("/api/fleet/scratch-forecast", body);
+}
+// The quick forecast as a sentence (Decisions › Forecasts): {units, running, months, start?, work?,
+// part?, spares?}: lines by owner, totals with 90% two-sided ranges, rows by period. Nothing is saved.
+export function quickForecast(body) {
+  return postJson("/api/fleet/quick-forecast", body);
+}
+// The forecast by owner for an Explorer node (Open in › in the quick forecast tool): `kind`
+// position (and everything below it), task or package; `root` the asset opened; months 12–60.
+export function getForecastLines({ kind, id, root = null, months = 12, whatif = null }) {
+  const base = { position: "positions", task: "tasks", package: "packages" }[kind];
+  const q = new URLSearchParams({ months: String(months) });
+  if (root) q.set("root", root);
+  // A what-if on supporting tasks: {task_id: {drop: true} | {interval: N}} (nothing is written).
+  if (whatif && Object.keys(whatif).length) q.set("whatif", JSON.stringify(whatif));
+  return request(`/api/maintenance/${base}/${encodeURIComponent(id)}/forecast-lines?${q}`);
+}
+// What the quick forecast tool and Optimal replacement take from an Explorer node (Open in ›):
+// `kind` position (and everything below it), task or package; `root` the asset opened.
+export function getForecastStart({ kind, id, root = null }) {
+  const base = { position: "positions", task: "tasks", package: "packages" }[kind];
+  const tail = root ? `?root=${encodeURIComponent(root)}` : "";
+  return request(`/api/maintenance/${base}/${encodeURIComponent(id)}/forecast-start${tail}`);
+}
 export function getFleet(id) {
   return request(`/api/fleet/fleets/${id}`);
 }
@@ -2532,6 +2635,13 @@ export function claimWalkthroughAutoStart(id) {
 
 // What changed in the active workspace over a period (#41): ``days`` (default
 // 30) or ``since`` ("last_visit" or a date). Computed by the server.
+// Everything Home shows, in one request: { maintenance, sections, errors }. Each
+// section is what its own list endpoint answers; `errors` names the parts that
+// failed (homeSummary.js turns it into Home's pieces).
+export function getHomeSummary() {
+  return request("/api/home/summary");
+}
+
 export function getWorkspaceChanges({ days = null, since = null } = {}) {
   const q = new URLSearchParams();
   if (since) q.set("since", since);
@@ -2550,8 +2660,10 @@ function postJson(url, body) {
   });
 }
 
-export function getMaintenanceOverview() {
-  return request("/api/maintenance/overview");
+// withTree: false leaves the asset tree out (Home reads none of it; on a large
+// workspace it is most of the answer).
+export function getMaintenanceOverview({ withTree = true } = {}) {
+  return request(`/api/maintenance/overview${withTree ? "" : "?tree=false"}`);
 }
 
 // The asset trees for the tree pane: every position once, flat, with its status,
@@ -2789,7 +2901,8 @@ export function verifyFailureReport(id, body) {
 let maintenanceAccess = null;
 export function getMaintenanceAccess() {
   if (!maintenanceAccess) {
-    maintenanceAccess = request("/api/maintenance/access").catch(() => ({ allowed: false }));
+    maintenanceAccess = shellRead("maintenance_access", () => request("/api/maintenance/access"))
+      .catch(() => ({ allowed: false }));
   }
   return maintenanceAccess;
 }
@@ -2917,13 +3030,26 @@ export function updateFailureMode(id, body) {
 export function getFailureModeCosts(id) {
   return request(`/api/maintenance/failure-modes/${id}/costs`);
 }
+// A failure mode's response (responses.py): kind "failure" (if it fails anyway, its corrective response) or
+// "found" (if an inspection finds it, its follow-on): {name?, labour?, cost?, spares?}.
+export function setModeResponse(id, kind, body) {
+  return putJson(`/api/maintenance/failure-modes/${id}/response/${kind}`, body);
+}
+export function clearModeResponse(id, kind) {
+  return request(`/api/maintenance/failure-modes/${id}/response/${kind}`, { method: "DELETE" });
+}
 export function mergeFailureMode(id, intoId) {
   return postJson(`/api/maintenance/failure-modes/${id}/merge`, { into_id: intoId });
 }
 
 // Every position's RCM (those with any), for the Explorer's RCM tab.
-export function getWorkspaceRcm({ within = null } = {}) {
-  return request(`/api/maintenance/rcm${within ? `?within=${encodeURIComponent(within)}` : ""}`);
+// rollupOnly: the whole rollup alone ({rollup}), the same counts without every worksheet.
+export function getWorkspaceRcm({ within = null, rollupOnly = false } = {}) {
+  const q = new URLSearchParams();
+  if (within) q.set("within", within);
+  if (rollupOnly) q.set("rollup_only", "true");
+  const qs = q.toString();
+  return request(`/api/maintenance/rcm${qs ? `?${qs}` : ""}`);
 }
 
 // An FMEA / RCM worksheet (Excel or CSV) added to a position's RCM. The
@@ -3066,12 +3192,22 @@ export function getFailureModeIntervalInputs(id, taskId = null) {
 // Optimise… on a task (backend/maintenance/task_optimise.py): how often to do it, for each failure
 // mode it prevents, from that mode's life model. body: failure_mode_id, model_type + model_id, the
 // costs, pf_interval (+ pf_unit, act_time), target_unavailability. Reads only.
+// A supporting task's impact fitted from its history (support_fit.py): k with its 90% two-sided range, or
+// why it can't be estimated; `use` is what to save as its support. Reads only.
+export function getSupportFit(taskId) {
+  return request(`/api/maintenance/tasks/${encodeURIComponent(taskId)}/support-fit`);
+}
 export function optimiseTask(taskId, body = {}) {
   return postJson(`/api/maintenance/tasks/${encodeURIComponent(taskId)}/optimise`, body);
 }
 // Its "Use every N": the task's interval, the analysis saved as the mode's evidence, a line in its notes.
 export function useTaskOptimise(taskId, body = {}) {
   return postJson(`/api/maintenance/tasks/${encodeURIComponent(taskId)}/optimise/use`, body);
+}
+// The next dates a "how often" gives, worked out on the server by RePyability (nothing saved): body
+// {rule, start?, after?, also?, count?, position_id?} (howOften.js previewFor builds it).
+export function scheduleDates(body) {
+  return postJson("/api/maintenance/schedule/dates", body);
 }
 // What a task's interval rests on ({rests_on: [{mode, model, analysis, use, moved}]}).
 export function getTaskIntervalBasis(taskId) {
@@ -3400,6 +3536,12 @@ export function getClassForecast(positionClass, { period = "month", periods = 12
   if (leadTimeDays !== undefined && leadTimeDays !== null && leadTimeDays !== "") q.set("lead_time_days", leadTimeDays);
   if (reviewDays) q.set("review_days", reviewDays);
   return request(`/api/maintenance/classes/forecast?${q}`);
+}
+// Several classes' forecasts in one read: {forecasts: {class: forecast, or {error, detail}}}.
+export function getClassForecasts(positionClasses, { period = "month", periods = 12 } = {}) {
+  const q = new URLSearchParams({ period, periods: String(periods) });
+  for (const c of positionClasses) q.append("position_class", c);
+  return request(`/api/maintenance/classes/forecasts?${q}`);
 }
 // A catalogue part's fields, e.g. its stock-level settings (lead_time_days,
 // service_level, repairable, turnaround_days; null clears one).
@@ -4027,11 +4169,19 @@ export function createMission(rbdId, { name = null, phases = null } = {}) {
 }
 // A new mission on a position with an RBD of its own, built from what's inside it: {rbd, mission, notes, placeholders}.
 // linkId: one of the position's model rows to fly it on (an RBD copied, or its model in use as the one block).
-export function createPositionMission(positionId, { name = null, linkId = null } = {}) {
+// The Missions tab's form adds: `tree` (built from the positions inside, in series where nothing
+// says what's redundant), `setup` ({start, calendar, from}) and `length` ({value, unit}: its first phase).
+export function createPositionMission(positionId, { name = null, linkId = null, tree = false, setup = null, length = null } = {}) {
   return request(`/api/maintenance/positions/${encodeURIComponent(positionId)}/missions`,
-    asJson("POST", { ...(name ? { name } : {}), ...(linkId ? { link_id: linkId } : {}) }));
+    asJson("POST", { ...(name ? { name } : {}), ...(linkId ? { link_id: linkId } : {}), ...(tree ? { tree: true } : {}),
+      ...(setup ? { setup } : {}), ...(length ? { length } : {}) }));
 }
-// {name?, phases?, expected_updated_at?}
+// A mission's two answers over its whole phased length (the chance of completing it, the failures
+// to expect), its calendar, starting state, plan and what it assumed (mission_answers.py).
+export function missionAnswers(rbdId, missionId) {
+  return request(`${missionPath(rbdId, missionId)}/answers`, { method: "POST" });
+}
+// {name?, phases?, setup?, expected_updated_at?}
 export function updateMission(rbdId, missionId, body) {
   return request(missionPath(rbdId, missionId), asJson("PUT", body));
 }
@@ -4107,12 +4257,32 @@ function asJsonBody(method, body) {
 export function getOperatingPlan(kind, id, root = null) {
   return request(`/api/maintenance/${kind === "item" ? "items" : "positions"}/${id}/operating-plan${root ? `?root=${encodeURIComponent(root)}` : ""}`);
 }
+// The Explorer's Operations tab in one read: each position's duty (its own, or the one it takes
+// from above it), other use, shutdown and outage windows (own and inherited) and time zone, inside
+// `root` (the asset opened).
+export function getOperations(root = null) {
+  return request(`/api/maintenance/operations${root ? `?root=${encodeURIComponent(root)}` : ""}`);
+}
+// A planned outage on a position: {start?, until?, reason}. Back in service ends it.
+export function takeOutOfService(positionId, body) {
+  return postJson(`/api/maintenance/positions/${positionId}/out-of-service`, body);
+}
+export function backInService(positionId) {
+  return postJson(`/api/maintenance/positions/${positionId}/back-in-service`, {});
+}
 // The forecast for a position and everything inside it (inside `root`, the asset opened): tasks on
 // dates, work per period, expected failures and cost with a 90% range, and what each rests on.
 export function getPositionForecast(positionId, { root = null, period = "month", periods = 12 } = {}) {
   const q = new URLSearchParams({ period, periods: String(periods) });
   if (root) q.set("root", root);
   return request(`/api/maintenance/positions/${positionId}/forecast?${q}`);
+}
+// A forecast's details (the Explorer's Forecast rows and Forecast…): `q` {root?, basis? (calendar |
+// hours), period?, months?, end?, hours?, every?, reading?, task_id?, package_id?}
+// (forecastDetails.js detailsQuery builds it).
+export function getForecastDetails(positionId, q = {}) {
+  const p = new URLSearchParams(Object.entries(q).filter(([, v]) => v != null && v !== "").map(([k, v]) => [k, String(v)]));
+  return request(`/api/maintenance/positions/${encodeURIComponent(positionId)}/forecast/details?${p}`);
 }
 // {plan, name?, time_zone?, from?, notes?}: how it runs from a date (default today).
 export function setOperatingPlan(positionId, body) {

@@ -1,0 +1,17 @@
+/* QuantityInput.jsx: a number and its unit as one control (InputGroup's border and ring).
+   Only as wide as it needs (the number box sized in digits, the unit to its words), never wider
+   than its column; no browser spinners. */
+.ctl-group.qty { display: inline-flex; width: fit-content; max-width: 100%; vertical-align: middle; }
+.ctl-group.qty.is-disabled { background: var(--bg-subtle); }
+.ctl-group.qty > .ctl.qty-num {
+  flex: 0 1 auto; min-width: 0;
+  width: calc(var(--qty-chars, 6) * 1ch + 2 * var(--space-3));
+  font-variant-numeric: tabular-nums;
+  appearance: textfield; -moz-appearance: textfield;
+}
+.ctl-group.qty > .ctl.qty-num::-webkit-inner-spin-button,
+.ctl-group.qty > .ctl.qty-num::-webkit-outer-spin-button { -webkit-appearance: none; appearance: none; margin: 0; }
+.ctl-group.qty > .sel-trigger.qty-unit { flex: 0 1 auto; width: auto; min-width: 0; height: auto; padding: 0 var(--space-3); gap: var(--space-2); }
+.ctl-group.qty > .ctl-addon { white-space: nowrap; }
+/* The embedded unit drop-down drops its own border: keep the hairline between number and unit. */
+.ctl-group.qty > .qty-unit, .ctl-group.qty > .ctl-addon { border-left: 1px solid var(--border); }

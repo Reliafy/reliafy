@@ -218,7 +218,7 @@ def test_instrument_air_samples_seed_once_and_validate(session):
         assert session.rbds.count_documents({"_id": sid}) == 1
         doc = session.rbds.find_one({"_id": sid})
         assert samples.is_sample(doc["owner_id"])
-        assert doc["name"].endswith("(sample)")
+        assert "sample" not in doc["name"].lower()
         v = rbd_analysis.validate_graph(doc["graph"])
         assert v["valid"] is True, v["errors"]
         assert v["errors"] == []
@@ -275,3 +275,24 @@ def test_a_joint_sample_saved_before_the_risk_bounds_is_refitted(session):
     assert all(r.get("risk_upper") for r in again["results"]["risk"])
     assert [r["risk"] for r in again["results"]["risk"]] == [r["risk"] for r in rows]
     assert session.models.count_documents({"_id": sid}) == 1
+
+
+def test_older_sample_names_lose_the_sample_suffix():
+    """No "(sample)" in a name (Nov 2026): a sample seeded before keeps its id and loses the suffix; its data
+    is said to be made up in its notes, once; a user's own item with the word keeps its name."""
+    import mongomock
+
+    from backend.services import samples
+
+    db = mongomock.MongoClient()["plain_names"]
+    db.models.insert_one({"_id": "sample-model-bearings-weibull", "owner_id": samples.SAMPLE_OWNER,
+                          "name": "Bearing life — Weibull (sample)", "spec": {}})
+    db.datasets.insert_one({"_id": "d", "owner_id": samples.SAMPLE_OWNER, "name": "Bearing fatigue test (sample)"})
+    db.models.insert_one({"_id": "mine", "owner_id": "user-1", "name": "My bearings (sample)", "spec": {}})
+    samples.plain_sample_names(db)
+    samples.plain_sample_names(db)
+    model = db.models.find_one({"_id": "sample-model-bearings-weibull"})
+    assert model["name"] == "Bearing life — Weibull" and model["spec"]["notes"] == samples.MADE_UP
+    assert db.datasets.find_one({"_id": "d"})["notes"] == samples.MADE_UP
+    assert db.models.find_one({"_id": "mine"})["name"] == "My bearings (sample)"
+    assert all("(sample)" not in s["name"] for s in samples.SAMPLE_MODELS + samples.SAMPLE_DATASETS)

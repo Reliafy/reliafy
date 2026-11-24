@@ -65,6 +65,8 @@ LEGACY: dict = {
 NEW_ACTIONS = {
     # One search for everything the user can open, by name (Nov 2026).
     ("list", "search"),
+    # The quick forecast as a sentence: work on a schedule and a part that fails (Nov 2026).
+    ("analyse", "forecast"),
     # Overhaul every X, replace after N overhauls (Nov 2026).
     ("analyse", "optimal_overhaul_replace"),
     # A how-often rule's dates, or an operating plan's hours by date, saved nowhere (Nov 2026).
@@ -93,6 +95,8 @@ NEW_ACTIONS = {
     # Things the app does that agents couldn't (Nov 2026): fit and save a degradation model, add an RCM worksheet
     # or task plan from CSV, save an optimal-replacement analysis.
     ("change", "model_fit_degradation"), ("change", "import_rcm"), ("change", "optimal_replacement_save"),
+    # Adjust a model for conditions by a known hazard ratio (SurPyval 0.29's hr, Nov 2026).
+    ("change", "model_adjust"),
 }
 NEW_HEAVY = {"analyse.fault_tree", "change.model_fit_degradation", "change.import_rcm"}
 NEW_TEXT = {"get.maintainability_prediction", "list.maintainability_predictions",
@@ -185,7 +189,9 @@ def test_gating_and_slots_are_the_earlier_ones_renamed():
     assert mcp_server._LIBRARY_TOOLS == libraries
     # And fitting a degradation model (Nov 2026), Pro like every fit.
     fits = {"analyse.bayes_update", "change.model_fit_degradation"}
-    assert {_new_key(k) for k in OLD_PRO_ONLY} | fits | libraries == mcp_server.PRO_ONLY_TOOLS
+    # The quick forecast (Nov 2026) runs the fleet engine: Pro like analyse fleet_forecast.
+    forecasts = {"analyse.forecast"}
+    assert {_new_key(k) for k in OLD_PRO_ONLY} | fits | libraries | forecasts == mcp_server.PRO_ONLY_TOOLS
     assert {_new_key(k) for k in OLD_HEAVY} | NEW_HEAVY == mcp_server.HEAVY_TOOLS
     assert {_new_key(k) for k in OLD_UNGATED} == mcp_server.UNGATED_TOOLS
     assert {_new_key(k) for k in OLD_UNCOUNTED} == mcp_server.UNCOUNTED_TOOLS
@@ -256,7 +262,8 @@ def test_the_listed_tools_are_small(env):
     optimal_overhaul_replace, after shortening the change, report_problem and guide intros; 7,985 with
     list search, after shortening the get and list intros; 7,988 with change model_fit_degradation, import_rcm
     and optimal_replacement_save, after shortening the get, list, change and report_problem intros and three
-    required lines) and
+    required lines; 7,987 with change model_adjust; 7,987 with analyse forecast, after shortening four one-of
+    lines to "model_id|params") and
     about 1,000 for the instructions (3,663 before)."""
     from backend import mcp_server
 
@@ -490,7 +497,7 @@ def test_maintenance_adds_its_calls_to_the_same_sets():
         _, table = mcp_tools.TOOL_TABLES["maintenance"]
         expected = {f"{area[len('maintenance_'):]}.{verb}" for area, (_, t) in mcp_tools.TABLES.items() for verb in t}
         expected |= {"overview", "guide", "view_photo", "graph_schema", "graph_query", "apply"}
-        assert set(table) == expected and len(table) == 254  # + rcm.optimise (Nov 2026: Optimise… on a task); + list.rcm_evidence (Nov 2026); + get.spares_year, get.package_parts, parts.count (Nov 2026); + get.forecast (Nov 2026); + get.operating_plan (Nov 2026); - products.add_sample (Nov 2026); + list.tree (Nov 2026: the asset tree sheet); 189 + work packages (Nov 2026): 9 actions, 2 reads, work_orders.mark, out of service ×4; + signals ×9, signal_data ×3; progression ×2; + failure reports (Nov 2026): 7 actions, 2 reads; + FME(C)A: failure_modes.score (positions.add_sample_uav since removed: the sample quadcopter is products.add_sample); + products (Nov 2026): 4 actions, 2 gets, 3 lists; products.add_sample; - positions.add_sample_truck (Nov 2026: the sample product is the one sample); + failure_modes.undo_delete (Nov 2026); + positions.log_event (Nov 2026); + measurements.move_point (Nov 2026); + tasks.set_resources (Nov 2026: the LSA); + rcm.pf_interval, rcm.ff_interval (Nov 2026; first named interval_on_condition, interval_failure_finding); + models.link, models.unlink (Nov 2026: life models on positions)
+        assert set(table) == expected and len(table) == 256  # + get.support_fit (Nov 2026: a supporting task's fitted impact); + get.operations (Nov 2026: the Operations tab); + rcm.optimise (Nov 2026: Optimise… on a task); + list.rcm_evidence (Nov 2026); + get.spares_year, get.package_parts, parts.count (Nov 2026); + get.forecast (Nov 2026); + get.operating_plan (Nov 2026); - products.add_sample (Nov 2026); + list.tree (Nov 2026: the asset tree sheet); 189 + work packages (Nov 2026): 9 actions, 2 reads, work_orders.mark, out of service ×4; + signals ×9, signal_data ×3; progression ×2; + failure reports (Nov 2026): 7 actions, 2 reads; + FME(C)A: failure_modes.score (positions.add_sample_uav since removed: the sample quadcopter is products.add_sample); + products (Nov 2026): 4 actions, 2 gets, 3 lists; products.add_sample; - positions.add_sample_truck (Nov 2026: the sample product is the one sample); + failure_modes.undo_delete (Nov 2026); + positions.log_event (Nov 2026); + measurements.move_point (Nov 2026); + tasks.set_resources (Nov 2026: the LSA); + rcm.pf_interval, rcm.ff_interval (Nov 2026; first named interval_on_condition, interval_failure_finding); + models.link, models.unlink (Nov 2026: life models on positions)
         # The whole list an operator loads on every connection, guarded (301,819 characters as 40 tools).
         listed = json.dumps([t.model_dump(mode="json", by_alias=True, exclude_none=True) for t in every])
         assert len(listed) < 22_000  # was 20,000 before the signal channel actions, 21,000 before failure reports

@@ -13,7 +13,7 @@ import { modeAnswers } from "../decisionCheck.js";
 import { formatCost } from "../money.js";
 import { tabPlace } from "../explorerTabs.js";
 import {
-  ANALYSIS_KIND, TASK_COST_FIELD, TIME_UNITS, analysisName, taskCostWords, answerUnitWords, calculatorFor, isUseUnit, money, num, pct, pfUnits, rationale, roundDown, taskUnit, withUnit,
+  ANALYSIS_KIND, TASK_COST_FIELD, TIME_UNITS, analysisName, taskCostWords, answerUnitWords, calculatorFor, isUseUnit, money, num, pct, pfStartUnit, pfUnits, rationale, roundDown, taskUnit, withUnit,
 } from "../rcmIntervals.js";
 
 // "Calculate…" on an RCM task card (RcmModeTasks): how often to do the task, worked out
@@ -36,7 +36,10 @@ import {
 const blank = (v) => v === "" || v == null;
 const n = (v) => (blank(v) ? null : Number(v));
 
-export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
+// `inline` (Derryn, 23 Nov 2026: "the saved result shouldn't be a separate page, it should just be
+// the calculation"): the same calculator drawn in place in a task's panel ("Interval based on"),
+// no dialog; started from a saved calculation (its inputs), it works the answer out at once.
+export default function IntervalCalculator({ r, task, kind, onClose, onUse, inline = false }) {
   const calc = calculatorFor(kind);
   const [form, setForm] = useState(() => startForm(calc.key, task));
   const [from, setFrom] = useState({}); // where a prefilled value came from, by field
@@ -48,8 +51,11 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
   // costs: the cost inputs wait behind "Show costs" (Derryn, 9 Nov 2026).
   const safety = ["safety", "environmental"].includes(modeAnswers(r.ref).consequence);
   const [showCosts, setShowCosts] = useState(!safety);
+  const [why, setWhy] = useState(false);
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
+  // Inline, from a saved calculation: work it out once its inputs are in.
+  const runSaved = useRef(false);
   const set = (k) => (e) => { const v = e.target.value; setForm((f) => ({ ...f, [k]: v })); setResult(null); };
 
   useEffect(() => {
@@ -100,6 +106,10 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
       const prev = got.previous?.inputs;
       if (prev && got.previous.kind === ANALYSIS_KIND[calc.key]) {
         for (const [k, v] of Object.entries(prev)) if (k in next && blank(next[k]) && !blank(v)) next[k] = String(v);
+        // The saved calculation's own unit and chance of finding, not the starting ones.
+        if (calc.key === "pf" && prev.pf_unit) next.pf_unit = prev.pf_unit;
+        if (calc.key === "pf" && !blank(prev.detection_probability)) next.detection_probability = String(Number(prev.detection_probability) * 100);
+        if (inline) runSaved.current = true;
       }
       return next;
     });
@@ -196,6 +206,12 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
     }
   };
 
+  useEffect(() => {
+    if (!runSaved.current || busy || result) return;
+    runSaved.current = false;
+    if (!missing()) work();
+  }, [form]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const use = useOf(calc.key, result);
   const cheapest = result?.out?.cost_optimal?.recommended && !sameUse(result.out.cost_optimal.recommended, use)
     ? { ...result.out.cost_optimal.recommended, cheapest: true } : null;
@@ -220,44 +236,48 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
     }
   };
 
-  return (
-    <Modal title={calc.title} onClose={onClose} locked={busy} className="ivc-dialog"
-           footer={(
-             <>
-               <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
-               {cheapest && (
-                 <button type="button" className="secondary" onClick={() => apply(cheapest)} disabled={busy}>
-                   Use the cheapest, {withUnit(cheapest.value, cheapest.unit)}
-                 </button>
-               )}
-               <button type="button" onClick={() => apply()} disabled={!use || busy} aria-busy={busy || undefined}>
-                 {use ? `Use ${withUnit(use.value, use.unit)}` : "Use"}
-               </button>
-             </>
-           )}>
-      <p className="ivc-what">{WHAT[calc.key]}</p>
+  const acts = (
+    <>
+      <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
+      {cheapest && (
+        <button type="button" className="secondary" onClick={() => apply(cheapest)} disabled={busy}>
+          Use the cheapest, {withUnit(cheapest.value, cheapest.unit)}
+        </button>
+      )}
+      <button type="button" onClick={() => apply()} disabled={!use || busy} aria-busy={busy || undefined}>
+        {use ? `Use ${withUnit(use.value, use.unit)}` : "Use"}
+      </button>
+    </>
+  );
+  const content = (
+    <>
+      <p className="ivc-what">
+        {LEAD[calc.key]}{" "}
+        <button type="button" className="link ivc-why" aria-expanded={why} onClick={() => setWhy((o) => !o)}>{why ? "Less" : "Why?"}</button>
+      </p>
+      {why && <p className="ivc-what ivc-whytext">{WHAT[calc.key]}</p>}
       <form className="ivc-form" onSubmit={(e) => { e.preventDefault(); work(); }}>
         {calc.key === "pf" && (
           <>
-            <Field label="P-F interval" help={from.pf_interval || "From the first sign you can detect (a noise, a rise in temperature) to the failure."} as="fieldset">
+            <Field label="P-F interval" help={from.pf_interval || "First sign to failure."} as="fieldset">
               <InputGroup label="P-F interval">
                 <TextInput type="number" inputMode="decimal" min="0" step="any" value={form.pf_interval} onChange={set("pf_interval")} aria-label="P-F interval" placeholder="e.g. 10" />
                 <Select value={form.pf_unit} onChange={set("pf_unit")} aria-label="P-F interval unit">
-                  {pfUnits(task).map((u) => <option key={u} value={u}>{u}{isUseUnit(u) ? " (use)" : ""}</option>)}
+                  {pfUnits(task, form.pf_unit).map((u) => <option key={u} value={u}>{u}{isUseUnit(u) ? " (use)" : ""}</option>)}
                 </Select>
               </InputGroup>
             </Field>
             <Field label="Time needed to act" optional as="fieldset"
-                   help="From finding the warning to the fix being done (ordering the part, planning the shutdown), in the P-F interval's unit. When the P-F interval less this is shorter than half of it, that's the limit.">
+                   help="Warning found to fix done, same unit.">
               <TextInput type="number" inputMode="decimal" min="0" step="any" value={form.act_time} onChange={set("act_time")} aria-label="Time needed to act" placeholder="0" />
             </Field>
             {!isUseUnit(form.pf_unit) && (
               <CostsToggle safety={safety} show={showCosts} onShow={() => { setShowCosts(true); setResult(null); }}
-                           words="Costs only matter for whether the check pays for itself, not for the P-F interval; add them to see the cost-optimal interval." />
+                           words="Optional: add costs for the cheapest interval too." />
             )}
             {showCosts && !isUseUnit(form.pf_unit) && (
               <>
-                <Field label="Failures a year, if nothing is done" optional help={from.onset_rate || "How often the warning (and so the failure) starts, e.g. 0.5 for once in two years. Needed with the costs."}>
+                <Field label="Failures a year, if nothing is done" optional help={from.onset_rate || "E.g. 0.5: once in two years."}>
                   <TextInput type="number" inputMode="decimal" min="0" step="any" value={form.onset_rate} onChange={set("onset_rate")} placeholder="e.g. 0.5" />
                 </Field>
                 <div className="ivc-row">
@@ -267,7 +287,7 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
                 </div>
               </>
             )}
-            <Field label="Chance a check finds the warning (%)" help={Number(form.detection_probability) === 100 ? "Assumed: every check finds a warning that's there. Lower it for a check that can miss." : null}>
+            <Field label="Chance a check finds the warning (%)" help={Number(form.detection_probability) === 100 ? "Assumed: every check finds it." : null}>
               <TextInput type="number" inputMode="decimal" min="1" max="100" step="any" value={form.detection_probability} onChange={set("detection_probability")} />
             </Field>
           </>
@@ -282,7 +302,7 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
                 </p>
               </Field>
             ) : (
-              <Field label="The device's failure rate (failures a year)" help={from.failure_rate || "Its hidden failures, e.g. 0.1 for one in ten years."}>
+              <Field label="The device's failure rate (failures a year)" help={from.failure_rate || "E.g. 0.1: one in ten years."}>
                 <TextInput type="number" inputMode="decimal" min="0" step="any" value={form.failure_rate} onChange={set("failure_rate")} placeholder="e.g. 0.1" />
               </Field>
             )}
@@ -298,13 +318,13 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
             )}
             <Field label="Target unavailability (%)" optional
                    help={form.targetAssumed && Number(form.target) === 1
-                     ? "Assumed: 1% (failed when needed at most 1 time in 100) is a common starting point for safety. Clear it to find the cheapest interval instead."
-                     : "The most it may be failed when needed. Blank: the cheapest interval, from the costs."}>
+                     ? "Assumed: 1%, common for safety. Clear it for the cheapest."
+                     : "Most it may be failed when needed. Blank: cheapest."}>
               <TextInput type="number" inputMode="decimal" min="0" max="100" step="any" value={form.target}
                          onChange={(e) => { const v = e.target.value; setForm((f) => ({ ...f, target: v, targetAssumed: false })); setResult(null); }} />
             </Field>
             <CostsToggle safety={safety} show={showCosts} onShow={() => { setShowCosts(true); setResult(null); }}
-                         words="Costs are optional: the target alone gives the interval. Add them to see the cheapest interval too." />
+                         words="Optional: add costs for the cheapest interval too." />
             {showCosts && (
               <>
                 <div className="ivc-row">
@@ -312,7 +332,7 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
                   <Field label="Cost of a repair ($)" optional><TextInput type="number" inputMode="decimal" min="0" step="any" value={form.repair_cost} onChange={set("repair_cost")} /></Field>
                 </div>
                 <div className="ivc-row">
-                  <Field label="Demands a year" optional help="How often it's needed (the trip, the relief)."><TextInput type="number" inputMode="decimal" min="0" step="any" value={form.demand_rate} onChange={set("demand_rate")} /></Field>
+                  <Field label="Demands a year" optional help="How often it's needed."><TextInput type="number" inputMode="decimal" min="0" step="any" value={form.demand_rate} onChange={set("demand_rate")} /></Field>
                   <Field label="Cost of a demand on a failed device ($)" optional><TextInput type="number" inputMode="decimal" min="0" step="any" value={form.consequence_cost} onChange={set("consequence_cost")} /></Field>
                 </div>
               </>
@@ -321,7 +341,7 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
         )}
         {calc.key === "fixed" && (
           <>
-            <Field label="The part's life" help={from.model || (form.model ? null : "A non-repairable model fitted to its failures.")}>
+            <Field label="The part's life" help={from.model || (form.model ? null : "A non-repairable model of its failures.")}>
               {models === null && !form.model ? <p className="ivc-model">Reading your models…</p> : (
                 <Select value={form.model?.model_id || (form.model ? "__given" : "")}
                         onChange={(e) => pick(e.target.value, (model) => setForm((f) => ({ ...f, model })))}>
@@ -344,10 +364,29 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse }) {
       </form>
       {failed && <p className="field-error" role="alert">{failed}</p>}
       {result && <Result k={calc.key} out={result.out} task={task} use={use} />}
+    </>
+  );
+  if (inline) {
+    return (
+      <div className="ivc-inline" role="group" aria-label={calc.title}>
+        {content}
+        <div className="ivc-inline-acts">{acts}</div>
+      </div>
+    );
+  }
+  return (
+    <Modal title={calc.title} onClose={onClose} locked={busy} className="ivc-dialog" footer={acts}>
+      {content}
     </Modal>
   );
 }
 
+// What it works out: one sentence, then the why behind "Why?" (Derryn, 23 Nov 2026: "too long").
+const LEAD = {
+  pf: "Check at least every half P-F interval to catch the warning in time.",
+  ff: "Test often enough that it's rarely failed when it's needed.",
+  fixed: "Replace at the age that costs least over time, if that beats running to failure.",
+};
 const WHAT = {
   pf: "A failure often gives a warning first: a noise, a leak, a rise in temperature. The time from that first sign to the failure is the P-F interval. "
     + "Checking at least every half P-F interval finds the warning with time to act; that's all this needs.",
@@ -359,7 +398,7 @@ const WHAT = {
 
 function startForm(key, task) {
   if (key === "pf") {
-    return { pf_interval: "", pf_unit: isUseUnit(task?.unit) ? taskUnit(task.unit) : "weeks", act_time: "", onset_rate: "", inspection_cost: "", found_cost: "", failure_cost: "", detection_probability: "100" };
+    return { pf_interval: "", pf_unit: pfStartUnit(task), act_time: "", onset_rate: "", inspection_cost: "", found_cost: "", failure_cost: "", detection_probability: "100" };
   }
   if (key === "ff") {
     return { device: "rate", model: null, failure_rate: "", target: "1", targetAssumed: true, test_cost: "", repair_cost: "", demand_rate: "", consequence_cost: "" };

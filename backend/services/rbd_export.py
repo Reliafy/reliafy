@@ -253,11 +253,11 @@ class _Missing(Exception):
 
 
 def _effective_spec(model: Optional[dict], resolve_model) -> Optional[dict]:
-    """The model spec with a saved model's fitted parameters filled in.
+    """The model spec on a saved model's current fit.
 
-    The app analyses the parameters stored on the block (a snapshot of the
-    saved fit taken when it was picked), so those win; ``resolve_model`` only
-    supplies what the block lacks (parameters, kind, name).
+    A block linked to a saved model always takes the model's current parameters (the copy stored
+    on the block can be out of date: backend/services/rbd_live_models.py), as the analysis does;
+    the block's own copy is used only when the saved model can't be read.
     """
     if not model:
         return model
@@ -265,8 +265,6 @@ def _effective_spec(model: Optional[dict], resolve_model) -> Optional[dict]:
     if not model_id or resolve_model is None:
         return model
     has_params = bool(model.get("params")) and model.get("distribution_id")
-    if has_params and model.get("kind") and model.get("name"):
-        return model
     try:
         saved = resolve_model(model_id)
     except Exception:  # noqa: BLE001 - treated as unresolvable
@@ -275,9 +273,15 @@ def _effective_spec(model: Optional[dict], resolve_model) -> Optional[dict]:
         return {**model, "_unresolved": True} if not has_params else model
     merged = dict(model)
     for key in ("kind", "name", "distribution", "unit"):
-        if not merged.get(key) and saved.get(key):
+        if saved.get(key) and (not merged.get(key) or key in ("name", "distribution", "unit")):
             merged[key] = saved[key]
-    if not has_params:
+    plain = model.get("kind") in (None, "distribution", "two_clock") and saved.get("kind") in (
+        None, "distribution", "two_clock")
+    if plain and saved.get("params") and saved.get("distribution_id"):
+        merged.pop("converted", None)
+        for key in ("distribution_id", "distribution", "params", "extras", "base_distribution_id"):
+            merged[key] = saved.get(key)
+    elif not has_params:
         for key in ("distribution_id", "distribution", "params", "extras", "base_distribution_id"):
             if saved.get(key) is not None:
                 merged[key] = saved[key]
@@ -425,7 +429,7 @@ def _dist_expr(model: Optional[dict], label: str, unit: str) -> tuple[str, str]:
     # header then says the script needs 0.23 or later.
     extras = []
     stored = model.get("extras") or {}
-    for key, kw in (("gamma", "gamma"), ("p", "lfp_p"), ("f0", "f0")):
+    for key, kw in (("gamma", "gamma"), ("p", "lfp_p"), ("f0", "f0"), ("hr", "hr")):
         value = stored.get(key)
         if value is None and key == "p":
             value = stored.get("lfp_p")

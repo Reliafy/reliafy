@@ -1,5 +1,10 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
-import { calculateMission, getMission, getRbd, updateMission } from "../api.js";
+import { calculateMission, getMission, getRbd, missionAnswers, updateMission } from "../api.js";
+import MissionSetup from "./MissionSetup.jsx";
+import MissionAnswers from "./MissionAnswers.jsx";
+import { DEFAULT_SETUP, NEW_LENGTH, phaseShown, phaseStored, runsOnBody, sameSetup, setupBody, setupErrors, setupForm } from "../missionSetup.js";
+import Field from "./ui/Field.jsx";
+import PhaseCovValue from "./PhaseCovValue.jsx";
 import TablePane from "./TablePane.jsx";
 import CovariateInputs from "./CovariateInputs.jsx";
 import MissionBlockGrid from "./MissionBlockGrid.jsx";
@@ -11,13 +16,14 @@ import { saveErrorText } from "../confirm.js";
 import { ShowMe } from "./SectionPage.jsx";
 import {
   SOURCE_WORDS, answerText, cleanPhases, editablePhase, fadedIn, feedsText, fmt, leaveOut, lengthText, movePhase, newPhase, pct, phaseCompletes,
-  phaseCovariates, phaseLine, phaseNeeds, placeholderWarning, unitWord, withBlockValue, withValue,
+  phaseCovariates, phaseLine, phaseNeeds, placeholderWarning, unitWord, withBlockValue, withValue, isSchedule, covValueText,
 } from "../explorerMissions.js";
 import "./CovariateCalculator.css";
 import { levelPct } from "../levels.js";
 import "./RbdMission.css";
 import "./MissionPane.css";
-import { Select } from "./ui/Controls.jsx";
+import { Select, TextInput } from "./ui/Controls.jsx";
+import QuantityInput from "./ui/QuantityInput.jsx";
 
 // The diagram loads only when "Show the RBD" asks for it (React Flow is large).
 const RbdDiagramView = lazy(() => import("./RbdDiagramView.jsx"));
@@ -40,9 +46,32 @@ const RbdDiagramView = lazy(() => import("./RbdDiagramView.jsx"));
 //   onOpenRbd()          the mission's RBD opened in the shared RBD builder, in this table area
 //   phone, headingRef, onClose: TablePane's
 
-const valueText = (v, unit) => (v == null ? "—" : `${typeof v === "number" ? fmt(v) : v}${unit ? (unit === "%" ? "%" : ` ${unit}`) : ""}`);
+// A phase's duration on the mission's clock: typed in operating units, or on calendar time in its
+// calendar unit (kept as typed while editing; stored in operating time).
+function PhaseDuration({ duration, conv, disabled, onChange }) {
+  const first = phaseShown(duration, conv);
+  const [text, setText] = useState(() => (first.value == null ? String(duration ?? "") : String(Number(first.value.toPrecision(6)))));
+  return (
+    <QuantityInput label={`Duration (${first.unit})`} suffix={first.unit} min="0" placeholder="e.g. 8" disabled={disabled} value={text}
+                   onChange={(x) => { setText(x); onChange(phaseStored(x, conv)); }} />
+  );
+}
 
-export default function MissionPane({ rbdId, missionId, position, phase = null, phone = false, headingRef = null, onClose, onSaved, onDirty, onDelete, onOpenRbd }) {
+// A value a block uses, with its unit; a schedule in words ("follows a table of 2 steps"), never "[object Object]".
+const valueText = (v, unit) => (v == null ? "—" : isSchedule(v) ? `the schedule (${covValueText(v, unit).replace(/^follows /, "")})`
+  : `${typeof v === "number" ? fmt(v) : v}${unit ? (unit === "%" ? "%" : ` ${unit}`) : ""}`);
+
+// `answersMode` (the Missions tab, Derryn 23 Nov 2026: "a mission and a phase need their own
+// details screen", a panel filling the table area): two views of the one mission, switched in place.
+//   The mission's: its name and where it lives; Set-up (runs on, start, length, calendar, starting
+//   state); Answers (the two cards and what was assumed); Phases (a compact table: order, name,
+//   duration, completes, weakest block; add, move, remove; a row opens that phase).
+//   A phase's: "Phase 2 of 3 · Hot" in the heading, with "‹ Back to <mission>" beside it; Set-up (name, duration, what runs
+//   in it: each block's state); Covariates in this phase (constants and schedules); Result
+//   (completes, still going, weakest block and its share); Previous and Next phase.
+// Both edit the same records and save together (Save); the numbers are the same calls as before.
+// `jump` ({phase, n}): the tree picked a row of this mission (a phase, or the mission: phase null).
+export default function MissionPane({ rbdId, missionId, position, phase = null, phone = false, headingRef = null, onClose, onSaved, onDirty, onDelete, onOpenRbd, answersMode = false, jump = null }) {
   const [detail, setDetail] = useState(null);
   const [error, setError] = useState(null);
   const [name, setName] = useState("");
@@ -52,6 +81,9 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
   const [tried, setTried] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
+  // The Missions tab: which view fills the panel, the mission's (null) or a phase's (its index).
+  const [at, setAt] = useState(answersMode ? phase : null);
+  useEffect(() => { if (answersMode && jump) setAt(jump.phase ?? null); }, [jump?.n]); // eslint-disable-line react-hooks/exhaustive-deps
   const [result, setResult] = useState(null);
   const [calc, setCalc] = useState({ busy: false, error: null, stale: false });
   const [shown, setShown] = useState(null); // the phase key whose RBD is shown
@@ -60,6 +92,10 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
   // A plain life model's mission (no covariates): its starting age, "new", "now" or "age" (with `age`).
   const [start, setStart] = useState({ mode: "new", age: "" });
   const [startDirty, setStartDirty] = useState(false);
+  // The Missions tab: its setup, as saved and as edited, and its two answers.
+  const [setup, setSetup] = useState(() => setupForm(null));
+  const [savedSetup, setSavedSetup] = useState(() => setupForm(null));
+  const [ans, setAns] = useState({ data: null, busy: false, error: null });
 
   const load = () => getMission(rbdId, missionId).then((d) => {
     setDetail(d);
@@ -72,8 +108,17 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
     const st = d.summary?.start || {};
     setStart(st.now ? { mode: "now", age: "" } : st.age != null ? { mode: "age", age: String(st.age) } : { mode: "new", age: "" });
     setStartDirty(false);
+    setSetup(setupForm(d.summary?.setup));
+    setSavedSetup(setupForm(d.summary?.setup));
     setError(null);
   }, (e) => setError(e));
+  // The two answers, for the mission as saved (the Missions tab).
+  const loadAnswers = () => {
+    if (!answersMode) return Promise.resolve();
+    setAns((a) => ({ ...a, busy: true, error: null }));
+    return missionAnswers(rbdId, missionId).then((data) => setAns({ data, busy: false, error: null }),
+      (e) => setAns({ data: null, busy: false, error: e.message }));
+  };
   useEffect(() => { load(); }, [rbdId, missionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Opened on a phase (from the tree): its name field focused, ready to be named.
@@ -103,6 +148,16 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
   const covRows = detail?.covariates || [];
   const byPhase = useMemo(() => rows.map((r) => phaseCovariates(covRows, r)), [rows, covRows]);
   const total = phases.reduce((t, p) => t + (Number.isFinite(p.duration) ? p.duration : 0), 0);
+  // A mission with an RBD of its own takes a setup (start, calendar, starting state).
+  const ownRbd = !!detail?.rbd?.mission_rbd;
+  const setupOn = answersMode && ownRbd;
+  const setupChanged = setupOn && !sameSetup(setup, savedSetup);
+  const setupBad = setupOn && Object.keys(setupErrors(setup)).length > 0;
+  const editSetup = (next) => {
+    setSetup(next);
+    setDirty(true);
+    onDirty?.(true);
+  };
 
   const change = (fn) => {
     setRows(fn);
@@ -129,7 +184,7 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
       setCalc({ busy: false, error: null, stale: false });
       if (!dirty) onSaved?.(null);
     } catch (e) {
-      setCalc({ busy: false, error: e.message, pro: e.code === "pro_required", stale: false });
+      setCalc({ busy: false, error: e.message, pro: e.code === "pro_required", needs: e.data?.needs_model || null, stale: false });
     }
   };
   // Opening a mission with phases works it out straight away.
@@ -138,16 +193,18 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
     if (!detail || !first.current) return;
     first.current = false;
     if ((detail.mission.phases || []).length) calculate();
+    loadAnswers();
   }, [detail]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = async () => {
     setTried(true);
-    if (errors.length) return;
+    if (errors.length || setupBad) return;
     setSaving(true);
     setSaveError(null);
     try {
       await updateMission(rbdId, missionId, { name: name.trim() || detail.mission.name, phases, expected_updated_at: detail.rbd.updated_at,
-        ...(simple ? { start: startBody } : {}) });
+        ...(simple ? { start: startBody } : {}), ...(setupChanged ? { setup: setupBody(setup) } : {}) });
+      setSavedSetup(setup);
       setDirty(false);
       setStartDirty(false);
       onDirty?.(false);
@@ -160,6 +217,7 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
         setResult(got);
         onSaved?.(null);
       }, () => {});
+      await loadAnswers();
     } catch (e) {
       setSaveError(saveErrorText(e, { offline: navigator.onLine === false }));
     } finally {
@@ -187,9 +245,186 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
   const fitted = detail?.age_now?.age != null;
   const u = unitWord(unit);
   const title = detail ? `Mission: ${detail.mission.name}` : "Mission";
+  // The phase view's phase (null: the mission's view, or a phase that's gone).
+  const atRow = answersMode && at != null ? rows[at] || null : null;
+  const addPhase = () => change((rs) => {
+    const p = newPhase(rs.length, rs);
+    setOpen((st) => new Set([...st, p.key]));
+    return [...rs, p];
+  });
+  const removePhase = (key) => change((rs) => rs.filter((r) => r.key !== key));
+  // The mission's clock (operating or calendar time): its phases' durations follow it. On calendar
+  // time they're shown and typed in its calendar unit, through its duty (the answers' per_day); the
+  // records keep operating time, as before.
+  const ansClock = ans.data?.clock || null;
+  const conv = {
+    clock: setupOn ? setup.clock : "operating",
+    perDay: ansClock?.per_day ?? null,
+    calUnit: ansClock?.calendar_length?.unit || "days",
+    unit,
+    label: (setupOn && setup.clock !== "calendar" && String(setup.label || "").trim()) || ansClock?.label || u,
+  };
+  const shownLength = (v) => {
+    const p = phaseShown(v, conv);
+    return p.value == null ? "—" : `${fmt(p.value)} ${p.unit}`;
+  };
+  const missionView = answersMode && detail && !atRow ? (
+    <>
+      <div className="mission-head">
+        <Field label="Mission name" className="mission-name-field">
+          <TextInput value={name} maxLength={80} disabled={readOnly}
+                     onChange={(e) => { setName(e.target.value); setDirty(true); onDirty?.(true); }} />
+        </Field>
+        <p className="rim-tquiet mission-on">
+          Lives on <b>{position.name}</b>. Runs on <b>{detail.rbd.name}</b>
+          {onOpenRbd ? <> (<button type="button" className="link" onClick={onOpenRbd}>open it</button>)</> : null}
+          : {rows.length} phase{rows.length === 1 ? "" : "s"}, {shownLength(total)} in all
+          {conv.clock === "calendar" && conv.perDay ? ` (${fmt(total)} ${ansClock?.label || u})` : ""}.{" "}
+          <ShowMe help={{ guide: "missions" }}>Read the guide</ShowMe>
+        </p>
+      </div>
+      <section className="mission-sec" aria-labelledby="mission-setup-h">
+        <h3 className="mission-k" id="mission-setup-h">Set-up</h3>
+        {setupOn && <MissionSetup value={setup} onChange={editSetup} withFrom={!simple} tried={tried} disabled={readOnly}
+                                  conversion={setup.clock === "calendar" && !dirty ? ansClock?.words : ""} />}
+        {simple && (
+          <div className="mission-simple-start">
+            <ChoiceChips label="Starts at" disabled={readOnly} value={start.mode} onChange={(v) => v && pickStart({ mode: v })}
+                         options={[
+                           { value: "new", label: "New", title: "The item starts the mission new (age 0)" },
+                           ...(fitted || start.mode === "now" ? [{ value: "now", label: fitted ? `Its age now (${lengthText(detail.age_now.age, unit)})` : "Its age now" }] : []),
+                           { value: "age", label: "An age", title: "An age you give, in the model's unit" },
+                         ]} />
+            {start.mode === "age" && (
+              <QuantityInput label={`Age it starts at${u ? ` (${u})` : ""}`} suffix={u} min="0" placeholder="Age" disabled={readOnly}
+                             invalid={!!(startBad && tried)} value={start.age} onChange={(x) => pickStart({ age: x })} />
+            )}
+          </div>
+        )}
+        {!setupOn && !simple && <p className="rim-tquiet">This mission is stored on a shared RBD: its start and calendar are set on missions with an RBD of their own.</p>}
+      </section>
+      {(detail.series_warning || result?.series_warning) && (
+        <section className="mission-ph mission-series" role="note" aria-label="Blocks placed in series">
+          <p><b>Check the wiring:</b> {result?.series_warning || detail.series_warning}{" "}
+            {onOpenRbd && <button type="button" className="secondary sm" onClick={onOpenRbd}>Open the RBD</button>}</p>
+        </section>
+      )}
+      <section className="mission-sec" aria-labelledby="mission-answers-h">
+        <h3 className="mission-k" id="mission-answers-h">Answers</h3>
+        {calc.needs?.length && !calc.stale ? (
+          <MissionNeedsModels blocks={calc.needs} readOnly={readOnly} onOpenRbd={onOpenRbd}
+                              onLeaveOut={(ids) => change((rs) => leaveOut(rs, ids))} />
+        ) : (
+          <MissionAnswers answers={dirty ? null : ans.data} busy={ans.busy} error={dirty ? null : ans.error} onOpenRbd={onOpenRbd} />
+        )}
+      </section>
+      <section className="mission-sec" aria-labelledby="mission-phases-h">
+        <h3 className="mission-k" id="mission-phases-h">Phases</h3>
+        {rows.length === 0 ? <p className="rim-tquiet">No phases yet. Add the first: a start-up, steady running, a peak…</p> : (
+          <div className="maint-scroll">
+            <table className="mission-phase-table">
+              <thead>
+                <tr><th scope="col">#</th><th scope="col">Phase</th><th scope="col" className="num">Duration</th>
+                  <th scope="col" className="num">Completes</th><th scope="col">Weakest block</th>{!readOnly && <th scope="col"><span className="sr-only">Move or remove</span></th>}</tr>
+              </thead>
+              <tbody>
+                {rows.map((row, i) => {
+                  const res = resultRow(i);
+                  const needs = phaseNeeds(byPhase[i] || []);
+                  return (
+                    <tr key={row.key}>
+                      <td className="num">{i + 1}</td>
+                      <td><button type="button" className="link mission-phase-open" onClick={() => setAt(i)}>{row.name || "(no name)"}</button></td>
+                      <td className="num">{row.duration === "" || row.duration == null ? "—" : shownLength(row.duration)}</td>
+                      <td className="num">{res?.waiting || (needs.length && !res) ? <Chip tone="warning" title={`Needs a value: ${needs.join(", ")}`}>Needs values</Chip>
+                        : res ? pct(phaseCompletes(res)) : <span className="rw-blank">—</span>}</td>
+                      <td>{res?.weakest ? <>{res.weakest.label} <span className="mission-sub">({fmt(res.weakest.share * 100)}%)</span></> : <span className="rw-blank">—</span>}</td>
+                      {!readOnly && (
+                        <td className="mission-phase-tools">
+                          <button type="button" className="ghost sm" onClick={() => change((rs) => movePhase(rs, i, -1))} disabled={i === 0}
+                                  aria-label={`Move ${row.name || `phase ${i + 1}`} earlier`} title="Earlier">↑</button>
+                          <button type="button" className="ghost sm" onClick={() => change((rs) => movePhase(rs, i, 1))} disabled={i === rows.length - 1}
+                                  aria-label={`Move ${row.name || `phase ${i + 1}`} later`} title="Later">↓</button>
+                          <button type="button" className="ghost sm" onClick={() => removePhase(row.key)}
+                                  aria-label={`Remove ${row.name || `phase ${i + 1}`}`} title="Remove">×</button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {!readOnly && <button type="button" className="secondary sm" disabled={rows.length >= 50} onClick={addPhase}>Add a phase</button>}
+      </section>
+      {!dirty && result && !calc.stale && <MissionCurve result={result} unit={unit} name={title} />}
+    </>
+  ) : null;
+  const ai = atRow ? rows.indexOf(atRow) : -1;
+  const atRes = atRow ? resultRow(ai) : null;
+  const atCovs = atRow ? byPhase[ai] || [] : [];
+  const phaseView = atRow ? (
+    <>
+      <section className="mission-sec" aria-labelledby="phase-setup-h">
+        <h3 className="mission-k" id="phase-setup-h">Set-up</h3>
+        <div className="mission-phase-fields">
+          <Field label="Phase name" id={`mission-phase-name-${atRow.key}`}>
+            <TextInput value={atRow.name} placeholder="e.g. Cruise" maxLength={80} disabled={readOnly}
+                       onChange={(e) => patch(atRow.key, { name: e.target.value })} />
+          </Field>
+          <Field label="Duration">
+            <PhaseDuration key={`${atRow.key}:${conv.clock}:${conv.perDay}`} duration={atRow.duration} conv={conv} disabled={readOnly}
+                           onChange={(d) => patch(atRow.key, { duration: d })} />
+          </Field>
+        </div>
+        <p className="mission-phase-line">{phaseLine(atRow, { blocks, votes })}</p>
+        <MissionBlockGrid blocks={blocks} phases={[atRow]} readOnly={readOnly} onChange={patch} title="What runs in this phase" />
+        {votes.map((v) => (
+          <Field key={v.id} label={`${v.label}: working inputs needed`}>
+            <QuantityInput label={`${v.label}: working inputs needed`} suffix={`of ${v.inputs}`} chars={3} min="1" max={v.inputs || undefined}
+                           step="1" inputMode="numeric" disabled={readOnly} placeholder={String(v.n)}
+                           value={atRow.votes[v.id]} onChange={(x) => patch(atRow.key, { votes: { ...atRow.votes, [v.id]: x } })} />
+          </Field>
+        ))}
+      </section>
+      <section className="mission-sec" aria-labelledby="phase-covs-h">
+        <h3 className="mission-k" id="phase-covs-h">Covariates in this phase</h3>
+        {atCovs.length === 0 ? (
+          <p className="rim-tquiet">No block in this RBD has use or environment covariates left open: each block keeps one life model.</p>
+        ) : (
+          <PhaseCovariateList key={atRow.key} rows={atCovs} phase={atRow} idPrefix={`mp-${atRow.key}`} readOnly={readOnly} unit={unit}
+                              onChange={(next) => patch(atRow.key, next)} />
+        )}
+      </section>
+      <section className="mission-sec" aria-labelledby="phase-result-h">
+        <h3 className="mission-k" id="phase-result-h">Result</h3>
+        {dirty ? <p className="rim-tquiet">Changed: Save (or Calculate) to work it out again.</p>
+          : atRes?.waiting ? <Chip tone="warning">Needs values: {phaseNeeds(atCovs).join(", ")}</Chip>
+          : atRes ? (
+            <dl className="mission-phase-result-list">
+              <div><dt>Completes</dt><dd><b>{pct(phaseCompletes(atRes))}</b> <span className="mission-sub">once this phase has started</span></dd></div>
+              <div><dt>Still going</dt><dd><b>{pct(atRes.reliability_at_end)}</b> <span className="mission-sub">at its end, from the mission's start</span></dd></div>
+              {atRes.weakest && <div><dt>Weakest block</dt><dd><b>{atRes.weakest.label}</b> <span className="mission-sub">{fmt(atRes.weakest.share * 100)}% of this phase's failures{driversText(atRes) ? `; also ${driversText(atRes)}` : ""}</span></dd></div>}
+            </dl>
+          ) : <p className="rim-tquiet">{calc.busy ? "Working it out…" : "Calculate to work it out."}</p>}
+      </section>
+      <nav className="mission-phase-nav" aria-label="Phases">
+        <button type="button" className="secondary sm" disabled={ai <= 0} onClick={() => setAt(ai - 1)}>‹ Previous phase</button>
+        <button type="button" className="secondary sm" disabled={ai >= rows.length - 1} onClick={() => setAt(ai + 1)}>Next phase ›</button>
+      </nav>
+    </>
+  ) : null;
 
   return (
-    <TablePane title="Mission" subject={`${detail?.mission?.name || "…"} · ${position.name}`} phone={phone} busy={saving}
+    <TablePane title={atRow ? `Phase ${rows.indexOf(atRow) + 1} of ${rows.length}` : "Mission"}
+               subject={atRow ? atRow.name || "(no name)" : `${detail?.mission?.name || "…"} · ${position.name}`} phone={phone} busy={saving}
+               actions={atRow ? (
+                 <button type="button" className="link mission-back" onClick={() => setAt(null)} aria-label={`Back to ${name || detail?.mission?.name}`}
+                         title={`Back to ${name || detail?.mission?.name}`}>
+                   {phone ? "‹ Mission" : `‹ Back to ${name || detail?.mission?.name}`}
+                 </button>
+               ) : null}
                headingRef={headingRef} onClose={onClose} className="mission-pane">
       <div className="mission">
         {error && (
@@ -198,7 +433,31 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
           </p>
         )}
         {!detail && !error && <p className="rim-tquiet">Opening the mission…</p>}
-        {detail && (
+        {detail && answersMode && (
+          <>
+            {missionView}
+            {phaseView}
+            {tried && errors.length > 0 && <ul className="rbd-costs-errors">{errors.map((e) => <li key={e}>{e}</li>)}</ul>}
+            {saveError && <p className="field-error" role="alert">{saveError}</p>}
+            <div className="mission-foot">
+              <span className="mission-foot-gap" />
+              {!readOnly && onDelete && !atRow && (
+                <button type="button" className="secondary danger" onClick={onDelete} disabled={saving}>Delete…</button>
+              )}
+              <button type="button" className={dirty && !readOnly ? "secondary" : ""} onClick={calculate}
+                      disabled={calc.busy || !rows.length} aria-busy={calc.busy || undefined} data-wt="mission-calculate">
+                {calc.busy ? "Working it out…" : "Calculate"}
+              </button>
+              {!readOnly && (
+                <button type="button" onClick={save} disabled={!dirty || saving} aria-busy={saving || undefined}>
+                  {saving ? "Saving…" : "Save"}
+                </button>
+              )}
+            </div>
+            {readOnly && <p className="rim-tquiet">This RBD isn't yours to change: you can work its missions out, not edit them.</p>}
+          </>
+        )}
+        {detail && !answersMode && (
           <>
             <div className="mission-head">
               <label className="mission-name">
@@ -264,8 +523,13 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
                 </p>
               </section>
             )}
-            <MissionAnswer result={calc.stale ? null : result} busy={calc.busy} error={calc.error} pro={calc.pro}
-                           stale={calc.stale} total={total} unit={unit} name={title} simple={simple} />
+            {calc.needs?.length && !calc.stale ? (
+              <MissionNeedsModels blocks={calc.needs} readOnly={readOnly} onOpenRbd={onOpenRbd}
+                                  onLeaveOut={(ids) => change((rs) => leaveOut(rs, ids))} />
+            ) : (
+              <MissionAnswer result={calc.stale ? null : result} busy={calc.busy} error={calc.error} pro={calc.pro}
+                             stale={calc.stale} total={total} unit={unit} name={title} simple={simple} />
+            )}
             {!calc.stale && !calc.error && (
               <MissionPlaceholders result={result} readOnly={readOnly} onOpenRbd={onOpenRbd}
                                    onLeaveOut={(ids) => change((rs) => leaveOut(rs, ids))} />
@@ -413,48 +677,77 @@ export default function MissionPane({ rbdId, missionId, position, phase = null, 
 // never fills with "Mission 1"s. `taken`: the position's mission names (a clash is said as typed).
 //   position {id, name}   onCreate(name) a promise (a refusal's message shows here)   onClose()
 // `on`: the model it's flown on, when added from a model row's menu (that RBD's name, or the model in use).
-export function NewMissionPane({ position, taken = [], on = null, phone = false, headingRef = null, onCreate, onClose }) {
+export function NewMissionPane({ position, taken = [], on = null, phone = false, headingRef = null, onCreate, onClose, runsOn = null }) {
+  // `runsOn` (the Missions tab): what it can run on (missionSetup.js runsOnOptions); with it, the
+  // form asks for the setup too: start, length (its first phase), calendar and starting state.
+  const full = Array.isArray(runsOn);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(null);
   const [tried, setTried] = useState(false);
+  const [pick, setPick] = useState(() => (full && runsOn.length ? runsOn[0].value : ""));
+  const [setup, setSetup] = useState(() => ({ ...DEFAULT_SETUP, length: { ...NEW_LENGTH } }));
   const clean = name.trim().replace(/\s+/g, " ");
   const clash = clean && taken.some((t) => String(t || "").trim().toLowerCase() === clean.toLowerCase());
-  const why = !clean ? "Give the mission a name." : clash ? `${position.name} already has a mission named “${clean}”.` : null;
+  const setupBad = full && Object.keys(setupErrors(setup, { withLength: true })).length > 0;
+  const nameWhy = !clean ? "Give the mission a name." : clash ? `${position.name} already has a mission named “${clean}”.` : null;
+  const runsWhy = full && !runsOn.length ? `${position.name} has nothing a mission can run on: give it a model, an RBD or positions inside.` : null;
+  const why = nameWhy || runsWhy;
   const save = async (e) => {
     e?.preventDefault();
     setTried(true);
-    if (why || busy) return;
+    if (why || setupBad || busy) return;
     setBusy(true);
     setFailed(null);
     try {
-      await onCreate(clean);
+      await onCreate(clean, full ? { ...runsOnBody(pick), setup: setupBody(setup), length: { value: Number(setup.length.value), unit: setup.length.unit } } : undefined);
     } catch (err) {
       setFailed(err.message);
       setBusy(false);
     }
   };
+  const picked = full ? runsOn.find((o) => o.value === pick) : null;
   return (
     <TablePane title="New mission" subject={position.name} phone={phone} busy={busy} headingRef={headingRef} onClose={onClose}
                className="mission-pane">
-      <form className="mission mission-new" onSubmit={save}>
-        <label className="mission-name">
-          <span>Mission name</span>
-          <input value={name} maxLength={80} autoFocus disabled={busy} placeholder="e.g. Summer peak, Survey run"
-                 aria-invalid={tried && why ? "true" : undefined} onChange={(e) => setName(e.target.value)} />
-        </label>
-        <p className="rim-tquiet">
-          A mission is the system run through phases, each with its own length and the blocks it needs.{" "}
-          {on ? <>Adding it makes an RBD of its own from {on}, named after the mission; you then give it its phases.</>
-            : <>Adding it builds an RBD of its own from what&apos;s inside {position.name}, named after the mission; you then give it its phases.</>}{" "}
-          <ShowMe help={{ guide: "missions-and-phases" }}>Read the guide</ShowMe>
-        </p>
-        {tried && why && <p className="field-error" role="alert">{why}</p>}
-        {failed && <p className="field-error" role="alert">{failed}</p>}
-        <div className="mission-foot">
-          <span className="mission-foot-gap" />
-          <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
-          <button type="submit" disabled={busy} aria-busy={busy || undefined}>{busy ? "Adding…" : "Add the mission"}</button>
+      <form className="mission mission-new" onSubmit={save} noValidate>
+        <div className="mission-form">
+          <Field label="Mission name" error={tried && nameWhy ? nameWhy : null}>
+            <TextInput value={name} maxLength={80} autoFocus disabled={busy} placeholder="e.g. Summer peak, Survey run"
+                       onChange={(e) => setName(e.target.value)} />
+          </Field>
+          {full ? (
+            <>
+              <MissionSetup value={setup} onChange={setSetup} withLength tried={tried} disabled={busy} sections
+                            runsOn={(
+                              <Field label="Runs on" error={tried && runsWhy ? runsWhy : null}
+                                     help={picked?.value === "tree" ? "In series: the tree doesn't say which positions back each other up. Rewire its RBD where some do."
+                                       : picked ? `${picked.hint}. It gets its own copy, so the original never changes.` : null}>
+                                <Select value={pick} disabled={busy || !runsOn.length} onChange={(e) => setPick(e.target.value)}>
+                                  {runsOn.map((o) => <option key={o.value} value={o.value}>{o.label}{o.value.startsWith("rbd:") ? ` (${o.hint.toLowerCase()})` : ""}</option>)}
+                                </Select>
+                              </Field>
+                            )} />
+              <p className="rim-tquiet mission-form-note">
+                A mission is a saved what-if: this system run through phases. It starts as one phase of this length; add phases,
+                their covariates and the blocks each needs once it&apos;s made. It uses the current maintenance plan.{" "}
+                <ShowMe help={{ guide: "missions" }}>Read the guide</ShowMe>
+              </p>
+            </>
+          ) : (
+          <p className="rim-tquiet">
+            A mission is the system run through phases, each with its own length and the blocks it needs.{" "}
+            {on ? <>Adding it makes an RBD of its own from {on}, named after the mission; you then give it its phases.</>
+              : <>Adding it builds an RBD of its own from what&apos;s inside {position.name}, named after the mission; you then give it its phases.</>}{" "}
+            <ShowMe help={{ guide: "missions-and-phases" }}>Read the guide</ShowMe>
+          </p>
+          )}
+          {failed && <p className="field-error" role="alert">{failed}</p>}
+          <div className="mission-foot mission-form-foot">
+            <span className="mission-foot-gap" />
+            <button type="button" className="ghost" onClick={onClose} disabled={busy}>Cancel</button>
+            <button type="submit" disabled={busy} aria-busy={busy || undefined}>{busy ? "Adding…" : "Add the mission"}</button>
+          </div>
         </div>
       </form>
     </TablePane>
@@ -493,6 +786,36 @@ function MissionAnswer({ result, busy, error, pro, stale, total, unit, name, sim
     </ResultSummary>
     {!waiting && <MissionCurve result={result} unit={unit} name={name} />}
     </>
+  );
+}
+
+// Blocks a phase needs with no life model: no answer, since no life is invented for them. Which
+// they are, and what can be done: give them models in the RBD, or leave them out of the mission.
+function MissionNeedsModels({ blocks, readOnly, onOpenRbd, onLeaveOut }) {
+  const n = blocks.length;
+  const them = n === 1 ? "it" : "them";
+  return (
+    <section className="mission-ph mission-ph-most" role="note" aria-label="Blocks with no model">
+      <p className="mission-ph-what">
+        <b>Not worked out yet:</b> {blocks.map((b) => b.label).join(", ")} {n === 1 ? "needs" : "need"} a life
+        model. Reliafy doesn&rsquo;t invent one, so the mission has no answer until {n === 1 ? "it has" : "each has"} one.
+      </p>
+      <ul className="mission-ph-do">
+        <li>
+          <b>Give {them} a model:</b> set each block&rsquo;s model in the mission&rsquo;s RBD, or mark a block that never
+          fails as Working there.{" "}
+          {onOpenRbd && <button type="button" className="secondary sm" onClick={onOpenRbd}>Open the RBD</button>}
+        </li>
+        <li>
+          <b>Leave {them} out:</b> mark {them} Not needed in every phase.{" "}
+          {!readOnly && (
+            <button type="button" className="secondary sm" onClick={() => onLeaveOut(blocks.map((b) => b.id))}>
+              Leave {n === 1 ? "it" : `all ${n}`} out
+            </button>
+          )}
+        </li>
+      </ul>
+    </section>
   );
 }
 
@@ -550,80 +873,127 @@ function MissionPlaceholders({ result, readOnly, onOpenRbd, onLeaveOut }) {
 // A phase's covariates with the one covariate input component: a value set once for the phase,
 // and under each, the blocks it feeds with the value each uses, where it comes from, and a field
 // for a block's own value in this phase.
+// A covariate's input for CovariateInputs, from a phase's covariate row (its default only where
+// every block it feeds has the same one: else the phase needs a value).
+function covInput(r) {
+  const ds = r.blocks.map((b) => b.default);
+  const shared = ds.length && ds.every((d) => d != null && d === ds[0]) ? ds[0] : null;
+  return { key: r.name, label: r.name, unit: r.unit, role: r.role, kind: r.kind, choices: r.choices,
+    limits: r.limits, help: r.help, symbol: null, default: shared };
+}
+
+// What a phase's covariate feeds, and each block's own value in the phase (set with "Set a block's
+// own…"): under the phase's value, in the mission editor and in a phase's own details alike.
+function CovFeeds({ row, input, phase, own, setOwn, idPrefix, readOnly, onChange }) {
+  // Blocks that take the phase's value (or the RBD's, or the default) are one line; a block with
+  // its own value, or none, gets its own line; "Set a block's own…" adds one for this phase.
+  const shown = row.blocks.filter((b) => b.missing || b.source === "override" || b.source === "own"
+    || own.has(`${b.id}:${b.key}`));
+  const rest = row.blocks.filter((b) => !shown.includes(b));
+  const common = rest.length ? rest[0] : null;
+  const same = common && rest.every((b) => b.source === common.source && b.used === common.used);
+  const pickable = row.blocks.filter((b) => !shown.includes(b));
+  return (
+    <div className="mission-feeds">
+      <span className="mission-feeds-what">{feedsText(row)}</span>
+      <ul>
+        {rest.length > 0 && same && (
+          <li>
+            <span className="mission-feed-uses">
+              {rest.length === row.blocks.length ? (row.blocks.length > 1 ? "Each uses " : "Uses ") : `The other${rest.length > 1 ? "s use" : " uses"} `}
+              {valueText(common.used, row.unit)}<span className="mission-sub"> ({SOURCE_WORDS[common.source]})</span>
+            </span>
+          </li>
+        )}
+        {rest.length > 0 && !same && rest.map((b) => (
+          <li key={`${b.id}:${b.key}`}>
+            <span className="mission-feed-label">{b.label}</span>
+            <span className="mission-feed-uses">uses {valueText(b.used, row.unit)}<span className="mission-sub"> ({SOURCE_WORDS[b.source]})</span></span>
+          </li>
+        ))}
+        {shown.map((b) => (
+          <li key={`${b.id}:${b.key}`} className={b.missing ? "is-missing" : ""}>
+            <span className="mission-feed-label">{b.label}</span>
+            {b.missing ? (
+              <span className="field-error mission-needs">needs a value</span>
+            ) : b.source === "override" ? null : b.source === "own" ? (
+              <span className="mission-feed-uses">uses {valueText(b.used, row.unit)}<span className="mission-sub"> ({SOURCE_WORDS.own})</span></span>
+            ) : null}
+            {(b.source === "override" || own.has(`${b.id}:${b.key}`)) && (
+              <CovariateInputs bare readOnly={readOnly} idPrefix={`${idPrefix}-${b.id}`}
+                               inputs={[{ ...input, key: b.key, label: `${b.label}'s own in this phase` }]}
+                               values={{ [b.key]: phase.block_values?.[b.id]?.[b.key] ?? "" }}
+                               sources={{ [b.key]: { value: row.value ?? row.diagram ?? b.default, words: "this phase" } }}
+                               onChange={(v) => onChange(withBlockValue(phase, b.id, b.key, v[b.key]))} />
+            )}
+          </li>
+        ))}
+      </ul>
+      {!readOnly && pickable.length > 0 && (
+        <Select className="mission-own-pick" aria-label={`Set a block's own ${row.name} in this phase`} value=""
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v) setOwn((st) => new Set([...st, v]));
+                }}>
+          <option value="">Set a block's own…</option>
+          {pickable.map((b) => <option key={`${b.id}:${b.key}`} value={`${b.id}:${b.key}`}>{b.label}</option>)}
+        </Select>
+      )}
+      {row.missing.length > 0 && (
+        <p className="field-error mission-row-needs">Needs a value for {row.missing.join(", ")}: set it for the phase, or on each block.</p>
+      )}
+    </div>
+  );
+}
+
+// A phase's covariates in its own details (the Missions tab): each one's value for the phase, one
+// value or a schedule over the phase (PhaseCovValue, the editor the tree's covariate details use),
+// then what it feeds and each block's own value in the phase.
+function PhaseCovariateList({ rows, phase, idPrefix, readOnly, onChange, unit }) {
+  const [own, setOwn] = useState(() => new Set());
+  return (
+    <div className="mission-cov-list">
+      {rows.map((r) => {
+        const value = phase.values?.[r.name] ?? "";
+        const sched = isSchedule(value);
+        const choice = r.kind === "choice" && (r.choices || []).length;
+        const set = (v) => onChange(withValue(phase, r.name, v)); // typed on save (cleanPhases), as the mission editor's
+        const ru = String(r.unit || "").trim();
+        return (
+          <div key={r.name} className="mission-cov-item">
+            <Field label={`${r.name}${ru ? ` (${ru})` : ""}`}
+                   help={sched ? "It follows this schedule through the phase: every block it feeds takes it." : "Set once for the phase: every block it feeds takes it."}>
+              <PhaseCovValue cov={r} value={value} onChange={set} unit={unit} duration={Number(phase.duration) || null} disabled={readOnly}
+                             constant={choice ? (
+                               <Select value={sched ? "" : value} disabled={readOnly} onChange={(e) => set(e.target.value)}>
+                                 <option value="">Not set</option>
+                                 {r.choices.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
+                               </Select>
+                             ) : (
+                               <TextInput type="number" inputMode="decimal" step="any" value={sched ? "" : value} disabled={readOnly}
+                                          placeholder={covInput(r).default != null ? String(covInput(r).default) : "—"}
+                                          onChange={(e) => set(e.target.value)} />
+                             )} />
+            </Field>
+            <CovFeeds row={r} input={covInput(r)} phase={phase} own={own} setOwn={setOwn} idPrefix={`${idPrefix}-${r.name}`}
+                      readOnly={readOnly} onChange={onChange} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function PhaseCovariates({ rows, phase, idPrefix, readOnly, onChange }) {
   const [own, setOwn] = useState(() => new Set());
-  // A default only where every block it feeds has one (the same): else the phase needs a value.
-  const shared = (r) => {
-    const ds = r.blocks.map((b) => b.default);
-    return ds.length && ds.every((d) => d != null && d === ds[0]) ? ds[0] : null;
-  };
-  const inputs = rows.map((r) => ({ key: r.name, label: r.name, unit: r.unit, role: r.role, kind: r.kind, choices: r.choices,
-    limits: r.limits, help: r.help, symbol: null, default: shared(r) }));
+  const inputs = rows.map(covInput);
   const values = Object.fromEntries(rows.map((r) => [r.name, phase.values?.[r.name] ?? ""]));
   const sources = Object.fromEntries(rows.filter((r) => r.value == null && r.diagram != null && r.diagram !== "")
     .map((r) => [r.name, { value: r.diagram, words: "the RBD's value" }]));
   const extra = (input) => {
     const row = rows.find((r) => r.name === input.key);
     if (!row) return null;
-    // Blocks that take the phase's value (or the RBD's, or the default) are one line; a block with
-    // its own value, or none, gets its own line; "Set a block's own…" adds one for this phase.
-    const shown = row.blocks.filter((b) => b.missing || b.source === "override" || b.source === "own"
-      || own.has(`${b.id}:${b.key}`));
-    const rest = row.blocks.filter((b) => !shown.includes(b));
-    const common = rest.length ? rest[0] : null;
-    const same = common && rest.every((b) => b.source === common.source && b.used === common.used);
-    const pickable = row.blocks.filter((b) => !shown.includes(b));
-    return (
-      <div className="mission-feeds">
-        <span className="mission-feeds-what">{feedsText(row)}</span>
-        <ul>
-          {rest.length > 0 && same && (
-            <li>
-              <span className="mission-feed-uses">
-                {rest.length === row.blocks.length ? (row.blocks.length > 1 ? "Each uses " : "Uses ") : `The other${rest.length > 1 ? "s use" : " uses"} `}
-                {valueText(common.used, row.unit)}<span className="mission-sub"> ({SOURCE_WORDS[common.source]})</span>
-              </span>
-            </li>
-          )}
-          {rest.length > 0 && !same && rest.map((b) => (
-            <li key={`${b.id}:${b.key}`}>
-              <span className="mission-feed-label">{b.label}</span>
-              <span className="mission-feed-uses">uses {valueText(b.used, row.unit)}<span className="mission-sub"> ({SOURCE_WORDS[b.source]})</span></span>
-            </li>
-          ))}
-          {shown.map((b) => (
-            <li key={`${b.id}:${b.key}`} className={b.missing ? "is-missing" : ""}>
-              <span className="mission-feed-label">{b.label}</span>
-              {b.missing ? (
-                <span className="field-error mission-needs">needs a value</span>
-              ) : b.source === "override" ? null : b.source === "own" ? (
-                <span className="mission-feed-uses">uses {valueText(b.used, row.unit)}<span className="mission-sub"> ({SOURCE_WORDS.own})</span></span>
-              ) : null}
-              {(b.source === "override" || own.has(`${b.id}:${b.key}`)) && (
-                <CovariateInputs bare readOnly={readOnly} idPrefix={`${idPrefix}-${b.id}`}
-                                 inputs={[{ ...input, key: b.key, label: `${b.label}'s own in this phase` }]}
-                                 values={{ [b.key]: phase.block_values?.[b.id]?.[b.key] ?? "" }}
-                                 sources={{ [b.key]: { value: row.value ?? row.diagram ?? b.default, words: "this phase" } }}
-                                 onChange={(v) => onChange(withBlockValue(phase, b.id, b.key, v[b.key]))} />
-              )}
-            </li>
-          ))}
-        </ul>
-        {!readOnly && pickable.length > 0 && (
-          <Select className="mission-own-pick" aria-label={`Set a block's own ${row.name} in this phase`} value=""
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (v) setOwn((s) => new Set([...s, v]));
-                  }}>
-            <option value="">Set a block's own…</option>
-            {pickable.map((b) => <option key={`${b.id}:${b.key}`} value={`${b.id}:${b.key}`}>{b.label}</option>)}
-          </Select>
-        )}
-        {row.missing.length > 0 && (
-          <p className="field-error mission-row-needs">Needs a value for {row.missing.join(", ")}: set it for the phase, or on each block.</p>
-        )}
-      </div>
-    );
+    return <CovFeeds row={row} input={input} phase={phase} own={own} setOwn={setOwn} idPrefix={idPrefix} readOnly={readOnly} onChange={onChange} />;
   };
   return (
     <CovariateInputs inputs={inputs} values={values} idPrefix={idPrefix} sources={sources} readOnly={readOnly} extra={extra}

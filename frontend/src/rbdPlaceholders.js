@@ -1,4 +1,5 @@
-// How much of a diagram rests on placeholders, in words, for the RBD Calculator's note.
+// How much of a diagram has no real life model (none, or a placeholder), in words, for the RBD
+// Calculator's note. A block with none stops the calculation (the check lists it): no life is invented.
 //
 // Placeholders are counted through every sub-system by the server (`placeholder_blocks` on the
 // diagram's check: {basic, placeholders, names, more, mostly}); without one yet, only the
@@ -16,13 +17,11 @@ export function placeholderNote(graph, held = null) {
     const ph = Number(held.placeholders);
     const basic = Number(held.basic) || ph;
     const mostly = !!held.mostly || ph * 2 >= basic;
-    const count = basic === 1 ? "Its one block is a placeholder"
-      : `${n(ph)} of ${n(basic)} basic blocks ${ph === 1 ? "is a placeholder" : "are placeholders"}`;
+    const count = basic === 1 ? "Its one block has no real life model yet"
+      : `${n(ph)} of ${n(basic)} basic blocks ${ph === 1 ? "has" : "have"} no real life model yet`;
     return {
       mostly,
-      text: mostly
-        ? `${count}: most of this answer rests on invented lives, so it isn't a real figure. Give the blocks real models first.`
-        : `${count}: results are illustrative until you set real values.`,
+      text: `${count}: the results aren't real until each has one. Give each a model, or mark a block that never fails as Working under Status.`,
     };
   }
   const own = (graph?.nodes || []).filter((x) => x.data?.model?.placeholder).length;
@@ -31,6 +30,6 @@ export function placeholderNote(graph, held = null) {
   const inside = hasSubsystems(graph) ? " (and maybe more inside its sub-systems)" : "";
   return {
     mostly: blocks > 0 && own * 2 >= blocks,
-    text: `${own === 1 ? "1 block uses" : `${n(own)} blocks use`} placeholder parameters${inside}: results are illustrative until you set real values.`,
+    text: `${own === 1 ? "1 block has" : `${n(own)} blocks have`} only placeholder parameters${inside}: the results aren't real until each has a real model.`,
   };
 }

@@ -179,6 +179,7 @@ ordinary week), days: the next 14 days' runs and hours (real hours in the plan's
 over to a rate, the rate fills only the time they leave), and against_actual: over the last 90 days, the hours \
 the position's hours counter ran as a share of the plan, with a proposal {utilisation} when they differ. Offer \
 it to the user; never save it unasked. An item has no plan of its own: it runs as the position it's fitted to.
+- maintenance get.operations (root: the asset opened; id: one position) reads every position's operations at once: duty.source own / inherited (duty.from: the position above it whose plan it runs to) / none (it runs all the time), parent_duty (what end_operating_plan would leave it on), other_use, windows (shutdowns and outages that take it off-line over the next year, own and inherited, each with source) and time_zone.
 - Tasks by use in operating hours fall due through the plan: the moment the hours counter (from its latest \
 reading) crosses the task's next reading, and the stop after it (limits[].due_moment, stop_after, basis). With \
 no plan here or above, from the counter's recent rate (basis kind rate), as before.
@@ -186,8 +187,12 @@ no plan here or above, from the counter's recent rate (basis kind rate), as befo
 due_at: hours by date and when the meter reaches a value). Saves nothing.
 - How often, as a pattern: maintenance tasks.create / update take rule: {kind: 'weekly', weekdays: \
 ['Saturday']}, {kind: 'monthly', weekday: 'Saturday', nth: 1} (nth 1 to 5, -1 last; a 5th skips months with \
-none) or {kind: 'monthly', day: 15}, {kind: 'yearly', month: 11, weekday: 'Tuesday', nth: 1} or {kind: \
-'yearly', month: 7, day: 1}; every: N (default 1) for every N weeks, months or years. The task's interval and \
+none) or {kind: 'monthly', day: 15} (day 31: the last day), {kind: 'yearly', month: 11, weekday: 'Tuesday', \
+nth: 1} or {kind: 'yearly', month: 7, day: 1}; every: N (default 1) for every N weeks, months or years. Monthly \
+every 2, 3, 4 or 6 with anchor: the same months each year (every 6, day 1, anchor 2027-03-01: 1 March and 1 \
+September; every 3, day 31: the last day of each quarter). {kind: 'shutdowns', every: 12, unit: 'months'} (a \
+position's task): at the first planned shutdown (its or above it) 12 months after it was last done; it joins a \
+shutdown package only. analyse schedule doesn't take shutdowns: read the task's next_due. The task's interval and \
 unit follow it, and it falls due on the rule's dates (the first after it was last done). update rule {} clears \
 it; a new interval also clears it. A work package takes the same with month (packages.create / update: unit \
 years, month, weekday + nth or day). Show the user the next dates before saving."""),
@@ -220,7 +225,14 @@ calendar time), its age, cost per failure (the position class's failure cost, el
 rests_on; placeholder true when its parameters were typed in, not fitted from data. not_forecast and \
 not_on_dates say what was left out and why; states say what to do (no plan and no readings; an ended plan; a \
 life in a unit no counter here measures; a placeholder). Report those to the user; never fill a gap in.
-- Systems (a position whose model in use is an RBD) aren't forecast as a whole yet: their blocks' positions are."""),
+- Systems (a position whose model in use is an RBD) aren't forecast as a whole yet: their blocks' positions are.
+- lines (by owner, each counted once): lines.lines: kind planned (a task: certain count, hours, cost, spares; does: \
+supports for a supporting task, or the effect counted), failures (a failure mode, on one or several positions: \
+expected failures with range, found_share when a check finds some), corrective (after a failure) and follow_on \
+(found at an inspection) under it; each with number (certain | worked out | simulated) and gaps (what it leaves \
+out). lines.totals: hours, cost (by_kind planned / follow_on / corrective, 90% two-sided range; known false with \
+leaves_out when a figure is missing), spares. lines.not_counted: every gap with its fix and link. id a task or a \
+work package, or months (12, 24, 36, 60: whole months from today), forecasts that node as Open in › does."""),
     "plan": ("RCM or tasks directly; tasks on a position, an item or a location; work packages.", """\
 Planning the maintenance.
 - RCM, step by step, on the position itself (the asset tree is its spine: position > function > performance \
@@ -328,6 +340,7 @@ other) with reference; trade (who may do it); last_done.
 - Raised by an event instead of (or as well as) the interval: trigger on tasks.create / tasks.update. A reading past a limit: {kind: 'reading', point_id: a condition point, above: 120} (after 120 mm of rain in 24 h, test and re-dose the pool: the rain gauge POOL-RAIN's reading of 128 raises the work order, dated the reading's day). A named event: {kind: 'event', event_type: 'Lightning strike'}, raised when someone logs it with maintenance positions.log_event (position_id, event_type, note, on) on the task's position or one above it. with_interval true keeps the interval running too; otherwise the task waits for the event (status 'Waiting for the event', never overdue). One work order per event: another reading or event while it's open raises nothing. clear_trigger true: the interval alone again.
 - How each task is done (LSA, the logistic support analysis: the RCM says what and why, the LSA says how): maintenance tasks.set_resources (task_id, resources). E.g. {labour: [{trade: 'Pool technician', people: 1, hours: 0.5}], tools: [{name: 'Photometer', point_id: '<the free-chlorine point>'}], spares: [{part_id: '<id>', qty: 1}], consumables: [{name: 'DPD tablets', qty: 2, unit: 'each'}], access: {downtime_hours: 0, permits: []}, method: 'Home kit'}. Each section sent replaces that one, null clears it. Which measuring point or channel an instrument reads goes on its tool line (point_id), not on the RCM decision. Task reads carry resources with labour_hours; list.packages gives each package's rollup (labour by trade, tools, spares, consumables): what a visit brings.
 - What a fixed-interval task leaves the item as (an RBD on the position reads it): tasks.update restoration {kind: 'kijima2', restores: 70, replace_every: 3, replacement_cost: 5000}: an overhaul that takes away 70% of its age, every 3rd a full replacement (kijima1: 70% of the age gained since the last task; as_new, the default, renews it). On a decision: decision.restoration (or a member's). basis 'operating' counts a calendar interval in running hours. A shutdown: packages.update shutdown {duration_hours: 72, cost?, scope?: [position ids]}; its tasks are done at each shut, tasks.update older_than {value: 18, unit: 'months'} only on an older item.
+- A supporting task (greasing, an oil change) keeps the item on its life rather than renewing it: tasks.update support {failure_mode_ids: ['<mode>'] ([]: the whole life), reference: {value: 50, unit: 'hours'} (the interval its life model assumes; default the task's own), impact: {form: 'hazard_ratio', k: 2} (the failure rate × 2 if it isn't done; left out: supports, no modelled impact), grace: 20 (% overdue before the impact applies; default 0), source: assumed (default) | maker | fitted, note}. Routine work or fixed-interval tasks only; a fixed-interval one then restores none of the age. Several on one part multiply (× 2 and × 1.5 give × 3). It's recorded only: forecasts are unchanged until what-ifs use it. support {} clears it.
 - Several performance standards on one function: a function is one job (one verb, one object); how well it must \
 do it can be several numbers (pH, alkalinity and hardness; flow and pressure). Each is one performance standard, as a list: \
 maintenance failure_modes.add_standard (text: one parameter and one limit, 'pH 7.2-7.8'; parameter, comparator, \
@@ -443,7 +456,7 @@ still on time (Saturday with Sunday fine: 1); tolerance_unit hours is kept but n
   - By operating hours: unit hours, every 50 (a 50 h service) on a position with an hours counter; it holds \
 tasks by operating hours (calendar tasks stay in calendar packages). Its visits come each time the counter passes \
 anchor_reading (default its reading on the anchor date) plus a multiple of every, dated through the position's \
-operating plan, else the counter's recent rate; with neither, each is due at a reading, with no date (get.package: cadence.by_hours.basis; each next visit with its \
+operating plan, else the counter's recent rate; with neither, running all the time, 24 h a day (basis kind continuous) (get.package: cadence.by_hours.basis; each next visit with its \
 hours). The anchor is visit 1, so a 100 h task with visit_rule nth, every_nth 2 comes at 100 h, 200 h... No \
 layers, pattern, season or shutdown; from_last_visit counts the hours from the close.
   - Layers: a package on another (parent_id, no position or location of its own) visits on some of its parent's \

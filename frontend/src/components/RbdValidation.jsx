@@ -40,11 +40,39 @@ function Warnings({ validation }) {
   );
 }
 
+// Blocks on no life model (the check's ``needs_model``: [{id, label}]): the system isn't worked out
+// until each has one, and no life is invented in its place. Each name opens the block's model
+// (``onOpenBlock(id)``) where the page can; otherwise it's plain text.
+export function NeedsModels({ blocks, onOpenBlock = null }) {
+  if (!blocks?.length) return null;
+  const one = blocks.length === 1;
+  return (
+    <div className="rbd-needs-models">
+      <p>{one ? "This block needs" : "These blocks need"} a life model before the system can be worked out:</p>
+      <ul className="rbd-check-list">
+        {blocks.map((b) => (
+          <li key={b.id}>
+            {onOpenBlock ? (
+              <button type="button" className="link" onClick={() => onOpenBlock(b.id)}
+                title={`Give ${b.label} a life model`}>
+                {b.label}: add a model
+              </button>
+            ) : b.label}
+          </li>
+        ))}
+      </ul>
+      <p className="rbd-check-note">
+        A block that never fails (a frame, a pipe) can be marked Working under Status instead.
+      </p>
+    </div>
+  );
+}
+
 // Renders the outcome of a validate call: a green pass, an amber pass that
 // carries warnings (never green, #305), or a red panel that explains what
 // makes the RBD invalid, and notes which nodes are simulated.
 // ``stale`` means the diagram has changed since this result was produced.
-export default function ValidationPanel({ validation, stale }) {
+export default function ValidationPanel({ validation, stale, onOpenBlock = null }) {
   if (!validation) return null;
 
   if (stale) {
@@ -148,16 +176,24 @@ function routesSentence(routes) {
     );
   }
 
+  // The blocks on no life model are listed once, with links (their sentence is errors[0]).
+  const needs = validation.needs_model || [];
+  const others = needs.length ? (errors || []).slice(1) : errors || [];
   return (
     <div className="rbd-check rbd-check-bad">
       <span className="rbd-check-icon">✕</span>
       <div>
         {!valid && (
           <>
-            <strong>This isn’t a valid reliability block diagram yet.</strong>
-            {errors && errors.length > 0 && (
+            <strong>
+              {needs.length && others.length === 0
+                ? "Not calculated yet: some blocks have no life model."
+                : "This isn’t a valid reliability block diagram yet."}
+            </strong>
+            <NeedsModels blocks={needs} onOpenBlock={onOpenBlock} />
+            {others.length > 0 && (
               <ul className="rbd-check-list">
-                {errors.map((e, i) => (
+                {others.map((e, i) => (
                   <li key={i}>{e}</li>
                 ))}
               </ul>

@@ -58,16 +58,16 @@ export const MODEL_KINDS = [
     tabs: ["Life-stress", "Probability plot", "Calculator", "Diagnostics", "Data"] },
   // Repairable (recurrent-event) models.
   ...[
-    ["repairable-crow-amsaa", "Compressor fleet — Crow-AMSAA (sample)"],
+    ["repairable-crow-amsaa", "Compressor fleet — Crow-AMSAA"],
     ["repairable-duane", "Smoke kinds — Duane"],
     ["repairable-hpp", "Smoke kinds — HPP"],
-    ["repairable-imperfect", "Compressor fleet — imperfect repair (sample)"],
+    ["repairable-imperfect", "Compressor fleet — imperfect repair"],
   ].map(([slug, name]) => ({
     slug, find: { path: "/models/recurrent/:id", list: "/api/recurrent/models", name },
     tabs: ["Failures over time", "Calculator", "Plan ahead", "Diagnostics", "Data"],
   })),
   { slug: "repairable-covariates",
-    find: { path: "/models/recurrent/:id", list: "/api/recurrent/models", name: "Slurry pumps — repair rate by site and duty (sample)" },
+    find: { path: "/models/recurrent/:id", list: "/api/recurrent/models", name: "Slurry pumps — repair rate by site and duty" },
     tabs: ["Failures over time", "Effects", "Calculator", "Plan ahead", "Diagnostics", "Data"] },
   { slug: "repairable-params",
     find: { path: "/models/recurrent/:id", list: "/api/recurrent/models", name: "Smoke kinds — repairable from parameters" },
@@ -78,7 +78,7 @@ export const MODEL_KINDS = [
   { slug: "competing-risks-fine-gray", find: { name: "Smoke kinds — competing risks, Fine-Gray" },
     tabs: ["Failure modes", "Effects", "Calculator", "Diagnostics", "Data"] },
   { slug: "degradation",
-    find: { path: "/models/degradation/:id", list: "/api/degradation/models", name: "Brake pad wear — linear degradation (sample)" },
+    find: { path: "/models/degradation/:id", list: "/api/degradation/models", name: "Brake pad wear — linear degradation" },
     tabs: ["Paths", "Calculator", "Model characteristics", "Diagnostics", "Data"] },
   { slug: "degradation-best-path",
     find: { path: "/models/degradation/:id", list: "/api/degradation/models", name: "Smoke kinds — degradation, best path" },

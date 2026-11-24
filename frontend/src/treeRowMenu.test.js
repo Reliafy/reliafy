@@ -91,27 +91,30 @@ test("Move to…: every position or location but the row itself and what's insid
   assert.deepEqual(moveTargets(null, "x"), []);
 });
 
-test("Focus: Focus here (every level), then Focus › levels; just Focus here with nothing inside; Clear focus while one is on", () => {
+test("Focus: What (Focus here, or the tab's kinds), then Depth as deep as the row goes; just Focus here with nothing inside; Clear focus while one is on", () => {
   const items = isolateItems({ key: "a", kids: ["b"] }, { can: true });
-  assert.deepEqual(items.map((i) => [i.id, i.label]), [["isolate:all", "Focus here"], ["isolate", "Focus to a depth"]]);
-  assert.deepEqual(items[1].items.map((i) => [i.id, i.label]), [
-    ["isolate:1", "1 level"], ["isolate:2", "2 levels"], ["isolate:3", "3 levels"],
+  assert.deepEqual(items.map((i) => [i.id, i.label, i.section]), [
+    ["isolate:all", "Focus here", "what"], ["isolate:1", "1 level", "depth"], ["isolate:2", "2 levels", "depth"], ["isolate:3", "3 levels", "depth"],
   ]);
+  // Only as deep as the row goes.
+  assert.deepEqual(isolateItems({ key: "a", kids: ["b"] }, { can: true, levels: 2 }).map((i) => i.id), ["isolate:all", "isolate:1", "isolate:2"]);
   assert.deepEqual(isolateItems({ key: "m", kids: [] }, { can: true }), [{ id: "isolate:1", label: "Focus here" }]);
   assert.deepEqual(isolateItems({ key: "a", kids: ["b"] }, { can: false }), []);
   // A focus on: Clear focus after them, on every row (even one that can't be focused itself).
-  assert.deepEqual(isolateItems({ key: "a", kids: ["b"] }, { can: true, focused: true }).map((i) => i.id), ["isolate:all", "isolate", "focus-clear"]);
+  assert.deepEqual(isolateItems({ key: "a", kids: ["b"] }, { can: true, focused: true, levels: 1 }).map((i) => i.id), ["isolate:all", "isolate:1", "focus-clear"]);
   assert.deepEqual(isolateItems({ key: "m", kids: [] }, { can: true, focused: true }).map((i) => i.label), ["Focus here", "Clear focus"]);
   assert.deepEqual(isolateItems({ key: "h", kids: ["x"] }, { can: false, focused: true }), [{ id: "focus-clear", label: "Clear focus" }]);
-  // A tab with its own table names what it shows.
-  assert.deepEqual(isolateItems({ key: "a", kids: ["b"] }, { can: true, noun: "tasks" }).map((i) => i.label), ["Focus tasks", "Focus to a depth"]);
+  // A tab with its own table names what it shows; its kinds inside the row, one each.
+  assert.deepEqual(isolateItems({ key: "a", kids: ["b"] }, { can: true, noun: "tasks", levels: 1 }).map((i) => i.label), ["Focus tasks", "1 level"]);
+  assert.deepEqual(isolateItems({ key: "a", kids: ["b"] }, { can: true, levels: 1, kinds: [{ id: "functions", label: "functions" }, { id: "modes", label: "failure modes" }] })
+    .map((i) => [i.id, i.label]), [["isolate-kind:functions", "Focus functions"], ["isolate-kind:modes", "Focus failure modes"], ["isolate:1", "1 level"]]);
   assert.deepEqual(isolateItems({ key: "m", kids: [] }, { can: true, noun: "models" }).map((i) => i.label), ["Focus models"]);
   assert.equal(focusNoun("maintenance", { tasks: true }), "tasks");
   assert.equal(focusNoun("maintenance"), "");
   assert.deepEqual(["rcm", "fmea", "measurements", "models", "missions", "summary"].map((t) => focusNoun(t)), ["failure modes", "failure modes", "measurements", "models", "missions", ""]);
   // Before Delete, with Pin this branch after it.
   const skim = summaryActions({ key: "a", type: "pos", kids: ["b"], ref: {} }, { mode: "positions" });
-  assert.deepEqual(withPin(skim, [...items, { id: "pin" }]).map((i) => i.id), ["tree-new", "report-new", "event-log", "tree-rename", "tree-move", "tree-export", "isolate:all", "isolate", "pin", "tree-delete"]);
+  assert.deepEqual(withPin(skim, [...items, { id: "pin" }]).map((i) => i.id), ["tree-new", "report-new", "event-log", "tree-rename", "tree-move", "tree-export", "isolate:all", "isolate:1", "isolate:2", "isolate:3", "pin", "tree-delete"]);
 });
 
 test("Add failure report…: positions only (a report sits at a position), greyed when the team is view only", () => {

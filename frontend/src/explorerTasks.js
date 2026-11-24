@@ -2,37 +2,47 @@
 // tabs (Derryn, 22 Nov 2026: "the maintenance tab should show tasks in the tree. That way for a
 // certain level we can run the forecasts"; "at any level, you should see all the stuff from
 // underneath it aggregated"). Under each position (or place) hang its own maintenance tasks, one
-// row each, with the table's columns beside them: how often, when next due, what it costs each
-// time, its package, where it came from and its kind. Each position's roll-up counts the tasks on
-// it and on everything below it, at any depth. A position's menu has Forecast…: the forecast for
-// that level and everything inside it, in the table area (PositionForecast.jsx).
+// row each, with the table's columns beside them: when next due (only when it's known), how often,
+// what it costs each time, its package, where it came from and its kind. Each position's roll-up
+// counts the tasks on it and on everything below it, at any depth, after its soonest next due.
+// No forecasts in the tree (Derryn, 23 Nov 2026): a quick forecast is the left menu's Spares
+// forecast (Decisions › Forecasts), a deliberate one a mission.
 //
 // The tasks come in one read for the asset opened (GET /api/maintenance/task-table?within=<root>:
 // the server's roll-up, Maintenance.subtree_ids, never another asset's). Pure functions, tested in
 // explorerTasks.test.js; the cells are drawn by TaskTreeTable.jsx.
 
+import { counted } from "./menuStandard.js";
 import { cellText, costWhere, fromRcm, kindText, money, SOURCE_WORDS } from "./lsaTab.js";
-import { dayText, hoursText, moneyText, periodLabel, sig } from "./positionForecast.js";
+import { sig } from "./positionForecast.js";
+import { formatDate } from "./dates.js";
+import { packageExtras, taskExtras } from "./taskExtras.js";
 
 export const TASK_TYPE = "mtask";
 export const isTaskRow = (r) => r?.type === TASK_TYPE;
 export const taskKey = (id) => `MT:${id}`;
-// A work package's row (at the meeting point of its tasks), a reference to one of its tasks under
-// it, and the Forecast rows under a task or a package (the row, then its lines).
+// A work package's row (at the meeting point of its tasks), and a reference to one of its tasks under it.
 export const PKG_TYPE = "mpkg";
 export const PKG_REF_TYPE = "mpref";
-export const FC_TYPE = "mfc";
-export const FC_LINE_TYPE = "mfcl";
 export const isPackageRow = (r) => r?.type === PKG_TYPE;
 export const isPackageRef = (r) => r?.type === PKG_REF_TYPE;
-export const isForecastRow = (r) => r?.type === FC_TYPE || r?.type === FC_LINE_TYPE;
 export const packageKey = (id) => `MP:${id}`;
-// Any of the Maintenance tab's own rows (a task, a package, a reference, a Forecast row or line).
-export const isMaintRow = (r) => isTaskRow(r) || isPackageRow(r) || isPackageRef(r) || isForecastRow(r);
+// A task's optional extras as rows under it (Derryn, 23 Nov 2026): "Labour · 1.5 h mechanic",
+// "Part · Spindle kit × 1", "Cost · $40 each time" (taskExtras.js), only when set. Not tasks: they
+// count in no roll-up, take no pick and no filter; a click opens the task at that fold-out.
+export const EXTRA_TYPE = "mxtra";
+// A task's extra (ref.task), or a package's (ref.pkg: its tasks' totals, opening the package).
+export const isExtraRow = (r) => r?.type === EXTRA_TYPE && !!r.ref?.task;
+export const isPackageExtra = (r) => r?.type === EXTRA_TYPE && !!r.ref?.pkg;
+export const extraKey = (taskId, section, i = 0) => `MX:${taskId}:${section}:${i}`;
+// Any of the Maintenance tab's own rows (a task, a package, a reference, a task's extra).
+export const isMaintRow = (r) => isTaskRow(r) || isPackageRow(r) || isPackageRef(r) || r?.type === EXTRA_TYPE;
 
+// Next due is the first column (a level's roll-up runs on after its soonest next due) and sorts.
 export const TASK_COLUMNS = [
+  { id: "due", label: "Next due", width: 132, min: 112, sort: true, sortWords: ["soonest first", "latest first"],
+    title: "When it's next due, only when that's known: blank when there's no record to count from (overdue in red)" },
   { id: "interval", label: "Interval", width: 140, min: 112, title: "How often it's done, or what raises it" },
-  { id: "due", label: "Next due", width: 120, min: 108, title: "When it's next due (overdue in red)" },
   { id: "cost", label: "Cost each time", width: 120, min: 112, num: true, title: "What it costs each time it's done: typed on the task, or from its LSA" },
   { id: "trade", label: "Trade", width: 110, min: 90, title: "Who does it" },
   // Derryn, 22 Nov 2026: "There should be a 'packaged' column": the package it's in, a link to it.
@@ -53,10 +63,10 @@ const blank = () => ({ tasks: 0, overdue: 0 });
 // rows stay. The rows left out stay in `rows` (a row picked keeps its place for when the filter
 // goes), only unreachable.
 // `packages` (the work packages on this asset, listPackages): each shows as a row at the meeting
-// point of its tasks (packageHomes), its tasks listed under it as references; `all`: every task
-// (the filter's `tasks` aside), so a filter never moves a package. `forecasts`: each task and each
-// package gets a child Forecast row (forecastRows fills it once the forecast is read: `forecast`).
-export function graftTasks(display, tasks = [], { prune = false, packages = null, all = null, forecasts = false, forecast = null } = {}) {
+// point of its tasks (packageHomes), a leaf (its tasks are in its details); `all`: every task
+// (the filter's `tasks` aside), so a filter never moves a package. Each level's `tall.next` is the
+// soonest known next due at and below it (a task's or a package's), or null.
+export function graftTasks(display, tasks = [], { prune = false, packages = null, all = null } = {}) {
   const rows = new Map();
   for (const [k, r] of display.rows) rows.set(k, { ...r, kids: [...r.kids] });
   const out = { ...display, rows, tasks: true };
@@ -76,22 +86,30 @@ export function graftTasks(display, tasks = [], { prune = false, packages = null
     for (const t of [...list].sort((a, b) => String(a.name).localeCompare(String(b.name), "en", { numeric: true }))) {
       const key = taskKey(t.id);
       keys.push(key);
+      const extras = taskExtras(t).map((x, i) => ({ ...x, key: extraKey(t.id, x.section, i) }));
       rows.set(key, {
-        key, type: TASK_TYPE, parent: pk, kids: [], depth: p.depth + 1, own: noStatus(), sum: noStatus(),
+        key, type: TASK_TYPE, parent: pk, kids: extras.map((x) => x.key), depth: p.depth + 1, own: noStatus(), sum: noStatus(),
         ref: {
           name: t.name, task: t, position_id: pk,
           search: [t.name, t.package?.name, t.trade, cellText(t, "from"), kindText(t)].filter(Boolean).join(" ").toLowerCase(),
         },
       });
+      for (const x of extras) {
+        rows.set(x.key, {
+          key: x.key, type: EXTRA_TYPE, parent: key, kids: [], depth: p.depth + 2, own: noStatus(), sum: noStatus(),
+          ref: { name: x.text, section: x.section, task: t, task_key: key, position_id: pk, search: x.text.toLowerCase() },
+        });
+      }
       p.tsum.tasks += 1;
-      if (t.overdue) p.tsum.overdue += 1;
-      if (forecasts) rows.get(key).kids = forecastRows(rows, key, { kind: "task", task: t, forecast });
+      if (nextOf(t).overdue) p.tsum.overdue += 1;
+      p.tsum.next = soonest(p.tsum.next, nextOf(t), t.name);
     }
     p.kids = [...keys, ...p.kids];
   }
   // The packages, each at the lowest position (or place) all its tasks sit under, after that
-  // level's own tasks; under it, a reference to each of its tasks (they stay under their own
-  // positions too, their Packaged cell naming it), then its Forecast.
+  // level's own tasks: one row each, with nothing under it (Derryn, 23 Nov 2026: listing its
+  // tasks under it too was "an unnecessary double up"). Its tasks stay under their own positions,
+  // their Packaged cell naming it; the package's details list them.
   if (packages?.length) {
     const shown = new Set(tasks.map((t) => t.id));
     for (const home of packageHomes(display, all || tasks, packages).values()) {
@@ -101,22 +119,22 @@ export function graftTasks(display, tasks = [], { prune = false, packages = null
       const members = home.tasks.filter((t) => shown.has(t.id) && rows.has(taskKey(t.id)));
       // A filter on: a package none of whose tasks match isn't on the way to a match.
       if (prune && !members.length) continue;
-      const refs = members.map((t) => {
-        const key = `${PKG_REF_TYPE}:${home.pkg.id}:${t.id}`;
-        rows.set(key, {
-          key, type: PKG_REF_TYPE, parent: pkey, kids: [], depth: h.depth + 2, own: noStatus(), sum: noStatus(),
-          ref: { name: t.name, task: t, task_key: taskKey(t.id), on: t.subject?.name || "", position_id: h.key, task_position: t.subject?.id, package_id: home.pkg.id },
+      // Its tasks' extras together, as rows under it (the tasks themselves stay under their positions).
+      const extras = packageExtras(home.tasks).map((x, i) => ({ ...x, key: `MX:P:${home.pkg.id}:${x.section}:${i}` }));
+      for (const x of extras) {
+        rows.set(x.key, {
+          key: x.key, type: EXTRA_TYPE, parent: pkey, kids: [], depth: h.depth + 2, own: noStatus(), sum: noStatus(),
+          ref: { name: x.text, section: x.section, pkg: home.pkg, position_id: h.key, search: x.text.toLowerCase() },
         });
-        return key;
-      });
+      }
       rows.set(pkey, {
-        key: pkey, type: PKG_TYPE, parent: h.key, kids: refs, depth: h.depth + 1, own: noStatus(), sum: noStatus(),
+        key: pkey, type: PKG_TYPE, parent: h.key, kids: extras.map((x) => x.key), depth: h.depth + 1, own: noStatus(), sum: noStatus(),
         ref: {
           name: home.pkg.name, pkg: home.pkg, tasks: home.tasks, outside: home.outside, position_id: h.key,
           search: [home.pkg.name, home.pkg.trade, "package"].filter(Boolean).join(" ").toLowerCase(),
         },
       });
-      if (forecasts) rows.get(pkey).kids = [...refs, ...forecastRows(rows, pkey, { kind: "package", pkg: home.pkg, tasks: home.tasks, forecast })];
+      h.tsum.next = soonest(h.tsum.next, packageNext(home.pkg), home.pkg.name);
       h.tsum.packages = (h.tsum.packages || 0) + 1;
       const own = h.kids.filter((k) => rows.get(k)?.type === TASK_TYPE);
       const pk = h.kids.filter((k) => rows.get(k)?.type === PKG_TYPE);
@@ -134,6 +152,7 @@ export function graftTasks(display, tasks = [], { prune = false, packages = null
         const s = total(c);
         t.tasks += s.tasks;
         t.overdue += s.overdue;
+        t.next = soonest(t.next, s.next);
         if (s.packages) t.packages = (t.packages || 0) + s.packages;
       }
     }
@@ -147,15 +166,14 @@ export function graftTasks(display, tasks = [], { prune = false, packages = null
       if (keep.has(k)) return keep.get(k);
       const r = rows.get(k);
       keep.set(k, false);
-      let y = r?.type === TASK_TYPE || r?.type === PKG_REF_TYPE;
+      let y = r?.type === TASK_TYPE || r?.type === PKG_TYPE || r?.type === PKG_REF_TYPE;
       for (const c of r?.kids || []) if (has(c)) y = true;
       keep.set(k, y);
       return y;
     };
     const tops = display.roots || [...rows.values()].filter((r) => r.parent == null).map((r) => r.key);
     for (const k of tops) has(k);
-    // A task's (or package's) Forecast stays with it.
-    for (const r of rows.values()) if (r.kids.length) r.kids = r.kids.filter((c) => keep.get(c) || isForecastRow(rows.get(c)));
+    for (const r of rows.values()) if (r.kids.length) r.kids = r.kids.filter((c) => keep.get(c));
     out.pruned = true;
   }
   return out;
@@ -180,8 +198,12 @@ export function rollupText(r, open = false) {
 // What a cell says for a task (and its title); `due` and `cost` carry a tone of their own.
 export function taskCell(t, col) {
   switch (col) {
-    case "interval": return { text: cellText(t, "interval") || (t.on_event ? "On an event" : "") };
-    case "due": return { text: t.next_due || "", overdue: !!t.overdue, title: [t.overdue ? "Overdue" : null, t.due_basis].filter(Boolean).join(". ") };
+    case "interval": {
+      // A calendar rule in words, as a cell starts: "The first Saturday of every month".
+      const text = cellText(t, "interval");
+      return { text: text ? text[0].toUpperCase() + text.slice(1) : (t.on_event ? "On an event" : "") };
+    }
+    case "due": return dueCell(nextOf(t));
     case "cost": return t.cost?.amount == null
       ? { text: "", blank: "Not set", title: costWhere(t.cost) }
       : { text: money(t.cost.amount), title: `${money(t.cost.amount)} each time. ${costWhere(t.cost)}` };
@@ -201,10 +223,8 @@ export function openForTasks(display, key) {
   return out;
 }
 
-// A task row's ⋯; a position's (or place's) own: Add task…, then Forecast… (a position on an
-// asset: the forecast for it and everything inside it, in the table area).
+// A task row's ⋯; a position's (or place's) own: Add task…, Package the tasks….
 export const TASK_OPEN = "mtask-open";
-export const TASK_FORECAST = "mtask-forecast";
 // Optimise…: how often to do it, from its failure modes' life models, in the table area.
 export const TASK_OPTIMISE = "mtask-optimise";
 export const TASK_PACKAGE = "mtask-package";
@@ -214,25 +234,34 @@ export const TASK_CLEAR = "mtask-clear";
 export const TASK_SELECT = "mtask-select";
 // Package the tasks… on a level: drafts packages from its tasks in none, in the table area.
 export const TASK_DRAFT = "mtask-draft";
+export const TASK_RETIRE = "mtask-retire";
 // A task row's menu: Open…, Optimise… (this row's task), then Package… and Add to package… for the tasks selected (the row
 // itself when it isn't one of them), each greyed with the reason when none of them can go.
 // `tasks`: the task-table rows it acts on; `canPackage`: false on a product's design, or view only.
-export function taskRowActions(r, { tasks = null, canPackage = true, canSelect = false } = {}) {
-  const out = [{ id: TASK_OPEN, label: "Open…" },
-    { id: TASK_OPTIMISE, label: "Optimise…", title: "How often to do it, worked out from the life model of the failure modes it prevents" }];
-  if (canSelect) out.push({ id: TASK_SELECT, label: "Select", title: "Pick this task, then tap others to add them" });
-  if (!canPackage) return out;
+export function taskRowActions(r, { tasks = null, canPackage = true, canSelect = false, viewOnly = null } = {}) {
   const list = tasks?.length ? tasks : r?.ref?.task ? [r.ref.task] : [];
-  const free = list.filter((t) => !t.why_not && !t.package);
-  const stuck = list.length && list.every((t) => t.why_not);
-  const why = stuck ? `${list.length === 1 ? "It can't" : "They can't"} join a package: ${list[0].why_not}`
-    : !free.length ? `${list.length === 1 ? "It's" : "They're"} in a package already: take ${list.length === 1 ? "it" : "them"} out there first`
-      : null;
-  const n = list.length > 1 ? ` ${list.length} tasks` : "";
-  out.push({ separator: true },
-    { id: TASK_PACKAGE, label: "Package…", disabled: !!why, reason: why || undefined, title: `A new work package with${n || " this task"}` },
-    { id: TASK_ADD_TO, label: "Add to package…", disabled: !!why, reason: why || undefined, title: `Put${n || " this task"} in a package already on this asset` });
-  if (list.length > 1) out.push({ id: TASK_CLEAR, label: "Clear the selection" });
+  const many = list.length > 1;
+  // Several picked: what acts on one task says so; Package and Add to package count them.
+  const one = many ? { disabled: true, reason: `It works on one task: ${list.length} are picked.` } : {};
+  const out = [{ id: TASK_OPEN, label: "Open", ...one },
+    { id: TASK_OPTIMISE, label: "Optimise…", title: "How often to do it, worked out from the life model of the failure modes it prevents", ...one }];
+  if (canSelect) out.push({ id: TASK_SELECT, label: "Select", title: "Pick this task, then tap others to add them" });
+  if (canPackage) {
+    const free = list.filter((t) => !t.why_not && !t.package);
+    const stuck = list.length && list.every((t) => t.why_not);
+    const why = stuck ? `${list.length === 1 ? "It can't" : "They can't"} join a package: ${list[0].why_not}`
+      : !free.length ? `${list.length === 1 ? "It's" : "They're"} in a package already: take ${list.length === 1 ? "it" : "them"} out there first`
+        : null;
+    const n = many ? ` ${list.length} tasks` : "";
+    out.push(
+      { id: TASK_PACKAGE, label: counted("Package…", list.length), disabled: !!why, reason: why || undefined, title: `A new work package with${n || " this task"}` },
+      { id: TASK_ADD_TO, label: many ? `Add ${list.length} tasks to a package…` : "Add to package…", disabled: !!why, reason: why || undefined,
+        title: `Put${n || " this task"} in a package already on this asset` });
+    if (many) out.push({ id: TASK_CLEAR, label: "Clear the selection" });
+  }
+  // Retire… (it stops falling due; its history stays), last, one task at a time.
+  const retireWhy = viewOnly || (many ? "Retire one task at a time." : null);
+  out.push({ id: TASK_RETIRE, label: "Retire…", danger: true, ...(retireWhy ? { disabled: true, reason: retireWhy } : {}) });
   return out;
 }
 
@@ -259,8 +288,13 @@ export const TASK_FACETS = [
       return { value: text, label: text, order: (Number(t.interval) || 0) * (SPAN[t.unit] ?? 1000) + (UNIT_ORDER[t.unit] ?? 5) * 1e-6 };
     } },
   { id: "due", col: "due", label: "Next due",
-    of: (t) => (t.overdue ? { value: "overdue", label: "Overdue", order: 0 }
-      : t.next_due ? { value: "due", label: "Not overdue", order: 1 } : { value: "", label: "No date", order: 2 }) },
+    of: (t) => {
+      const n = nextOf(t);
+      return n.overdue ? { value: "overdue", label: "Overdue", order: 0 }
+        : n.on ? { value: "due", label: "On a date", order: 1 }
+          : n.at_reading != null ? { value: "reading", label: "At a reading, no date", order: 2 }
+            : { value: "", label: "Not known", order: 3 };
+    } },
   { id: "cost", col: "cost", label: "Cost each time",
     of: (t) => (t.cost?.amount != null ? { value: "set", label: "Cost set", order: 0 } : { value: "", label: "Not set", order: 1 }) },
   { id: "trade", col: "trade", label: "Trade",
@@ -381,6 +415,8 @@ export function packageMisfit(pkg, t, display) {
   const hours = pkg.cadence?.unit === "hours";
   if (hours && t.unit !== "hours") return `${pkg.name} goes by operating hours, and ${t.name} by the calendar: a package by hours holds tasks by hours.`;
   if (!hours && t.unit === "hours") return `${pkg.name} goes by the calendar, and ${t.name} by operating hours: put it in a package by hours on its position.`;
+  // A task done at planned shutdowns: only a shutdown's visits are those.
+  if (t.rule_kind === "shutdowns" && !pkg.shutdown) return `${t.name} is done at planned shutdowns, and ${pkg.name} isn't a shutdown: it joins a shutdown package only.`;
   // A package on a position takes any task on the same asset (it then lives where its tasks meet,
   // which moves up); one on a location, the tasks at it.
   const on = pkg.subject?.id;
@@ -416,20 +452,6 @@ export function rankPackages(pkgs, tasks, display) {
   });
   return rows.sort((a, b) => a.rank - b.rank || String(a.pkg.name).localeCompare(String(b.pkg.name), "en", { numeric: true }));
 }
-// A level's Forecast…: everything below this point, in the table area. A position on an asset:
-// its work, failures, costs and spares for the year. A place on an asset, and a design's rows: the
-// spares for the year alone (work and failures are forecast by position, and a design has no
-// due dates; its spares are the items built from it, or a planned fleet).
-export function forecastItem(r, { design = false } = {}) {
-  if (r?.type !== "pos" && r?.type !== "loc") return [];
-  if (r.type === "pos" && !design) {
-    return [{ id: TASK_FORECAST, label: "Forecast…", title: "The work, failures, costs and spares to come at this level and everything inside it, by month" }];
-  }
-  return [{ id: TASK_FORECAST, label: "Spares for the year…", title: design
-    ? "The parts the items built from this design will use: what to hold, order and buy"
-    : "What failures and tasks here and inside it will use: what to hold, order and buy" }];
-}
-
 // ---- where a package lives (Derryn, 22 Nov 2026) -------------------------------------------
 // "Where does a maintenance package live though... I think at the lowest point in the tree that
 // all the tasks meet!" A package is drawn at the meeting point of its tasks: the deepest position
@@ -468,10 +490,7 @@ export function packageCell(r, col) {
   const tasks = r.ref.tasks || [];
   switch (col) {
     case "interval": return { text: p.cadence?.text ? p.cadence.text[0].toUpperCase() + p.cadence.text.slice(1) : "" };
-    case "due": {
-      const on = nextVisit(p);
-      return { text: on || "", overdue: false, title: on ? "Its next visit" : p.status === "paused" ? "Paused" : "" };
-    }
+    case "due": return dueCell(packageNext(p));
     case "cost": {
       const priced = tasks.filter((t) => t.cost?.amount != null);
       if (!priced.length) return { text: "", blank: "Not set", title: "None of its tasks has a cost each time yet" };
@@ -485,7 +504,7 @@ export function packageCell(r, col) {
       const more = r.ref.outside ? ` · ${r.ref.outside.toLocaleString("en-AU")} on other assets` : "";
       return { text: `${count(n, "task")}${more}`, title: r.ref.outside
         ? `${count(n, "task")} on this asset; ${count(r.ref.outside, "more task")} on other assets, not shown here (the tree shows one asset)`
-        : `${count(n, "task")}, listed under it` };
+        : `${count(n, "task")}: open the package to see them` };
     }
     case "from": return { text: p.parent ? `A layer on ${p.parent.name}` : "Work package" };
     case "kind": return { text: p.status === "paused" ? "Paused" : "" };
@@ -502,16 +521,6 @@ export function packageWhere(r, display) {
   return r.ref.outside ? `${why}. ${count(r.ref.outside, "more task")} on other assets aren't shown here.` : `${why}.`;
 }
 
-// ---- forecasts under a task and a package --------------------------------------------------
-// Derryn, 22 Nov 2026: "For forecasts (of cost and spares), I think they are sub items of either a
-// task or a maintenance package". Under each task and each package, a Forecast row: open it and
-// its lines say when it's next due, how many times it comes in each month, the labour, the parts
-// and spares it uses, and what it costs. They're read from the level's forecast (the same server
-// forecast Forecast… opens: backend position_forecast), so the numbers agree with it.
-
-export const FORECAST_LABEL = "Forecast";
-const fcKey = (parent) => `MF:${parent}`;
-
 // What a task's LSA says it uses each time: [{name, qty, unit}] (spares, then consumables).
 export function taskParts(task) {
   const r = task?.resources || {};
@@ -521,129 +530,147 @@ export function taskParts(task) {
   return out;
 }
 
-const addParts = (into, parts, times) => {
-  for (const x of parts) {
-    const e = into.get(x.key) || { ...x, qty: 0 };
-    e.qty += x.qty * times;
-    into.set(x.key, e);
-  }
-};
 // "6 × Spin-on oil filter, 12 L Engine oil" (a count says ×; "each" is a count).
 const COUNTED = new Set(["", "each", "ea", "no", "pcs", "piece", "pieces"]);
 export const partsText = (parts) => parts.map((x) => `${sig(x.qty)}${COUNTED.has(String(x.unit).toLowerCase()) ? " ×" : ` ${x.unit}`} ${x.name}`).join(", ");
 
-// One task's or one package's forecast from the level's: {entries, next, overdue, periods:
-// [{label, count, labour, cost, priced}], count, labour, cost (null: none priced), unpriced, parts,
-// end, why (none on dates: why)}. `fc`: the forecast read; `tasks`: the task-table rows.
-export function forecastOf(tasks, fc) {
-  const byId = new Map((fc?.tasks || []).map((e) => [e.id, e]));
-  const why = new Map((fc?.not_on_dates || []).map((x) => [x.task?.id, x.reason]));
-  const rows = fc?.rows || [];
-  const periods = rows.map((r, i) => ({ start: r.start, label: periodLabel(r, fc.period || "month", i === 0), count: 0, labour: 0, cost: 0, priced: 0 }));
-  const parts = new Map();
-  let n = 0, labour = 0, cost = 0, priced = 0, unpriced = 0, next = null, overdue = false;
-  const reasons = [];
-  for (const t of tasks) {
-    const e = byId.get(t.id);
-    if (!e) {
-      if (why.has(t.id)) reasons.push({ task: t, reason: why.get(t.id) });
-      continue;
-    }
-    const dates = e.dates || [];
-    n += dates.length;
-    labour += (Number(e.labour_each) || 0) * dates.length;
-    if (e.cost_each != null) { cost += Number(e.cost_each) * dates.length; priced += dates.length; } else if (dates.length) unpriced += 1;
-    if (dates[0] && (!next || dates[0] < next)) next = dates[0];
-    if (e.overdue) overdue = true;
-    addParts(parts, taskParts(t), dates.length);
-    for (const d of dates) {
-      let i = periods.length - 1;
-      while (i > 0 && d < periods[i].start) i -= 1;
-      const p = periods[i];
-      if (!p) continue;
-      p.count += 1;
-      p.labour += Number(e.labour_each) || 0;
-      if (e.cost_each != null) { p.cost += Number(e.cost_each); p.priced += 1; }
-    }
+// A package row's menu, and a reference's.
+export const PKG_OPEN = "mpkg-open";
+export const REF_GO = "mpref-go";
+export const PKG_RETIRE = "mpkg-retire";
+export const REF_REMOVE = "mpref-remove";
+export function packageRowActions(r, { viewOnly = null } = {}) {
+  const pkg = r?.ref?.pkg;
+  const wo = pkg?.open_work_order;
+  const why = viewOnly || (wo ? `Close or cancel work order #${wo.number} first.` : null);
+  return [{ id: PKG_OPEN, label: "Open", title: "Its tasks, visits, what each visit needs, and pause or retire" },
+    { id: PKG_RETIRE, label: "Retire…", danger: true, ...(why ? { disabled: true, reason: why } : {}) }];
+}
+export function refRowActions(r, { viewOnly = null } = {}) {
+  return [{ id: REF_GO, label: "Show the task", title: `${r.ref.name}, on ${r.ref.on || "its position"}` },
+    { id: REF_REMOVE, label: "Remove from package…", danger: true, ...(viewOnly ? { disabled: true, reason: viewOnly } : {}) }];
+}
+
+// ---- next due (Derryn, 23 Nov 2026: "Next due" is a column, blank when we don't know) ----------
+// The server says what's known (backend/maintenance/next_due.py): {on, at_reading, unit, basis, why,
+// overdue}. A date, else the reading it falls due at ("at 1,250 h"), else blank with why. Nothing
+// here works out a date.
+
+const BLANK_NEXT = { on: null, at_reading: null, unit: null, basis: null, why: null, overdue: false };
+// A task's next due (a row from before the server said: blank, never its old count from "now").
+export const nextOf = (t) => t?.next || { ...BLANK_NEXT, why: "Not known" };
+// A package's (a paused or retired one isn't listed with one: why, from its status).
+export function packageNext(p) {
+  if (p?.next) return p.next;
+  return { ...BLANK_NEXT, why: p?.status === "paused" ? "Paused" : p?.status === "retired" ? "Retired" : "No visit to come" };
+}
+
+// "5 Dec 2026", the one date format (dates.js): a day as written, whatever the browser's language.
+export const dayWords = (iso) => (iso ? formatDate(String(iso).slice(0, 10)) : "");
+const UNIT_SHORT = { hours: "h", hour: "h", h: "h" };
+// "at 1,250 h" (a reading's unit as the counter says it).
+export const readingWords = (n) => (n?.at_reading == null ? ""
+  : `at ${Number(n.at_reading).toLocaleString("en-GB", { maximumFractionDigits: 1 })} ${UNIT_SHORT[String(n.unit || "").toLowerCase()] || n.unit || ""}`.trim());
+
+// What a Next due cell says: {text, overdue, title, blank}. A date ("5 Dec 2026"), the reading
+// ("at 1,250 h"), or blank (—) with why in the tooltip.
+export function dueCell(n) {
+  if (n?.on) {
+    const at = readingWords(n);
+    return { text: n.on, words: dayWords(n.on), overdue: !!n.overdue,
+      title: [n.overdue ? "Overdue" : null, at ? `Due ${at}` : null, n.basis].filter(Boolean).join(". ") };
   }
-  return {
-    next, overdue, periods, count: n, labour, cost: priced ? cost : null, unpriced, end: fc?.end || null,
-    // Spares first, then consumables, each in the order the tasks name them.
-    parts: [...parts.values()].filter((x) => x.qty > 0),
-    why: reasons,
+  if (n?.at_reading != null) return { text: readingWords(n), words: readingWords(n), overdue: false, title: n.why || "" };
+  return { text: "", words: "", overdue: false, blank: true, title: n?.why || "Not known" };
+}
+
+// The sooner of two known next dues (a level's roll-up): a date beats none; `name` says whose.
+function soonest(a, b, name = null) {
+  const bb = b?.on ? { on: b.on, overdue: !!b.overdue, name: b.name || name } : null;
+  if (!a) return bb;
+  if (!bb) return a;
+  return bb.on < a.on ? bb : a;
+}
+
+// A level's Next due cell: the soonest next due at and below it, or blank.
+export function levelDueCell(r) {
+  const n = r?.tall?.next;
+  if (!n) return { text: "", words: "", blank: true, overdue: false, title: r?.tall?.tasks ? "No date known for anything here or below" : "" };
+  return { text: n.on, words: dayWords(n.on), overdue: !!n.overdue, title: `The soonest here or below${n.name ? `: ${n.name}` : ""}${n.overdue ? " (overdue)" : ""}` };
+}
+
+// What a row sorts by in Next due: a date first, then a reading alone, then blanks (always last).
+function dueKey(r) {
+  const n = isTaskRow(r) || isPackageRef(r) ? nextOf(r.ref.task) : isPackageRow(r) ? packageNext(r.ref.pkg)
+    : r?.tall ? (r.tall.next ? { on: r.tall.next.on } : null) : null;
+  if (n?.on) return [0, n.on];
+  if (n?.at_reading != null) return [1, Number(n.at_reading)];
+  return null;
+}
+
+// The Next due sort after a header click: soonest first, then latest first, then the tree's order.
+export function nextDueSort(sort, col) {
+  if (!sort || sort.col !== col) return { col, dir: 1 };
+  return sort.dir === 1 ? { col, dir: -1 } : null;
+}
+
+// Each level's rows in Next due order (outlineTree flatten's `order`): its tasks among themselves,
+// its packages, then its positions by their soonest; blanks last either way.
+export function dueOrder(display, sort) {
+  if (!sort || sort.col !== "due") return null;
+  return (keys) => {
+    const rows = keys.map((k) => display.rows.get(k));
+    if (!rows.some((r) => isTaskRow(r) || isPackageRow(r) || r?.tall)) return keys;
+    const group = (r) => (isTaskRow(r) ? 0 : isPackageRow(r) ? 1 : isPackageRef(r) ? 2 : 3);
+    return rows.map((r, i) => ({ k: keys[i], i, g: group(r), v: dueKey(r) }))
+      .sort((a, b) => {
+        if (a.g !== b.g) return a.g - b.g;
+        if (!a.v || !b.v) return !a.v && !b.v ? a.i - b.i : a.v ? -1 : 1;
+        if (a.v[0] !== b.v[0]) return a.v[0] - b.v[0];
+        const c = a.v[1] < b.v[1] ? -1 : a.v[1] > b.v[1] ? 1 : 0;
+        return c ? c * sort.dir : a.i - b.i;
+      })
+      .map((x) => x.k);
   };
 }
 
-const timesWord = (n, kind) => (kind === "package" ? count(n, "task") : count(n, "time"));
+// ---- Open in › (Derryn, 23 Nov 2026) ----------------------------------------------------------
+// "Quick one-off work lives in the left menu's tools; the detailed, saved work for a specific asset
+// lives in the Explorer." A position (and everything below it), a task or a work package opens the
+// left menu's tools filled in from it: Optimal replacement (a scratch Optimise: Optimise… on the
+// task is the one that changes its interval) and the forecast tool's three views. Nothing is
+// written to the Explorer; the tool names where it came from, with a link back.
+export const OPEN_IN = [
+  { id: "open-in-optimise", label: "Optimise", view: null, title: "Optimal replacement, filled in from here: try other intervals without changing the task" },
+  { id: "open-in-spares", label: "Spares forecast", view: "spares", title: "How many spares these will use, filled in from here and everything below it" },
+  { id: "open-in-hours", label: "Hours forecast", view: "hours", title: "The maintenance hours these will need, filled in from here and everything below it" },
+  { id: "open-in-costs", label: "Cost forecast", view: "costs", title: "What these will cost to maintain, filled in from here and everything below it" },
+];
+const OPEN_IN_IDS = new Set(OPEN_IN.map((x) => x.id));
+export const isOpenIn = (id) => OPEN_IN_IDS.has(id);
 
-// The Forecast row's roll-up: "12 times to 30 Nov 2027 · 24 h labour · $1,440".
-export function forecastSummary(f, kind = "task") {
-  if (!f) return "";
-  if (!f.count) return f.why.length ? "Not on dates" : `None due to ${dayText(f.end)}`;
-  return [`${timesWord(f.count, kind)} to ${dayText(f.end)}`, f.labour ? `${hoursText(f.labour)} labour` : null,
-    f.cost != null ? `${moneyText(f.cost)}${f.unpriced ? " (some not priced)" : ""}` : "cost not set"].filter(Boolean).join(" · ");
+// What a row opens the tools from: {kind, id}, or null (a place, a design's row, a reference).
+export function openInSource(r, { design = false } = {}) {
+  if (design) return null;
+  if (r?.type === "pos") return { kind: "position", id: r.key };
+  if (isTaskRow(r)) return { kind: "task", id: r.ref.task.id };
+  if (isPackageRow(r)) return { kind: "package", id: r.ref.pkg.id };
+  return null;
 }
 
-// The lines under a Forecast row: [{id, label (the tree column), text (across the columns),
-// title?, tone?}].
-export function forecastLines(f, { kind = "task", pkg = null } = {}) {
-  if (!f) return [];
-  const out = [];
-  const visit = kind === "package" ? nextVisit(pkg) : null;
-  if (visit) out.push({ id: "next", label: "Next visit", text: dayText(visit) });
-  else if (f.next) out.push({ id: "next", label: f.overdue ? "Overdue" : "Next due", text: f.overdue ? `done first, on ${dayText(f.next)}` : dayText(f.next), tone: f.overdue ? "danger" : null });
-  for (const x of f.why) out.push({ id: `why:${x.task.id}`, label: "Not on dates", text: kind === "package" ? `${x.task.name}: ${x.reason}` : x.reason });
-  if (!f.count && !f.why.length) out.push({ id: "none", label: "Not due", text: `before ${dayText(f.end)}` });
-  for (const p of f.periods) {
-    if (!p.count) continue;
-    out.push({ id: `p:${p.start}`, label: p.label, text: [timesWord(p.count, kind), p.labour ? `${hoursText(p.labour)} labour` : null,
-      p.priced ? moneyText(p.cost) : null].filter(Boolean).join(" · ") });
-  }
-  if (f.count) {
-    out.push({ id: "parts", label: "Parts and spares", text: f.parts.length ? partsText(f.parts) : "None in its LSA",
-      title: f.parts.length ? `What the LSA says is used, times the ${count(f.count, "time")} it comes to ${dayText(f.end)}` : "Add spares and consumables to the task's LSA: open the task, then What it needs" });
-    out.push({ id: "total", label: "In all", text: forecastSummary(f, kind) });
-  }
-  return out;
+// The row's Open in › submenu ([] where it has none).
+export function openInItem(r, opts = {}) {
+  if (!openInSource(r, opts)) return [];
+  return [{ id: "open-in", label: "Open in", title: "Open a left-menu tool filled in from this row: nothing here changes",
+    items: OPEN_IN.map(({ id, label, title }) => ({ id, label, title })) }];
 }
 
-// The Forecast row (and its lines) under a task or a package, into `rows`: its key, in a list.
-// `forecast`: {fc, error} once read (null: not yet, so its line asks for it).
-function forecastRows(rows, parentKey, { kind, task = null, pkg = null, tasks = null, forecast = null }) {
-  const parent = rows.get(parentKey);
-  const key = fcKey(parentKey);
-  const list = kind === "task" ? [task] : tasks || [];
-  const f = forecast?.fc ? forecastOf(list, forecast.fc) : null;
-  const lines = forecast?.error ? [{ id: "error", label: "Not worked out", text: `Couldn't work out the forecast: ${forecast.error}`, tone: "danger" }]
-    : f ? forecastLines(f, { kind, pkg }) : [{ id: "wait", label: "Working out…", text: "" }];
-  const kids = lines.map((l) => {
-    const k = `${key}:${l.id}`;
-    rows.set(k, { key: k, type: FC_LINE_TYPE, parent: key, kids: [], depth: parent.depth + 2, own: noStatus(), sum: noStatus(),
-      ref: { name: l.label, line: l, of: parentKey, position_id: parent.ref.position_id } });
-    return k;
-  });
-  rows.set(key, {
-    key, type: FC_TYPE, parent: parentKey, kids, depth: parent.depth + 1, own: noStatus(), sum: noStatus(),
-    ref: { name: FORECAST_LABEL, of: parentKey, kind, summary: f ? forecastSummary(f, kind) : "", position_id: parent.ref.position_id },
-  });
-  return [key];
-}
-
-// Whether any Forecast row is open in the tree (`open`: the keys open), so the forecast is read.
-export const forecastWanted = (open) => [...(open || [])].some((k) => typeof k === "string" && k.startsWith("MF:"));
-
-// A package row's menu, a reference's, and a Forecast row's.
-export const PKG_OPEN = "mpkg-open";
-export const PKG_FORECAST = "mpkg-forecast";
-export const REF_GO = "mpref-go";
-export const FC_OPEN = "mfc-open";
-export function packageRowActions() {
-  return [{ id: PKG_OPEN, label: "Open…", title: "Its tasks, visits, what each visit needs, and pause or retire" },
-    { id: PKG_FORECAST, label: "Forecast…", title: "The full forecast where its tasks meet: work, failures, costs and spares, by month" }];
-}
-export function refRowActions(r) {
-  return [{ id: REF_GO, label: "Show the task", title: `${r.ref.name}, on ${r.ref.on || "its position"}` }];
-}
-export function forecastRowActions() {
-  return [{ id: FC_OPEN, label: "Open the full forecast…", title: "The forecast for this level and everything inside it, with spares for the year" }];
+// Where an Open in item goes: the tool's address, filled in from the row (`root`: the asset opened).
+export function openInLink(r, id, root = null, opts = {}) {
+  const src = openInSource(r, opts);
+  const it = OPEN_IN.find((x) => x.id === id);
+  if (!src || !it) return null;
+  const q = new URLSearchParams({ from: `${src.kind}:${src.id}` });
+  if (root) q.set("root", root);
+  return `${it.view ? `/forecasts/${it.view}` : "/strategy/replacement"}?${q}`;
 }

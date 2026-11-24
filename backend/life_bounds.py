@@ -40,6 +40,10 @@ CURVE_ONLY_NOTE = ("No bounds on the B-lives: this model's confidence bounds are
                    "band), not on its quantiles.")
 # A Bayesian update's bounds are credible intervals (SurPyval's quantile_cri and mean_cri), so the
 # card says so rather than calling them confidence bounds.
+# SurPyval (0.29) refuses a bound on the mean life of a model with a hazard ratio (its B-life bounds
+# hold the ratio fixed); said in words rather than worked out here.
+HR_MEAN_NOTE = ("No bound on the mean life: SurPyval doesn't give one for a model adjusted by a hazard ratio. "
+                "The B-lives keep their bounds.")
 CREDIBLE_NOTE = ("The bounds are credible intervals from a Bayesian update: there's that chance the value lies "
                  "beyond the bound, given the baseline and the data. They aren't confidence bounds.")
 
@@ -290,7 +294,8 @@ def _mttf(model, alpha: float, with_bounds: bool, tau=None) -> dict:
                 else model.mean_cb(alpha_ci=alpha, bound="lower")
             out["lower"] = _num(np.ravel(np.asarray(bound, dtype=float))[0])
     except Exception:  # noqa: BLE001 - the value stands without its bound
-        pass
+        if getattr(model, "hr", 1) != 1:
+            out["note"] = HR_MEAN_NOTE
     return out
 
 

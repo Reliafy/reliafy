@@ -17,7 +17,9 @@ const fileName = (name) => `${String(name).replace(/[^\w\- ]+/g, "").trim() || "
 
 // A fleet's spares question and answer: the replacement part's lead time and
 // service level (saved with the fleet, in its periods) → how many to hold.
-export default function FleetSparesCard({ fleet, settings, forecast, readOnly, dirty, onChange }) {
+// `runWord`: what updates the answer (null: it follows the inputs as you type, the quick tool; "Save & forecast" on a saved fleet; "Forecast" on the quick,
+// unsaved forecast tool).
+export default function FleetSparesCard({ fleet, settings, forecast, readOnly, dirty, onChange, runWord = "Save & forecast" }) {
   const sp = settings.spares || {};
   const label = String(settings.period_label || "periods");
   const answer = !dirty ? forecast.spares : null;
@@ -65,9 +67,9 @@ export default function FleetSparesCard({ fleet, settings, forecast, readOnly, d
                   label="Repairable: failed ones are repaired and come back" />
         {sp.repairable && field("turnaround", `Repair turnaround (${label})`)}
       </div>
-      {dirty && <p className="lib-date">Save &amp; forecast to update the answer.</p>}
+      {dirty && runWord && <p className="lib-date">{runWord} to update the answer.</p>}
       {!dirty && !answer && (
-        <p className="lib-date">Set the replacement part’s lead time, then Save &amp; forecast.</p>
+        <p className="lib-date">Set the replacement part’s lead time{runWord ? <>, then {runWord}</> : ": the answer follows"}.</p>
       )}
       {answer && !ok && <p className="lib-date">{answer.summary || answer.reason}</p>}
       {ok && (

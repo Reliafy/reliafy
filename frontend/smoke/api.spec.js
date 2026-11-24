@@ -13,12 +13,18 @@ const SIGNED_IN = [
   // Libraries: making one (reads are public, so only the writes need a sign-in).
   ["POST", "/api/libraries"],
   ["POST", "/api/rbds/standby-route"], // a standby block's route and words (#363)
+  ["GET", "/api/home/summary"], // everything Home shows, in one request
+  ["GET", "/api/me/bootstrap"], // the app frame's settings, in one request
   ["GET", "/api/extensions"], // optional extensions' pages (an empty list without any)
   ["GET", "/api/search?q=pump"], // the one search for everything (the header's search, ⌘K)
   ["GET", "/api/datasets/sample-ds-pumps/csv"], // a dataset's Download CSV
+  ["GET", "/api/datasets/sample-ds-pumps/lifetimes"], // a dataset's Lifetimes view
+  ["POST", "/api/datasets/smoke/lifetimes"], // the same, with a reading being changed
   // The asset tree in a spreadsheet, both ways (the Explorer's Import from Excel and Export).
   ["GET", "/api/maintenance/hierarchy/export"],
+  ["GET", "/api/maintenance/operations"], // the Explorer's Operations tab
   ["POST", "/api/maintenance/hierarchy/import"],
+  ["POST", "/api/maintenance/schedule/dates"], // How often's next dates, from the server
   // RCM studies (the standalone worksheets under Maintenance).
   ["GET", "/api/rcm/studies"],
   // The interval calculators on an RCM task card.
@@ -85,6 +91,7 @@ const SIGNED_IN = [
   ["GET", "/api/maintenance/parts/levels"], // #435
   ["POST", "/api/maintenance/parts/import-bom"], // #435
   ["GET", "/api/maintenance/classes/forecast"], // #407
+  ["GET", "/api/maintenance/classes/forecasts"],
   ["GET", "/api/maintenance/item-classes/smoke/fleet"], // the Explorer by Classes: a class's positions with risk now
   ["GET", "/api/maintenance/positions/smoke/condition"], // a position's Condition monitoring tab: its risk now
   ["GET", "/api/maintenance/condition-below/smoke"], // Condition monitoring on a node: every monitored position below it
@@ -140,10 +147,15 @@ const SIGNED_IN = [
   ["POST", "/api/maintenance/positions/x/missions"],
   ["GET", "/api/rbds/x/missions"],
   ["POST", "/api/rbds/x/missions"],
+  ["POST", "/api/rbds/x/missions/mission/answers"],
   ["GET", "/api/rbds/x/missions/m"],
   ["POST", "/api/rbds/x/missions/m/calculate"],
   ["GET", "/api/maintenance/rcm/options"], // the decision dialog's vocabulary
   ["GET", "/api/fleet/fleets"],
+  ["POST", "/api/fleet/scratch-forecast"], // the quick forecast tool (Decisions › Forecasts)
+  ["POST", "/api/fleet/quick-forecast"], // the quick forecast as a sentence
+  ["GET", "/api/maintenance/positions/smoke/forecast-start"], // Open in ›: what a node fills in
+  ["GET", "/api/maintenance/positions/smoke/forecast-lines"], // Open in ›: the forecast by owner
   ["GET", "/api/strategy/analyses"],
   ["GET", "/api/models"],
   ["GET", "/api/joint/models"],

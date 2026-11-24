@@ -193,7 +193,7 @@ test("adding from each row's menu grows the tree: a function, its failures and m
   expect(sheet.positions[0].functions.map((f) => f.text)).toEqual([`Turn the shaft ${tag}`, `Stay cool ${tag}`]);
   expect(sheet.positions[0].functions[0].failures[0].modes.map((m) => m.text)).toEqual([`Winding burnt ${tag}`, `Bearing worn ${tag}`]);
   // A failure mode's menu: decide, edit, delete; Delete asks first (the counted dialog), then offers Undo.
-  await fromMenu(page, `^Failure mode: Bearing worn ${tag}`, `Failure mode: Bearing worn ${tag}`, "Delete failure mode…");
+  await fromMenu(page, `^Failure mode: Bearing worn ${tag}`, `Failure mode: Bearing worn ${tag}`, "Delete…");
   const delMode = page.getByRole("dialog", { name: `Delete “Bearing worn ${tag}”?` });
   await expect(delMode.getByTestId("delete-counts")).toContainText("Nothing else is under it.");
   await delMode.getByRole("button", { name: "Delete the failure mode" }).click();
@@ -217,22 +217,22 @@ test("a row's menu: Shift+F10 and the Menu key, the arrows, Esc, the ⋯ button;
   await page.keyboard.press("Shift+F10");
   const menu = rowMenu(page, fnName);
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole("menuitem")).toHaveText(["Add a performance standard…", "Add functional failure", "Open…", "Edit description", "Move to…", "Move up", "Move down", "Focus failure modes", "Focus to a depth", "Focus on incomplete rows", "Delete function…"]);
-  await expect(menu.getByRole("menuitem", { name: "Add a performance standard…" })).toBeFocused();
+  // The menu standard: the general section, the adds, More › (Move up / down from the keyboard),
+  // then Delete… after a line.
+  await expect(menu.locator(":scope > [role='menuitem']")).toHaveText(["Open", /^Rename…/, "Move to…", "Focus", /^Pin this branch/, "Copy link", "Add a performance standard…", "Add functional failure", "More", "Delete…"]);
+  await expect(menu.getByRole("menuitem", { name: "Open", exact: true })).toBeFocused();
   await page.keyboard.press("ArrowDown");
-  await expect(menu.getByRole("menuitem", { name: "Add functional failure" })).toBeFocused();
+  await expect(menu.getByRole("menuitem", { name: "Rename…", exact: true })).toBeFocused();
   await page.keyboard.press("ArrowUp");
   await page.keyboard.press("ArrowUp"); // round to the last
-  await expect(menu.getByRole("menuitem", { name: "Delete function…" })).toBeFocused();
+  await expect(menu.getByRole("menuitem", { name: "Delete…", exact: true })).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0);
   await expect(fn).toBeFocused();
-  // The Menu key; Enter chooses: Edit description opens the function's text
-  // in a dialog (with its counter).
+  // The Menu key; Enter chooses: Rename… opens the function's text in a dialog (with its counter).
   await page.keyboard.press("ContextMenu");
   await expect(menu).toBeVisible();
-  await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("ArrowDown");
+  await expect(menu.getByRole("menuitem", { name: "Open", exact: true })).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
   const editDialog = page.getByRole("dialog", { name: "Edit the function" });
@@ -247,7 +247,7 @@ test("a row's menu: Shift+F10 and the Menu key, the arrows, Esc, the ⋯ button;
   // A failure mode's description is still edited in place.
   const modeRow = trow(page, `^Failure mode: Seal leaks No flow Pump water ${tag}`);
   await modeRow.locator(".tt-tree").click({ button: "right" });
-  await rowMenu(page, "Failure mode: Seal leaks").getByRole("menuitem", { name: "Edit description" }).click();
+  await rowMenu(page, "Failure mode: Seal leaks").getByRole("menuitem", { name: "Rename…", exact: true }).click();
   const inPlace = table(page).getByRole("textbox", { name: `Function, standard, failure, mode or task of Seal leaks No flow Pump water ${tag}` });
   await expect(inPlace).toBeFocused();
   await page.keyboard.press("Escape");
@@ -333,8 +333,8 @@ test("at 400 px each row shows its ⋯: a tap opens the menu, and adding works",
   expect(Math.min(size.width, size.height)).toBeGreaterThanOrEqual(32);
   await more.click();
   const menu = rowMenu(page, fnName);
-  // On a phone the details panel edits the description: no Edit description here.
-  await expect(menu.getByRole("menuitem")).toHaveText(["Add a performance standard…", "Add functional failure", "Open…", "Move to…", "Move up", "Move down", "Focus failure modes", "Focus to a depth", "Focus on incomplete rows", "Delete function…"]);
+  // On a phone the details panel edits the description: Rename… is greyed, saying so.
+  await expect(menu.locator(":scope > [role='menuitem']")).toHaveText(["Open", /^Rename…/, "Move to…", "Focus", /^Pin this branch/, "Copy link", "Add a performance standard…", "Add functional failure", "More", "Delete…"]);
   const mbox = await menu.boundingBox();
   expect(mbox.x).toBeGreaterThanOrEqual(0);
   expect(mbox.x + mbox.width).toBeLessThanOrEqual(400);
@@ -407,9 +407,10 @@ test("the RCM tab's heading is two slim rows: the way up and the name with the �
   const md = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--control-md")));
   expect(boxes.map((b) => [b.w, b.h])).toEqual([[md, md], [md, md]]);
   expect(boxes[1].left - boxes[0].right).toBe(8);
-  // The "…": what isn't a row's action (adding is the row menu's), Open the full page last.
+  // The "…": the row's own menu (the menu standard) with the heading's Columns… and Open the full page.
   await bar.getByRole("button", { name: "More actions" }).click();
-  await expect(bar.locator(".ovm-menu .ovm-item")).toHaveText(["Import worksheet…", "Export CSV", "Columns…", "Open the full page"]);
+  expect(await menuLabels(page, page.getByRole("menu", { name: "More actions", exact: true })))
+    .toEqual(expect.arrayContaining(["Import worksheet…", "Export CSV", "Columns…", "Open the full page"]));
   await page.keyboard.press("Escape");
   await expect(bar.locator(".ovm-menu")).toBeHidden();
   await expect(bar.getByRole("tab")).toHaveCount(0);
@@ -806,7 +807,7 @@ test("adding, deleting and deciding go once: a double-click, three clicks at onc
 
   // Deleting: a double-click on the dialog's button deletes once (the count before it is a dry run).
   const deletes = sent(page, "DELETE", "");
-  await fromMenu(page, `^Function: Triple ${tag}`, `Function: Triple ${tag}`, "Delete function…");
+  await fromMenu(page, `^Function: Triple ${tag}`, `Function: Triple ${tag}`, "Delete…");
   const confirm = page.getByRole("dialog", { name: new RegExp(`^Delete “Triple ${tag}”`) });
   await confirm.getByRole("button", { name: "Delete the function" }).dblclick();
   await expect(confirm).toHaveCount(0);
@@ -976,3 +977,16 @@ test("one click on a function, failure or mode picks that row first time: with a
   }
 });
 
+// Every label in a menu: its top level and the items under More › (the menu standard folds what
+// doesn't fit in ten there).
+async function menuLabels(page, menu) {
+  const read = (loc) => loc.evaluateAll((els) => els.map((e) => e.dataset.label || e.textContent.trim()));
+  const out = await read(menu.locator(":scope > [role='menuitem']"));
+  if (out.includes("More")) {
+    await menu.getByRole("menuitem", { name: "More", exact: true }).hover();
+    const sub = page.getByRole("menu", { name: "More", exact: true });
+    await expect(sub).toBeVisible();
+    out.push(...await read(sub.getByRole("menuitem")));
+  }
+  return out;
+}

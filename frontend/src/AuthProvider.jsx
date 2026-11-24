@@ -26,10 +26,14 @@ export function AuthProvider({ children }) {
         if (cancelled) return;
         fb.current = mod;
         unsubscribe = mod.onAuthStateChanged(mod.auth, (u) => {
-          setUser(u);
-          setLoading(false);
-          // Upsert the user profile on the backend on first sight (fire-and-forget).
-          if (u) import("./api.js").then(({ getMe }) => getMe().catch(() => {}));
+          // A new user (or none): the frame's settings are read afresh, in one request
+          // (api.js shellRead) that also upserts the profile on the backend.
+          import("./api.js").then(({ getMe, resetBootstrap, shellRead }) => {
+            resetBootstrap();
+            setUser(u);
+            setLoading(false);
+            if (u) shellRead("me", getMe).catch(() => {});
+          });
         });
       })
       .catch(() => {

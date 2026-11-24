@@ -22,8 +22,11 @@ export function figureText(key, v) {
   return key === "downtime_rate" ? `${money(v)} an hour` : money(v);
 }
 
-// A field's placeholder: the class's figure, used while the mode has none of its own.
+// A field's placeholder: the corrective response's cost (failure cost only), else the class's figure,
+// used while the mode has none of its own (a typed figure overrides both).
 export function placeholderFor(key, costs) {
+  const resp = costs?.responses?.failure;
+  if (key === "failure_cost" && resp?.cost_each != null) return `From its response: ${figureText(key, resp.cost_each)}`;
   const cls = costs?.class_figures?.[key];
   if (cls != null) return `From its class (${costs.class}): ${figureText(key, cls)}`;
   return "Not set";
@@ -59,7 +62,7 @@ export function promptGroups(prompts) {
   if (costs.length) {
     groups.push({
       id: "cost", title: `Failure modes with no failure cost (${costs.length})`,
-      lead: "Enter what one failure costs, and how long it stops the asset, on the failure mode's consequence.",
+      lead: "Enter what one failure costs, and how long it stops the asset, on what's done if it fails (its corrective task on the Maintenance tab).",
       items: costs.map((x) => ({
         key: x.mode ? `c-${x.mode.id}` : `c-${x.position.id}-${x.life}`,
         name: x.mode ? x.mode.text : x.life, where: x.position.name, link: x.link,
@@ -99,3 +102,28 @@ export function plannedTitle(row) {
   if (row.other_planned_cost) bits.push(`other (a typed cost the LSA doesn't explain) ${money(row.other_planned_cost)}`);
   return bits.length ? `Planned: ${bits.join(", ")}` : "";
 }
+
+// A response is a task raised by its event (responses.py): its kind on the Maintenance tab (the
+// table's Kind, the task panel's head) and the line under its name there.
+export const RESPONSE_KIND = { failure: "Corrective: on failure", found: "Follow-on: when found" };
+export const responseKindOf = (t) => (t?.trigger && RESPONSE_KIND[t.trigger.kind] ? t.trigger.kind : null);
+export function responseTrigger(kind, mode) {
+  const what = mode || "its failure mode";
+  return kind === "failure" ? `Raised when ${what} fails` : `Raised when an inspection finds ${what}`;
+}
+
+// A response in one line on the RCM tab (ModeResponseLinks): {text, action, gap}. `used`: the failure
+// cost in force (its all-in figure, said after a corrective response when it's more than the repair).
+export function responseLine(kind, resp, used = null) {
+  const lead = kind === "failure" ? "If it fails" : "If an inspection finds it";
+  if (!resp) {
+    return { text: kind === "failure" ? "No response if it fails" : "Nothing recorded for when it's found", action: "Add in Maintenance", gap: true };
+  }
+  const bits = [];
+  if (resp.hours_each != null) bits.push(`${Number(Number(resp.hours_each).toPrecision(4)).toLocaleString("en-GB")} h`);
+  if (resp.cost_each != null) bits.push(money(resp.cost_each));
+  let text = `${lead}: ${resp.name}${bits.length ? ` (${bits.join(", ")})` : ""}`;
+  if (kind === "failure" && used?.per_failure != null && used.per_failure !== resp.cost_each) text += `; a failure costs ${money(used.per_failure)} all in`;
+  return { text, action: "Edit in Maintenance", gap: false };
+}
+

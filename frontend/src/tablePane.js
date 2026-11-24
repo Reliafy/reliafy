@@ -44,7 +44,17 @@ export const TABLE_PANES = {
       confirmLabel: "Discard them", cancelLabel: "Keep fixing",
     },
   },
-  // How a position runs (?plan=<position id>; Monitoring › Readings, where one opened from the Summary moves): its operating plan.
+  // Adjust for conditions… on a model row (?adjust=<model row's link id>&on=<position id>): the model
+  // with a hazard ratio, saved as a new model and put in the row's place (AdjustModelPanel.jsx).
+  adjust: {
+    param: "adjust",
+    on: "on",
+    discard: {
+      title: "Discard this adjustment?", body: "The adjusted model isn't saved.",
+      confirmLabel: "Discard it", cancelLabel: "Keep adjusting",
+    },
+  },
+  // How a position runs (?plan=<position id>; the Operations tab, where one opened from the Summary or Measurements moves): its operating plan.
   plan: {
     param: "plan",
     discard: {

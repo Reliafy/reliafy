@@ -460,10 +460,15 @@ def _alerts(db, fleet_docs: dict, since, until) -> list:
     return out
 
 
-def _rcm_modes(owners: list, user: dict | None) -> list[tuple[str, dict]]:
+def _rcm_modes(owners: list, user: dict | None, evidence_ids=None, rcm_all=None) -> list[tuple[str, dict]]:
     """Every decided failure mode on the workspace's asset tree (Reliafy
     Maintenance; each owner is a maintenance organisation), as (position name,
-    mode with its decision) pairs. Nothing without Maintenance."""
+    mode with its decision) pairs. Nothing without Maintenance. evidence_ids: only the positions
+    with a mode decided on one of those models are read (the rest could never match).
+    rcm_all ({organisation: its Maintenance.rcm_all()}, every position): an RCM
+    already read (Home's summary reads it once for its counts too), used as it is
+    for the organisations it covers. The caller keeps only modes linking
+    evidence_ids, so the whole RCM gives the same rows."""
     from backend.maintenance.access import allowed
 
     if not allowed(user):
@@ -476,13 +481,16 @@ def _rcm_modes(owners: list, user: dict | None) -> list[tuple[str, dict]]:
     for org in owners:
         if org == SAMPLE_OWNER:
             continue
-        for p in Maintenance(store, org, (user or {}).get("uid") or org).rcm_all()["positions"]:
+        read = (rcm_all or {}).get(org)
+        if read is None:
+            read = Maintenance(store, org, (user or {}).get("uid") or org).rcm_all(evidence_ids=evidence_ids, shared=True)
+        for p in read["positions"]:
             modes = [m for fn in p["functions"] for ff in fn["failures"] for m in ff["modes"]] + p["unassigned"]
             out.extend((p["id"], p["name"], m) for m in modes if m.get("decision"))
     return out
 
 
-def _rcm(db, model_docs: dict, refit_rows: dict, owners, user: dict | None) -> list:
+def _rcm(db, model_docs: dict, refit_rows: dict, owners, user: dict | None, rcm_all=None) -> list:
     """Decisions whose linked non-repairable model was refitted in the period."""
     from backend.maintenance import rcm_decisions, rcm_graph
 
@@ -490,7 +498,7 @@ def _rcm(db, model_docs: dict, refit_rows: dict, owners, user: dict | None) -> l
         return []
     out = []
     fetch = None
-    for pid, position, mode in _rcm_modes(owners, user):
+    for pid, position, mode in _rcm_modes(owners, user, set(refit_rows), rcm_all):
         decision = mode.get("decision") or {}
         evidence = decision.get("evidence") or {}
         if evidence.get("type") != "model" or evidence.get("id") not in refit_rows:
@@ -604,11 +612,13 @@ FLEETS_LEFT_OUT = {"what": "Fleet forecasts and alerts",
                    "why": "Fleets are part of Pro when used from an AI agent (MCP), so they're left out here."}
 
 
-def summarize(db, list_owners, uid: str, period: dict, fleets: bool = True, user: dict | None = None) -> dict:
+def summarize(db, list_owners, uid: str, period: dict, fleets: bool = True, user: dict | None = None,
+              rcm_all=None) -> dict:
     """The workspace's changes over ``period`` (from :func:`resolve_period`).
     ``fleets`` false leaves fleet forecasts and alerts out (a plan without them).
     ``user`` (the caller) decides whether the RCM on the asset tree is read
-    (Reliafy Maintenance): without it, or without Maintenance, no RCM rows."""
+    (Reliafy Maintenance): without it, or without Maintenance, no RCM rows.
+    ``rcm_all``: the RCM already read, per organisation (:func:`_rcm_modes`)."""
     since, until = period["since"], period["until"]
     owners = _scope(list_owners)
     new, changed, ids = _items(db, owners, since, until, uid)
@@ -620,7 +630,7 @@ def summarize(db, list_owners, uid: str, period: dict, fleets: bool = True, user
         alerts = _alerts(db, ids["fleets"], since, until)
     else:
         forecasts, unrecorded, alerts = [], 0, []
-    rcm = _rcm(db, ids["models"], refit_rows, owners, user)
+    rcm = _rcm(db, ids["models"], refit_rows, owners, user, rcm_all)
     runs = _runs(db, ids["rbds"], since, until, owners)
 
     counts = {

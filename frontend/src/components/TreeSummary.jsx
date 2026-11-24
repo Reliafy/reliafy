@@ -470,8 +470,9 @@ function Inside({ r, display, onSelect, add, here = null, design = false }) {
   );
 }
 
-// One line: how it runs (its operating plan, or the one above it it runs to), opening the plan
-// in the table area (?plan=). An item runs as the position it's fitted to: said, not opened.
+// One line: how it runs (its duty, or the one above it it runs to), linking to the Operations tab,
+// where the duty, its shutdowns and its time zone are kept (Derryn, 23 Nov 2026: the duty moved out
+// of Summary). An item runs as the position it's fitted to: said, and linked to that tab too.
 function OperatingPlanLine({ r }) {
   const { pathname, search } = useLocation();
   const [state, setState] = useState({ key: null, data: null });
@@ -486,16 +487,19 @@ function OperatingPlanLine({ r }) {
   if (!data) return null;
   const plan = data.plan;
   const q = new URLSearchParams(search);
-  q.set("plan", r.key);
+  q.set("tab", "operations");
+  q.set("arrange", "positions");
+  q.set("sel", r.key);
+  if (kind === "position") q.set("plan", r.key);
   const words = plan ? `${planWords(plan.plan)}${plan.hours_per_week != null ? ` · ${hoursWords(plan.hours_per_week)}` : ""}` : null;
   return (
-    <Section title="Operating plan">
+    <Section title="Operations">
       <ul className="td-rows">
-        <Row title={words || quiet("None yet")}
+        <Row title={words || quiet("All the time (no duty set)")}
              meta={kind === "item" ? (plan ? `Runs as the position it's fitted to${data.inherited_from ? ` (from ${data.inherited_from.name})` : ""}` : data.note)
-               : plan ? (data.inherited_from ? `From ${data.inherited_from.name}` : "Its own plan")
-               : "Say how it runs: usage tasks go on dates from it"}
-             chips={kind === "position" ? <Link to={`${pathname}?${q}`} className="td-more">{plan ? "Open" : "Set one"}</Link> : null} />
+               : plan ? (data.inherited_from ? `From ${data.inherited_from.name}` : "Its own duty")
+               : "Set its duty, shutdowns and time zone in Operations"}
+             chips={<Link to={`${pathname}?${q}`} className="td-more">Open in Operations</Link>} />
       </ul>
     </Section>
   );

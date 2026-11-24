@@ -1,10 +1,10 @@
 // The Explorer's Maintenance tab is one tree-table (Derryn, 22 Nov 2026: no sub-tabs). A work
 // package is a row at the lowest point all its tasks meet (worked out from its tasks, so a package
-// made on the asset's top holding only the engine's tasks sits at the engine), with its tasks
-// listed under it; each task and each package has a Forecast row whose lines say when it's next
-// due, each month's count, labour, parts and cost. Open the full forecast… opens the level's
-// Forecast… in the table area, with the spares for the year under it. At 400 px nothing scrolls
-// sideways. Each test makes its own small plant through the API.
+// made on the asset's top holding only the engine's tasks sits at the engine): one row with nothing
+// under it, its tasks listed in its details (they show under their own positions only). A
+// double-click opens its details across the table. No forecast rows (Derryn, 23 Nov 2026): Next due is a column, a package's next
+// visit in it and a level's soonest beneath it, sorted from its header; Open in › on a package opens
+// the left menu's forecast tool filled in from it. At 400 px nothing scrolls sideways. Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 
 const M = "/api/maintenance";
@@ -32,7 +32,7 @@ async function mower(request, tag) {
   return { top, engine, deck, oil, service, engineOnly };
 }
 
-test("packages sit where their tasks meet; Forecast rows under a task and a package; the full forecast with spares", async ({ page, request, problems }) => {
+test("packages sit where their tasks meet; Next due by row and by level, sorted; Open in › from a package", async ({ page, request, problems }) => {
   const tag = `t${Date.now()}`;
   const p = await mower(request, tag);
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -49,50 +49,69 @@ test("packages sit where their tasks meet; Forecast rows under a task and a pack
   await nameRow(page, `Engine ${tag}`).locator(".tp-chev").click();
   await expect(eng).toBeVisible();
   await expect(eng).toHaveAttribute("aria-level", "3");
-  // Its tasks are listed under it, and stay under their own positions, marked Packaged.
-  await svc.locator(".tp-chev").click();
-  await expect(page.locator(`[id^="tp-mpref:${p.service.id}:"]`)).toHaveCount(2);
+  // No task under it (no double up): its tasks show under their own positions only, marked Packaged.
+  // Only its tasks' extras together (labour, parts, cost a visit) may hang under it.
+  await expect(page.locator(`[id^="tp-mpref:"]`)).toHaveCount(0);
   await expect(page.locator(`[id="tp-MT:${p.oil.id}"]`).locator(".mt-pkg-link")).toHaveText(`Monthly service ${tag}`);
+  await expect(page.locator(`[id="tp-MT:${p.oil.id}"]`)).toHaveCount(1);
+
+  // A double-click opens its details across the table (the columns give way), its tasks listed
+  // there; a task's name picks it in the tree. Back to table (or Esc) puts the table back.
+  await svc.locator(".tp-nm").dblclick();
+  const side = page.getByRole("complementary", { name: `Monthly service ${tag}` });
+  await expect(side).toHaveClass(/is-expanded/);
+  await expect(page.getByRole("columnheader", { name: "Interval" })).toHaveCount(0);
+  await shot(page, "package-details-wide-1440");
+  await side.getByRole("button", { name: "Back to table" }).click();
+  await expect(page.getByRole("columnheader", { name: "Interval" })).toBeVisible();
+  await expect(side).not.toHaveClass(/is-expanded/);
+  await shot(page, "package-row-and-details-1440");
+  await side.getByRole("button", { name: `Change the oil ${tag}`, exact: true }).click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("mtask")).toBe(p.oil.id);
+  await expect(page.locator(`[id="tp-MT:${p.oil.id}"]`)).toBeVisible();
+  await page.keyboard.press("Escape");
 
   // A package opens beside the table, saying where it sits.
   await eng.locator(".tp-nm").click();
   await expect.poll(() => new URL(page.url()).searchParams.get("mpkg")).toBe(p.engineOnly.id);
   await expect(page.getByRole("complementary", { name: `Engine checks ${tag}` })).toContainText(`Shown at Engine ${tag}, where its task is.`);
 
-  // A task's Forecast: next due, each month, parts and the total.
-  await page.locator(`[id="tp-MT:${p.oil.id}"]`).locator(".tp-chev").click();
-  const fc = page.locator(`[id="tp-MF:MT:${p.oil.id}"]`);
-  await fc.locator(".tp-chev").click();
-  await expect(fc).toContainText(/times to \d+ \w+ \d{4}/);
-  await expect(fc).toContainText("$");
-  await expect(page.locator(`[id="tp-MF:MT:${p.oil.id}:next"]`)).toContainText("Next due");
-  // A package's Forecast adds up its tasks.
-  const pfc = page.locator(`[id="tp-MF:MP:${p.service.id}"]`);
-  await pfc.locator(".tp-chev").click();
-  await expect(pfc).toContainText(/tasks to \d+ \w+ \d{4}/);
-  await shot(page, "maintenance-tree-forecasts-1440");
+  // No Forecast rows: under a task are only its extras (its labour, parts and a typed cost). A
+  // package's Next due is its next visit (a date); the mower's is the soonest beneath it.
+  await expect(page.locator(`[id^="tp-MF:"]`)).toHaveCount(0);
+  const date = /^\d{1,2} \w{3} \d{4}/;
+  await expect(svc.locator(".mt-c-due")).toHaveText(date);
+  await expect(page.locator(`[id="tp-${p.top.id}"] .mt-c-due`)).toHaveText(date);
+  // A task with no record of when it was last done: a dash, saying why.
+  await expect(page.locator(`[id="tp-MT:${p.oil.id}"] .mt-c-due span`)).toHaveAttribute("title", /No record|visit of/);
+  // Next due sorts from its header: soonest first, then latest, then the tree's order.
+  const head = page.locator('[role="columnheader"]', { has: page.getByRole("button", { name: /^Next due: sort/ }) });
+  const sortBy = head.getByRole("button", { name: /^Next due: sort/ });
+  await sortBy.click();
+  await expect(head).toHaveAttribute("aria-sort", "ascending");
+  await sortBy.click();
+  await expect(head).toHaveAttribute("aria-sort", "descending");
+  await sortBy.click();
+  await expect(head).toHaveAttribute("aria-sort", "none");
+  await shot(page, "maintenance-tree-next-due-1440");
 
-  // Open the full forecast…: the level's Forecast… in the table area, with the spares for the year.
-  await fc.locator(".tp-nm").click({ button: "right" });
-  await page.getByRole("menu").getByRole("menuitem", { name: "Open the full forecast…" }).click();
-  await expect.poll(() => new URL(page.url()).searchParams.get("forecast")).toBe(p.engine.id);
-  await expect(page.locator("section.fc-view").first()).toBeVisible();
-  await expect(page.getByRole("region", { name: "Spares for the year" }).first()).toBeVisible();
-  await shot(page, "maintenance-tree-full-forecast-1440");
+  // Open in › Cost forecast on a package: the tool, filled in from its tasks' positions.
+  await svc.locator(".tp-nm").click({ button: "right" });
+  await page.getByRole("menu").getByRole("menuitem", { name: /^Open in/ }).click();
+  await page.getByRole("menuitem", { name: "Cost forecast" }).click();
+  await expect(page).toHaveURL(new RegExp(`/forecasts/costs\\?from=package%3A${p.service.id}`));
+  await expect(page.locator(".ft-from")).toContainText(`Monthly service ${tag}`);
   await expectHealthy(page, problems, { label: "maintenance tree" });
 });
 
-test("the Maintenance tree at 400 px: a package and a Forecast row, nothing scrolls sideways", async ({ page, request, problems }) => {
+test("the Maintenance tree at 400 px: a package with its next visit, nothing scrolls sideways", async ({ page, request, problems }) => {
   const tag = `u${Date.now()}`;
   const p = await mower(request, tag);
   await page.setViewportSize({ width: 400, height: 860 });
   await open(page, `/asset-register/explorer?arrange=positions&root=${p.top.id}&sel=${p.top.id}&tab=maintenance`);
   const svc = page.locator(`[id="tp-MP:${p.service.id}"]`);
   await expect(svc).toBeVisible();
-  await svc.locator(".tp-chev").click();
-  await page.locator(`[id="tp-MF:MP:${p.service.id}"]`).locator(".tp-chev").click();
-  await expect(page.locator(`[id="tp-MF:MP:${p.service.id}"]`)).toContainText(/tasks to \d+ \w+ \d{4}/);
-  await expect(page.locator(`[id="tp-MF:MP:${p.service.id}:next"]`)).toContainText("Next visit");
+  await expect(svc).toContainText(/Next \d+ \w+ \d{4}/);
   await shot(page, "maintenance-tree-400");
   expect(await sideways(page)).toBeLessThanOrEqual(0);
   await expectHealthy(page, problems, { label: "maintenance tree 400" });
@@ -106,7 +125,9 @@ test("Add to package… takes a task from another branch of the asset; the packa
   const eng = page.locator(`[id="tp-MP:${p.engineOnly.id}"]`);
   await nameRow(page, `Deck ${tag}`).locator(".tp-chev").click();
   await nameRow(page, `Clean under the deck ${tag}`).locator(".tp-nm").click({ button: "right" });
-  await page.getByRole("menu").getByRole("menuitem", { name: "Add to package…" }).click();
+  // Open in › keeps its place in the menu; Add to package… is under More ›.
+  await page.getByRole("menu").getByRole("menuitem", { name: /^More/ }).click();
+  await page.getByRole("menuitem", { name: "Add to package…" }).click();
   const pane = page.locator("section.table-pane");
   // The engine's package is on the same asset: it can take the deck's task.
   const pick = pane.getByRole("radio", { name: new RegExp(`Engine checks ${tag}`) });

@@ -10,7 +10,7 @@ hidden: true
 ---
 
 The LSA (logistic support analysis) holds the *how* of your maintenance. In
-the Explorer it's part of the **Maintenance** tab: a **What it needs** section in each task's details. The RCM says what is done and why; the LSA says what each task
+the Explorer it's part of the **Maintenance** tab: each task's details have **Labour**, **Parts** and **Tools and method**. The RCM says what is done and why; the LSA says what each task
 needs to be done: who does it and for how long, the tools and instruments, the
 spares and consumables to bring, access and downtime, and the method. It's
 also where tasks are packaged into visits.
@@ -39,10 +39,48 @@ with **Interval**, **Next due**, **Cost each time**, **Trade**, **Packaged**,
 its whole programme; open or close a level with its arrow. Only the asset you
 opened is shown, and retired tasks aren't.
 
-Click a task to open it beside the table: change how often, its cost or what
-it prevents, and see the repairable RBDs that use it. **Add task…** on a row's
-**More actions (…)** adds one to that position. **Trade rates…** in the
-heading's **…** prices every task's labour.
+Click a task to open it beside the table. Its details read top to bottom:
+
+- **Kind of task**, then **What's done** (the action alone: *Replace the seal*).
+- **How often**: one line, *Every [50] [operating hours]*, with its next dates
+  and **Next due** under it. **More scheduling options** (folded) holds a second
+  limit (*or every 6 months, whichever comes first*), set calendar dates, at
+  planned shutdowns, and **When the item is replaced** (*Restart* or *Keep*,
+  the default named). Folded with something set, it says what in one line.
+- **Cost**, **Labour** and **Parts**, each folded with a line saying what's set
+  (*$40 each time*, *1.5 h mechanic*, *Spindle kit × 1*).
+
+A task from an RCM decision shows what the RCM owns in one line under its name,
+*From RCM: Drive belt cracked and breaks · Check condition · Open in RCM ›*: its
+failure modes, why it's done and its kind are changed on the RCM tab only. A
+task added directly has its kind, **Why it's done** and the failure modes it
+prevents here.
+
+A task's labour, parts and a typed cost also show as rows under it in the tree
+(*Labour · 1.5 h mechanic*, *Part · Spindle kit × 1*, *Cost · $40 each time*),
+only when they're set; open the task's arrow to see them. Click one to open the
+task at that part. They aren't tasks: no count includes them.
+
+**Add task…** on a row's **More actions (…)** adds one to that position.
+**Trade rates…** in the heading's **…** prices every task's labour.
+
+### What's done if it fails, or when it's found
+
+What's done when a failure mode happens anyway (*replace the drive belt*), and
+when an inspection finds it early, are tasks too, raised by that event rather
+than a schedule. They sit under their position like any other task, with the
+kind **Corrective: on failure** or **Follow-on: when found**, their failure mode
+named, and no **Next due**. Their details have the same parts, with the trigger
+(*Raised when Drive belt cracked and breaks fails*) in place of How often. A
+corrective one also has **Cost of the failure itself (besides the repair)**:
+how long a failure keeps it out of use, what an hour out of use costs, or a
+failure's whole cost typed (which overrides the repair's).
+
+Add one from the heading's **…** (**Add response if it fails…** or **Add
+follow-on…**, then pick the failure mode), or from a failure mode's menu on the
+RCM tab. The forecast uses their hours, parts and cost for each failure (or
+find) it expects; with none, it lists the gap under **Not counted**, with **Add**
+opening the form here.
 
 **Filter a column** with the funnel in its heading: tick the values to keep
 (an interval, a trade, a package, "In no package", a kind). The values listed
@@ -81,46 +119,47 @@ column then names each task's package; click it to open the package.
 
 A package shows as a row in the tree **at the lowest level all its tasks sit
 under**: a 50 h service with engine and deck tasks sits at the mower; one with
-only engine tasks sits at the engine. Its tasks are listed under it (each says
-which position it's on), and they still show under their own positions too,
-their **Packaged** cell naming the package. Where it sits is worked out from
+only engine tasks sits at the engine. It's one row: its tasks show under their
+own positions, each one's **Packaged** cell naming the package (click it to open
+the package). Open the package (click its row, or double-click it to see its
+details across the table) to see its tasks listed; a task's name there picks it
+in the tree. Where it sits is worked out from
 its tasks each time, so adding a task to it, or taking one out, moves it to the
 new meeting point. A package with none of its tasks on this asset yet sits
 where it was made. Only the asset you opened is shown: a package that also
 holds tasks on another asset says how many, and never shows them.
 
-## Forecasts under a task and a package
+## Next due, and forecasts
 
-Each task and each package has a **Forecast** row under it. Open it: its lines
-say when it's next due (a package: its next visit), how many times it comes in
-each month, the labour, the **Parts and spares** it uses (from what its LSA
-names) and what it costs, with the total over the next year. **Open the full
-forecast…** on that row opens the forecast for the level it sits at.
+The **Next due** column comes first and says when each task is next due, only
+when that's known: from when it was last done, a start date set on it, or a
+calendar rule. A task by running hours shows the reading it falls due at ("at
+1,250 h"), with a date only when the position has a duty or measured readings;
+the tooltip says what the date rests on. A task with no record shows a dash,
+and its tooltip says why. A position shows the soonest next due at and below
+it. Click the column's heading to sort by it: soonest first, then latest first;
+blanks always come last.
 
-**Forecast…** on a position's **…** runs the forecast for that level and
-everything inside it (the work, the expected failures and the costs to come,
-by month, quarter or year) in the table area, with the tree still beside it,
-and the **spares for the year** under it: what failures and tasks there will
-use, against stock and lead time. On a location, and on a product's design,
-it's **Spares for the year…** alone.
+There are no forecasts in the table. **Open in ›** in a position's, task's or
+package's menu opens the quick **Spares**, **Hours** or **Cost forecast** in
+**Decisions › Forecasts**, filled in from that row and everything below it
+([Quick forecasts](/guides/forecast-tools)).
 
 ## Say what a task needs
 
 Open a task (double-click its row, or choose **Open…** from its **⋯**). Its
-details have a **What it needs** section, folded to one line of totals (the
-labour hours, people and materials cost) until you choose **Show**. Opened, it
-lists the failure modes the task serves, then a group for each thing it needs.
-There is no Save of its own: change what you like and use the details' **Save**
-at the foot, which saves the task and what it needs together:
+**Labour** (a line per trade: how many people and the hours each, plus the
+elapsed hours of the job) and **Parts** (pick a part from the parts register,
+or type a name) are fold-outs of their own. The rest is in **Tools and
+method**, folded to one line saying what's set. Opened, it lists the failure
+modes the task serves, then a group for each other thing it needs. There is no
+Save of its own: change what you like and use the details' **Save** at the
+foot, which saves the task and what it needs together:
 
-- **Labour** — a line per trade: how many people and the hours each, plus the
-  elapsed hours of the job.
 - **Tools and instruments** — tools and test equipment. An instrument can name
   the measuring point or channel it reads (the free-chlorine point for a
   photometer), so which sensor does the monitoring is part of the how, not the
   RCM decision.
-- **Spares** — pick a part from the parts register (its part number shows), or
-  type a name for one that isn't in it.
 - **Consumables** — what the job uses up, with a quantity, a unit and, if you
   know it, the cost for that quantity.
 - **Access and downtime** — downtime hours, permits, isolation and access
@@ -145,8 +184,8 @@ shortest interval, and a task at a whole multiple of it goes on every Nth
 visit, so a 100 h oil change comes on every second 50 h service. The package
 counts from the position's hour meter reading now, and its page shows each
 visit's hours and the date it's expected, from the operating plan (else the
-meter's recent rate; with neither, the reading it's due at, such as "due at
-150 h"). It needs an hour meter on its position.
+meter's recent rate; with neither, running all the time, 24 hours a day, and
+it says so, with a link to set a duty). It needs an hour meter on its position.
 
 ## Let Reliafy draft the packages
 
@@ -184,6 +223,4 @@ A task's own **⋯** has **Remove from package…**.
 - A position's **Summary** shows **Next visit** under Work when its tasks are
   in a package.
 - A package's own page and its view here list **Parts for the visit**: each part
-  against the stock usable now, and when an order placed today lands. The
-  spares each task uses also count in the **spares for the year** under a
-  level's **Forecast…**, against stock and lead time.
+  against the stock usable now, and when an order placed today lands. 

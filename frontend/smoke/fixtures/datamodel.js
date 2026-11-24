@@ -37,7 +37,16 @@ export const DESIGN = {
 // Answer the page's three requests with these, as if this user had graph access.
 export async function stubGraph(page, { schema = SCHEMA, design = DESIGN, schemaStatus = 200 } = {}) {
   const json = (body, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) });
-  await page.route("**/api/maintenance/access", (r) => r.fulfill(json({ allowed: true, graph: true })));
+  const access = { allowed: true, graph: true };
+  await page.route("**/api/maintenance/access", (r) => r.fulfill(json(access)));
+  // The app frame reads maintenance access from the one bootstrap request
+  // first, so answer it there too.
+  await page.route("**/api/me/bootstrap", async (r) => {
+    const res = await r.fetch();
+    const body = await res.json().catch(() => ({}));
+    body.parts = { ...(body.parts || {}), maintenance_access: access };
+    await r.fulfill({ response: res, json: body });
+  });
   await page.route("**/api/maintenance/graph/schema", (r) => r.fulfill(schemaStatus === 200
     ? json(schema) : json({ detail: "unavailable" }, schemaStatus)));
   await page.route("**/api/maintenance/graph/design", (r) => r.fulfill(json(design)));

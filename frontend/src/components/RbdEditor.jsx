@@ -1,6 +1,8 @@
 import { useUnsavedSignal } from "../useUnsavedSignal.js";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import useMenuDismiss from "./useMenuDismiss.js";
+import RowMenu from "./RowMenu.jsx";
+import { buildMenu } from "../menuStandard.js";
 import { Link, useNavigate } from "react-router-dom";
 import { CloseIcon } from "./icons.jsx";
 import ReactFlow, {
@@ -48,10 +50,12 @@ import {
   KNode,
   RbdCcfContext,
   RbdRenameContext,
+  RbdVoteFixContext,
   RbdRepairableContext,
   RbdUnitContext,
   StructureNode,
 } from "./RbdNodes.jsx";
+import { clampNote, clampVotes, inputCounts } from "../rbdVotes.js";
 import { lazy, Suspense } from "react";
 import { unitInText } from "./unitText.js";
 import Chip from "./ui/Chip.jsx";
@@ -328,7 +332,7 @@ function useKeepOnScreen(open, popRef) {
 // a chip, "✓ Valid", "! 1 warning" or "✕ 2 problems", toned by the worst item, that opens the
 // full check. It never stops a save: a half-built diagram saves as it is and the chip says
 // what's left to do.
-function ValidationStatus({ validation, stale, validating, onValidate }) {
+function ValidationStatus({ validation, stale, validating, onValidate, onOpenBlock = null }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const close = useCallback(() => setOpen(false), []);
@@ -378,7 +382,8 @@ function ValidationStatus({ validation, stale, validating, onValidate }) {
         <span className="rbd-tb-caret"><Caret /></span>
       </button>
       <div className="ovm-menu rbd-valid-pop" hidden={!open} ref={popRef}>
-        <ValidationPanel validation={validation} stale={false} />
+        <ValidationPanel validation={validation} stale={false}
+          onOpenBlock={onOpenBlock ? (id) => { setOpen(false); onOpenBlock(id); } : null} />
         <button type="button" className="secondary sm" onClick={() => onValidate()}>
           Check again
         </button>
@@ -593,6 +598,20 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
   // Always-current snapshot of the canvas, so the AI assistant can read the
   // live diagram via the bridge without stale-closure issues.
   const liveRef = useRef({ nodes: [], edges: [], unit: "" });
+  // A block named in the check as needing a life model: open its model on the Builder.
+  const openBlockModel = useCallback((id) => {
+    const nodes = liveRef.current?.nodes || [];
+    const node = nodes.find((x) => x.id === id);
+    if (!node) return;
+    setTab("builder");
+    if (node.type === "standby") {
+      setStandbyCtx({ nodeId: id, ...node.data });
+      setModal("standby");
+      return;
+    }
+    setModalNodeId(originalId(nodes, id));
+    setModal("lifemodel");
+  }, []);
   liveRef.current = { nodes, edges, unit: rbdUnit, repairable, ccf_groups: ccfGroups, ...costsField };
   const { screenToFlowPosition, fitView, getNodes, getEdges, deleteElements } = useReactFlow();
   // The builder's own width (NARROW_BUILDER): measured, as the pane beside the tree is narrower
@@ -932,6 +951,27 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     fitWhenMeasured();
   }, [full, fitWhenMeasured]);
 
+  // Wires removed below what a vote node needs: it's clamped to the inputs left, and the
+  // flash says so (never silently). Wiring in never changes it.
+  const onEdgesChangeVotes = useCallback((changes) => {
+    const removed = new Set(changes.filter((c) => c.type === "remove").map((c) => c.id));
+    if (removed.size) {
+      const all = getEdges();
+      const { nodes: next, clamped } = clampVotes(getNodes(), inputCounts(all),
+        inputCounts(all.filter((e) => !removed.has(e.id))));
+      if (clamped.length) {
+        const ids = new Set(clamped.map((c) => c.id));
+        setNodes((nds) => nds.map((nd) => (ids.has(nd.id) ? next.find((x) => x.id === nd.id) : nd)));
+        setConnectHint(clampNote(clamped));
+      }
+    }
+    onEdgesChange(changes);
+  }, [getEdges, getNodes, setNodes, onEdgesChange]);
+  // "Make it 1 of 2" on a vote node that needs all of its inputs.
+  const fixVote = useCallback((id, n) => {
+    setNodes((nds) => nds.map((nd) => (nd.id === id ? { ...nd, data: { ...nd.data, n } } : nd)));
+  }, [setNodes]);
+
   // Clear the transient "connected N links" note after a moment.
   useEffect(() => {
     if (!connectHint) return undefined;
@@ -1028,7 +1068,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         nds.concat({
           id: `k${i}`,
           type: "knode",
-          data: { n, k, ...(label ? { label } : {}) },
+          data: { n, ...(k != null ? { k } : {}), ...(label ? { label } : {}) },
           position: clearSpot(nds, flowPos || { x: 240, y: 40 + ((i * 70) % 200) }),
         })
       );
@@ -1131,7 +1171,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           nds.map((node) => {
             if (node.id !== knodeCtx.nodeId) return node;
             const { label: _old, ...rest } = node.data;
-            return { ...node, data: { ...rest, n, k, ...(label ? { label } : {}) } };
+            return { ...node, data: { ...rest, n, ...(k != null ? { k } : {}), ...(label ? { label } : {}) } };
           })
         );
       } else {
@@ -1551,7 +1591,6 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
   // clamp it into the viewport — which flips it up when it would run off the
   // bottom (and left when it would run off the right edge).
   const menuRef = useRef(null);
-  useMenuDismiss(Boolean(menu), closeMenu, menuRef);
   useLayoutEffect(() => {
     const el = menuRef.current;
     if (!menu || !el) return;
@@ -1562,6 +1601,76 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     el.style.left = `${left}px`;
     el.style.top = `${top}px`;
   }, [menu]);
+
+  // The canvas's menus, to the standard (menuStandard.js), drawn by the shared RowMenu: a block's
+  // Open in the tree and Rename… on top, its edits in the middle, Delete… last after a line; the
+  // canvas's adds; a link's Delete….
+  const canvasMenuFor = () => {
+    if (!menu) return [];
+    if (menu.kind === "pane") {
+      const flow = menu.flow;
+      return buildMenu({
+        adds: [
+          { id: "add-component", label: "Add component", onSelect: () => addComponent(flow) },
+          ...(network ? [] : [
+            { id: "add-junction", label: "Add junction", onSelect: () => addKNode(flow, 1, 2) },
+            { id: "add-vote", label: "Add voting node (MooN)", onSelect: () => { setKnodeCtx({ mode: "add", flowPos: flow, n: 1 }); setModal("knode"); } },
+          ]),
+          // A standby group works in both: repairable, its units are each repaired (#156).
+          { id: "add-standby", label: "Add standby node", onSelect: () => addBlock("standby", flow) },
+          ...(repairable ? [] : [
+            { id: "add-loadshare", label: "Add load-sharing node", onSelect: () => addBlock("loadshare", flow) },
+            { id: "add-series", label: "Add series node", onSelect: () => addBlock("series", flow) },
+            { id: "add-parallel", label: "Add parallel node", onSelect: () => addBlock("parallel", flow) },
+            { id: "add-subsystem", label: "Add sub-system", onSelect: () => addBlock("subsystem", flow) },
+          ]),
+        ],
+        actions: [{ id: "auto-arrange", label: "Auto-arrange", onSelect: () => autoLayout() }],
+      });
+    }
+    if (menu.kind === "edge") {
+      return buildMenu({ destroy: { id: "edge-delete", kind: "delete", onSelect: () => deleteEdge(menu.id) } });
+    }
+    if (menu.protectedNode) {
+      return buildMenu({ destroy: { id: "node-delete", kind: "delete", disabled: true, reason: "Input and output can't be removed." } });
+    }
+    const id = menu.id;
+    const node = nodes.find((nd) => nd.id === id);
+    const t = menu.nodeType;
+    const planned = treePlan?.blocks?.[originalId(nodes, id)];
+    const path = planned ? treePositionPath(planned.position.id, repairable ? "maintenance" : "models") : null;
+    const openTree = () => {
+      const ev = { defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+      pane?.onOpenFull?.(ev, path);
+      if (!ev.defaultPrevented) navigate(path);
+    };
+    return buildMenu({
+      general: {
+        open: path ? { id: "node-open", label: "Open in the tree", onSelect: openTree } : null,
+        rename: { id: "node-rename", onSelect: () => rename.start(id) },
+      },
+      actions: [
+        ...(t === "component" || t === "series" || t === "parallel" ? [{ id: "node-model", label: menu.repeat ? "Edit non-repairable model (original)" : "Edit non-repairable model",
+          onSelect: () => { setModalNodeId(originalId(nodes, id)); setModal("lifemodel"); } }] : []),
+        ...(t === "series" || t === "parallel" ? [{ id: "node-count", label: "Set count (n)",
+          onSelect: () => { setCountCtx({ nodeId: id, kind: node?.type, label: node?.data.label, n: node?.data.n ?? 2 }); setModal("count"); } }] : []),
+        ...(t === "knode" ? [{ id: "node-vote", label: "Edit vote (MooN)",
+          onSelect: () => { setKnodeCtx({ mode: "edit", nodeId: id, n: node?.data.n ?? 1, inputs: inputCounts(getEdges())[id] || 0, label: node?.data.label || "" }); setModal("knode"); } }] : []),
+        ...(t === "standby" ? [{ id: "node-standby", label: "Edit standby", onSelect: () => { setStandbyCtx({ nodeId: id, ...node?.data }); setModal("standby"); } }] : []),
+        ...(t === "loadshare" ? [{ id: "node-loadshare", label: "Edit load-sharing", onSelect: () => { setLoadshareCtx({ nodeId: id, ...node?.data }); setModal("loadshare"); } }] : []),
+        ...(t === "subsystem" ? [{ id: "node-subsystem", label: "Select RBD…", onSelect: () => { setSubsystemNodeId(id); setModal("subsystem"); } }] : []),
+        { id: "node-status", label: "Status", items: [
+          { id: "node-working", label: "Working (never fails)", checked: menu.state === "working", onSelect: () => setNodeState(id, "working") },
+          { id: "node-failed", label: "Failed", checked: menu.state === "failed", onSelect: () => setNodeState(id, "failed") },
+          { id: "node-clear", label: "Not set", checked: !menu.state, onSelect: () => setNodeState(id, null) },
+        ] },
+        ...(t === "component" && !repairable && !network ? [{ id: "node-repeat", label: "Repeat block", onSelect: () => repeatNode(id),
+          title: "Draw the same component again elsewhere (e.g. one power supply feeding two trains): it works or fails in every place at once" }] : []),
+        { id: "node-copy", label: "Copy (not wired in)", onSelect: () => cloneNode(id) },
+      ],
+      destroy: { id: "node-delete", kind: "delete", onSelect: () => deleteNode(id) },
+    });
+  };
 
   const onPaneContextMenu = useCallback(
     (event) => {
@@ -1616,8 +1725,8 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           setKnodeCtx({
             mode: "edit",
             nodeId: node.id,
-            n: node.data?.n ?? 2,
-            k: node.data?.k ?? 3,
+            n: node.data?.n ?? 1,
+            inputs: inputCounts(getEdges())[node.id] || 0,
             label: node.data?.label || "",
           });
           setModal("knode");
@@ -1923,6 +2032,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
     <RbdRepairableContext.Provider value={repairable}>
     <RbdCcfContext.Provider value={ccfMap}>
     <RbdRenameContext.Provider value={rename}>
+    <RbdVoteFixContext.Provider value={savedRbdReadOnly ? null : fixVote}>
     <div className="rbd-shell" ref={shellRef}>
     {/* Beside the tree (no page title, and no pane heading on a wide screen) the diagram's name
         is the pane's title. */}
@@ -1965,7 +2075,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           Junction
         </button>
         <button className="ovm-item" onClick={() => {
-          setKnodeCtx({ mode: "add", flowPos: centrePos(), n: 2, k: 3 });
+          setKnodeCtx({ mode: "add", flowPos: centrePos(), n: 1 });
           setModal("knode");
         }}>
           Voting node (MooN)…
@@ -2064,6 +2174,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           stale={validationStale}
           validating={validating}
           onValidate={runValidate}
+          onOpenBlock={openBlockModel}
         />
         {/* The explicit Save: a diagram not saved yet, a sample (a copy), or autosave turned off. */}
         {!autosave && (
@@ -2185,7 +2296,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         edges={flowEdges}
         nodeTypes={nodeTypes}
         onNodesChange={handleNodesChange}
-        onEdgesChange={onEdgesChange}
+        onEdgesChange={onEdgesChangeVotes}
         onSelectionChange={onSelectionChange}
         onConnect={onConnect}
         onPaneContextMenu={onPaneContextMenu}
@@ -2224,264 +2335,19 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
       </ReactFlow>
 
       {menu && (
-        <div
-          ref={menuRef}
-          className="rbd-menu"
-          style={{ top: menu.y, left: menu.x }}
-        >
-          {menu.kind === "pane" && (
-            <>
-              <button
-                onClick={() => {
-                  addComponent(menu.flow);
-                  closeMenu();
-                }}
-              >
-                Add component
-              </button>
-              {!network && (
-                <>
-              <button
-                onClick={() => {
-                  addKNode(menu.flow, 1, 2);
-                  closeMenu();
-                }}
-                title="Merge parallel branches back into one — any branch is enough"
-              >
-                Add junction
-              </button>
-              <button
-                onClick={() => {
-                  setKnodeCtx({ mode: "add", flowPos: menu.flow, n: 2, k: 3 });
-                  setModal("knode");
-                  closeMenu();
-                }}
-              >
-                Add voting node (MooN)
-              </button>
-                </>
-              )}
-              {/* A standby group works in both: repairable, its units are each repaired (#156). */}
-              <button onClick={() => { addBlock("standby", menu.flow); closeMenu(); }}>
-                Add standby node
-              </button>
-              {!repairable && (
-                <>
-                  <button onClick={() => { addBlock("loadshare", menu.flow); closeMenu(); }}>
-                    Add load-sharing node
-                  </button>
-                  <button onClick={() => { addBlock("series", menu.flow); closeMenu(); }}>
-                    Add series node
-                  </button>
-                  <button onClick={() => { addBlock("parallel", menu.flow); closeMenu(); }}>
-                    Add parallel node
-                  </button>
-                  <button onClick={() => { addBlock("subsystem", menu.flow); closeMenu(); }}>
-                    Add sub-system
-                  </button>
-                </>
-              )}
-              <div className="rbd-menu-sep" />
-              <button onClick={() => { autoLayout(); closeMenu(); }}>
-                Auto-arrange
-              </button>
-            </>
-          )}
-          {menu.kind === "node" &&
-            (menu.protectedNode ? (
-              <span className="rbd-menu-note">Input/output can’t be removed</span>
-            ) : (
-              <>
-                {treePlan?.blocks?.[originalId(nodes, menu.id)] && (() => {
-                  const pos = treePlan.blocks[originalId(nodes, menu.id)].position;
-                  const path = treePositionPath(pos.id, repairable ? "maintenance" : "models");
-                  return (
-                    <>
-                      <Link className="rbd-menu-link" to={path} title={`${pos.name}, in the Explorer`}
-                            onClick={(e) => { closeMenu(); pane?.onOpenFull?.(e, path); }}>
-                        Open in the tree
-                      </Link>
-                      <div className="rbd-menu-sep" />
-                    </>
-                  );
-                })()}
-                {(menu.nodeType === "component" ||
-                  menu.nodeType === "series" ||
-                  menu.nodeType === "parallel") && (
-                  <>
-                    <button
-                      onClick={() => {
-                        setModalNodeId(originalId(nodes, menu.id));
-                        setModal("lifemodel");
-                        closeMenu();
-                      }}
-                    >
-                      {menu.repeat ? "Edit non-repairable model (original)" : "Edit non-repairable model"}
-                    </button>
-                    {(menu.nodeType === "series" ||
-                      menu.nodeType === "parallel") && (
-                      <button
-                        onClick={() => {
-                          const node = nodes.find((nd) => nd.id === menu.id);
-                          setCountCtx({
-                            nodeId: menu.id,
-                            kind: node?.type,
-                            label: node?.data.label,
-                            n: node?.data.n ?? 2,
-                          });
-                          setModal("count");
-                          closeMenu();
-                        }}
-                      >
-                        Set count (n)
-                      </button>
-                    )}
-                    <div className="rbd-menu-sep" />
-                  </>
-                )}
-                {menu.nodeType === "knode" && (
-                  <>
-                    <button
-                      onClick={() => {
-                        const node = nodes.find((nd) => nd.id === menu.id);
-                        setKnodeCtx({
-                          mode: "edit",
-                          nodeId: menu.id,
-                          n: node?.data.n ?? 2,
-                          k: node?.data.k ?? 3,
-                          label: node?.data.label || "",
-                        });
-                        setModal("knode");
-                        closeMenu();
-                      }}
-                    >
-                      Edit vote (MooN)
-                    </button>
-                    <div className="rbd-menu-sep" />
-                  </>
-                )}
-                {menu.nodeType === "standby" && (
-                  <>
-                    <button
-                      onClick={() => {
-                        const node = nodes.find((nd) => nd.id === menu.id);
-                        setStandbyCtx({ nodeId: menu.id, ...node?.data });
-                        setModal("standby");
-                        closeMenu();
-                      }}
-                    >
-                      Edit standby
-                    </button>
-                    <div className="rbd-menu-sep" />
-                  </>
-                )}
-                {menu.nodeType === "loadshare" && (
-                  <>
-                    <button
-                      onClick={() => {
-                        const node = nodes.find((nd) => nd.id === menu.id);
-                        setLoadshareCtx({ nodeId: menu.id, ...node?.data });
-                        setModal("loadshare");
-                        closeMenu();
-                      }}
-                    >
-                      Edit load-sharing
-                    </button>
-                    <div className="rbd-menu-sep" />
-                  </>
-                )}
-                {menu.nodeType === "subsystem" && (
-                  <>
-                    <button
-                      onClick={() => {
-                        setSubsystemNodeId(menu.id);
-                        setModal("subsystem");
-                        closeMenu();
-                      }}
-                    >
-                      Select RBD…
-                    </button>
-                    <div className="rbd-menu-sep" />
-                  </>
-                )}
-                {menu.state !== "working" && (
-                  <button
-                    onClick={() => {
-                      setNodeState(menu.id, "working");
-                      closeMenu();
-                    }}
-                  >
-                    Set working
-                  </button>
-                )}
-                {menu.state !== "failed" && (
-                  <button
-                    onClick={() => {
-                      setNodeState(menu.id, "failed");
-                      closeMenu();
-                    }}
-                  >
-                    Set failed
-                  </button>
-                )}
-                {menu.state && (
-                  <button
-                    onClick={() => {
-                      setNodeState(menu.id, null);
-                      closeMenu();
-                    }}
-                  >
-                    Clear status
-                  </button>
-                )}
-                <div className="rbd-menu-sep" />
-                {menu.nodeType === "component" && !repairable && !network && (
-                  <button
-                    onClick={() => {
-                      repeatNode(menu.id);
-                      closeMenu();
-                    }}
-                    title="Draw the same component again elsewhere (e.g. one power supply feeding two trains): it works or fails in every place at once"
-                  >
-                    Repeat block
-                  </button>
-                )}
-                <button
-                  onClick={() => {
-                    cloneNode(menu.id);
-                    closeMenu();
-                  }}
-                  title={menu.repeat ? "Another linked copy of the same component, not wired in" : "An independent copy with its own model, placed below and not wired in: drag lines to it, or use Add alongside to copy it in parallel"}
-                >
-                  Copy (not wired in)
-                </button>
-                <button
-                  onClick={() => rename.start(menu.id)}
-                  title="Rename the block (F2)"
-                >
-                  Rename
-                </button>
-                <button
-                  onClick={() => {
-                    deleteNode(menu.id);
-                    closeMenu();
-                  }}
-                >
-                  Delete node
-                </button>
-              </>
-            ))}
-          {menu.kind === "edge" && (
-            <button
-              onClick={() => {
-                deleteEdge(menu.id);
-                closeMenu();
-              }}
-            >
-              Delete edge
-            </button>
-          )}
-        </div>
+        <RowMenu items={canvasMenuFor()} at={{ x: menu.x, y: menu.y }} anchorId={null} onClose={closeMenu}
+                 label={menu.kind === "pane" ? "Add to the diagram" : menu.kind === "edge" ? "Actions for the link" : "Actions for the block"}
+                 onChoose={(id) => {
+                   const find = (list) => {
+                     for (const it of list) {
+                       if (it.id === id && it.onSelect) return it;
+                       const got = it.items && find(it.items);
+                       if (got) return got;
+                     }
+                     return null;
+                   };
+                   find(canvasMenuFor())?.onSelect();
+                 }} />
       )}
 
       {/* One short line until the first connection (#314). What an action
@@ -2502,6 +2368,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
           safety={repairable && !!policies.safety_function}
           capacity={nodes.find((n) => n.id === modalNodeId)?.type === "component"}
           jointBlock={nodes.find((n) => n.id === modalNodeId)?.type === "component"}
+          canNeverFail={nodes.find((n) => n.id === modalNodeId)?.type === "component"}
           conditions={conditions}
           nodeId={modalNodeId}
           onClose={() => {
@@ -2668,6 +2535,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
         rbdId={savedRbdId}
         name={savedRbdName}
         onBuild={toBuilder}
+        onOpenBlock={openBlockModel}
         onProduction={setProduction}
         onCurrentState={setAsOfState}
         onNodeData={(updates) =>
@@ -2759,6 +2627,7 @@ function Builder({ rbdId, imported, embedded = false, pane = null, onSaved, onMe
       </div>
     )}
     </div>
+    </RbdVoteFixContext.Provider>
     </RbdRenameContext.Provider>
     </RbdCcfContext.Provider>
     </RbdRepairableContext.Provider>

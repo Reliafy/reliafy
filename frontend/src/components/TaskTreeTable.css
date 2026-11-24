@@ -22,3 +22,6 @@
 .mt-fc-spares { margin-top: var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--border-subtle); }
 .mt-fc-spares:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
 .mt-fc-h { margin: 0 0 var(--space-2); font-size: var(--fs-14); line-height: var(--lh-14); font-weight: 600; color: var(--text); }
+/* A task's Kind cell with the supporting marker beside its kind ("Supports × 2"). */
+.mt-kind-cell { display: inline-flex; gap: var(--space-1); min-width: 0; max-width: 100%; overflow: hidden; }
+.mt-kind-cell > .pk-kind { flex: 0 1 auto; min-width: 0; }

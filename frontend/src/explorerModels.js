@@ -272,7 +272,7 @@ export function inUseWords(link) {
 // the table area (Open in the pane) or on its own page (Open full page).
 export function rowActions(r, { viewOnly = null } = {}) {
   const link = r.ref.link;
-  const off = viewOnly ? { disabled: true, title: viewOnly } : {};
+  const off = viewOnly ? { disabled: true, reason: viewOnly, title: viewOnly } : {};
   // A model's Strategy row: open it (the pane: its saved strategies and the tools that fit).
   if (r.ref.strategy) return [{ id: "model-strategy-open", label: "Open" }];
   // Strategy is optional (Derryn, 16 Nov 2026): offered quietly on a model a strategy tool takes.
@@ -293,13 +293,15 @@ export function rowActions(r, { viewOnly = null } = {}) {
       : link.model && /^(Weibull|Exponential|Lognormal)$/.test(link.model.kind || "") ? { id: "model-bayes", label: "Update with this position's history…", ...off } : null,
     // A covariate model (NSWC-11, ALT, PH): which covariates are fixed here, the rest set in an RBD.
     bindingOf(link) ? { id: "model-bind", label: "Fix covariates at this position…", ...off } : null,
+    // A single-distribution life model for the conditions here: a new model with a hazard ratio, in the pane.
+    link.model_type === "model" && link.model?.adjustable ? { id: "model-adjust", label: "Adjust for conditions…", ...off } : null,
     // A life model (not an RBD or a prediction) can be snapshotted into one of the user's data libraries.
     isLifeModelLink(link) ? { id: "model-to-library", label: "Add to library…", pro: true, ...off } : null,
     // Typed-in parameters (Assumed): changed in place, without unlinking and entering them again.
     link.model?.entered ? { id: "model-params-edit", label: "Edit parameters…", ...off } : null,
     strategy,
     rbd ? null : { id: "model-replace", label: "Replace with…", ...off },
-    { id: "model-unlink", label: "Unlink…", ...off },
+    { id: "model-unlink", label: "Unlink…", danger: true, ...off },
   ].filter(Boolean);
 }
 

@@ -40,10 +40,24 @@ def _label(node: dict) -> str:
     return str(d.get("label") or node.get("label") or node.get("id") or "a block")
 
 
+#: Blocks whose life is a model on the block (a load-sharing block names its saved model).
+_MODEL_BLOCKS = ("component", "series", "parallel", "standby")
+
+
 def _is_placeholder(node: dict) -> bool:
+    """A block on a placeholder life, or on no life model at all (then the diagram isn't worked out
+    until it has one). A block pinned Working or Failed needs none."""
     d = node.get("data") or {}
     model = d.get("model") if isinstance(d.get("model"), dict) else node.get("model")
-    return isinstance(model, dict) and bool(model.get("placeholder"))
+    if isinstance(model, dict) and model.get("placeholder"):
+        return True
+    if node.get("type") not in _MODEL_BLOCKS or d.get("state") in ("working", "failed") or d.get("repeat_of"):
+        return False
+    if node.get("type") == "standby":
+        from backend.services import rbd_standby
+
+        return not rbd_standby.model_paths(d) and not isinstance(node.get("model"), dict)
+    return not (isinstance(model, dict) and model)
 
 
 def tally(graph: dict, resolve_subsystem: Optional[Callable[[str], Optional[dict]]] = None,
@@ -125,9 +139,9 @@ def words(t: dict) -> str:
     """"27 of 27 basic blocks are placeholders" (or "1 of 12 basic blocks is a placeholder")."""
     ph, basic = t["placeholders"], t["basic"]
     if basic == 1:
-        return "its one block is a placeholder" if ph else ""
+        return "its one block has no real life model yet" if ph else ""
     what = "basic blocks" if t.get("by_node") is None or nested(t) else "blocks"
-    return f"{ph:,} of {basic:,} {what} {'is a placeholder' if ph == 1 else 'are placeholders'}"
+    return f"{ph:,} of {basic:,} {what} {'has' if ph == 1 else 'have'} no real life model yet"
 
 
 def names_text(t: dict) -> str:

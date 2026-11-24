@@ -120,7 +120,10 @@ Plain series/parallel covers a lot, but real systems need more, and the canvas
 has block types for the common cases:
 
 - **Voting node (MooN)** — k-out-of-n voting: the system needs at least *k* of the *n* branches
-  feeding the gate. Three sensors where any two must agree is a 2-of-3.
+  feeding the gate. Three sensors where any two must agree is a 2-of-3. You set only *k*
+  (it starts at 1); *n* is the branches you wire into it. A node that needs more than are wired in
+  can't be calculated, and one that needs all of them (2 of 2) adds no redundancy, so it says so
+  and offers **Make it 1 of 2**.
 - **Standby group** — spares that sit dormant (cold, the default) or lightly
   loaded (warm), or run all the time (hot), until switched in. The risk here is the *switching*: the
   **Chance a spare starts** is 1 (every spare starts) until you set it, and 0.95–0.99 is
@@ -164,6 +167,13 @@ anything, if a component is missing its non-repairable model, or if a k-of-n
 setting leaves no path through the system at all. It also tells you whether the
 diagram can be solved in closed form or needs simulation. **Check again** in the
 list runs it on demand.
+
+Blocks with no life model are listed together, **These blocks need a life
+model**, each name a link that opens its model. Nothing is calculated until
+each has one: Reliafy never invents a life for a block. A block that never
+fails (a frame, a pipe) can be marked **Working** under **Status** instead.
+A block that uses a saved model always takes the model as it is now, so
+refitting the model updates every diagram that uses it.
 
 Fix anything it reports, then switch to the **Calculator** tab and press
 **Calculate**. For the sample pump station (a controller in series with two

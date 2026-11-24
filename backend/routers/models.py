@@ -473,6 +473,81 @@ def paste_dataset(
                                  **({"library": added} if added else {})})
 
 
+def _notation_error(exc) -> JSONResponse:
+    """A typed text that can't be read: SurPyval's words, with where (``where``: entry, line, column, start,
+    end)."""
+    return JSONResponse(status_code=422, content={"detail": str(exc), "where": exc.payload()})
+
+
+@router.post("/datasets/notation/read")
+def read_notation(
+    text: str = Body(default=""),
+    unit: str | None = Body(default=None),
+    lifetimes: bool = Body(default=False),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """New dataset's "Type it in": what typed text says, as it is typed (the live reading), and the columns
+    it would be saved with. Saves nothing. ``text`` in SurPyval's notation (``120, 310, [400, 450],
+    1000+``; one ``P1: …`` history per line for repairable data). Text that can't be read is an answer
+    here, not a failure (it's mid-typing): ``{"error", "where"}`` with 200. ``lifetimes``: also the Lifetimes
+    view's payload for the unsaved data (``lifetimes``, as ``GET /api/datasets/{id}/lifetimes`` answers for a
+    saved dataset; ``{"error"}`` where a fit would refuse the rows), so the chart draws as you type."""
+    from backend.services import notation
+
+    try:
+        out = notation.read(text, unit)
+    except notation.NotationError as exc:
+        return JSONResponse(content={"error": str(exc), "where": exc.payload()})
+    if lifetimes:
+        out["lifetimes"] = notation.draft_lifetimes(out)
+    return JSONResponse(content=out)
+
+
+@router.post("/datasets/notation")
+def create_from_notation(
+    name: str = Body(default=""),
+    text: str = Body(default=""),
+    unit: str | None = Body(default=None),
+    library_id: str | None = Body(default=None),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """Save typed text (SurPyval's notation) as a dataset: stored as the CSV the same data in a spreadsheet
+    would be, with its reading, so everything downstream reads it as any other dataset. ``name`` and
+    ``unit`` are needed, as for an upload."""
+    from backend.services import notation
+
+    if not (name or "").strip():
+        return JSONResponse(status_code=422, content={"detail": "Give the dataset a name."})
+    if not (unit or "").strip():
+        return JSONResponse(status_code=422, content={
+            "detail": "Give the unit of the times (hours, cycles, km…), or say they have none."})
+    try:
+        out = notation.read(text, unit)
+    except notation.NotationError as exc:
+        return _notation_error(exc)
+    lib = _upload_library(session, ctx, library_id)
+    if isinstance(lib, JSONResponse):
+        return lib
+    csv_bytes, reading, name = out["csv"].encode(), out["reading"], name.strip()
+    denied = _creation_denied(session, ctx, "datasets")
+    if denied is not None and datasets_service.find_reusable(
+            session, ctx.write_owner, storage.checksum(csv_bytes), name, reading) is None:
+        return denied
+    try:
+        dataset, reused = datasets_service.create_or_reuse(session, name, csv_bytes, ctx.write_owner, reading=reading)
+    except (FitError, dataset_reading.ReadingError) as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Failed to store a typed dataset")
+        return JSONResponse(status_code=500, content={"detail": "Failed to store the dataset. The error has been logged."})
+    added = _into_library(session, ctx, lib, [(dataset, reused)])
+    if isinstance(added, JSONResponse):
+        return added
+    return JSONResponse(content={**_created(dataset, reused, session, ctx, 1, None),
+                                 **({"library": added} if added else {})})
+
+
 def _reading_form(raw: str | None):
     """The ``reading`` form field (JSON) as a dict, None when left out, or the 422."""
     import json
@@ -630,6 +705,72 @@ def download_dataset_csv(
         "Content-Disposition": f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name)}",
         "Cache-Control": "no-store",
     })
+
+
+@router.get("/datasets/{dataset_id}/notation")
+def dataset_notation(
+    dataset_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """The dataset page's "Show as text": its life data in SurPyval's notation (``120, 310, 1000+``), read
+    as its reading says, for a dataset of up to 200 rows. 422 says why one can't be written so."""
+    from backend.services import notation
+
+    dataset, _ = access_service.fetch_readable(session, "datasets", Dataset, dataset_id, ctx)
+    if dataset is None or dataset.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
+    reading, _source = dataset_reading.for_dataset_db(session, dataset, ctx.read_owners, ctx.hidden)
+    try:
+        if dataset.n_rows > notation.MAX_TEXT_ROWS:
+            raise notation.NotationError(f"This dataset has {dataset.n_rows:,} rows; the text is offered up to "
+                                         f"{notation.MAX_TEXT_ROWS}. Download the CSV instead.")
+        out = notation.dataset_text(datasets_service.load_dataframe(dataset), reading)
+    except notation.NotationError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    return JSONResponse(content={**out, "unit": reading.get("unit") or ""})
+
+
+def _lifetimes(session, ctx: AccessCtx, dataset_id: str, draft: dict | None) -> JSONResponse:
+    from backend.services import lifetimes as lifetimes_service
+
+    dataset, _ = access_service.fetch_readable(session, "datasets", Dataset, dataset_id, ctx)
+    if dataset is None or dataset.id in ctx.hidden:
+        return JSONResponse(status_code=404, content={"detail": "Dataset not found."})
+    try:
+        if draft is None:
+            reading, source = dataset_reading.for_dataset_db(session, dataset, ctx.read_owners, ctx.hidden)
+        else:
+            reading, source = dataset_reading.normalize(draft, dataset.columns, require_x=False), "draft"
+        out = lifetimes_service.for_dataset(dataset, reading)
+    except dataset_reading.ReadingError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    except lifetimes_service.LifetimesError as exc:
+        # What a fit would say about these rows: shown in place of the lines.
+        return JSONResponse(content={"error": client_message(exc), "lines": [], "source": source})
+    return JSONResponse(content={**out, "source": source})
+
+
+@router.get("/datasets/{dataset_id}/lifetimes")
+def dataset_lifetimes(
+    dataset_id: str, session=Depends(get_session), ctx: AccessCtx = Depends(get_access)
+) -> JSONResponse:
+    """One line per unit (or per system), read with the dataset's reading the
+    way a fit reads it: where each came under observation, and how it ended
+    (failed, still running, failed before, failed in a window), for the
+    dataset page's Lifetimes view. Past 5,000 lines an even sample in time
+    order (``sampled``); the counts are of every unit."""
+    return _lifetimes(session, ctx, dataset_id, None)
+
+
+@router.post("/datasets/{dataset_id}/lifetimes")
+def dataset_lifetimes_draft(
+    dataset_id: str,
+    reading: dict = Body(..., embed=True),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """The lifetimes with a draft reading (Change, before it is saved):
+    nothing is kept."""
+    return _lifetimes(session, ctx, dataset_id, reading)
 
 
 @router.get("/datasets/{dataset_id}/rows")
@@ -1054,6 +1195,39 @@ def create_from_params(
     except FitError as exc:
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     return JSONResponse(content=_model_detail(model, ctx))
+
+
+@router.post("/models/{model_id}/adjust")
+def adjust_model(
+    model_id: str,
+    hazard_ratio: float | None = Body(default=None),
+    life_scale: float | None = Body(default=None),
+    name: str | None = Body(default=None),
+    save: bool = Body(default=False),
+    session=Depends(get_session),
+    ctx: AccessCtx = Depends(get_access),
+) -> JSONResponse:
+    """Adjust for conditions: the model with a known hazard ratio (``hazard_ratio`` times the hazard at
+    every age, the same shape), or the ratio that makes it last ``life_scale`` times as long (a Weibull or
+    an exponential only). Without ``save``: what it does, B10 and mean life before and after, nothing
+    saved. With ``save``: a new model (``name``, default "<name> (×1.5 hazard)") that records this one
+    and the ratio; this one is unchanged. Counts against the model cap."""
+    from backend.services import model_adjust
+
+    model, _ = access_service.fetch_readable(session, "models", Model, model_id, ctx)
+    if model is None:
+        return JSONResponse(status_code=404, content={"detail": "Model not found."})
+    try:
+        if not save:
+            return JSONResponse(content=model_adjust.preview(session, model, ctx.read_owners, hazard_ratio, life_scale))
+        denied = _creation_denied(session, ctx, "models")
+        if denied is not None:
+            return denied
+        doc = model_adjust.adjust(session, model, ctx.read_owners, ctx.write_owner, hazard_ratio, life_scale, name)
+        access_service.stamp_editor(session, "models", doc.id, ctx)
+    except (model_adjust.AdjustError, FitError) as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+    return JSONResponse(content=_model_detail(doc, ctx))
 
 
 @router.post("/models/per-demand")

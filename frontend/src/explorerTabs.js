@@ -96,6 +96,14 @@ export const TABS = [
     id: "maintenance", label: "Maintenance", title: "Every maintenance task here and below, the packages they're done in, and the forecast of each: how often, when it's next due and what it costs",
     kinds: ["pos", "loc"],
   },
+  // How each position runs (Derryn, 23 Nov 2026: Operations is the record of what a real asset
+  // does): its duty, its own or the one it takes from above ("from Site A"), other use, the
+  // shutdowns and outages that take it off-line, and its time zone. Built assets only: a product's
+  // design has no operations (its missions will carry their own calendars). explorerOperations.js.
+  {
+    id: "operations", label: "Operations", title: "How it runs: its duty (its own or from above), other use, planned shutdowns and outages, and its time zone",
+    kinds: ["pos", "item"], asset: true,
+  },
   // A design's positions have it too (designKinds): the reports on the items built from the
   // product, here and below; its design locations don't.
   {
@@ -116,6 +124,12 @@ export const TABS = [
   // explorerMissions.js nestMissions). It was two views, Life models and Missions, until then;
   // ?tab=missions opens this one (TAB_ALIASES).
   { id: "models", label: "Models", title: "The models on this position and the positions inside it, with the missions flown on them: what each says, where it came from and what uses it", kinds: ["pos"] },
+  // Every mission here and below (Derryn, 23 Nov 2026: missions are the deliberate, saved "what
+  // will happen"; step 3 of the missions plan): each under the position it lives on, with its
+  // phases, their covariates and node status rules; a mission opens with its setup (start,
+  // calendar, starting state) and its two answers. A design's positions have it too (their
+  // missions carry their own calendar). The Models tab keeps them under their models for now.
+  { id: "missions", label: "Missions", title: "The missions here and below: each one's phases, its start and calendar, the chance it completes and the failures to expect", kinds: ["pos"] },
   // An item class (a row of the tree by Classes) has this one tab and no Summary: its fleet. A
   // position on an asset has it too, in every arrangement: its own risk now (one id and one label,
   // so the tab stays picked from a class to a position and on to the next). Not a design's
@@ -156,7 +170,8 @@ export const DEFAULT_TAB = "summary";
 // Earlier tab ids and the tab they open now (Derryn, 9 Nov 2026: Packages became
 // the LSA tab, packaging included).
 // Missions became rows of the Models tab, under the model each is flown on (22 Nov 2026).
-export const TAB_ALIASES = EXPLORER_LSA_TAB ? { packages: "lsa", missions: "models" } : { packages: "maintenance", lsa: "maintenance", missions: "models" };
+// Missions had been rows of the Models tab alone from 22 Nov 2026; ?tab=missions is its own tab again (23 Nov).
+export const TAB_ALIASES = EXPLORER_LSA_TAB ? { packages: "lsa" } : { packages: "maintenance", lsa: "maintenance" };
 
 // An old address of the Maintenance tab's inner views (?tab=lsa: What it needs, Packages, Spares;
 // ?tab=maintenance&mview=forecast), as the one table opens the same thing: a package open
@@ -180,8 +195,34 @@ export function maintenanceRedirect(params, { tabKey = "tab" } = {}) {
     q.delete("task");
   }
   q.delete("packaging");
-  if ((mview === "forecast" || mview === "spares") && q.get("sel") && !q.get("forecast") && !q.get("mpkg") && !q.get("mtask")) q.set("forecast", q.get("sel"));
   return q;
+}
+
+// The quick spares forecast in the left menu (Decisions › Forecasts › Spares forecast), started
+// from a position (and one of its tasks) in the asset opened (`root`): it fills in what's recorded.
+export function sparesForecastLink({ position = null, task = null, root = null } = {}) {
+  const q = new URLSearchParams();
+  if (task) q.set("from", `task:${task}`);
+  else if (position) q.set("from", `position:${position}`);
+  if (root) q.set("root", root);
+  const text = q.toString();
+  return `/forecasts/spares${text ? `?${text}` : ""}`;
+}
+
+// An old address of an Explorer forecast (Derryn, 23 Nov 2026: no forecasts in the Explorer):
+// ?forecast=<position> (a level's Forecast…), ?mview=forecast or spares with a row picked, or a
+// task's or package's Forecast row picked (?sel=MF:MT:<task>): the spares forecast, filled in
+// from that position (or task) where it can be. Null: not one.
+export function forecastRedirect(params, { tabKey = "tab" } = {}) {
+  const mview = params.get("mview");
+  const sel = params.get("sel") || "";
+  const old = params.get("forecast") || ((mview === "forecast" || mview === "spares") && params.get(tabKey) === "maintenance" ? sel || "-" : null)
+    || (sel.startsWith("MF:") ? sel : null);
+  if (!old) return null;
+  const root = params.get("root");
+  if (old.startsWith("MF:MT:")) return sparesForecastLink({ task: old.slice(6), root });
+  if (old.startsWith("MF:") || old === "-") return sparesForecastLink({ root });
+  return sparesForecastLink({ position: old, root });
 }
 
 // The tab the address asks for, if it's one (else Summary).
@@ -314,7 +355,7 @@ export function classesInBranch(display, branch) {
 //
 // The panel's tabs as one flat row, ordered by use, the ones that don't fit folded into a last
 // "⋯ N" tab (the shared Tabs with `overflow`):
-//   Summary · Maintenance · Monitoring · RCM · FME(C)A · Models · History
+//   Summary · Operations · Maintenance · Monitoring · RCM · FME(C)A · Models · History
 // Maintenance is one view (its tasks, packages and forecasts in the tree: no inner views since
 // 22 Nov 2026); Monitoring has Readings (Measurements) · Life left (Condition
 // monitoring: the chance of failing soon and the life left); Models is one view, its missions rows
@@ -331,6 +372,7 @@ export const EXPLORER_PANEL_TABS = true;
 
 export const PANEL_TABS = [
   { id: "summary", label: "Summary", views: [{ id: "summary", tab: "summary" }] },
+  { id: "operations", label: "Operations", views: [{ id: "operations", tab: "operations" }] },
   {
     id: "maintenance", label: "Maintenance", title: "The maintenance tasks here and below, the packages they're done in, and their forecasts",
     designTitle: "The maintenance programme here: its tasks and what each needs",
@@ -348,6 +390,7 @@ export const PANEL_TABS = [
   { id: "fmea", label: "FME(C)A", views: [{ id: "fmea", tab: "fmea" }] },
   // One view (22 Nov 2026): the models, each with the missions flown on it as rows under it.
   { id: "models", label: "Models", views: [{ id: "models", tab: "models" }] },
+  { id: "missions", label: "Missions", views: [{ id: "missions", tab: "missions" }] },
   { id: "history", label: "History", designLabel: "Field reports", views: [{ id: "reports", label: "Failure reports", tab: "reports" }] },
 ];
 
@@ -401,6 +444,27 @@ export function viewTarget(row, tabId, viewId = null, { preview = false } = {}) 
   if (!p) return null;
   const v = (viewId && p.views.find((x) => x.id === viewId)) || p.views[0];
   return { tab: v.tab, mview: v.mview || null };
+}
+
+// The tree-table tabs: each one's rows hang under positions, so on it the tree is arranged by
+// positions and the Positions / Locations / Classes switch is locked, saying why. One list for
+// both (the arrangement the tree takes and the switch's lock), so a tab can never force the
+// positions tree while the switch still looks live: clicking Locations then changed nothing (the
+// Maintenance tab did, until 23 Nov 2026).
+const POSITIONS_TREE_TABS = {
+  operations: () => `A duty is set on a position, so ${tabPlace("operations")} shows the positions tree`,
+  maintenance: () => `Tasks hang under their positions, so ${tabPlace("maintenance")} shows the positions tree`,
+  measurements: () => `Measurements hang under their positions, so ${tabPlace("measurements")} shows the positions tree`,
+  models: () => `Models and their missions hang under their positions, so ${tabPlace("models")} shows the positions tree`,
+  missions: () => `Missions belong to positions, so ${tabPlace("missions")} shows the positions tree`,
+  rcm: () => "RCM is by position, so the RCM tab shows the positions tree",
+  fmea: () => "FME(C)A is by position, so the FME(C)A tab shows the positions tree",
+};
+export const TREE_TABLE_TABS = new Set(Object.keys(POSITIONS_TREE_TABS));
+
+// Why the tree is by positions on `tab` (the switch's lock, its tooltip), or null: any arrangement.
+export function positionsTreeLock(tab) {
+  return POSITIONS_TREE_TABS[tab]?.() ?? null;
 }
 
 // The words that name where an address tab is, for text that sends you there ("Models › Life

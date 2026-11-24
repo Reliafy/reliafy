@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.12.7 (unreleased)
+
+Needs a server on the same release.
+
+- **Operations** (Maintenance, operators): `maintenance get.operations` reads every position's duty in
+  one call (`root` the asset opened, or `id` one position): its own operating plan or the one it takes
+  from the nearest position above it (`duty.source` own / inherited / none, `duty.from`), what clearing
+  its own would leave it on (`parent_duty`), other use (km or cycles a day), the shutdown and outage
+  windows that take it off-line over the next year, its own and inherited, and its time zone.
+  `reliafy maintenance get.operations --root …`. Duties are still set with `positions.update`
+  (`operating_plan`, `end_operating_plan`).
+- **Calendar schedules on tasks** (Reliafy Maintenance): a task's `rule` takes `{kind: 'shutdowns', every:
+  12, unit: 'months'}`, done at the first planned shutdown of its position that long after it was last
+  done; a monthly rule every 2, 3, 4 or 6 months with an `anchor` falls in the same months each year (1
+  March and 1 September), and `day: 31` is the month's last day. `maintenance rcm.optimise` with `use`
+  and `as_rule` keeps a task's calendar rule at the step nearest the answer.
+- **Type a few lives in**: `change dataset_upload` takes `notation`, small data typed as text in
+  SurPyval's notation, instead of `csv` or `upload_id`: `120, 310, [400, 450], 1000+` (plain numbers
+  failed, `1000+` still running at 1000, `[a, b]` failed in that window, `<50` failed before 50,
+  `3*200` three alike, `| (tl, tr]` the window an entry was observed in), or one `P1: 120, 310, 1000+`
+  history per line for repairable data. `unit` is needed. It's saved as the CSV of the same data
+  (columns `x` or `xl`/`xr`, `c`, `n`, `tl`, `tr`, `i`) with its reading, and `read_as` says what was
+  read. `reliafy upload --notation "120, 310, 1000+" --name Seals --unit hours`, and
+  `Client.upload_notation(text, name=…, unit=…)`. The REST twin (`POST /api/v1/change/dataset_upload`)
+  takes it too.
+- **Adjust a model for conditions**: `change model_adjust` makes a new model from a non-repairable one
+  with a known hazard ratio (`hazard_ratio`: 1.5 is 1.5 times the hazard at every age, the same shape),
+  or the ratio that makes a Weibull or exponential last `life_scale` times as long. It records the
+  original, which is unchanged, and gives the B10 and mean life before and after; `save=false` only
+  previews. `reliafy change model_adjust --model-id … --hazard-ratio 1.5`.
+- `maintenance position_models.link` takes `hazard_ratio` with `library_record_id` (or `bind` with every
+  covariate fixed): the record adjusted for the conditions at that position.
+
 ## 0.12.6 (unreleased)
 
 Needs a server on the same release.

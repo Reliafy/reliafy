@@ -111,6 +111,17 @@ A row's **⋯** has **Refit…** (a fitted model), **Replace with…** and
 A product's design carries models too. An item built from the product takes
 its design's models when it's built, as it takes the RCM.
 
+### Adjust a model for the conditions here
+
+A model row's **⋯ → Adjust for conditions…** opens in the table area: give a hazard ratio
+(1.5 is 1.5 times the hazard, harsher), or for a Weibull or exponential how long it lasts
+here. It shows the B10 and mean life now and adjusted, then saves a new model with the ratio
+and either uses it here in place of the row's model (the default) or adds it beside it. The
+original model, and every other position and RBD that uses it, is unchanged. Adding a record
+from the data library takes the same hazard ratio as an option (with every covariate fixed,
+for a record that has them). The [Fit your first model](/guides/fit-your-first-model)
+guide says more.
+
 ## Accelerated-life and covariate models
 
 An accelerated-life model (how life shortens with temperature, voltage or
@@ -179,9 +190,9 @@ with none, its class's fitted model; with neither but positions inside it (a
 sub-assembly such as Propulsion, whose lives are its motors' and propellers'),
 its own RBD, built from what's inside it the same way and brought in as a
 sub-system (a position with its own RBD in use comes in as a sub-system too).
-Only a position with none of these gets a placeholder, flagged: the row warns
-until each has a model, and a placeholder inside a sub-system is named with
-its path (Propulsion › ESC 1). Each block's tooltip, and the RBD row's panel,
+Only a position with none of these gets a block with no model: no life is
+invented for it, the diagram isn't calculated until each block has one, and a
+block inside a sub-system is named with its path (Propulsion › ESC 1). Each block's tooltip, and the RBD row's panel,
 say where its model came from. They're wired by their connections and
 redundancy sets (below), in series where there are none. A repairable diagram can't
 take sub-systems: its **Maintenance plan** names them and offers **Expand
@@ -201,7 +212,7 @@ second diagram.
 **RBD › New blank RBD…** starts a diagram of the position's own, on any
 position, a leaf included. Choose **Non-repairable** (the default) or
 **Repairable**, and start either with **one block for the position itself**
-(its life model in use, or a placeholder until it has one) or **empty**. It's
+(its life model in use, or no model until it has one) or **empty**. It's
 saved in your RBDs, linked to the position as its RBD, and opens beside the
 tree.
 
@@ -266,11 +277,11 @@ mark them as a set only if the system can run without one of them.
 
 The RBD row shows the system's MTBF and B10, and its panel lists every block
 with its model and the position it came from; type an age to see the
-system's reliability there. Double-click the row (or **Open in the pane**) to
+system's reliability there. Double-click the row (or **Open** in its menu) to
 edit the diagram beside the tree; **Open full page** opens it on its own page.
 **Rebuild from what's inside…** (on the row, or under **RBD ›**) opens the
 diagram and asks first; **Rebuild** then adds the positions inside that have
-no block yet, and gives a block still on a placeholder the model its position
+no block yet, and gives a block still with no model the model its position
 has now, keeping your other edits.
 
 ## The model in use

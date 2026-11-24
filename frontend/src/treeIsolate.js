@@ -67,6 +67,62 @@ export function isolateOpen(display, open, key, depth) {
   return next;
 }
 
+// ---- Focus <a kind of row> (the Focus › menu's What section) ----------------------
+// The kinds of row each tab's table shows, that a row can be focused on: the way down to them
+// opened, they themselves left closed (so "Focus failure modes" shows the modes, not their tasks).
+export const FOCUS_KINDS = {
+  maintenance: [{ id: "tasks", label: "tasks", types: ["mtask"] }, { id: "packages", label: "packages", types: ["mpkg"] }],
+  rcm: [{ id: "functions", label: "functions", types: ["fn"] }, { id: "modes", label: "failure modes", types: ["mode"] }, { id: "tasks", label: "tasks", types: ["task"] }],
+  fmea: [{ id: "functions", label: "functions", types: ["fn"] }, { id: "modes", label: "failure modes", types: ["mode"] }],
+  measurements: [{ id: "meas", label: "measurements", types: ["meas"] }],
+  models: [{ id: "models", label: "models", types: ["pmodel"] }, { id: "missions", label: "missions", types: ["mission"] }],
+};
+export const focusKind = (tab, id) => (FOCUS_KINDS[tab] || []).find((k) => k.id === id) || null;
+// The tab's kinds that are somewhere inside the row `key` (not the row itself).
+export function focusKinds(tab, display, key) {
+  const list = FOCUS_KINDS[tab] || [];
+  const top = display?.rows.get(key);
+  if (!list.length || !top) return [];
+  const seen = new Set();
+  const stack = [...top.kids];
+  while (stack.length) {
+    const r = display.rows.get(stack.pop());
+    if (!r) continue;
+    seen.add(r.type);
+    stack.push(...r.kids);
+  }
+  return list.filter((k) => k.types.some((t) => seen.has(t)));
+}
+// What's open after focusing `key` on the rows of `types`: the rows above it, and every row inside
+// it on the way down to one of those (they stay closed), nothing else in the display. Rows outside
+// the display keep what they had.
+export function isolateKindOpen(display, open, key, types) {
+  const top = display?.rows.get(key);
+  const next = new Set([...(open || [])].filter((k) => !display?.rows.has(k)));
+  if (!top) return new Set(open || []);
+  for (let up = top.parent; up != null; up = display.rows.get(up)?.parent ?? null) next.add(up);
+  const want = new Set(types);
+  const memo = new Map();
+  const leads = (k) => {
+    if (memo.has(k)) return memo.get(k);
+    memo.set(k, false);
+    let y = false;
+    for (const c of display.rows.get(k)?.kids || []) if (want.has(display.rows.get(c)?.type) || leads(c)) y = true;
+    memo.set(k, y);
+    return y;
+  };
+  const stack = [key];
+  while (stack.length) {
+    const r = display.rows.get(stack.pop());
+    if (!r || (r.key !== key && want.has(r.type))) continue;
+    if (leads(r.key)) {
+      next.add(r.key);
+      stack.push(...r.kids);
+    }
+  }
+  return next;
+}
+
 // ---- Clear focus ----------------------------------------------------------------
 // A focus remembers what was open before it (the first focus of a run: focusing
 // again moves the focus, and Clear focus still goes back to the start), so

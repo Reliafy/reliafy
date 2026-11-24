@@ -36,3 +36,14 @@ test("a first-failures forecast's CSV has its years: failures and cost, with ran
   assert.ok(lines.includes("1,1,12,6.2,4,8,620,400,800"));
   assert.ok(lines.includes("2,13,24,3.3,1,6,330,100,600"));
 });
+
+test("items with a count get a units column", () => {
+  const text = fleetForecastCsv({
+    items: [{ id: "a", name: "Shipped Jan", current_use: 6, count: 450 }, { id: "b", name: "Spare", current_use: 0 }],
+    perItem: { a: { prob_any: 0.25, expected: 112.5 } }, defaultRate: 1, forecast: {},
+  });
+  const lines = text.split("\n");
+  assert.equal(lines[0], "item,units,current_use,rate_per_period,prob_any_failure,expected_failures");
+  assert.equal(lines[1], "Shipped Jan,450,6,1,0.25,112.5");
+  assert.equal(lines[2], "Spare,1,0,1,,");
+});

@@ -15,7 +15,8 @@ import { saveErrorText } from "../confirm.js";
 import { explorerHere } from "../products.js";
 import { workspaceCurrency } from "../money.js";
 import { pct } from "../rcmIntervals.js";
-import { bodyFor, every, modelSource, modelWords, startText, useLabel, usedText } from "../taskOptimise.js";
+import { bodyFor, breakEvenTiles, every, modelSource, modelWords, startText, useLabel, usedText } from "../taskOptimise.js";
+import Chip from "./ui/Chip.jsx";
 import "./TaskOptimisePane.css";
 
 // Optimise… on a maintenance task, in the Explorer's table area beside the tree (the Maintenance
@@ -50,7 +51,8 @@ export default function TaskOptimisePane({ task, position, phone = false, headin
         </p>
         {state.error && <LoadFailed what="Couldn't work out this task's interval." error={state.error} onRetry={() => setAttempt((n) => n + 1)} />}
         {!state.data && !state.error && <Loading shape="fields" rows={4} label="Working out the interval…" />}
-        {state.data && !modes.length && (
+        {state.data?.support && <SupportBreakEven b={state.data.support} />}
+        {state.data && !modes.length && !state.data.support && (
           <p className="to-none">This task prevents no failure mode yet, so there&apos;s no failure model to work its interval
             out from. Link the failure modes it prevents on its panel, or decide them on the RCM tab.</p>
         )}
@@ -60,6 +62,19 @@ export default function TaskOptimisePane({ task, position, phone = false, headin
         ))}
       </div>
     </TablePane>
+  );
+}
+
+// A supporting task (forecast plan step 8): its break-even for a one-number impact, in plain words, never an
+// interval: one number can't place one. What a best interval would need is said (a fitted curve).
+function SupportBreakEven({ b }) {
+  return (
+    <Section title="Keeps it on its life: break-even" className="to-support" aside={b.assumed ? <Chip tone="warning">Assumed</Chip> : null}>
+      <ResultSummary tone={b.break_even == null ? "caveat" : "neutral"} sentence={b.words} stats={breakEvenTiles(b)}>
+        {b.interval_needs}
+      </ResultSummary>
+      {(b.gaps || []).length > 0 && <ul className="to-gaps">{b.gaps.map((g) => <li key={g}>{g}</li>)}</ul>}
+    </Section>
   );
 }
 

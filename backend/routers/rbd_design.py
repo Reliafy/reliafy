@@ -20,6 +20,7 @@ from backend.services import rbd_design
 from backend.services import rbds as rbds_service
 from backend.services.access import AccessCtx, get_access
 from backend.errors import client_message
+from backend.services import rbd_live_models
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -51,6 +52,7 @@ def design_rbd(
 ) -> JSONResponse:
     """The most reliable design within a budget (or the cheapest reaching a
     target reliability at ``t``), and the cost–reliability trade-off."""
+    graph = rbd_live_models.refresh(session, graph, ctx.read_owners)  # linked blocks on their model's fit
     resolve_model, resolve_subsystem = _resolvers(session, ctx.read_owners)
     try:
         result = rbd_design.design_redundancy(
@@ -78,6 +80,7 @@ def apply_rbd_design(
 ) -> JSONResponse:
     """The diagram with a design drawn on it (not saved), its R(t), and notes
     on its common-cause groups (copies that joined one, a group removed)."""
+    graph = rbd_live_models.refresh(session, graph, ctx.read_owners)  # linked blocks on their model's fit
     resolve_model, resolve_subsystem = _resolvers(session, ctx.read_owners)
     try:
         out, notes = rbd_design.apply_design_with_notes(graph, blocks, design)

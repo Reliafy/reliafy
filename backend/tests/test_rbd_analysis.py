@@ -357,7 +357,7 @@ def test_missing_life_model_is_a_clear_error():
     }
     with pytest.raises(AnalysisError) as exc:
         analyze(graph)
-    assert "non-repairable model" in str(exc.value)
+    assert "needs a life model" in str(exc.value) and "Empty" in str(exc.value)
 
 
 def test_no_edges_is_a_clear_error():
@@ -455,7 +455,8 @@ def test_validate_flags_missing_life_model():
     }
     v = validate_graph(graph)
     assert not v["valid"] and not v["can_calculate"]
-    assert any("non-repairable model" in e for e in v["errors"])
+    assert any("needs a life model" in e for e in v["errors"])
+    assert v["needs_model"] == [{"id": "c1", "label": "Empty"}]
 
 
 def test_validate_flags_dangling_node():
@@ -471,6 +472,44 @@ def test_validate_flags_dangling_node():
     v = validate_graph(graph)
     assert not v["valid"]
     assert any("B" in e for e in v["errors"])
+
+
+@pytest.mark.parametrize("repairable", [False, True])
+def test_unwired_blocks_fail_the_check_and_calculate_in_the_same_words(repairable):
+    """Four of five blocks with no wires: the builder's check isn't "valid" (it was, and only
+    Calculate refused), and both name every unwired block."""
+    labels = ["Control", "Pump", "Motor", "Priming system", "Skid frame"]
+    make = (lambda i, lb: _repairable_component(i, lb, 1000, 1.5, 1.0)) if repairable else (
+        lambda i, lb: _component(i, lb, "weibull", [("alpha", 1000), ("beta", 1.5)]))
+    graph = {"nodes": _io_nodes() + [make(f"c{i}", lb) for i, lb in enumerate(labels)],
+             "edges": [_edge("input", "c0"), _edge("c0", "output"), _edge("c0", "c3")],
+             "repairable": repairable}
+    v = validate_graph(graph)
+    assert not v["valid"] and not v["can_calculate"]
+    [msg] = [e for e in v["errors"] if "not wired between" in e]
+    assert msg.startswith("4 blocks are not wired between the input and the output")
+    assert "Pump, Motor and Skid frame (not wired in at all)" in msg
+    assert "Priming system (it doesn't lead on to the output)" in msg
+    assert not any("don't lead anywhere" in e for e in v["errors"])  # said once, not twice
+    with pytest.raises(AnalysisError) as err:
+        ra.analyze_availability(graph, n_simulations=10) if repairable else analyze(graph)
+    assert str(err.value) == msg
+    # Wired in: valid again.
+    graph["edges"] = [_edge("input", f"c{i}") for i in range(5)] + [_edge(f"c{i}", "output") for i in range(5)]
+    assert validate_graph(graph)["valid"]
+
+
+def test_structure_that_never_fails_needs_no_repair_time():
+    """A "Base frame" with no repair time blocks Calculate on a repairable diagram, and the message
+    says how to leave it out; marked Never fails (state working) the diagram calculates."""
+    frame = _component("f", "Base frame", "weibull", [("alpha", 1000), ("beta", 1.5)])
+    graph = {"nodes": _io_nodes() + [_repairable_component("p", "Pump", 1000, 1.5, 1.0), frame],
+             "edges": [_edge("input", "p"), _edge("p", "f"), _edge("f", "output")], "repairable": True}
+    v = validate_graph(graph)
+    assert not v["valid"] and any("Base frame" in e and "Never fails" in e for e in v["errors"]), v["errors"]
+    frame["data"] = {"label": "Base frame", "model": None, "state": "working"}
+    v = validate_graph(graph)
+    assert v["valid"] and v["can_calculate"], v["errors"]
 
 
 def test_validate_cold_standby_is_analytic():
@@ -976,3 +1015,36 @@ def test_common_cause_comparison_is_at_the_importance_time():
     assert ccf["reliability_with"] == pytest.approx(float(rbd.sf(t)), abs=1e-12)
     assert ccf["reliability_without"] == pytest.approx(float(baseline.sf(t)), abs=1e-12)
     assert ccf["reliability_without"] > ccf["reliability_with"]
+
+
+def test_a_life_invented_when_built_from_the_tree_counts_as_no_model():
+    """Diagrams made from a structure before used a 1,000-hour placeholder for a position with no
+    model, and the results included it. It counts as no model now: no figure, the block named, and
+    a block marked Working (never fails) needs none."""
+    invented = {"distribution_id": "exponential", "params": [{"name": "failure_rate", "value": 0.001}],
+                "placeholder": True}
+    real = {"source": "params", "distribution_id": "weibull",
+            "params": [{"name": "alpha", "value": 900}, {"name": "beta", "value": 1.4}]}
+    graph = {"nodes": _io_nodes() + [
+        {"id": "a", "type": "component", "data": {"label": "Airframe", "model": invented,
+                                                  "model_source": "A placeholder: no model in use"}},
+        {"id": "b", "type": "component", "data": {"label": "Rotor", "model": real}}],
+        "edges": [_edge("input", "a"), _edge("a", "b"), _edge("b", "output")]}
+    with pytest.raises(AnalysisError, match="This block needs a life model.*Airframe"):
+        analyze(graph)
+    v = validate_graph(graph)
+    assert not v["can_calculate"] and v["needs_model"] == [{"id": "a", "label": "Airframe"}]
+    # Marked as never failing: the system is the rotor alone.
+    graph["nodes"][2]["data"]["state"] = "working"
+    import math
+
+    assert analyze(graph)["mttf"] == pytest.approx(900 * math.gamma(1 + 1 / 1.4), rel=1e-3)
+
+
+def test_a_sub_system_block_never_needs_a_model_of_its_own():
+    from backend.services.rbd_analysis import blocks_needing_models
+
+    graph = {"nodes": _io_nodes() + [
+        {"id": "s", "type": "component", "data": {"label": "Gimbal", "rbd": {"id": "r1"}}},
+        {"id": "c", "type": "component", "data": {"label": "Comms"}}]}
+    assert blocks_needing_models(graph) == [{"id": "c", "label": "Comms"}]

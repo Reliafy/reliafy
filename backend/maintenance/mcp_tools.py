@@ -61,14 +61,14 @@ BODIES: dict = {}
 _ORIGINAL: dict = {}
 # Calls (tool.action) that fit a non-repairable model on the server: Pro only, like the MCP
 # server's other fitting tools (added to its plan gating when registered).
-PRO_FIT_CALLS = ("maintenance_reliability.fit_class_model",)
+PRO_FIT_CALLS = ("maintenance_reliability.fit_class_model", "maintenance_get.support_fit")
 # Calls that can take a while: they share the MCP server's heavy-call slots.
 HEAVY_CALLS = ("maintenance_reliability.fit_class_model", "maintenance_models.link", "maintenance_workspace.import_history",
                "maintenance_list.tree",
                "maintenance_parts.import_bom", "maintenance_parts.build_positions",
                "maintenance_get.plan_economics", "maintenance_get.class_forecast", "maintenance_get.spares_plan",
                "maintenance_get.spares_year", "maintenance_get.package_parts",
-               "maintenance_get.forecast",
+               "maintenance_get.forecast", "maintenance_get.support_fit",
                "maintenance_topology.generate_rbd", "maintenance_graph_query", "maintenance_graph_schema",
                "maintenance_apply")
 
@@ -84,14 +84,19 @@ Measurement = Annotated[dict[str, Any] | str | None, Field(description=(
 Trigger = Annotated[dict[str, Any] | None, Field(description=(
     "Raise it when an event happens: {kind: 'reading', point_id (a condition point), above | below} or "
     "{kind: 'event', event_type (e.g. 'Lightning strike'), note?}; with_interval true keeps the interval running "
-    "too (otherwise it waits for the event, never overdue)."))]
+    "too (otherwise it waits for the event, never overdue). A failure mode's response: {kind: 'failure', "
+    "failure_mode_id} (what's done if it fails anyway: its labour, spares and cost feed the forecast's failure "
+    "lines and its cost of a failure) or {kind: 'found', failure_mode_id} (what's done when an inspection finds "
+    "it); make it on the mode's position."))]
 
 
 # How often, as a pattern an interval can't say (how_often.py).
 Rule = Annotated[dict[str, Any] | None, Field(description=(
     "create/update: a calendar pattern, e.g. {kind: 'monthly', every: 1, weekday: 'Saturday', nth: 1} (the "
     "first Saturday), {kind: 'yearly', month: 11, weekday: 'Tuesday', nth: 1}, {kind: 'weekly', weekdays: "
-    "['Monday']}; monthly/yearly take day in place of weekday+nth. The interval follows it. update: {} clears."))]
+    "['Monday']}; monthly/yearly take day in place of weekday+nth (day 31: the last day); monthly every 3 with "
+    "anchor 2027-03-01: March, June, September, December. {kind: 'shutdowns', every: 12, unit: 'months'}: at "
+    "the first planned shutdown that long after it was last done. The interval follows it. update: {} clears."))]
 
 
 # A task's LSA record: what doing it needs (Maintenance.set_task_resources).
@@ -100,6 +105,11 @@ Restoration = Annotated[dict[str, Any] | None, Field(description=(
     "the age since the last task) | kijima2 (of its whole age), q (0 as good as new to 1 as bad as old) or "
     "restores (the %), replace_every? (every Nth task a full replacement), replacement_cost?, "
     "failure_mode_id? (that mode's decision only)}; {} clears it."))]
+Support = Annotated[dict[str, Any] | None, Field(description=(
+    "update: keeps the item on its life (a supporting task: greasing, an oil change): {failure_mode_ids? "
+    "([] its whole life), reference? (the interval its life assumes; default its own), impact? ({form: "
+    "'hazard_ratio', k}: failure rate × k if not done; null: none), grace? (% overdue first), source? "
+    "(assumed|maker|fitted), note?}; {} clears it."))]
 OlderThan = Annotated[dict[str, Any] | None, Field(description=(
     "update: at a shutdown, do it only on an item older than {value, unit (days/weeks/months/years)}; "
     "{} clears it."))]
@@ -130,8 +140,16 @@ GET_KINDS: Table = {
     "operating_plan": ("id", "root", """How a position (or the item fitted to one) runs: its own plan, or
         the nearest above it inside root (the asset opened), with inherited_from; hours a week and the next 14
         days."""),
-    "forecast": ("id", "root period periods", """id = a position. It and everything inside it: tasks on
-        dates, work, failures and cost per period with a 90% range (guide topic forecast)."""),
+    "operations": ("", "id root", """Each position's duty (own or from the one above), other use, shutdown and
+        outage windows and time zone, inside root; id = one position. Set with positions.update."""),
+    "support_fit": ("id", "", """id = a supporting task. Its impact (failure rate × k while overdue) fitted from the
+        history where it holds the life up: k with its 90% two-sided range, "not shown to matter" when the range
+        includes 1, or why it can't be estimated; use: what to send as tasks.update support."""),
+    "forecast": ("id", "root period periods months whatif", """id = a position (it and everything inside it), a task or
+        a work package. Tasks on dates, work, failures and cost per period with a 90% range, and lines by owner
+        (each task; each failure mode's corrective and follow-on) with what's not counted; months (12, 24, 36,
+        60): whole months from today; whatif {task_id: {drop: true} | {interval: N}} on supporting tasks: the same
+        with them changed, beside it, and each supporting task's worth (guide topic forecast)."""),
     "position": ("id", "", """Its path, positions inside it, the item fitted now, every past fitment (with
         from_precision / to_precision for rough dates), failure modes (from RCM, by hand or ad hoc),
         class_failure_modes (seen at other positions of its class), tasks with last-done / next-due and trade,
@@ -512,14 +530,15 @@ TASKS: Table = {
     "update": ("task_id", "name interval unit also_interval also_unit point_id last_done_reading instructions "
                "checklist failure_mode_id unlink_failure_mode source reference outcome clear_outcome trade "
                "while_stored include_positions trigger clear_trigger start cost clear_cost restoration basis older_than "
-               "rule visit_cost", """Rename it or change its interval, second limit (also_interval 0
+               "rule visit_cost support on_replace", """Rename it or change its interval, second limit (also_interval 0
         removes it), measurement (point_id, last_done_reading), instructions, checklist, trade ('' clears), failure mode link (unlink_failure_mode
         true removes it), source / reference / outcome (clear_outcome true) of a hand-made task, while_stored
         or include_positions, or its trigger (clear_trigger true: the interval alone again), or when it next
         falls due (start, a date; then every interval; '' goes back to one interval from last done). cost: what it costs
         each time, typed (in place of its LSA's labour at trade rates, spares and consumables; clear_cost true
         goes back to that); the RCM's calculators read it. visit_cost: a task in no package, its call-out and setup each
-        time (-1 clears it). Its subject can't change: move it, or retire it and
+        time (-1 clears it). on_replace: when the item is replaced, restart the schedule or keep it ('' the
+        default: restart on its own, keep for a calendar pattern or in a package). Its subject can't change: move it, or retire it and
         create another."""),
     "link": ("task_id failure_mode_id", "", "The task also prevents that mode (on its position or one inside it); "
              "its other links stay."),
@@ -751,13 +770,14 @@ RELIABILITY: Table = {
 # Life models on positions (the Explorer's Modelling tab, position_models.py). Read them with get.position (models).
 POSITION_MODELS: Table = {
     "link": ("position_id", "model_id model_type from_class fit distribution scope failure_mode_ids note "
-                            "replace_link_id baseline trust exclude prediction rbd_id build_rbd use_link_id data method prior library_record_id covariates bind window", """Attach a life model to a position (a link: the model isn't
+                            "replace_link_id baseline trust exclude prediction rbd_id build_rbd use_link_id data method prior library_record_id covariates hazard_ratio bind window", """Attach a life model to a position (a link: the model isn't
         copied). One of: model_id (a saved model; model_type model default, recurrent_model, degradation_model,
         alt_model), from_class true (its position class's fitted model) or fit true (Pro: fit distribution, weibull
         default, to its own failure history, or its class's pooled history when its own is thin: scope auto,
         position or class; saved to Models; window {since?, until?}: only lives fitted then). failure_mode_ids: the modes it's for (none: every failure there);
         replace_link_id: the model on it this replaces. library_record_id: a data library record (list kind library)
-        as an exponential model, cited, with every one of its covariates given (pipe length, clock, demands a year...). fit true with data (position, class, both: the class's history
+        as an exponential model, cited, with every one of its covariates given (pipe length, clock, demands a year...);
+        hazard_ratio adjusts it for the conditions here. fit true with data (position, class, both: the class's history
         as the prior) and method (mle: plain, 90% confidence; bayes: with a prior {kind: class | model | params | b10,
         ...}, 90% credible); trust weighs a prior (close, guide, start). fit true with baseline: a Bayesian update of a
         baseline (the class's model by default) with its history, for one or two failures (guide topic modelling).
@@ -792,10 +812,11 @@ TOPOLOGY: Table = {
     "set_duty": ("group_id position_id", "", "Which member of a standby group runs now (a duty / standby swap)."),
     "retire_group": ("group_id", "reason", "Take a redundancy group out of use (kept in the history)."),
     "restore_group": ("group_id", "", "Bring a retired group back with its members."),
-    "generate_rbd": ("position_id", "", """Generate (or regenerate) an RBD for a system position from the
+    "generate_rbd": ("position_id", "existing", """Generate an RBD for a system position from the
         positions inside it: connections wire the blocks, groups become k of n (or one standby block), blocks
         take each position's model in use (placeholders otherwise, in notes); look-alikes with no group come back
-        in ask (create_group, then regenerate). Saved as a normal RBD: analyse rbd."""),
+        in ask (create_group, then regenerate). One made before is returned unchanged (existing: true) unless
+        existing is copy (a new one) or rebuild (replaces its edits: ask the user). Saved as a normal RBD."""),
 }
 
 ITEM_CLASSES: Table = {
@@ -901,7 +922,7 @@ RCM: Table = {
         save_evidence true, with failure_mode_id (task_id optional): as pf_interval's. With task_id and demand_rate
         but no test_cost, the task's own cost is used (task_cost_used)."""),
     "optimise": ("task_id", "failure_mode_id model_type model_id planned_cost unplanned_cost pf_interval pf_unit "
-                                 "act_time target_unavailability use", """The app's Optimise… on a task: how
+                                 "act_time target_unavailability use as_rule", """The app's Optimise… on a task: how
         often to do it, for each failure mode it prevents, from that mode's life model (the one an earlier
         Optimise used, the decision's evidence or the position's model; model_type model or degradation_model
         + model_id to choose). Replace or restore: the cost-optimal age with its range across the model's 90%
@@ -1351,9 +1372,12 @@ def register() -> None:
                             "item_class: true for the class's fleet (its positions, with risk now) in place of "
                             "the class record."))] = None,
                         root: Annotated[str | None, Field(description=(
-                            "operating_plan, forecast, spares_year: the asset opened; nothing above it is used."))]
+                            "operating_plan, operations, forecast, spares_year: the asset opened; nothing above it is used."))]
                         = None,
                         months: int | None = None, fleet_size: int | None = None,
+                        whatif: Annotated[dict[str, Any] | None, Field(description=(
+                            "forecast: supporting tasks changed for a what-if, {task_id: {drop: true} | "
+                            "{interval: N}}; nothing is written."))] = None,
                         hours_per_day: float | None = None,
                         leave_out: Annotated[list[str] | None, Field(description=(
                             "spares_year, package_parts: task ids taken off their next visit."))] = None
@@ -1396,6 +1420,8 @@ def register() -> None:
             return run(m.task_measurement, rid, position_id)
         if kind == "operating_plan":
             return run(m.operating_plan, rid, root)
+        if kind == "operations":
+            return run(m.operations, root, rid)
         if kind in ("spares_year", "package_parts"):
             from backend.maintenance import position_models as pm
             from backend.maintenance import spares_year
@@ -1415,6 +1441,12 @@ def register() -> None:
 
             reader = _reader(_caller(ctx))
             fetch = pm.fetcher(_db(), reader.read_owners, reader.hidden)
+            label = (m.s.node(m.org, str(rid)) or {}).get("label")
+            if months is not None or whatif or label in ("Task", "WorkPackage"):
+                from backend.maintenance import forecast_lines
+
+                of = {"Task": "task", "WorkPackage": "package"}.get(label, "position")
+                return run(forecast_lines.node_forecast, m, fetch, of, rid, root, _d(months, 12), whatif)
             return run(position_forecast.position_forecast, m, rid, root, _d(period, "month"), _d(periods, 12),
                        fetch)
         if kind == "item_class" and fleet:
@@ -1428,7 +1460,7 @@ def register() -> None:
                 "impact": m.impact, "conditions": m.conditions_of, "part_structure": m.part_structure,
                 "where_used": m.where_used, "function": m.function, "package": m.package,
                 "failure_report": m.failure_report, "product": m.product,
-                "design_rollup": m.design_rollup}[kind]
+                "design_rollup": m.design_rollup, "support_fit": m.fit_support}[kind]
         return run(read, rid)
 
     @tool("maintenance_list", _READ, "List maintenance records", LIST_KINDS, "kind")
@@ -2024,7 +2056,10 @@ def register() -> None:
                           basis: Annotated[Literal["calendar", "operating"] | None, Field(description=(
                               "update: operating counts its interval in running hours (an RBD puts it on "
                               "the calendar through the block's duty); calendar (default)."))] = None,
-                          older_than: OlderThan = None,
+                          older_than: OlderThan = None, support: Support = None,
+                          on_replace: Annotated[Literal["restart", "keep", ""] | None, Field(description=(
+                              "update: when the item is replaced, restart the schedule (from the fitting) or "
+                              "keep it; '' goes back to the default."))] = None,
                           trade_rates: Annotated[dict[str, float | None] | None, Field(description=(
                               "set_resources: hourly rates by trade, e.g. {'Fitter': 95}; null clears "
                               "one."))] = None,
@@ -2066,6 +2101,10 @@ def register() -> None:
                     view = m.set_task_basis(task_id, basis)
                 if older_than is not None:
                     view = m.set_task_older_than(task_id, older_than)
+                if support is not None:
+                    view = m.set_task_support(task_id, support or None)
+                if on_replace is not None:
+                    view = m.set_task_on_replace(task_id, on_replace or None)
                 return view
             return run(update)
         if action == "link":
@@ -2704,6 +2743,9 @@ def register() -> None:
                                "or {kind: b10, b10: {value, low, high}, shape: {low, high}, unit}, or {kind: library, "
                                "record_id, covariates?, shape?: [low, high]} (a data library record and its covariates)."))] = None,
                            library_record_id: str | None = None,
+                           hazard_ratio: Annotated[float | None, Field(gt=0, description=(
+                               "With library_record_id, or bind with every covariate fixed: a known hazard ratio for the conditions here (1.5: 1.5 "
+                               "times the hazard at every age); saved as a new model with it."))] = None,
                            window: Annotated[dict[str, Any] | None, Field(description=(
                                "With fit (no data/method): {since?, until?} ISO dates, the fitment starts kept."))] = None,
                            covariates: Annotated[dict[str, Any] | None, Field(description=(
@@ -2733,14 +2775,15 @@ def register() -> None:
             from backend.maintenance import covariate_positions
 
             return run(covariate_positions.bind, m, _db(), m.org, reader.read_owners, position_id, bind,
-                       failure_mode_ids, note or "", replace_link_id)
+                       failure_mode_ids, note or "", replace_link_id, hazard_ratio)
         if use_link_id:
             return run(m.use_position_model, position_id, use_link_id)
         if library_record_id:
             from backend.maintenance import library_models
 
             return run(library_models.attach, m, _db(), m.org, position_id, library_record_id, failure_mode_ids,
-                       note or "", replace_link_id, owners=reader.read_owners, covariates=covariates)
+                       note or "", replace_link_id, owners=reader.read_owners, covariates=covariates,
+                       hazard_ratio=hazard_ratio)
         if build_rbd:
             return run(pm.build_rbd, m, _db(), reader.read_owners, reader.hidden, position_id, None, replace_link_id,
                        note or "")
@@ -2791,7 +2834,8 @@ def register() -> None:
                              remove: list[str] | None = None, position_id: str | None = None,
                              clear_realised_by: bool | None = None, reason: str | None = None,
                              start_probability: float | None = None,
-                             dormancy: float | None = None) -> dict[str, Any]:
+                             dormancy: float | None = None,
+                             existing: Literal["open", "copy", "rebuild"] | None = None) -> dict[str, Any]:
         """How positions depend on each other: connections (what passes from one to another) and
         redundancy groups (k of n will do). They drive impact (maintenance get.impact) and the RBD
         generate_rbd makes from a system."""
@@ -2819,7 +2863,7 @@ def register() -> None:
                        clear(start_probability), clear(dormancy))
         if action == "set_duty":
             return run(m.set_duty, group_id, position_id)
-        return run(rbd_derive.save, m, _db(), position_id)
+        return run(rbd_derive.save, m, _db(), position_id, existing=existing)
 
     # ---- item classes and the manufacturer register (optional) --------------------------
 
@@ -3043,7 +3087,10 @@ def register() -> None:
                         task_id: str | None = None, save_evidence: bool | None = None,
                         model_type: Literal["model", "degradation_model"] | None = None,
                         planned_cost: float | None = None, unplanned_cost: float | None = None,
-                        use: bool | None = None) -> dict[str, Any]:
+                        use: bool | None = None,
+                        as_rule: Annotated[bool | None, Field(description=(
+                            "optimise with use: a task on a calendar rule keeps it, at the step nearest the "
+                            "answer (its use_rule)."))] = None) -> dict[str, Any]:
         """The interval calculators on an RCM task card: on condition (the P-F calculator) and failure finding.
         save_evidence (with failure_mode_id; task_id: which of its tasks, else its first of the kind): use the
         answer as the app's "Use" does (rcm_apply_interval). optimise: the app's Optimise… on a task
@@ -3066,7 +3113,8 @@ def register() -> None:
             if not use:
                 return run(task_optimise.optimise, m, _db(), owners, frozenset(), task_id, **args)
             _require_scope(ctx, "write")  # the call writes: a read-only token can't
-            return run(task_optimise.use, m, _db(), owners, frozenset(), _caller(ctx)["uid"], task_id, **args)
+            return run(task_optimise.use, m, _db(), owners, frozenset(), _caller(ctx)["uid"], task_id,
+                       as_rule=bool(as_rule), **args)
         if save_evidence and not failure_mode_id:
             raise ToolError("save_evidence needs failure_mode_id: the failure mode whose task takes the interval.")
         # The task's own cost (its position's figure, task_costs.py) where a priced call leaves it out:
@@ -3307,7 +3355,7 @@ def register() -> None:
     graph_actions = frozenset(GRAPH_TOOL_NAMES)
     intro = ("Reliafy Maintenance (the CMMS): positions, locations, classes, items, RCM, tasks, work orders, failure "
              "reports, parts. Start with overview; guide (args {topic}) has the how-tos; apply runs many changes in "
-             "one checked call.")
+             "one checked call. Arguments go in args: guide(action='maintenance.<action>') lists them.")
     TOOL_NAMES.append("maintenance")
     args_tool("maintenance", _WRITE, "Reliafy Maintenance", "action", intro, table, run_action,
               call_key=lambda kwargs: keys.get(kwargs.get("action"), "maintenance"),
@@ -3318,11 +3366,12 @@ def register() -> None:
 
     def listing(graph: bool, work_orders: bool) -> tuple[dict, str]:
         hide = (frozenset() if graph else graph_actions) | (frozenset() if work_orders else wo_actions)
-        return (_listed_schema("action", [a for a in table if a not in hide]),
+        # No args description here: the intro says where they are (the action list is near its cap).
+        return (_listed_schema("action", [a for a in table if a not in hide], args_help=None),
                 _listed_description("maintenance", "action", intro if work_orders else intro_no_wo, table, hide=hide))
 
     listings = {(g, w): listing(g, w) for g in (True, False) for w in (True, False)}
-    listings[(True, True)] = (LISTED_SCHEMAS["maintenance"], listings[(True, True)][1])
+    LISTED_SCHEMAS["maintenance"] = listings[(True, True)][0]
 
     # The tool is listed only to people who may use it, and its graph actions
     # only to those who may run graph queries: wrap the server's tools/list.

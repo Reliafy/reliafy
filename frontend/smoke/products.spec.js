@@ -11,6 +11,7 @@
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { EXPLORER_PARTS_CLASSES_TABS } from "../src/explorerTabs.js";
 import { SMOKE_PRODUCT } from "./seed.js";
+import { focusItem, subItem } from "./explorer.js";
 
 // One after another: building an item writes its tree in steps, and the Assets list is checked meanwhile.
 test.describe.configure({ mode: "serial" });
@@ -213,21 +214,22 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     const top = table.getByRole("row", { name: NAME }).first();
     await top.locator(".tt-tree").click({ button: "right" });
     const menu = page.getByRole("menu", { name: new RegExp(`^Actions for ${SMOKE_PRODUCT}`) });
-    // As on the Explorer's FME(C)A tab: Add function, the worksheet in and out, Print view, Isolate, Pin, Delete… last.
-    await expect(menu.getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Print view", "Focus failure modes", "Focus to a depth", "Pin this branch", "Delete…"]);
+    // As on the Explorer's FME(C)A tab: the general section, Add function, Import worksheet… (Export CSV and
+    // Print view under More ›), Delete… last.
+    await expect(menu.getByRole("menuitem")).toHaveText(["Open", /^Rename…/, /^Move to…/, "Focus", "Pin this branch", "Copy link", "Add function", "Import worksheet…", "More", "Delete…"]);
     await page.keyboard.press("Escape");
     // The RCM tab: Focus on incomplete rows on the design (the winding mode has no decision, on purpose).
     await page.getByRole("tab", { name: "RCM" }).click();
     const rcm = page.getByRole("treegrid", { name: /and their RCM/ });
     await rcm.getByRole("row", { name: NAME }).first().locator(".tt-tree").click({ button: "right" });
-    await menu.getByRole("menuitem", { name: "Focus on incomplete rows" }).click();
+    await (await focusItem(page, menu, "Focus on incomplete rows")).click();
     await expect(page.locator(".sr-only[role='status']")).toContainText(new RegExp(`Collapsed the rest of the tree: \\d+ incomplete rows? under ${SMOKE_PRODUCT}`));
     await expect(rcm.getByRole("row", { name: /^Failure mode: / }).first()).toBeVisible();
     await shot(page, `${width}-product-rcm-incomplete`);
     // The print view of a design position, from the FME(C)A tab, and Back to the product's tab.
     await page.getByRole("tab", { name: "FME(C)A" }).click();
     await top.locator(".tt-tree").click({ button: "right" });
-    await menu.getByRole("menuitem", { name: "Print view" }).click();
+    await (await subItem(page, menu, "More", "Print view")).click();
     await expect(page).toHaveURL(new RegExp(`/asset-register/positions/${product.id}/fmea$`));
     const sheet = page.locator("table.fm-sheet");
     await expect(sheet).toBeVisible();
@@ -425,3 +427,24 @@ for (const [width, height] of [[1440, 900], [400, 860]]) {
     await expectHealthy(page, problems, { label: `parts and classes tabs ${width}`, root: width < 600 ? ".td" : "main" });
   });
 }
+
+// Make an RBD from this structure, again: the RBD made before is never overwritten unasked. Open it
+// (the default), make a new copy, or rebuild it, which says what is lost first.
+test("making the product's RBD again asks first and opens the existing one", async ({ page, request, problems }) => {
+  test.setTimeout(120000);
+  const product = await seeded(request);
+  const first = await postOk(request, `${M}/positions/${product.id}/rbd`, {});
+  await open(page, `/products/${product.id}`);
+  const section = page.locator("#design-analysis");
+  await section.getByRole("button", { name: "Make an RBD from this structure" }).click();
+  const choice = section.getByRole("group", { name: "An RBD from this structure exists" });
+  await expect(choice.getByRole("button", { name: "Open the existing RBD" })).toBeVisible({ timeout: 20000 });
+  await expect(choice.getByRole("button", { name: "Make a new copy" })).toBeVisible();
+  await choice.getByRole("button", { name: /Rebuild it \(replaces your edits\)/ }).click();
+  const confirm = page.getByRole("alertdialog", { name: "Rebuild the RBD from the structure?" });
+  await expect(confirm).toContainText("Everything changed on it since it was made is lost");
+  await confirm.getByRole("button", { name: "Cancel" }).click();
+  await choice.getByRole("button", { name: "Open the existing RBD" }).click();
+  await expect(page).toHaveURL(new RegExp(`/systems/b/${first.rbd_id}`));
+  await expectHealthy(page, problems, { label: "make the product's RBD again" });
+});

@@ -5,8 +5,11 @@ import { ErrorNotice } from "./StorageCap.jsx";
 import PreviewTable from "./PreviewTable.jsx";
 import { useSpreadsheet } from "./ExcelSheetPicker.jsx";
 import {
-  SPREADSHEET_ACCEPT, excelToCsvFile, isSpreadsheetFile, pasteDataset, uploadDataset, uploadSplitDatasets,
+  SPREADSHEET_ACCEPT, createNotationDataset, excelToCsvFile, isSpreadsheetFile, pasteDataset, uploadDataset,
+  uploadSplitDatasets,
 } from "../api.js";
+import NotationEntry, { useNotationReading } from "./NotationEntry.jsx";
+import { unitSettled } from "../lifeData.js";
 import { useDatasetSplit } from "./DatasetSplit.jsx";
 import { sourceStem } from "../datasetSplit.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
@@ -49,7 +52,18 @@ function serverPreview(up) {
   const cols = up?.cols;
   if (!cols?.columns?.length || !cols.preview?.length) return null;
   const types = Object.fromEntries(cols.columns.map((c) => [c, dtypeLabel(up.facts?.[c]?.dtype)]));
-  return <PreviewTable columns={cols.columns} rows={cols.preview.slice(0, 5)} types={types} />;
+  // Number columns written with thousands separators or decimal commas: read as numbers, and said.
+  const notes = cols.number_notes || [];
+  return (
+    <>
+      <PreviewTable columns={cols.columns} rows={cols.preview.slice(0, 5)} types={types} />
+      {notes.length > 0 && (
+        <ul className="hint ds-number-notes" aria-label="How the numbers were read">
+          {notes.map((n) => <li key={n}>{n}</li>)}
+        </ul>
+      )}
+    </>
+  );
 }
 
 function ListField({ f, v, onChange, disabled, placeholder, broadcast, bad }) {
@@ -90,7 +104,7 @@ export default function NewDatasetModal({
 }) {
   // Opens on the dropzone; "paste or type" switches to entering data.
   const [step, setStep] = useState("upload"); // upload | enter
-  const [enterMode, setEnterMode] = useState("paste"); // paste | form
+  const [enterMode, setEnterMode] = useState("paste"); // paste | notation (typed text) | form (by column)
   const [name, setName] = useState(initialName);
   // No header row: the user's choice, or null to guess from the data (#434:
   // a first row of only numbers is data).
@@ -146,6 +160,10 @@ export default function NewDatasetModal({
   }, [picked, onSplit]);
   // paste
   const [text, setText] = useState("");
+  // typed in: SurPyval's notation, read live; the unit is needed, as for an upload
+  const [typed, setTyped] = useState("");
+  const [typedUnit, setTypedUnit] = useState("");
+  const typedView = useNotationReading(step === "enter" && enterMode === "notation" ? typed : "");
 
   // The data on show (the picked CSV, or the paste) and whether its first row
   // looks like data; the guess holds until the user says otherwise.
@@ -267,6 +285,16 @@ export default function NewDatasetModal({
     catch (e) { setError(e); } finally { setBusy(false); }
   };
 
+  // --- typed in ---
+  const typedValid = name.trim() && unitSettled(typedUnit) && typedView.state === "ok";
+  const onTyped = async () => {
+    setBusy(true); setError(null);
+    try {
+      const libId = await libraryTarget();
+      await addMeasurements(await createNotationDataset(name.trim(), typed, typedUnit, libId), name.trim());
+    } catch (e) { setError(e); } finally { setBusy(false); }
+  };
+
   // --- form ---
   const usingX = listLen(vals.x) > 0;
   const usingInterval = listLen(vals.xl) > 0 || listLen(vals.xr) > 0;
@@ -323,10 +351,16 @@ export default function NewDatasetModal({
   // ---- footer: Back on the left (entering data), the one primary on the right ----
   const enter = step === "enter";
   // The reading must be settled (x and c at least) before a file or paste is saved.
-  const needsReading = !(enter && enterMode === "form");
-  const valid = (enter ? (enterMode === "paste" ? pasteValid : formValid) : !!picked) && (!needsReading || !readingWait)
+  // (Typed text and the form name their own columns.)
+  const needsReading = !(enter && (enterMode === "form" || enterMode === "notation"));
+  const enterValid = { paste: pasteValid, notation: typedValid, form: formValid }[enterMode];
+  const valid = (enter ? enterValid : !!picked) && (!needsReading || !readingWait)
     && (!libraryChoice || libraryChoiceReady(library));
-  const run = enter ? (enterMode === "paste" ? onPaste : onForm) : onUpload;
+  const run = enter ? { paste: onPaste, notation: onTyped, form: onForm }[enterMode] : onUpload;
+  // Why Create is greyed for typed text, beside it.
+  const typedWait = enter && enterMode === "notation" && !busy && (
+    !typed.trim() ? "Type the lives first." : typedView.state === "error" ? "Correct the text above."
+      : !unitSettled(typedUnit) ? "Say the unit of the times." : !name.trim() ? "Give the dataset a name." : null);
   const footer = split.saved ? (
     <button className="ds-foot-primary" onClick={onClose}>Done</button>
   ) : split.active ? (
@@ -345,6 +379,7 @@ export default function NewDatasetModal({
       {needsReading && readingWait && (step === "upload" ? !!picked : true) && (
         <span className="hint ds-next-why m-0" role="status">{readingWait}</span>
       )}
+      {typedWait && <span className="hint ds-next-why m-0">{typedWait}</span>}
       <button className="ds-foot-primary" onClick={run} disabled={!valid || busy}>
         {busy ? "Creating…" : "Create dataset"}
       </button>
@@ -405,7 +440,9 @@ export default function NewDatasetModal({
                 <span className="dz-big">Drop a CSV or Excel file here or <strong>click to browse</strong></span>
               </div>
               <p className="ds-new-alt">
-                No file? <button className="link" onClick={() => go("enter")}>Paste or type the data</button>
+                No file? <button className="link" onClick={() => { setEnterMode("paste"); go("enter"); }}>Paste the data</button>
+                {" · "}
+                <button className="link" onClick={() => { setEnterMode("notation"); go("enter"); }}>Type it in</button>
               </p>
               {noHeaderBox(true)}
             </>
@@ -420,6 +457,16 @@ export default function NewDatasetModal({
                   </span>
                 )}
                 {picked.excel?.sheet && <span className="muted">Sheet “{picked.excel.sheet}”</span>}
+                {picked.excel && (
+                  // Another sheet (or header row) of the same workbook: the picker again, the file kept.
+                  <button className="link" disabled={busy || split.saving}
+                          onClick={async () => {
+                            const excel = await chooseSheet(picked.file);
+                            if (excel) { setError(null); setPicked({ file: picked.file, excel }); }
+                          }}>
+                    Change sheet
+                  </button>
+                )}
                 <button className="link" onClick={() => { setPicked(null); setHeaderChoice(null); setError(null); }}
                         disabled={busy || split.saving}>
                   Choose another file
@@ -457,7 +504,8 @@ export default function NewDatasetModal({
             style={{ alignSelf: "flex-start" }}
             options={[
               { value: "paste", label: "Paste" },
-              { value: "form", label: "Type it in" },
+              { value: "notation", label: "Type it in", title: "Type the lives as text: 120, 310, [400, 450], 1000+" },
+              { value: "form", label: "By column", title: "One list of values per column: times, status, counts…" },
             ]}
           />
           <label className="login-field">
@@ -466,7 +514,14 @@ export default function NewDatasetModal({
                    onChange={(e) => setName(e.target.value)} />
           </label>
 
-          {enterMode === "paste" ? (
+          {enterMode === "notation" ? (
+            <>
+              <NotationEntry text={typed} onText={setTyped} unit={typedUnit} onUnit={setTypedUnit} view={typedView}
+                             disabled={busy} />
+              {libraryBox}
+              {measurementsBox}
+            </>
+          ) : enterMode === "paste" ? (
             <>
               <label className="login-field">
                 <span>Data</span>

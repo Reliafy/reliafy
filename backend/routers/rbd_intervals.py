@@ -31,6 +31,7 @@ from backend.services import rbds as rbds_service
 from backend.services.access import AccessCtx, get_access
 from backend.services.rbd_analysis import AnalysisError, require_blocks
 from backend.errors import client_message
+from backend.services import rbd_live_models
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -96,6 +97,7 @@ def rbd_intervals_endpoint(
     the diagram's unit); ``stagger`` chooses the first tests' times too.
     ``assume_unlimited_crews`` is needed when the diagram's repair crews are
     limited. Nothing is saved."""
+    graph = rbd_live_models.refresh(session, graph, ctx.read_owners)  # linked blocks on their model's fit
     owners = ctx.read_owners
     rbd = None
     if rbd_id:

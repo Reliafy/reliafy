@@ -4,9 +4,13 @@ import { formatCost } from "./money.js";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-// A period's label: "Nov 2026", "Q4 2026", "2027"; a first period cut short says from when.
+// A period's label: "Tue 1 Dec 2026", "Week of 7 Dec 2026", "Nov 2026", "Q4 2026", "2027"; a first
+// period cut short says from when (a last one, `last`, to when, when it ends early).
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 export function periodLabel(row, period, first = false) {
   const [y, m, d] = row.start.split("-").map(Number);
+  if (period === "day") return `${WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]} ${d} ${MONTHS[m - 1]} ${y}`;
+  if (period === "week") return `${first && new Date(Date.UTC(y, m - 1, d)).getUTCDay() !== 1 ? "From" : "Week of"} ${d} ${MONTHS[m - 1]} ${y}`;
   let text = period === "year" ? String(y) : period === "quarter" ? `Q${Math.floor((m - 1) / 3) + 1} ${y}` : `${MONTHS[m - 1]} ${y}`;
   if (first && d !== 1) text += ` (from ${d} ${MONTHS[m - 1]})`;
   else if (first && period !== "month" && (period === "year" ? m !== 1 : (m - 1) % 3 !== 0)) text += ` (from ${d} ${MONTHS[m - 1]})`;

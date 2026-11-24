@@ -7,6 +7,7 @@
 //
 // With SMOKE_SHOTS_DIR set, it also saves screenshots there (for the pull request).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
+import { focusItem } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -50,14 +51,15 @@ test("the tasks tab: Focus tasks on a mid-level position opens only its branch, 
   await expect(nameRow(page, `Check seal A ${tag}`)).toBeVisible();
   const url = page.url();
 
-  // The level's menu: Focus tasks, then Focus tasks › levels, then Pin this branch.
+  // The level's menu: Focus › (Focus tasks, then the levels), then Pin this branch.
   await nameRow(page, `Focus line A ${tag}`).locator(".tp-nm").click({ button: "right" });
   const menu = rowMenu(page, `Focus line A ${tag}`);
-  await expect(menu.getByRole("menuitem", { name: "Focus tasks", exact: true }).first()).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Focus to a depth", exact: true })).toHaveAttribute("aria-haspopup", "menu");
+  await expect(menu.getByRole("menuitem", { name: "Focus", exact: true })).toHaveAttribute("aria-haspopup", "menu");
   await expect(menu.getByRole("menuitem", { name: "Pin this branch" })).toBeVisible();
+  const focusTasks = await focusItem(page, menu, "Focus tasks");
+  await expect(page.getByRole("menu", { name: "Focus", exact: true }).getByRole("menuitem", { name: "1 level" })).toBeVisible();
   await shot(page, "tabfocus-1-menu-1440");
-  await menu.getByRole("menuitem", { name: "Focus tasks", exact: true }).first().click();
+  await focusTasks.click();
 
   // Only line A's branch open, down to every task; line B closed but still on show.
   await expect(nameRow(page, `Grease pump A ${tag}`)).toBeVisible();
@@ -91,7 +93,7 @@ test("at 400 px: Focus tasks from the row's ⋯; the pill under the search box; 
   await openEverything(page);
   await expect(nameRow(page, `Grease pump B ${tag}`)).toBeVisible();
   await nameRow(page, `Focus line A ${tag}`).getByRole("button", { name: /^Actions for / }).click();
-  await rowMenu(page, `Focus line A ${tag}`).getByRole("menuitem", { name: "Focus tasks", exact: true }).first().click();
+  await (await focusItem(page, rowMenu(page, `Focus line A ${tag}`), "Focus tasks")).click();
   await expect(nameRow(page, `Check seal A ${tag}`)).toBeVisible();
   await expect(nameRow(page, `Grease pump B ${tag}`)).toHaveCount(0);
   await expect(page.getByRole("group", { name: "Focus" })).toContainText(`Focused: Focus line A ${tag}`);

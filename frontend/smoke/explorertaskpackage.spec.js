@@ -8,6 +8,7 @@
 // With SMOKE_SHOTS_DIR set, it saves screenshots (for the pull request).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
 import { expectChosen } from "./select.js";
+import { subItem } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -61,8 +62,11 @@ test("Maintenance tasks: filter a column, select two, Package…, they show as P
   await expect(page.locator(".tt-selected")).toContainText("2 selected");
   await nameRow(page, `Grease the bearings ${tag}`).locator(".tp-nm").click({ button: "right" });
   const menu = page.getByRole("menu");
-  await expect(menu.getByRole("menuitem")).toHaveText(["Open…", "Optimise…", "Package…", "Add to package…", "Clear the selection"]);
-  await menu.getByRole("menuitem", { name: "Package…", exact: true }).click();
+  // Two picked: Package 2 tasks… counts them; what works on one task (Open, Optimise…, Retire…) is
+  // greyed with the reason; Optimise… (greyed) and Clear the selection fold under More ›.
+  await expect(menu.getByRole("menuitem")).toHaveText([/^Open.*picked/, /^Rename…/, /^Move to…/, /^Focus/, /^Pin this branch/, "Copy link",
+    "Package 2 tasks…", "Add 2 tasks to a package…", "More", /^Retire…/]);
+  await menu.getByRole("menuitem", { name: "Package 2 tasks…", exact: true }).click();
   const pane = page.locator("section.table-pane");
   await expect(pane).toContainText("2 tasks");
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -81,7 +85,9 @@ test("Maintenance tasks: filter a column, select two, Package…, they show as P
 
   // Add to package… on the three-monthly task: the package fits, on every 3rd visit.
   await nameRow(page, `Megger the windings ${tag}`).locator(".tp-nm").click({ button: "right" });
-  await page.getByRole("menu").getByRole("menuitem", { name: "Add to package…" }).click();
+  // Open in › keeps its place in the menu; Add to package… is under More ›.
+  await page.getByRole("menu").getByRole("menuitem", { name: /^More/ }).click();
+  await page.getByRole("menuitem", { name: "Add to package…" }).click();
   await expect(pane.getByRole("radio", { name: /Monthly service/ })).toBeChecked();
   await expectChosen(pane.getByRole("combobox", { name: /on which visits/ }), "3");
   await pane.getByRole("button", { name: "Add", exact: true }).click();
@@ -113,8 +119,73 @@ test("Maintenance tasks at 400 px: the Filter button, Select on a task's menu an
   await expect(page.getByRole("status").filter({ hasText: "2 selected" })).toBeVisible();
   await expect(page.locator(".tp-row.picked")).toHaveCount(2);
   await nameRow(page, `Megger the windings ${tag}`).getByRole("button", { name: /^Actions for/ }).click();
-  await expect(page.getByRole("menu").getByRole("menuitem", { name: "Package…", exact: true })).toBeVisible();
+  // Package 2 tasks… stays at the top level (a greyed item folds into More › first).
+  await expect(page.getByRole("menu").first().getByRole("menuitem", { name: "Package 2 tasks…", exact: true })).toBeVisible();
   expect(await sideways(page)).toBeLessThanOrEqual(0);
   await shot(page, "tasks-menu-phone");
   await expectHealthy(page, problems, { label: "tasks packaging phone" });
+});
+
+test("Maintenance tasks: Ctrl-click three, Shift-click a range, Package…; also on a pinned branch", async ({ page, request, problems }) => {
+  const tag = `m${Date.now()}`;
+  const p = await plant(request, tag);
+  await postOk(request, `${M}/positions/${p.motor.id}/tasks`, { name: `Tighten the mounts ${tag}`, interval: 6, unit: "months", trade: `Fitter ${tag}` });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const names = [`Check the seal ${tag}`, `Grease the bearings ${tag}`, `Megger the windings ${tag}`, `Tighten the mounts ${tag}`];
+  for (const pinned of [false, true]) {
+    await open(page, `/asset-register/explorer?arrange=positions&root=${p.pump.id}&sel=${p.motor.id}&tab=maintenance${pinned ? `&pin=${p.pump.id}` : ""}`);
+    await expect(nameRow(page, names[3])).toBeVisible();
+    // The hint shows while nothing is selected.
+    // The hint sits in the header; where a pinned branch fills it, it's the header's tooltip.
+    if (pinned) await expect(page.locator(".tt-h-tree")).toHaveAttribute("title", "Shift/Ctrl-click: select several");
+    else await expect(page.locator(".tt-select-hint")).toContainText("Shift/Ctrl-click: select several");
+    await nameRow(page, names[0]).locator(".tp-nm").click({ modifiers: ["ControlOrMeta"] });
+    await nameRow(page, names[1]).locator(".tp-nm").click({ modifiers: ["ControlOrMeta"] });
+    await nameRow(page, names[3]).locator(".tp-nm").click({ modifiers: ["ControlOrMeta"] });
+    await expect(page.locator(".tp-row.picked")).toHaveCount(3);
+    await expect(page.locator(".tt-selected")).toContainText("3 selected");
+    await expect(page.locator(".tt-select-hint")).toHaveCount(0);
+    // A plain click picks one; Shift-click the last takes the range.
+    await nameRow(page, names[0]).locator(".tp-nm").click();
+    await nameRow(page, names[3]).locator(".tp-nm").click({ modifiers: ["Shift"] });
+    await expect(page.locator(".tp-row.picked")).toHaveCount(4);
+    await nameRow(page, names[2]).locator(".tp-nm").click({ button: "right" });
+    await expect(page.getByRole("menu").getByRole("menuitem", { name: "Package 4 tasks…", exact: true })).toBeVisible();
+    await page.getByRole("menu").getByRole("menuitem", { name: "Package 4 tasks…", exact: true }).click();
+    await expect(page.locator("section.table-pane")).toContainText("4 tasks");
+    await page.keyboard.press("Escape");
+  }
+  await expectHealthy(page, problems, { label: "tasks multi-select" });
+});
+
+test("Maintenance tasks: select with Focus on, and with the task panel full width, then Package…", async ({ page, request, problems }) => {
+  const tag = `f${Date.now()}`;
+  const p = await plant(request, tag);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const a = `Grease the bearings ${tag}`;
+  const b = `Megger the windings ${tag}`;
+  const base = `/asset-register/explorer?arrange=positions&root=${p.pump.id}&sel=${p.motor.id}&tab=maintenance`;
+  const pick = async () => {
+    await nameRow(page, a).locator(".tp-nm").click();
+    await nameRow(page, b).locator(".tp-nm").click({ modifiers: ["Shift"] });
+    await expect(page.locator(".tp-row.picked")).toHaveCount(2);
+    await expect(page.locator(".tt-selected")).toContainText("2 selected");
+    await nameRow(page, b).locator(".tp-nm").click({ button: "right" });
+    await page.getByRole("menu").getByRole("menuitem", { name: "Package 2 tasks…", exact: true }).click();
+    await expect(page.locator("section.table-pane")).toContainText("2 tasks");
+  };
+  // Focus on the motor.
+  await open(page, base);
+  await nameRow(page, `Pkg motor ${tag}`).click({ button: "right" });
+  await page.getByRole("menu").first().getByRole("menuitem", { name: "Focus", exact: true }).hover();
+  await page.getByRole("menu", { name: "Focus", exact: true }).getByRole("menuitem").first().click();
+  await expect(page.locator(".tt-focused").first()).toContainText("Focused");
+  await pick();
+  await expectHealthy(page, problems, { label: "tasks multi-select, focused" });
+  // A task's panel across the table (a double-click), then pick from the tree column.
+  await open(page, base);
+  await nameRow(page, `Check the seal ${tag}`).locator(".tp-nm").dblclick();
+  await expect(page.getByRole("heading", { name: `Check the seal ${tag}` })).toBeVisible();
+  await pick();
+  await expectHealthy(page, problems, { label: "tasks multi-select, full-width panel" });
 });

@@ -351,13 +351,14 @@ def _params_from_mean(dist_id: str, model: dict, where: str) -> list[dict]:
 
 def _extras(raw, where: str) -> dict:
     """A model's fitted extras the analysis rebuilds it with: an offset
-    ``gamma``, an LFP ``p`` and a zero-inflation ``f0`` (finite numbers)."""
+    ``gamma``, an LFP ``p``, a zero-inflation ``f0`` (finite numbers) and a known
+    hazard ratio ``hr`` (above 0: "Adjust for conditions")."""
     if raw is None:
         return {}
     if not isinstance(raw, dict):
-        raise GraphError(f"{where}: extras must be an object of gamma, p and f0.")
+        raise GraphError(f"{where}: extras must be an object of gamma, p, f0 and hr.")
     out = {}
-    for key in ("gamma", "p", "f0"):
+    for key in ("gamma", "p", "f0", "hr"):
         value = raw.get(key)
         if value is None:
             continue
@@ -367,6 +368,8 @@ def _extras(raw, where: str) -> dict:
             raise GraphError(f"{where}: {key} must be a number.") from None
         if isinstance(value, bool) or not math.isfinite(number):
             raise GraphError(f"{where}: {key} must be a finite number.")
+        if key == "hr" and not number > 0:
+            raise GraphError(f"{where}: hr, the hazard ratio, must be above 0.")
         out[key] = number
     return out
 

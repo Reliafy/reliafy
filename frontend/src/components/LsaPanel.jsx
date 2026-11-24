@@ -6,11 +6,8 @@ import {
 } from "../api.js";
 import { Field, FormModal, fmtDate, today as workspaceToday, useSendOnce } from "./MaintenanceParts.jsx";
 import HowOften from "./HowOften.jsx";
-import PositionForecast from "./PositionForecast.jsx";
-import SparesYear from "./SparesYear.jsx";
 import PackageParts from "./PackageParts.jsx";
-import SegmentedControl from "./ui/SegmentedControl.jsx";
-import { CALENDAR, HOURS_PACKAGE_NOTE, formFromPackage, howOftenProblem, packageBody, packageDates } from "../howOften.js";
+import { CALENDAR, HOURS_PACKAGE_NOTE, cadenceOf, formFromPackage, howOftenProblem, packageBody, previewFor, stepChoices } from "../howOften.js";
 import Chip from "./ui/Chip.jsx";
 import MoreMenu from "./ui/MoreMenu.jsx";
 import { ShowMe } from "./SectionPage.jsx";
@@ -257,10 +254,14 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone, Fr
   const [name, setName] = useState(() => (named && tasks.length ? packageNameFor(start.every, start.unit) : ""));
   const [timing, setTiming] = useState("fixed");
   // Weekly visits on the visit day; monthly ones on the first of that weekday.
-  const [how, setHow] = useState(() => ({
-    ...formFromPackage({ cadence: { every: start.every, unit: start.unit } }),
-    weekday: dayName(DEFAULT_VISIT_DAY), pattern: start.unit === "weeks" ? "weekday" : start.unit === "months" ? "nth" : "none",
-  }));
+  const [how, setHow] = useState(() => {
+    const visitDay = dayName(DEFAULT_VISIT_DAY);
+    const plain = formFromPackage({ cadence: { every: start.every, unit: start.unit } });
+    const step = `${start.unit}:${start.every}`;
+    if (!["weeks", "months"].includes(start.unit) || stepChoices(null).every(([v]) => v !== step)) return plain;
+    return { ...plain, weekday: visitDay, ...formFromPackage({ cadence: { every: start.every, unit: start.unit, weekday: visitDay,
+      ...(start.unit === "months" ? { nth: 1 } : {}) } }) };
+  });
   const hours = how.unit === "hours";
   const [trade, setTrade] = useState(trades.length === 1 ? trades[0] : "");
   const [tolerance, setTolerance] = useState(String(DEFAULT_TOLERANCE_DAYS));
@@ -270,19 +271,22 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone, Fr
     : howOftenProblem(how, { wholeOnly: true });
   const ok = name.trim() && !problem;
   const today = workspaceToday();
-  const dates = problem ? null : packageDates(how, { anchor: today, today, timing });
+  // The next dates, from the server (a package by hours: from its meter, said in words).
+  const preview = problem || hours ? null : previewFor(fixed ? how : { ...how, ...cadenceOf(how), type: "interval" },
+    { from: today, anchor: today, fixed });
+  const step = cadenceOf(how);
   const submit = async () => {
-    const { clear_pattern: _none, ...cadence } = packageBody(fixed && !hours ? how : { ...how, pattern: "none" });
+    const { clear_pattern: _none, ...cadence } = packageBody(fixed && !hours ? how : { ...how, ...cadenceOf(how), type: "interval" });
     const body = {
       ...scope, name: name.trim(), timing, ...cadence, trade: trade.trim(),
       ...(tolerance !== "" && Number(tolerance) > 0 ? { tolerance: Math.round(Number(tolerance)), tolerance_unit: "days" } : {}),
-      ...(tasks.length ? { tasks: packageMembers(tasks, how.every, how.unit) } : {}),
+      ...(tasks.length ? { tasks: packageMembers(tasks, step.every, step.unit) } : {}),
     };
     const made = await createPackage(body);
     onDone(tasks.length ? `Made ${made.name} with ${plural(tasks.length, "task")}.` : `Made ${made.name}. Add its tasks from its ⋯.`, made.id);
   };
   const differ = intervalsText(tasks);
-  const plan = problem ? "" : visitPlanText(tasks, how.every, how.unit);
+  const plan = problem ? "" : visitPlanText(tasks, step.every, step.unit);
   return (
     <Frame title={tasks.length ? `Package ${plural(tasks.length, "task")}` : "Add a package"} submitLabel={tasks.length ? "Make package" : "Add package"}
            canSubmit={!!ok} onClose={onClose} onSubmit={submit}>
@@ -312,8 +316,9 @@ export function AddPackageDialog({ scope, where, tasks = [], onClose, onDone, Fr
       </Field>
       <fieldset className="mt-how">
         <legend>How often</legend>
-        <HowOften value={how} onChange={setHow} units={units} patterns={fixed && !hours} problem={problem} dates={dates}
-                  datesNote={hours ? HOURS_PACKAGE_NOTE : fixed ? "" : "Counted from the last visit: each visit is the interval after the one before closes."} />
+        <HowOften value={how} onChange={setHow} units={units} patterns={fixed && !hours} problem={problem} preview={preview}
+                  datesNote={hours ? HOURS_PACKAGE_NOTE : ""} />
+        {!fixed && !hours && <p className="field-help">Counted from the last visit: each visit is the interval after the one before closes.</p>}
       </fieldset>
       <div className="pk-dialog-row">
         <Field label="Trade (optional)" text={trade}><input value={trade} maxLength={200} onChange={(e) => setTrade(e.target.value)} placeholder="e.g. Fitter" /></Field>
@@ -498,7 +503,9 @@ function PackagesHere({ scope, where, onOpen, version }) {
 
 // `at`: where it's shown (the Maintenance tab: the meeting point of its tasks), in place of the
 // position it was made on; `where`: a line saying why it's there.
-export function PackageView({ id, today, onBack = null, onOpen, onChanged, headingRef = null, at = null, where = "" }) {
+// `onTask(taskId)`: a member's name is a link that picks the task in the tree (the Explorer's
+// Maintenance tab, where the package's row has nothing under it); without it, a plain name.
+export function PackageView({ id, today, onBack = null, onOpen, onChanged, onTask = null, headingRef = null, at = null, where = "" }) {
   const confirm = useConfirm();
   const [state, setState] = useState({ id: null, pkg: null, error: null });
   const [modal, setModal] = useState(null);
@@ -568,7 +575,9 @@ export function PackageView({ id, today, onBack = null, onOpen, onChanged, headi
           {pkg.tasks.map((t) => (
             <li key={t.task_id} className="pk-member">
               <div className="pk-member-main">
-                <span className="pk-member-name">{t.name}</span>
+                {onTask
+                  ? <button type="button" className="link pk-member-name" onClick={() => onTask(t.task_id)} title={`Show ${t.name} in the tree, under ${t.subject?.name || "its position"}`}>{t.name}</button>
+                  : <span className="pk-member-name">{t.name}</span>}
                 <span className="lib-date pk-sub">
                   {[t.subject?.name, visitRuleText(t), t.suppresses?.length ? `covers ${t.suppresses.map((s) => s.name).join(", ")}` : null,
                     t.next_due ? `next ${fmtDate(t.next_due)}` : null].filter(Boolean).join(" · ")}
@@ -704,12 +713,9 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
   const taskOpen = useOpenParam(maint ? "mtask" : "task");
   const adding = useOpenParam("addtask");
   const ratesOpen = useOpenParam("rates");
-  // Tasks / Forecast (?mview=forecast): the forecast for a position and everything inside it
-  // (PositionForecast.jsx), inside the asset opened (?root=). The Maintenance tab is operators' only.
+  // No forecast or spares views here (Derryn, 23 Nov 2026): an old ?mview=forecast or spares opens
+  // the left menu's Spares forecast (explorerTabs.js forecastRedirect).
   const viewParam = useOpenParam("mview");
-  const [search] = useSearchParams();
-  const forecastable = maint && row.type === "pos";
-  const forecastOn = forecastable && viewParam.open === "forecast";
   // Held here as well as in the address, so the box answers at once.
   const belowParam = useOpenParam("below");
   const [belowOn, setBelowOn] = useState(belowParam.open === "1");
@@ -824,32 +830,10 @@ export default function LsaPanel({ row, today, onMenu = null, variant = "lsa" })
       </div>
     );
   }
-  // Spares for the year (?mview=spares): every part a failure or a task uses here and inside it
-  // (SparesYear.jsx), inside the asset opened (?root=); on a design, the items built from it.
-  if (!maint && EXPLORER_PANEL_TABS && viewParam.open === "spares") {
-    return (
-      <div className="td-tab-page pk-panel rw">
-        <SparesYear id={row.key} root={design ? null : search.get("root") || null} name={row.ref?.name || ""} design={design} />
-      </div>
-    );
-  }
   // With the panel tabs the panel's header switches the views (Tasks · What it needs · Packages ·
   // Forecast · Spares), so the body draws no switch of its own.
   if (!maint && !design && EXPLORER_PANEL_TABS && viewParam.open === "packages") {
     return <PackagesHere scope={scope} where={where} onOpen={open.setOpen} version={version} />;
-  }
-  const viewSwitch = forecastable && !EXPLORER_PANEL_TABS ? (
-    <SegmentedControl size="sm" className="mt-view" label="Show" value={forecastOn ? "forecast" : "tasks"}
-                      onChange={(v) => viewParam.setOpen(v === "forecast" ? "forecast" : null)}
-                      options={[{ value: "tasks", label: "Tasks" }, { value: "forecast", label: "Forecast", title: "The work, failures and costs to come here and inside it, by month" }]} />
-  ) : null;
-  if (forecastOn) {
-    return (
-      <div className="td-tab-page pk-panel rw">
-        <PositionForecast positionId={row.key} name={row.ref.name || "this position"} root={search.get("root") || null}
-                          bar={viewSwitch} />
-      </div>
-    );
   }
   const tick = shown ? tickState(shown.filter((t) => !t.why_not), picked) : "none";
   const flip = (id) => setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });

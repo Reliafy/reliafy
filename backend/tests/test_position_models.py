@@ -481,7 +481,7 @@ def test_covariate_models_are_attached_as_they_are(m, db):
     ph = pm.link_saved(m, db, OWNERS, set(), pump, "model", "sample-model-seal-weibull-ph")
     rows = {r["id"]: r for r in pm.describe(m, db, OWNERS, set(), m.position_models(pump))}
     a = rows[alt["id"]]
-    assert a["source_text"] == ("Assigned: Valve seal — Weibull ALT on temp & load (sample) (accelerated life, "
+    assert a["source_text"] == ("Assigned: Valve seal — Weibull ALT on temp & load (accelerated life, "
                                 "stress: temperature, load)")
     ref = next(n for n in a["model"]["numbers"] if n["id"] == "reference")
     assert ref["text"] == "its lowest tested stress (Temperature (°C) 60, Load 0.5)"
@@ -505,16 +505,12 @@ def test_an_rbd_built_from_whats_inside_with_placeholders_then_rebuilt(m, db):
     assert rbd["name"] == "Pump station (from the tree)"
     blocks = {n["data"]["label"]: n["data"] for n in rbd["graph"]["nodes"] if n["type"] == "component"}
     assert blocks["Pump A"]["model"].get("modelId") == SAMPLE  # the child's model in use, linked
-    assert blocks["Pump B"]["model"]["placeholder"] is True  # never invented: flagged
+    assert not blocks["Pump B"].get("model")  # no life invented for it
     [row] = pm.describe(m, db, OWNERS, set(), m.position_models(plant), age=500)
-    assert row["source_text"] == "Built from 2 positions inside · 1 placeholder"
-    assert row["model"]["kind"] == "RBD" and row["model"]["quality"]["word"] == "1 placeholder"
-    nums = {n["id"]: n for n in row["model"]["numbers"]}
-    assert nums["mean"]["value"] > 0 and nums["reference"]["text"].startswith("reliability ")
-    # Non-repairable: a mean life, never an MTBF; no bounds, and the note says why.
-    assert "mtbf" not in nums and nums["mean"]["label"] == "Mean life"
-    assert nums["b10"]["value"] > 0 and nums["b10"]["lower"] is None
-    assert nums["b10"]["note"] == nums["mean"]["note"] == "no bounds: the system curve is exact from the blocks' point models"
+    assert row["source_text"] == "Built from 2 positions inside · 1 needs a model"
+    assert row["model"]["kind"] == "RBD" and row["model"]["quality"]["word"] == "1 needs a model"
+    # No system figure until Pump B has a model: the row says which block, and shows no numbers.
+    assert row["model"]["numbers"] == [] and "Pump B" in row["model"]["analysis_error"]
     full = pm.detail(m, db, OWNERS, set(), link["id"])
     assert {b["label"]: b["position"]["name"] for b in full["blocks"]} == {"Pump A": "Pump A", "Pump B": "Pump B"}
     assert next(b for b in full["blocks"] if b["label"] == "Pump B")["placeholder"] is True
@@ -614,6 +610,19 @@ def test_one_model_in_use_per_position(m, db):
     # Taken off, the default comes back.
     m.unlink_position_model(rbd["id"])
     assert m.in_use_link(pump)["id"] == life["id"]
+
+
+def test_the_latest_of_several_models_linked_on_one_day_is_the_one_in_use(m):
+    """Links made the same day keep the order they were made in (their ids are random), so the
+    default in use is always the last one linked, after a rebuild too."""
+    pump = m.create_position("Pump")["id"]
+    ids = [m.link_position_model(pump, "model", f"model-{i}")["id"] for i in range(8)]
+    assert [x["id"] for x in m.position_models(pump)] == ids
+    assert m.in_use_link(pump)["id"] == ids[-1]
+    _same_after_rebuild(m)
+    assert m.in_use_link(pump)["id"] == ids[-1]
+    m.unlink_position_model(ids[-1])
+    assert m.in_use_link(pump)["id"] == ids[-2]
 
 
 def test_a_parent_rbd_takes_a_childs_rbd_as_a_sub_system(m, db):

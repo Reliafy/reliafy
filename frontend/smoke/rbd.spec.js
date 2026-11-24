@@ -360,7 +360,7 @@ test("a new diagram built with Add block is connected from Input to Output", asy
   await status.click();
   const check = page.locator(".rbd-check").first();
   await expect(check).toBeVisible();
-  await expect(check).not.toContainText(/Not connected|Nothing feeds into|don't lead anywhere|not on any path/);
+  await expect(check).not.toContainText(/Not connected|Nothing feeds into|don't lead anywhere|not on any path|not wired between/);
   await expectHealthy(page, problems, { label: "new diagram built with Add block" });
 });
 
@@ -425,6 +425,86 @@ test("a repairable model's block: repairs and replacement", async ({ page, reque
   // Crow-AMSAA with a replacement rule is worked out exactly since RePyability 0.19, so free.
   await expect(section.getByText("Its long-run availability is worked out without simulation.")).toBeVisible();
   await expectHealthy(page, problems, { label: "repairable model block" });
+  await request.delete(`/api/rbds/${id}`);
+});
+
+// Structure on a repairable diagram ("Base frame", no repair time) blocks Calculate; Never fails in
+// its settings leaves it out of the model, and the diagram checks out.
+test("a block that never fails is left out of a repairable diagram from its settings", async ({ page, request, problems }) => {
+  const exp = (rate) => ({ source: "params", distribution: "Exponential", distribution_id: "exponential",
+                           params: [{ name: "failure_rate", value: rate }] });
+  const graph = {
+    repairable: true, unit: "Hours",
+    nodes: [{ id: "input", type: "input", position: { x: 0, y: 0 }, data: { label: "Input" } },
+            { id: "p", type: "component", position: { x: 200, y: 0 }, data: { label: "Pump", model: exp(0.001), repair: exp(0.1) } },
+            { id: "f", type: "component", position: { x: 400, y: 0 }, data: { label: "Base frame", model: exp(0.0001) } },
+            { id: "output", type: "output", position: { x: 600, y: 0 }, data: { label: "Output" } }],
+    edges: [{ id: "a", source: "input", target: "p" }, { id: "b", source: "p", target: "f" },
+            { id: "c", source: "f", target: "output" }],
+  };
+  const { id } = await (await request.post("/api/rbds", { data: { name: "Smoke never fails", graph } })).json();
+  await open(page, `/systems/b/${id}`);
+  await page.locator(".react-flow__node", { hasText: "Base frame" }).first().dblclick();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel(/Never fails/).check();
+  await expect(dialog.getByText(/It counts as always working/)).toBeVisible();
+  await expect(dialog.getByText("Repair-time distribution (time to repair)")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Save block" }).click();
+  await expect(dialog).toHaveCount(0);
+  const check = await (await request.post("/api/rbds/validate", { data: { graph: { ...graph,
+    nodes: graph.nodes.map((n) => (n.id === "f" ? { ...n, data: { ...n.data, state: "working" } } : n)) } } })).json();
+  expect(check.valid).toBe(true);
+  await expect(page.locator(".rbd-valid-menu .rbd-valid-toggle")).toContainText(/Valid/, { timeout: 15_000 });
+  await expectHealthy(page, problems, { label: "never fails block" });
+  await request.delete(`/api/rbds/${id}`);
+});
+
+// k-of-n vote nodes are judged by the wires into them: needing more than are wired in is
+// refused by the one check, naming the node; needing all of two adds no redundancy, which the
+// node says with a one-click "Make it 1 of 2".
+test("vote nodes: more needed than wired is refused, all-must-work is flagged and fixed in one click", async ({ page, request, problems }) => {
+  const exp = { source: "params", distribution: "Exponential", distribution_id: "exponential",
+                params: [{ name: "failure_rate", value: 0.001 }] };
+  const block = (id, label, x, y) => ({ id, type: "component", position: { x, y }, data: { label, model: exp } });
+  const graph = {
+    unit: "Hours",
+    nodes: [{ id: "input", type: "input", position: { x: 0, y: 80 }, data: { label: "Input" } },
+            block("s1", "Software 1", 180, 0), block("s2", "Software 2", 180, 160),
+            { id: "v1", type: "knode", position: { x: 420, y: 60 }, data: { label: "Software", n: 2, k: 2 } },
+            block("w1", "Workstation 1", 660, 80),
+            { id: "v2", type: "knode", position: { x: 900, y: 60 }, data: { label: "Workstations", n: 2, k: 3 } },
+            { id: "output", type: "output", position: { x: 1140, y: 80 }, data: { label: "Output" } }],
+    edges: [["input", "s1"], ["input", "s2"], ["s1", "v1"], ["s2", "v1"], ["v1", "w1"], ["w1", "v2"], ["v2", "output"]]
+      .map(([source, target]) => ({ id: `${source}-${target}`, source, target })),
+  };
+  const { id } = await (await request.post("/api/rbds", { data: { name: "Smoke vote nodes", graph } })).json();
+  await open(page, `/systems/b/${id}`);
+  const two = page.locator(".react-flow__node-knode", { hasText: "Workstations" });
+  await expect(two.locator(".rbd-knode.invalid")).toContainText("Needs 2 working inputs; 1 is wired in");
+  const pair = page.locator(".react-flow__node-knode", { hasText: "Software" }).first();
+  await expect(pair.locator(".rbd-knode.warn")).toContainText("All 2 must work: no redundancy");
+  const status = page.locator(".rbd-valid-menu .rbd-valid-toggle");
+  await expect(status).toContainText(/problem/, { timeout: 15_000 });
+  await status.click();
+  const check = page.locator(".rbd-check").first();
+  await expect(check).toContainText("Vote node “Workstations” needs at least 2 inputs for 2-of-n; it has 1");
+  await expect(check).toContainText("“Software” is 2 of 2: both must work, so this pair adds no redundancy. Did you mean 1 of 2?");
+  if (process.env.SMOKE_SHOTS) await page.screenshot({ path: `${process.env.SMOKE_SHOTS}/vote-nodes-invalid-and-warning.png` });
+  await page.keyboard.press("Escape");
+
+  await pair.getByRole("button", { name: "Make it 1 of 2" }).click();
+  await expect(page.locator(".react-flow__node-knode .rbd-knode.warn")).toHaveCount(0);
+  // The editor's own vote setting never offers more than is wired in, and starts at 1.
+  await two.dblclick();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("(of 1 wired in)")).toBeVisible();
+  await dialog.getByRole("spinbutton").fill("1");
+  await dialog.getByRole("button", { name: "Update" }).click();
+  // One input, needs 1: allowed (a pass-through), only noted.
+  await expect(status).not.toContainText(/problem/, { timeout: 15_000 });
+  await expect(status).toContainText(/Valid|warning/);
+  if (process.env.SMOKE_SHOTS) await page.screenshot({ path: `${process.env.SMOKE_SHOTS}/vote-nodes-fixed.png` });
+  await expectHealthy(page, problems, { label: "vote nodes" });
   await request.delete(`/api/rbds/${id}`);
 });
 

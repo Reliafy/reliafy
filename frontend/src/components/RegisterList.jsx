@@ -4,6 +4,16 @@ import { SectionHeader, ShowMe } from "./SectionPage.jsx";
 import ListSearch, { matches } from "./ListSearch.jsx";
 import { RowActions } from "./LibRows.jsx";
 import MoreMenu from "./ui/MoreMenu.jsx";
+import { isEditable, panelRowMore } from "../contextMenu.js";
+
+// A right-click on a row opens its ⋯ menu (the app's, not the browser's); a field keeps the browser's.
+export function rowContextMenu(e) {
+  if (isEditable(e.target)) return;
+  const more = panelRowMore(e.target);
+  if (!more) return;
+  e.preventDefault();
+  more.click();
+}
 import LoadFailed from "./LoadFailed.jsx";
 import "./RegisterList.css";
 import Loading from "./ui/Loading.jsx";
@@ -81,7 +91,7 @@ export default function RegisterList({
                   {(onDelete || rowMenu) && <th><span className="sr-only">Actions</span></th>}
                 </tr>
               </thead>
-              <tbody>
+              <tbody onContextMenu={rowContextMenu}>
                 {visible.map((r) => {
                   const n = name(r);
                   return (
@@ -98,7 +108,7 @@ export default function RegisterList({
                         <td className="lib-actions" onClick={(e) => e.stopPropagation()}>
                           <MoreMenu label={`Actions for ${n.label}`} items={rowMenu(r)} />
                         </td>
-                      ) : onDelete && <RowActions item={r} onDelete={() => onDelete(r)} />}
+                      ) : onDelete && <RowActions item={r} to={n.to} onDelete={() => onDelete(r)} />}
                     </tr>
                   );
                 })}

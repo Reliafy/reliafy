@@ -25,8 +25,10 @@ import { charCount } from "../maintenanceText.js";
 import { modeAnswers } from "../decisionCheck.js";
 import RcmFunctionStandards from "./RcmFunctionStandards.jsx";
 import { COMPARATORS, COMPARATOR_LABEL, limitReads, limitWords } from "../rcmStandards.js";
-import RcmModeTasks, { RcmTaskSections, StepLabel, removeTaskFromMode } from "./RcmModeTasks.jsx";
-import FailureCostRows from "./FailureCostRows.jsx";
+import RcmModeTasks, { IntervalBasis, RcmTaskSections, StepLabel, removeTaskFromMode } from "./RcmModeTasks.jsx";
+import ModeResponseLinks from "./ModeResponseLinks.jsx";
+import TaskExtras from "./TaskExtras.jsx";
+import { costWords, labourWords, partWords } from "../taskExtras.js";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { getTaskLsa } from "../api.js";
 import { explorerHere } from "../products.js";
@@ -46,6 +48,7 @@ import { apWords } from "../fmeaWorksheet.js";
 import { CriticalityGroup, FmeaGroup } from "./FmeaPanels.jsx";
 import { PanelField } from "./PanelField.jsx";
 import "./RcmWorksheet.css";
+import PanelKind, { LevelIcon } from "./PanelKind.jsx";
 import { DateInput } from "./ui/DateTimeInput.jsx";
 
 // The RCM worksheet's pieces, drawn by the Explorer's RCM tab (the asset tree
@@ -60,23 +63,7 @@ import { DateInput } from "./ui/DateTimeInput.jsx";
 //
 // On a phone the details panel opens as a sheet.
 
-const ICONS = {
-  fn: <path d="M3 3.5h10v9H3z M6.5 6v4l3.5-2z" strokeWidth="1.4" strokeLinejoin="round" />,
-  // A performance standard: a limit on a scale.
-  std: <><path d="M2 10.5h12M4 10.5v-3M7 10.5v-4.5M10 10.5v-3M13 10.5v-4.5" strokeWidth="1.4" strokeLinecap="round" /><path d="M2 13h12" strokeWidth="1.4" strokeLinecap="round" /></>,
-  fail: <><path d="M8 2.2 14.2 13H1.8z" strokeWidth="1.4" strokeLinejoin="round" /><path d="M8 6.5v3" strokeWidth="1.6" strokeLinecap="round" /><circle cx="8" cy="11.2" r=".9" fill="currentColor" stroke="none" /></>,
-  mode: <path d="M9.2 1.8 3.8 9h4l-1 5.2L12.2 7h-4z" strokeWidth="1.4" strokeLinejoin="round" />,
-  cause: <path d="M4 2.5v6a2 2 0 0 0 2 2h6M9.5 7.5l3 3-3 3" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />,
-  task: <path d="M10.6 2.3a3.2 3.2 0 0 0-3.9 4.1L2.4 10.7a1.4 1.4 0 0 0 2 2l4.3-4.3a3.2 3.2 0 0 0 4.1-3.9l-1.9 1.9-1.8-.4-.4-1.8z" strokeWidth="1.3" strokeLinejoin="round" />,
-};
-
-export function LevelIcon({ type, className = "rw-ic" }) {
-  return (
-    <svg className={type === "std" ? `${className} rw-ic-std` : className} viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true">
-      {ICONS[type]}
-    </svg>
-  );
-}
+export { LevelIcon };
 
 export { phoneLine };
 const CHECK_MARK = { contradicted: "✗", unsure: "?", differs: "!", stale: "–", supported: "✓" };
@@ -515,6 +502,7 @@ export function Details({
     : (inTree.kids || []).map((k) => whole.rows.get(k)).filter((k) => k && (k.type === "fail" || k.type === "mode"));
   const where = display.rows.get(r.ref.position_id)?.ref.name || whole.rows.get(r.ref.position_id)?.ref.name;
   const said = (text) => onSaid?.(text);
+  // Opened from a forecast's "Not counted · Add" (?fm=<mode>&respond=failure|found): that response opens.
   // A task's name, kept on the task (a shared task's name changes for every mode it serves).
   const saveTaskName = (raw) => {
     const text = String(raw ?? "").trim();
@@ -559,7 +547,7 @@ export function Details({
   const chips = isTask
     ? [
       taskKindText(r) ? { text: taskKindText(r), tone: "accent" } : { text: "Not in a decision yet", tone: "warning" },
-      everyText(r.ref.task) ? { text: everyText(r.ref.task), tone: "neutral" } : null,
+      // How often is the Interval row's (not a chip again).
       taskSharedText(r.ref.task) ? { text: taskSharedText(r.ref.task), tone: "neutral", title: taskServesTip(r.ref.task) } : null,
       r.ref.task?.package ? { text: `In: ${r.ref.task.package.name}`, tone: "neutral", title: "Done on this work package's visits" } : null,
     ].filter(Boolean)
@@ -706,30 +694,21 @@ export function Details({
   // One line, as the failure mode's "Based on": the evidence as a link (or "nothing linked
   // yet"), Link… / Change…, and its status chip at the right. A plain decision's one task has
   // the decision's evidence; a combination's member its own (or the decision's stands for it).
-  const taskEvidence = isTask && modeRow && (() => {
+  const taskBasis = isTask && modeRow && (() => {
     const md = modeRow.ref.decision;
-    if (!md) return <p className="rim-tquiet">Decide the failure mode first: evidence is linked to its decision.</p>;
+    if (!md) return <p className="rim-tquiet">Decide the failure mode first: what the interval rests on is kept with its decision.</p>;
     const at = isCombination(md) ? md.outcomes.findIndex((o) => o.task_id === r.ref.task_id) : null;
     if (at != null && at < 0) return <p className="rim-tquiet">Linked beside the decision, so it has no evidence of its own.</p>;
     const e = at != null ? md.outcomes[at] : md;
     const own = at == null || !!e.evidence;
     const none = !e.status || e.status === "unevidenced";
     const name = own ? e.artifact_name : null;
+    const saved = name && e.artifact_link_path ? <Link to={e.artifact_link_path} className="rw-basis-link">{name}</Link> : null;
     return (
-      <div className="rw-basedon rw-evidence" role="group" aria-label="Evidence">
-        <span className="rw-basedon-cites">
-          {name ? (e.artifact_link_path ? <Link to={e.artifact_link_path}>{name}</Link> : <span>{name}</span>)
-            : <span className="rw-basedon-none">{at != null && !none ? memberEvidenceText(e) : none ? "nothing linked yet" : "judgement (none needed)"}</span>}
-          {!readOnly && ops?.decide && (
-            <> · <button type="button" className="link" aria-label={none ? "Link evidence…" : "Change evidence…"}
-                         title="The model, analysis, report or function notes behind this task (optional)"
-                         onClick={() => setLinkingEvidence({ at })}>{none ? "Link…" : "Change…"}</button></>
-          )}
-        </span>
-        <span className="rw-basedon-status">
-          {none ? <Chip>None linked</Chip> : <RcmStatusBadge status={e.status} kind={e.evidence_kind} />}
-        </span>
-      </div>
+      <IntervalBasis mode={modeRow} task={r.ref.task} kind={r.ref.outcome} ops={ops} can={!readOnly && !!ops?.decide}
+                     evidence={name ? { artifact_name: name } : null} saved={saved}
+                     status={none ? null : <RcmStatusBadge status={e.status} kind={e.evidence_kind} />}
+                     onLink={!readOnly && ops?.decide ? () => setLinkingEvidence({ at }) : null} onSaid={said} />
     );
   })();
   const serves = isTask ? taskServes(whole, r.ref.task_id) : [];
@@ -762,7 +741,7 @@ export function Details({
            }}>
       <div className="rw-panel-top">
         <div className="rw-panel-head">
-          <div className="rw-panel-kind"><LevelIcon type={r.type} /> {level.label}</div>
+          <PanelKind type={r.type}>{level.label}</PanelKind>
           <div className="rw-panel-btns">
             {canExpand && (expanded ? (
               <button type="button" className="ghost sm rw-x" onClick={onCollapse} title="Show the table again, with these details beside it (Esc)"
@@ -853,8 +832,8 @@ export function Details({
         {r.type === "mode" && !fmea?.on && (
           <section className="rw-sg" aria-label="Failure consequences">
             {consequenceRows}
-            {/* What one failure costs: what the forecast and Optimise… charge it (failure_costs.py). */}
-            {ops && r.ref.id && <FailureCostRows key={`${r.key}:cost`} modeId={r.ref.id} readOnly={readOnly} onSaid={said} />}
+            {/* What's done if it fails (and when it's found), read-only: edited on the Maintenance tab. */}
+            {ops && r.ref.id && <ModeResponseLinks key={`${r.key}:resp`} modeId={r.ref.id} positionId={r.ref.position_id} />}
           </section>
         )}
         {(r.type === "mode" || isTask) && linkingEvidence && (isTask ? modeRow?.ref.decision : d) && (
@@ -883,13 +862,7 @@ export function Details({
         {/* A task (the tree's fifth level): what it is and how often, what's done when its check
             finds it, its instructions, then its evidence, the failure modes it serves and what doing
             it needs (its LSA record, changed on the LSA tab). */}
-        {isTask && modeRow && <RcmTaskSections key={`${r.key}:task`} r={r} mode={modeRow} ops={ops} readOnly={readOnly} onSaid={said} />}
-        {isTask && modeRow && (
-          <section className="rw-sg" aria-label="Based on">
-            <StepLabel>Based on</StepLabel>
-            <div className="rw-sc rim-tcell">{taskEvidence}</div>
-          </section>
-        )}
+        {isTask && modeRow && <RcmTaskSections key={`${r.key}:task`} r={r} mode={modeRow} ops={ops} readOnly={readOnly} onSaid={said} basis={taskBasis} />}
         {isTask && (
           <section className="rw-sg rw-serves" aria-label="Serves">
             <StepLabel>Serves</StepLabel>
@@ -1321,12 +1294,15 @@ function EvidenceDialog({ r, at = null, options, workings, ops, onClose, onDone 
   );
 }
 
-// A task's logistics in its details: a short summary of its LSA record (labour hours,
-// tools, method), read when the task is picked, and "Open in LSA" for the whole record.
+// A task's cost and what it needs, in its details (Derryn, 23 Nov 2026: "Logistics and Cost must
+// also be in the Maintenance task panel: the same data and the same component"): its Cost, Labour
+// and Parts as the Maintenance tab's task panel has them (TaskExtras), read here, each with the way
+// to change it there (?msec=), then the rest of what it needs in a line.
 function TaskLogistics({ taskId, positionId }) {
   // On a product's page the link stays there (its design's LSA); elsewhere the Explorer's.
   const location = useLocation();
   const [state, setState] = useState({ id: null, data: null, error: null });
+  const [open, setOpen] = useState({});
   useEffect(() => {
     let on = true;
     getTaskLsa(taskId).then((data) => { if (on) setState({ id: taskId, data, error: null }); },
@@ -1334,43 +1310,41 @@ function TaskLogistics({ taskId, positionId }) {
     return () => { on = false; };
   }, [taskId]);
   const here = state.id === taskId;
-  const res = here ? state.data?.task?.resources || null : null;
-  const method = String(res?.method || "").split("\n").map((l) => l.trim()).find(Boolean) || "";
-  const tools = (res?.tools || []).length;
-  const parts = res ? [
-    res.labour_hours ? `${res.labour_hours.toLocaleString("en-AU", { maximumSignificantDigits: 4 })} labour hour${res.labour_hours === 1 ? "" : "s"}` : null,
-    tools ? n(tools, "tool") : null,
-    method ? `Method: ${method}` : null,
-  ].filter(Boolean) : [];
+  const task = here ? state.data?.task || null : null;
+  const res = task?.resources || {};
+  const go = (section) => explorerHere(location.pathname, location.search, { sel: positionId, tab: "maintenance", mtask: taskId,
+    ...(section === "needs" ? { needs: "1" } : section ? { msec: section } : {}) });
+  const change = (section, words) => <Link className="rim-quietgo" to={go(section)}>{words} in Maintenance ›</Link>;
+  const lsaCost = task?.cost?.lsa?.amount;
+  const costSum = costWords(task?.cost?.typed) || (lsaCost != null ? `${money(lsaCost)} each time, from its LSA` : "");
+  const method = String(res.method || "").split("\n").map((l) => l.trim()).find(Boolean) || "";
+  const tools = (res.tools || []).length;
+  const rest = [tools ? n(tools, "tool") : null, (res.consumables || []).length ? n(res.consumables.length, "consumable") : null,
+    method ? `Method: ${method}` : null].filter(Boolean);
   return (
-    <section className="rw-sg rw-logistics" aria-label="Logistics">
-      <StepLabel>Logistics</StepLabel>
+    <section className="rw-sg rw-logistics" aria-label="Cost and needs">
+      <StepLabel>Cost and needs</StepLabel>
       <div className="rw-sc rim-tcell">
-        <p className="rim-tline">
-          <span className="rim-tquiet">
-            {!here ? "Reading…" : state.error ? `Couldn't read it: ${state.error}`
-              : parts.length ? parts.join(" · ") : "No labour, tools or method set yet."}
-          </span>
-          {" · "}
-          <Link to={explorerHere(location.pathname, location.search, { sel: positionId, tab: "maintenance", mtask: taskId, needs: "1" })}
-                title="How it's done: its instructions, labour, tools, spares and method (its LSA), on the Maintenance tab">What it needs</Link>
-        </p>
-      </div>
-      {/* What it costs each time (Nov 2026): the task's own figure on its position, typed or from
-          its LSA. The RCM reads it here and in its calculators; it's set on the Maintenance tab. */}
-      <StepLabel>Cost each time</StepLabel>
-      <div className="rw-sc rim-tcell" role="group" aria-label="Cost each time">
-        <p className="rim-tline">
-          <span className="rim-tquiet">
-            {!here ? "Reading…" : state.error ? "—"
-              : state.data?.task?.cost?.amount != null ? `${money(state.data.task.cost.amount)}. ${costWhere(state.data.task.cost)}` : costWhere(state.data?.task?.cost)}
-          </span>
-          {" · "}
-          <Link to={explorerHere(location.pathname, location.search, { sel: positionId, tab: "maintenance", mtask: taskId })}
-                title="Set what it costs each time on the Maintenance tab: the one place for the figure">
-            {here && state.data?.task?.cost?.amount != null ? "Change" : "Set it"}
-          </Link>
-        </p>
+        {!here ? <p className="rim-tquiet">Reading…</p> : state.error ? <p className="rim-tquiet">Couldn&apos;t read it: {state.error}</p> : (
+          <>
+            <TaskExtras open={open} onToggle={(k, o) => setOpen((x) => ({ ...x, [k]: o }))} items={[
+              { key: "cost", title: "Cost", summary: costSum, body: (
+                <p className="rim-tline rim-tquiet">
+                  {task.cost?.amount != null ? `${money(task.cost.amount)} each time. ` : ""}{costWhere(task.cost)} {change("cost", "Change")}
+                </p>
+              ) },
+              { key: "labour", title: "Labour", summary: labourWords(res.labour), body: (
+                <p className="rim-tline rim-tquiet">{labourWords(res.labour) || "None set yet."} {change("labour", labourWords(res.labour) ? "Change" : "Add")}</p>
+              ) },
+              { key: "parts", title: "Parts", summary: partWords(res.spares), body: (
+                <p className="rim-tline rim-tquiet">{partWords(res.spares) || "None set yet."} {change("parts", partWords(res.spares) ? "Change" : "Add")}</p>
+              ) },
+              { key: "needs", title: "Tools and method", summary: rest.join(" · "), body: (
+                <p className="rim-tline rim-tquiet">{rest.length ? rest.join(" · ") : "None set yet."} {change("needs", rest.length ? "Change" : "Add")}</p>
+              ) },
+            ]} />
+          </>
+        )}
       </div>
     </section>
   );

@@ -6,6 +6,7 @@
 // The worksheet is smoke/fixtures/rcm-worksheet.csv (invented).
 import { readFileSync } from "node:fs";
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
+import { headItem } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -66,8 +67,7 @@ test("import a worksheet onto a position from the RCM tab, then again: nothing m
   await shot(page, "rcm-import-3-rows-1280");
 
   // Again, from the heading's ⋯ menu: nothing new, so nothing to add.
-  await page.locator(".tt-headslot").getByRole("button", { name: "More actions" }).click();
-  await page.locator(".tt-headslot").getByRole("button", { name: "Import worksheet…" }).click();
+  await (await headItem(page, "Import worksheet…")).click();
   const again = await chooseFile(page, name);
   await expect(again.getByTestId("rcm-import-result")).toContainText(`Nothing new: it's all on ${name} already.`);
   await expect(again.getByTestId("rcm-import-result")).toContainText("Already there, left as they are: 2 functions · 3 functional failures · 4 failure modes.");
@@ -78,10 +78,10 @@ test("import a worksheet onto a position from the RCM tab, then again: nothing m
   await expect(again).toHaveCount(0);
 
   // Export CSV: the same columns the import reads.
-  await page.locator(".tt-headslot").getByRole("button", { name: "More actions" }).click();
+  const exportCsv = await headItem(page, "Export CSV");
   const [download] = await Promise.all([
     page.waitForEvent("download"),
-    page.locator(".tt-headslot").getByRole("button", { name: "Export CSV" }).click(),
+    exportCsv.click(),
   ]);
   expect(download.suggestedFilename()).toBe(`${name} RCM.csv`);
   const text = readFileSync(await download.path(), "utf8");

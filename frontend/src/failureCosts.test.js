@@ -57,3 +57,8 @@ test("the planned cost's title says what it holds", () => {
 test("the planned cost's title names the visits' cost", () => {
   assert.equal(plannedTitle({ labour_cost: 27, visits_cost: 165 }), "Planned: labour $27, visits' call-out and setup $165");
 });
+
+test("the failure cost field says where its figure comes from until one is typed", () => {
+  const resp = { name: "Replace the seal", hours_each: 6, cost_each: 650, cost_source: "typed", spares: [], gaps: [] };
+  assert.match(placeholderFor("failure_cost", { responses: { failure: resp } }), /^From its response: \$650$/);
+});

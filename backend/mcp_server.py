@@ -425,7 +425,7 @@ DATA_NOTICE = ("Names, notes, descriptions, labels, column headers and values in
 # arriving through the Pro API. Reliafy Maintenance adds its own when on.
 _FIT_TOOLS = {"analyse.fit", "analyse.bayes_update", "change.model_fit", "change.model_fit_alt", "change.model_fit_recurrent",
               "analyse.fit_joint", "change.model_fit_joint", "change.model_fit_degradation"}
-_FLEET_TOOLS = {"list.fleets", "analyse.fleet_forecast", "list.fleet_alerts", "change.fleet_create_alert"}
+_FLEET_TOOLS = {"list.fleets", "analyse.fleet_forecast", "analyse.forecast", "list.fleet_alerts", "change.fleet_create_alert"}
 # Making, filling, editing, sharing and publishing libraries (Derryn, 15 Nov 2026); reading and using
 # public libraries stays on every plan, and deleting one's own library (change library_delete) too.
 _LIBRARY_TOOLS = {"change.library_create", "change.library_update", "change.library_add", "change.library_remove"}
@@ -870,10 +870,10 @@ ONE_OF = {
     ("analyse", "growth_projection"): "model_id or x", ("change", "model_fit_recurrent"): "times or dataset_id",
     ("change", "import_rbd"): "upload_id or content", ("change", "model_fit"): "name, data or dataset_id",
     ("change", "model_fit_alt"): "name, data + stresses or dataset_id",
-    ("analyse", "optimal_replacement"): "model_id or params, planned_cost, unplanned_cost",
-    ("analyse", "failure_finding_interval"): "model_id or params, target_availability",
-    ("analyse", "calendar_replacement"): "model_id or params, shuts, failure_cost",
-    ("analyse", "next_replacement"): "model_id or params, age, shuts, failure_cost",
+    ("analyse", "optimal_replacement"): "model_id|params, planned_cost, unplanned_cost",
+    ("analyse", "failure_finding_interval"): "model_id|params, target_availability",
+    ("analyse", "calendar_replacement"): "model_id|params, shuts, failure_cost",
+    ("analyse", "next_replacement"): "model_id|params, age, shuts, failure_cost",
     ("analyse", "prediction"): "lines or product_id", ("analyse", "schedule"): "rule or plan",
     ("change", "prediction_save"): "name, lines or product_id",
     ("change", "library_add"): "library_id, dataset_id or model_id",
@@ -933,10 +933,12 @@ def _listed_description(name: str, selector: str, intro: str, table: Table, hide
     return text
 
 
-def _listed_schema(selector: str, values: list) -> dict:
+def _listed_schema(selector: str, values: list, args_help: str | None = ARGS_HELP) -> dict:
+    """``args_help`` None: the args object carries no description (the tool's own says where its
+    arguments are: the maintenance tool, whose action list is long)."""
+    args = {"type": "object", **({"description": args_help} if args_help else {})}
     return {"type": "object", "required": [selector],
-            "properties": {selector: {"type": "string", "enum": list(values)},
-                           "args": {"type": "object", "description": ARGS_HELP}}}
+            "properties": {selector: {"type": "string", "enum": list(values)}, "args": args}}
 
 
 def args_tool(name: str, annotations: ToolAnnotations, title: str, selector: str, intro: str, table: Table,
@@ -3020,6 +3022,12 @@ def alt_use_level(
         "bounds_methods": out.get("bounds_methods"),
         **_alt_stress_units(results),
     }
+    # The mean life (MTTF) at the use stress with its 90% two-sided Wald interval (SurPyval's mean_cb).
+    if (out.get("mean_life") or {}).get("ci"):
+        answer["mean_life_interval"] = {"lower": out["mean_life"]["ci"][0], "upper": out["mean_life"]["ci"][1],
+                                        "level": out["mean_life"]["level"], "bound": "two-sided"}
+    if out.get("activation_energy"):
+        answer["activation_energy_ev"] = out["activation_energy"]
     if out.get("no_finite_maximum"):
         answer["no_finite_maximum"] = out["no_finite_maximum"]
     if bounds_method == "wald":
@@ -3624,6 +3632,12 @@ def upload_dataset(
         "use upload_id instead."))] = None,
     upload_id: Annotated[Optional[str], Field(description=(
         "Instead of csv: a file sent through change upload_create (CSV/TSV, or an .xlsx workbook with sheet)."))] = None,
+    notation: Annotated[Optional[str], Field(min_length=1, description=(
+        "Instead of csv: small data typed as text in SurPyval's notation, entries separated by commas: 120 failed "
+        "at 120, 1000+ still running at 1000, [400, 450] failed between, <50 failed before 50, 3*200 three alike, "
+        "12 | (2, 50] observed only within (2, 50]; or one unit's history per line (P1: 120, 310, 1000+) for "
+        "repairable data. Saved as the CSV of the same data (columns x or xl/xr, c, n, tl, tr, i) with its "
+        "reading; needs unit. guide(action='change.dataset_upload') has the grammar."))] = None,
     sheet: Annotated[Optional[str], Field(description=(
         "With an .xlsx upload_id: the sheet to read (needed when the workbook has several; get kind upload "
         "lists them)."))] = None,
@@ -3646,8 +3660,12 @@ def upload_dataset(
     needs sheet), with its reading (which column is x, c, n, …, Z); returns its id, columns, a preview and
     the reading. Columns not named are guessed and the reading says so. Censoring: 0 = failed, 1 = running."""
     user, db = _caller(ctx), _db()
+    if notation is not None:
+        return _upload_notation(ctx, user, db, name, notation, unit, library_id,
+                                bool(csv is not None or upload_id is not None or (dataset_col or "").strip()))
     if (csv is None) == (upload_id is None):
-        raise ToolError("Give either csv (text) or upload_id (a file sent through change upload_create) — exactly one.")
+        raise ToolError("Give either csv (text), upload_id (a file sent through change upload_create) or notation "
+                        "(typed lives) — exactly one.")
     if library_id and user.get("mcp_plan", "pro") != "pro":
         raise Refusal(_pro_only_message("change.library_add"), "pro_only")
     lib = _own_library(db, user["uid"], library_id) if library_id else None
@@ -3696,6 +3714,38 @@ def upload_dataset(
     if added:
         out["library"] = added
     return out
+
+
+def _upload_notation(ctx, user, db, name: str, text: str, unit: Optional[str], library_id: Optional[str],
+                     other_source: bool) -> dict[str, Any]:
+    """upload_dataset with notation: the typed text read with SurPyval, saved as the CSV of the same data
+    with the reading that names its columns (services/notation.py), as the app's Type it in does."""
+    from backend.services import notation as notation_service
+
+    if other_source:
+        raise ToolError("Give notation on its own: not with csv, upload_id or dataset_col.")
+    if not (unit or "").strip():
+        raise ToolError("notation needs unit: the unit of the times (hours, cycles, km…), or \"none\".")
+    try:
+        out = notation_service.read(text, unit)
+    except notation_service.NotationError as exc:
+        raise ToolError(f"Couldn't read the notation: {exc}") from None
+    if library_id and user.get("mcp_plan", "pro") != "pro":
+        raise Refusal(_pro_only_message("change.library_add"), "pro_only")
+    lib = _own_library(db, user["uid"], library_id) if library_id else None
+    _cap(db, user, "datasets", "datasets")
+    try:
+        ds, reused = datasets_service.create_or_reuse(db, name.strip(), out["csv"].encode(), user["uid"],
+                                                      reading=out["reading"])
+    except (dataset_reading.ReadingError, FitError) as exc:
+        raise ToolError(str(exc)) from None
+    added = _upload_into_library(db, user["uid"], lib, [(ds, reused)])
+    result = {"id": ds.id, "name": ds.name, "n_rows": ds.n_rows, "columns": [c["name"] for c in ds.columns],
+              "preview": datasets_service.preview_rows(ds, 5), "url": _url(f"/data/{ds.id}"),
+              "read_as": out["summary"], "reading": _reading_out(*dataset_reading.for_dataset(ds))}
+    if added:
+        result["library"] = added
+    return result
 
 
 def _upload_into_library(db, uid: str, lib: Optional[dict], made: list) -> Optional[dict]:
@@ -5587,6 +5637,10 @@ def analyse_rbd_mission(
         "or {age: <time it has run>}); blocks left out are new. The mission then flies from now: each aged "
         "block starts it at its age, and a failed block stays failed. "
         "Omit to fly it from new."))] = None,
+    answers: Annotated[bool, Field(description=(
+        "With mission_id: add the Missions tab's two answers and summary {chance, clock, length} (chance of completing with its 90% one-sided "
+        "lower bound; part failures to expect, failed blocks replaced like new, with a 90% two-sided range: "
+        "simulated, Pro), its calendar, starting state and plan, from its saved setup."))] = False,
 ) -> dict[str, Any]:
     """A mission's chance of completing: each phase's failure probability, reliability at its end and
     weakest block, plus the Use / Environment covariates its phases can set (the blocks each feeds). A
@@ -5645,8 +5699,18 @@ def analyse_rbd_mission(
                    "blocks": [b["label"] for b in r["blocks"]],
                    "by_phase": {p["name"]: next((x["value"] for x in p["covariates"] if x["name"] == r["name"]), None)
                                 for p in detail["phases"]}} for r in detail["covariates"]]
-    return {"rbd_id": rbd.id, "mission_id": mission["id"], "name": mission["name"], "unit": graph.get("unit") or "",
-            "phases": mission["phases"], "covariates": covariates, "result": result}
+    out = {"rbd_id": rbd.id, "mission_id": mission["id"], "name": mission["name"], "unit": graph.get("unit") or "",
+           "phases": mission["phases"], "covariates": covariates, "result": result}
+    if answers:
+        from backend.routers.rbd_missions import mission_answers_for
+        from backend.services.access import AccessCtx
+
+        actx = AccessCtx(user=user, uid=user["uid"], workspace="personal", write_owner=user["uid"],
+                         read_owners=owners, list_owners=user["uid"], share_fallback=False,
+                         time_zone=time_zones.of_owner(db, user["uid"]))
+        status, got = mission_answers_for(db, actx, rbd, mission["id"])
+        out["answers"] = got if status == 200 else {"available": False, "message": got.get("detail")}
+    return out
 
 
 def save_rbd_mission(
@@ -5657,6 +5721,10 @@ def save_rbd_mission(
     phases: Annotated[Optional[list[MissionPhase]], Field(max_length=50, description=(
         "Replaces its phases, in order ([] on the diagram's own mission removes it)."))] = None,
     delete: Annotated[bool, Field(description="Delete the mission (only when the user asks).")] = False,
+    setup: Annotated[Optional[dict[str, Any]], Field(description=(
+        "A mission with an RBD of its own: {clock: 'operating' (phases in operating units, no calendar needed) | "
+        "'calendar', label?: e.g. 'flight hours', start: 'now' | 'YYYY-MM-DD', calendar: {linked: true} (its "
+        "position's duty) | {hours_per_day, days_per_week}, from: 'new' | 'today' (blocks at today's ages)}."))] = None,
 ) -> dict[str, Any]:
     """Add, change or delete a named phased mission on a non-repairable diagram: phases with durations, blocks
     not needed, vote counts and Use / Environment values per phase (values once per phase, block_values per
@@ -5674,7 +5742,8 @@ def save_rbd_mission(
             graph, mission = rbd_missions.remove(graph, mission_id), None
         else:
             raw = [p.model_dump(exclude_none=True) for p in phases] if phases is not None else None
-            graph, mission = rbd_missions.save(graph, mission_id, name, raw)
+            graph, mission = rbd_missions.save(graph, mission_id, name, raw,
+                                               **({"setup": setup} if setup is not None else {}))
         rbd_graph.check_limits(graph)
     except (rbd_missions.MissionError, rbd_graph.GraphError) as exc:
         raise ToolError(f"Nothing was saved — {exc}") from None
@@ -6967,6 +7036,51 @@ def optimal_replacement(
     return _with_conversion(_maybe_curve(out, include_curve), converted)
 
 
+def quick_forecast(
+    ctx: Context,
+    work: Annotated[Optional[dict[str, Any]], Field(description=(
+        "Work on a schedule: {name, every, unit (hours|days|weeks|months|years), effect? (none: it doesn't change "
+        "the part's life; replaces: it replaces the part at that age; supports: it keeps the part on its life, with "
+        "impact_k? (failure rate × k if not done), grace? (%) and whatif? {drop: true} | {interval: N}: the answer "
+        "with it dropped or stretched beside it, and its worth), on_replace? (restart, the default: age replacement; "
+        "keep: block replacement), hours_each?, cost_each?, spares_each?, spare_name?}. Its count is certain, assumed "
+        "just done at the start."))] = None,
+    part: Annotated[Optional[dict[str, Any]], Field(description=(
+        "A part that fails: {age or ages (one per unit), hours_if_fails?, cost_if_fails?, spare_cost?, use_per_day? "
+        "(a life in cycles, km...)} with model_id or distribution_id + params below."))] = None,
+    model_id: _MODEL_ID = None,
+    distribution_id: _DIST_ID = None,
+    params: _PARAMS = None,
+    unit: _UNIT = None,
+    units: Annotated[Optional[int], Field(ge=1, description="How many units (default 1; a list of ages counts them).")] = None,
+    running: Annotated[Optional[dict[str, Any]], Field(description=(
+        "{hours, per: day|week} or {all_the_time: true}. Default all the time (24 h a day), said on the answer."))]
+    = None,
+    months: Annotated[int, Field(description="Horizon: 12, 24, 36 or 60.")] = 12,
+    start: Annotated[Optional[str], Field(description="First date (default today).")] = None,
+) -> dict[str, Any]:
+    """The quick forecast as a sentence (the app's Decisions > Forecasts): work on a schedule, a part that
+    fails, or both. Lines with one owner each (the work, the part's failures): times, hours, cost and spares,
+    the kind of number (certain, worked out, simulated) and what each leaves out; totals with 90% two-sided
+    ranges. Saves nothing. Pro."""
+    from backend.services import quick_forecast as qf
+
+    user, db = _caller(ctx), _db()
+    body: dict[str, Any] = {"work": work, "units": units, "running": running, "months": months, "start": start}
+    if part is not None or model_id or distribution_id:
+        inputs = _dist_inputs(db, user["uid"], model_id, distribution_id, params, unit)
+        inputs.pop("unit_conversion", None)
+        name = None
+        if model_id:
+            got = models_service.get_model(db, model_id, _owners(user["uid"]))
+            name = got.name if got else None
+        body["part"] = {**(part or {}), **inputs, "name": name or (part or {}).get("name") or "Typed parameters"}
+    try:
+        return qf.quick_forecast(body)
+    except fleet_service.FleetValidationError as exc:
+        raise ToolError(client_message(exc)) from None
+
+
 def save_optimal_replacement(
     ctx: Context,
     name: Annotated[str, Field(min_length=1, max_length=200, description="The analysis's name.")],
@@ -8111,7 +8225,7 @@ def fleet_forecast(
             fleet = fleet.model_copy(update={"items": fleet_service._clean_items(units["items"])})
         except (fleet_items.NoModelData, fleet_service.FleetValidationError) as exc:
             raise ToolError(str(exc)) from None
-        source = {"items": "model_data", "n_items": len(fleet.items),
+        source = {"items": "model_data", "n_items": fleet_service.unit_count(fleet.items),
                   **({"note": units["reason"]} if units.get("reason") else {}),
                   **({"skipped": units["skipped"][:10]} if units.get("skipped") else {})}
     forecast = fleet_service.compute(db, fleet, [*owners, fleet.owner_id], item_periods=item_probabilities,
@@ -9432,6 +9546,40 @@ def update_model(
             "url": _url(f"/models/m/{m.id}" if kind == "life" else f"/models/recurrent/{m.id}")}
 
 
+def adjust_model(
+    ctx: Context,
+    model_id: Annotated[str, Field(description=(
+        "A single-distribution non-repairable model (list kind models), the user's or a sample."))],
+    hazard_ratio: Annotated[Optional[float], Field(gt=0, description=(
+        "Known hazard ratio: this many times the hazard at every age, same shape (1.5 harsher, 0.8 "
+        "milder). Or life_scale."))] = None,
+    life_scale: Annotated[Optional[float], Field(gt=0, description=(
+        "Lasts this many times as long (0.67: about 2/3 as long), converted exactly to a hazard ratio: "
+        "Weibull or exponential with no offset, LFP or zero inflation only."))] = None,
+    name: Annotated[Optional[str], Field(description="Name; default '<name> (×1.5 hazard)'.")] = None,
+    save: Annotated[bool, Field(description="False: preview only, nothing saved.")] = True,
+) -> dict[str, Any]:
+    """Adjust for conditions: a new model with a known hazard ratio (SurPyval's hr), recording the original,
+    which is unchanged; usable wherever a model is. Gives B10 and mean life before and after, 90% one-sided
+    lower bounds holding hr fixed (SurPyval gives none on the mean with hr)."""
+    from backend.services import model_adjust
+
+    user, db = _caller(ctx), _db()
+    model = models_service.get_model(db, model_id, _owners(user["uid"]))
+    if model is None:
+        raise ToolError("Model not found (list kind models).")
+    try:
+        before = model_adjust.preview(db, model, _owners(user["uid"]), hazard_ratio, life_scale)
+        if not save:
+            return {"saved": False, **before}
+        _cap(db, user, "models", "models")
+        doc = model_adjust.adjust(db, model, _owners(user["uid"]), user["uid"], hazard_ratio, life_scale, name)
+    except model_adjust.AdjustError as exc:
+        raise ToolError(str(exc)) from None
+    return {"saved": True, **model_adjust.summary(doc, before["before"]), "assumes": before["assumes"],
+            "unit": before["unit"], "url": _url(f"/models/m/{doc.id}")}
+
+
 def update_dataset(
     ctx: Context,
     dataset_id: Annotated[str, Field(description="One of the user's own dataset ids (list kind datasets).")],
@@ -10503,6 +10651,7 @@ _A = {  # new tool -> {action: the function it runs}
         "next_failure": _act(next_failure),
         "growth_projection": _act(growth_projection),
         "optimal_replacement": _act(optimal_replacement),
+        "forecast": _act(quick_forecast),
         "calendar_replacement": _act(calendar_replacement),
         "next_replacement": _act(calendar_next_replacement),
         "failure_finding_interval": _act(failure_finding_interval),
@@ -10535,6 +10684,7 @@ _A = {  # new tool -> {action: the function it runs}
         "model_fit_joint": _act(fit_joint_model),
         "model_fit_degradation": _act(fit_degradation_model),
         "model_update": _act(update_model),
+        "model_adjust": _act(adjust_model),
         "model_delete": _act(delete_model),
         "dataset_upload": _act(upload_dataset),
         "dataset_add_measurements": _act(add_measurements),

@@ -173,6 +173,9 @@ const COUNTED = { tools: "tools", spares: "spares", consumables: "consumables" }
 
 // What each column shows for a task (and what it sorts and searches by).
 export function kindText(t) {
+  // A failure mode's response (responses.py): "Corrective: on failure", "Follow-on: when found".
+  if (t.trigger?.kind === "failure") return "Corrective: on failure";
+  if (t.trigger?.kind === "found") return "Follow-on: when found";
   if (t.on_event) return triggerText(t.trigger) || "on event";
   return OUTCOME_LABEL[t.kind] || "";
 }
@@ -210,6 +213,9 @@ export function fromRcm(t) {
   return !t.source || t.source === "rcm";
 }
 export function fromText(t) {
+  // A response names the failure mode it answers.
+  const resp = ["failure", "found"].includes(t.trigger?.kind) ? t.trigger.failure_mode?.text : null;
+  if (resp) return `Failure mode: ${resp}`;
   const modes = (t.modes || []).map((m) => m.text).filter(Boolean);
   const listed = modes.length ? `${modes[0]}${modes.length > 1 ? ` +${modes.length - 1}` : ""}` : "";
   if (fromRcm(t)) return listed ? `RCM: ${listed}` : "RCM";

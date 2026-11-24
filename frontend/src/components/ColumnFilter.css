@@ -126,3 +126,6 @@
 /* Rows picked together (multi-select): "N selected" with Clear, the focus pill's look; no row boxes. */
 .tt-h-tree .tt-selected + .tt-filtered, .tt-h-tree .tt-focused + .tt-selected { margin-left: var(--space-1); }
 .tt-h-lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* The hint over a table whose rows can be picked together: quiet, truncated, no pill. */
+.tt-select-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); font-size: var(--fs-12); font-weight: normal; }

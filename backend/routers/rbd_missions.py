@@ -16,6 +16,7 @@ from backend.services import rbd_network, rbd_phases
 from backend.services.access import AccessCtx, get_access
 from backend.services.rbd_analysis import AnalysisError
 from backend.errors import client_message
+from backend.services import rbd_live_models
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -62,6 +63,7 @@ def phased_mission(
     the blocks' states now (as the diagram's calculation takes them), so the
     mission flies from their ages. A mission only a simulation can work out (blocks on standby
     without constant failure rates) needs Pro: 402 with code ``pro_required`` otherwise."""
+    graph = rbd_live_models.refresh(session, graph, ctx.read_owners)  # linked blocks on their model's fit
     from backend.services import rbd_standby
 
     try:
@@ -85,6 +87,7 @@ def phase_covariates(graph: dict = Body(..., embed=True), session=Depends(get_se
     """Every covariate a phase of this (unsaved) diagram can set: one row per covariate a block's
     life model leaves open (bound NSWC-11, ALT and PH blocks, and saved regression models), with the
     blocks each feeds. The same list the Explorer's tree hangs under each phase (rbd_missions.gather)."""
+    graph = rbd_live_models.refresh(session, graph, ctx.read_owners)  # linked blocks on their model's fit
     from backend.services import covariate_binding as cb
     from backend.services import rbd_missions
 
@@ -106,6 +109,7 @@ def network_reliability(
     90%), the mean time until they part, and each block's Birnbaum
     importance. Exact by decision diagram, or simulated where that is too
     large. Quick, so not plan-gated."""
+    graph = rbd_live_models.refresh(session, graph, ctx.read_owners)  # linked blocks on their model's fit
     try:
         return JSONResponse(content=rbd_network.analyze_for_owner(
             session, graph, ctx.read_owners, t=_time(t), t_max=_time(t_max) or None,
@@ -140,6 +144,8 @@ def _rbd_brief(rbd, ctx: AccessCtx) -> dict:
 
     return {"id": rbd.id, "name": rbd.name, "unit": (rbd.graph or {}).get("unit") or "",
             "repairable": bool((rbd.graph or {}).get("repairable")),
+            # A mission's own RBD (one built for it on its position): it takes a start, calendar and starting state.
+            "mission_rbd": bool((rbd.graph or {}).get("mission_of")),
             "read_only": not access_service.can_write(ctx, rbd.owner_id),
             "updated_at": rbd.updated_at.isoformat() if rbd.updated_at else None}
 
@@ -226,15 +232,19 @@ def create_mission(rbd_id: str, name: str | None = Body(default=None), phases: l
 @router.put("/rbds/{rbd_id}/missions/{mission_id}")
 def update_mission(rbd_id: str, mission_id: str, name: str | None = Body(default=None),
                    phases: list | None = Body(default=None), expected_updated_at: str | None = Body(default=None),
-                   start: Any = Body(default="unset"),
+                   start: Any = Body(default="unset"), setup: Any = Body(default="unset"),
                    session=Depends(get_session), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
     """Rename a mission or replace its phases (each with its duration, blocks not needed, vote
     counts, values and block values). ``start``: a mission on a life model with no covariates
     starts at this age ({"age": t} in the RBD's unit, "now" for the fitted item's age when it's
-    worked out, or "new"). ``expected_updated_at``: refuse if the diagram changed since."""
+    worked out, or "new"). ``setup``: a mission with an RBD of its own: {start: "now" | date,
+    calendar: {linked: true} | {hours_per_day, days_per_week}, from: "new" | "today"} (null clears
+    it). ``expected_updated_at``: refuse if the diagram changed since."""
     from backend.services import rbd_missions
 
     extra = {} if start == "unset" else {"start": start}
+    if setup != "unset":
+        extra["setup"] = setup
     return _write(session, ctx, rbd_id, lambda g: rbd_missions.save(g, mission_id, name, phases, **extra),
                   expected_updated_at)
 
@@ -340,7 +350,9 @@ def calculate_mission(rbd_id: str, mission_id: str, phases: list | None = Body(d
     except rbd_standby.SimulationNeedsPro as exc:
         return JSONResponse(status_code=402, content=_pro_payload(exc))
     except AnalysisError as exc:
-        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+        # Blocks a phase needs with no life model: named, so the pane can offer what to do.
+        needs = {"needs_model": exc.blocks} if getattr(exc, "blocks", None) else {}
+        return JSONResponse(status_code=422, content={"detail": client_message(exc), **needs})
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to analyse a mission")
         return JSONResponse(status_code=500, content={
@@ -356,3 +368,63 @@ def calculate_mission(rbd_id: str, mission_id: str, phases: list | None = Body(d
         record = rbd_missions.result_record(graph, saved_phases, result)
         session.rbds.update_one({"_id": rbd.id}, {"$set": {f"mission_results.{mission_id}": record}})
     return JSONResponse(content={"mission": {"id": mission["id"], "name": mission["name"]}, **result})
+
+
+def maintenance_for(user, org: str, actor: str, time_zone):
+    """The caller's Maintenance (for a mission's position: its duty, today's ages, its plan), or
+    None where Maintenance isn't on for them."""
+    from backend import config
+
+    try:
+        from backend.maintenance.access import allowed
+        from backend.maintenance.service import Maintenance
+        from backend.routers.maintenance import get_store
+
+        if not (config.MAINTENANCE_ENABLED and allowed(user)):
+            return None
+        return Maintenance(get_store(), org, actor, time_zone=time_zone)
+    except Exception:  # noqa: BLE001 - the answers say what they couldn't read
+        logger.exception("Couldn't open Maintenance for a mission's answers")
+        return None
+
+
+def mission_answers_for(session, ctx: AccessCtx, rbd, mission_id: str) -> tuple[int, dict]:
+    """(status, payload) of a mission's two answers: the REST route's and the MCP action's."""
+    from backend.services import billing as billing_service
+    from backend.services import mission_answers, rbd_missions, rbd_standby
+
+    graph = rbd.graph or {}
+    mission = rbd_missions.find(graph, mission_id)
+    if mission is None:
+        return 404, {"detail": "That mission isn't on this RBD (deleted?)."}
+    owner = rbd_missions.mission_of(graph) or {}
+    m = maintenance_for(ctx.user, ctx.write_owner, ctx.uid, getattr(ctx, "time_zone", None)) if owner else None
+    simulate = billing_service.premium_compute_allowed(session, ctx.user)
+    try:
+        with _simulation(session, ctx):
+            out = mission_answers.answers(session, ctx.read_owners, graph, mission, m=m,
+                                          position_id=owner.get("position_id"),
+                                          today=m.today() if m is not None else None, simulate=simulate,
+                                          age_now=_age_now(ctx, graph))
+    except rbd_standby.SimulationNeedsPro as exc:
+        return 402, _pro_payload(exc)
+    except AnalysisError as exc:
+        needs = {"needs_model": exc.blocks} if getattr(exc, "blocks", None) else {}
+        return 422, {"detail": client_message(exc), **needs}
+    return 200, out
+
+
+@router.post("/rbds/{rbd_id}/missions/{mission_id}/answers")
+def mission_answers(rbd_id: str, mission_id: str, session=Depends(get_session),
+                    ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
+    """A mission's two answers over its whole phased length: the chance of completing it (with its
+    90% one-sided lower bound where one can be drawn) and the system failures to expect during it
+    (failed blocks replaced at once, like new), with a 90% two-sided range of outcomes (simulated:
+    Pro). With them: its calendar (start, end through its duty), its starting state, the current
+    maintenance plan on its blocks (read only, not counted yet) and what it assumed. Blocks with no
+    model, or a placeholder, stop both answers and are listed (``blocked``)."""
+    rbd, err = _rbd_or_404(session, rbd_id, ctx)
+    if err:
+        return err
+    status, out = mission_answers_for(session, ctx, rbd, mission_id)
+    return JSONResponse(status_code=status, content=out)

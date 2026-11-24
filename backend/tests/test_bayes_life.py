@@ -201,7 +201,7 @@ def test_the_position_flow_previews_saves_and_attaches(db):
     assert row["model"]["kind"] == "Weibull (Bayesian)" and row["model"]["quality"]["word"] == "Bayesian"
     assert {n["id"] for n in row["model"]["numbers"]} >= {"char_life", "shape", "mean", "b10"}
     assert row["model"]["credible_level"] == 0.9
-    assert row["source_text"] == "Bayesian update of Bearing life — Weibull (sample) · 1 failure, 1 suspension"
+    assert row["source_text"] == "Bayesian update of Bearing life — Weibull · 1 failure, 1 suspension"
     # The panel's plot carries the posterior-predictive credible band, not confidence bounds.
     full = pm.detail(m, db, OWNERS, set(), link["id"])
     c = full["curves"]

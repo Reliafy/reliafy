@@ -4,7 +4,7 @@
 // Items and Locations addresses, and the phone's slide to the panel and back.
 // Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy } from "./health.js";
-import { details, headMenu, phoneTree } from "./explorer.js";
+import { details, headItem, phoneTree } from "./explorer.js";
 import { expectChosen } from "./select.js";
 
 const M = "/api/maintenance";
@@ -22,8 +22,10 @@ async function plant(request, tag) {
   const seal = await post(`${M}/positions`, { name: `Tree seal ${tag}`, parent_id: motor.id, position_class: "Mechanical seal" });
   await post(`${M}/positions/${motor.id}/tasks`, { name: "Grease", interval: 1, unit: "months", last_done: "2020-01-01" });
   await post(`${M}/work-orders`, { position_id: seal.id, title: `Tree leak ${tag}` });
-  // A unit fitted to the line (it has no tasks to restart), and a spare kept at the site.
-  await post(`${M}/positions/${line.id}/fit`, { new_item: { name: `Tree unit ${tag}`, serial: `TU-${tag}` } });
+  // A unit fitted to the line, and a spare kept at the site. A fitting above a task restarts its
+  // schedule (restart.py), so the unit went in back in 2019, before the motor was last greased:
+  // the grease stays overdue.
+  await post(`${M}/positions/${line.id}/fit`, { new_item: { name: `Tree unit ${tag}`, serial: `TU-${tag}` }, on: "2019-06-01" });
   const fitted = (await (await request.get(`${M}/positions/${line.id}`)).json()).fitted.item;
   const spare = await post(`${M}/items`, { name: `Tree spare ${tag}`, serial: `SP-${tag}` });
   await post(`${M}/items/${spare.id}/place`, { location_id: site.id });
@@ -66,7 +68,7 @@ test("the tree pane: open, close, levels, filter, and the panel for the row pick
   // The heading's two controls, the "…" and Full screen; Open the full page is in the "…".
   await expect(page.locator(".tt-headslot .tt-actions > *")).toHaveCount(2);
   await expect(page.locator(".tt-headslot .tt-actions").getByRole("button", { name: "Full screen", exact: true })).toBeVisible();
-  await expect((await headMenu(page)).getByRole("link", { name: "Open the full page" })).toHaveAttribute("href", `/asset-register/positions/${p.top.id}`);
+  await expect((await headItem(page, "Open the full page"))).toHaveAttribute("href", `/asset-register/positions/${p.top.id}`);
   await page.keyboard.press("Escape");
 
   // Open and close with the arrow keys, and the levels.
@@ -172,7 +174,7 @@ test("arranged by locations with the switch, and back by positions from the keyb
   await row(page, `Tree site ${tag}`).click();
   const panel = details(page);
   await expect(panel.getByRole("heading", { name: `Tree site ${tag}` })).toBeVisible();
-  await expect((await headMenu(page)).getByRole("link", { name: "Open the full page" })).toHaveAttribute("href", `/asset-register/locations/${p.site.id}`);
+  await expect((await headItem(page, "Open the full page"))).toHaveAttribute("href", `/asset-register/locations/${p.site.id}`);
   await page.keyboard.press("Escape");
   await expectHealthy(page, problems, { label: "arranged by locations" });
 
@@ -182,7 +184,7 @@ test("arranged by locations with the switch, and back by positions from the keyb
   await expect(page.getByText("1 match, shown with what they're inside")).toBeVisible();
   await row(page, `Tree spare ${tag}`).click();
   await expect(panel.getByText("Placed at")).toBeVisible();
-  const full = (await headMenu(page)).getByRole("link", { name: "Open the full page" });
+  const full = (await headItem(page, "Open the full page"));
   await expect(full).toHaveAttribute("href", `/asset-register/items/${p.spare.id}`);
   await full.click();
   await expect(page.getByRole("heading", { name: `Tree spare ${tag}` })).toBeVisible();

@@ -26,8 +26,13 @@ model — never stored — so it always reflects the model's current fit.
 
 from __future__ import annotations
 
+import copy
+import hashlib
+import json
 import math
+import threading
 import uuid
+from collections import OrderedDict
 
 import numpy as np
 import pandas as pd
@@ -209,11 +214,43 @@ def _clean_covariates(values, who: str) -> dict:
     return out
 
 
+MAX_ITEMS = 500  # rows: an item can stand for many identical units (its count)
+MAX_UNITS = 20_000  # units across every row: each is forecast on its own
+
+
+def item_count(item: dict) -> int:
+    """How many identical units an item stands for (same age, rate and
+    conditions): 1 unless it says otherwise."""
+    try:
+        return max(1, int(item.get("count") or 1))
+    except (TypeError, ValueError):
+        return 1
+
+
+def unit_count(items) -> int:
+    """The units a fleet's items stand for: each item's count, added up."""
+    return sum(item_count(it) for it in items or [])
+
+
+def _clean_count(value, name: str) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        count = float(value)
+    except (TypeError, ValueError):
+        raise FleetValidationError(f"'{name}': the number of units must be a whole number.")
+    if not math.isfinite(count) or count < 1 or count != int(count):
+        raise FleetValidationError(f"'{name}': the number of units must be a whole number of at least 1.")
+    return int(count) if count > 1 else None
+
+
 def _clean_items(items) -> list[dict]:
     if not isinstance(items, list):
         raise FleetValidationError("items must be a list.")
-    if len(items) > 500:
-        raise FleetValidationError("A fleet is limited to 500 items.")
+    if len(items) > MAX_ITEMS:
+        raise FleetValidationError(
+            f"A fleet is limited to {MAX_ITEMS} items. An item can stand for many identical units: "
+            "give it the number of units instead of a row each.")
     out = []
     for item in items:
         name = str(item.get("name") or "").strip()
@@ -256,6 +293,9 @@ def _clean_items(items) -> list[dict]:
             if not np.isfinite(service) or service < 0:
                 raise FleetValidationError(f"'{name}': the next service can't be negative.")
             cleaned["next_service_at"] = service
+        count = _clean_count(item.get("count"), name)
+        if count:
+            cleaned["count"] = count
         covariates = _clean_covariates(item.get("covariates"), f"'{name}'")
         if covariates:
             cleaned["covariates"] = covariates
@@ -263,6 +303,9 @@ def _clean_items(items) -> list[dict]:
         if in_service is not None:
             cleaned["service_periods"] = in_service
         out.append(cleaned)
+    if unit_count(out) > MAX_UNITS:
+        raise FleetValidationError(
+            f"A fleet is limited to {MAX_UNITS:,} units in all; these items stand for {unit_count(out):,}.")
     return out
 
 
@@ -410,7 +453,46 @@ def compute(db, fleet: Fleet, owners, *, item_periods: bool = False, spares_opts
     ``item_periods`` adds each item's cumulative chance of failing by the end
     of every period (first-failures forecasts only). ``spares_opts`` (the
     fleet's spares settings, or a what-if) adds ``spares``: how many of the
-    replacement part to hold (#31)."""
+    replacement part to hold (#31).
+
+    An item with a ``count`` stands for that many identical units: each unit
+    is forecast on its own (so nothing is scaled or approximated), and the
+    item's row adds its units' expected failures up. ``prob_any`` stays one
+    unit's chance."""
+    items = fleet.items or []
+    if all(item_count(it) == 1 for it in items):
+        return _compute(db, fleet, owners, item_periods=item_periods, spares_opts=spares_opts)
+    units = [it for it in items for _ in range(item_count(it))]
+    out = _compute(db, fleet.model_copy(update={"items": units}), owners,
+                   item_periods=item_periods, spares_opts=spares_opts)
+    return _collapse_units(out, items)
+
+
+def _collapse_units(out: dict, items: list[dict]) -> dict:
+    """A forecast of expanded units back to one row per item: expected
+    failures added up, everything else (one unit's chance, its rate) kept."""
+    rows = out.get("per_item")
+    if not rows:
+        return out
+    by_id: dict = {}
+    for row in rows:
+        key = row.get("id")
+        if key not in by_id:
+            by_id[key] = dict(row)
+        elif row.get("expected") is not None:
+            by_id[key]["expected"] = (by_id[key].get("expected") or 0.0) + row["expected"]
+    collapsed = []
+    for it in items:
+        row = by_id.get(it.get("id"))
+        if row is None:
+            continue
+        if item_count(it) > 1:
+            row["count"] = item_count(it)
+        collapsed.append(row)
+    return {**out, "per_item": collapsed}
+
+
+def _compute(db, fleet: Fleet, owners, *, item_periods: bool = False, spares_opts: dict | None = None) -> dict:
     kind = fleet.model_kind
     if kind == "recurrent":
         return _compute_recurrent(db, fleet, owners, spares_opts)
@@ -426,6 +508,68 @@ def compute(db, fleet: Fleet, owners, *, item_periods: bool = False, spares_opts
     results = model.results or {}
     if results.get("kind") == "regression":
         return _compute_covariate(db, fleet, owners, model, item_periods, spares_opts)
+    # The rest is a pure function of these inputs (seeded draws, no clock, no reads), so a
+    # forecast already worked out for exactly them is handed back, not simulated again.
+    inputs = _LifeInputs(model.id, model.name, {k: results.get(k) for k in _LIFE_RESULT_KEYS},
+                         fleet.settings or {}, fleet.items or [], item_periods, spares_opts)
+    return _LIFE_MEMO.get_or_compute(inputs.key(), lambda: _compute_life(inputs))
+
+
+# The saved results a plain-life forecast reads; nothing else of the model is used.
+_LIFE_RESULT_KEYS = ("params", "distribution_id", "extras", "unit")
+
+
+class _LifeInputs:
+    """Everything a plain-life forecast depends on."""
+
+    def __init__(self, model_id, model_name, results, settings, items, item_periods, spares_opts):
+        self.model_id, self.model_name, self.results = model_id, model_name, results
+        self.settings, self.items = settings, items
+        self.item_periods, self.spares_opts = item_periods, spares_opts
+
+    def key(self) -> str:
+        raw = json.dumps([self.model_id, self.model_name, self.results, self.settings, self.items,
+                          bool(self.item_periods), self.spares_opts], sort_keys=True, default=str)
+        return hashlib.sha256(raw.encode()).hexdigest()
+
+
+class _Memo:
+    """A small, thread-safe, least-recently-used memo of worked-out forecasts. Each caller
+    gets its own copy, so changing a result never changes the memo."""
+
+    def __init__(self, size: int):
+        self._size = size
+        self._rows: OrderedDict = OrderedDict()
+        self._lock = threading.Lock()
+
+    def get_or_compute(self, key: str, work, same=None):
+        """``same``: an object the answer was worked out from (a live fit), held with the
+        entry; a hit counts only for that very object."""
+        with self._lock:
+            hit = self._rows.get(key)
+            if hit is not None and hit[0] is same:
+                self._rows.move_to_end(key)
+                return copy.deepcopy(hit[1])
+        out = work()
+        with self._lock:
+            self._rows[key] = (same, copy.deepcopy(out))
+            self._rows.move_to_end(key)
+            while len(self._rows) > self._size:
+                self._rows.popitem(last=False)
+        return out
+
+    def clear(self) -> None:
+        with self._lock:
+            self._rows.clear()
+
+
+_LIFE_MEMO = _Memo(256)
+
+
+def _compute_life(inputs: _LifeInputs) -> dict:
+    """A plain-life fleet's forecast (renewals or first failures) from its inputs alone."""
+    results = inputs.results
+    item_periods, spares_opts = inputs.item_periods, inputs.spares_opts
     if not results.get("params"):
         return {"status": "stale",
                 "reason": "The linked model can't be evaluated as a plain distribution."}
@@ -436,7 +580,7 @@ def compute(db, fleet: Fleet, owners, *, item_periods: bool = False, spares_opts
     except StrategyError as exc:
         return {"status": "stale", "reason": client_message(exc)}
 
-    settings = fleet.settings or {}
+    settings = inputs.settings
     periods = int(settings.get("periods", 12))
     default_rate = float(settings.get("default_rate", 0) or 0)
     method = settings.get("method", "renewals")
@@ -447,15 +591,15 @@ def compute(db, fleet: Fleet, owners, *, item_periods: bool = False, spares_opts
                 "reason": "The linked model is a limited-failure-population fit - "
                           "renewals forecasting can't sample replacement lives from it. "
                           "Switch this forecast to the 'first failures' method."}
-    items = fleet.items or []
+    items = inputs.items
 
     base = {
         "status": "ok",
         "method": method,
         "periods": periods,
         "period_label": settings.get("period_label", "months"),
-        "model_name": model.name,
-        "model_id": model.id,
+        "model_name": inputs.model_name,
+        "model_id": inputs.model_id,
         "model_kind": "life",
         "unit": results.get("unit", ""),
         "n_items": len(items),
@@ -864,7 +1008,7 @@ def _forecast_single(model, ages, rates, periods, items, *, Z=None, limits=None,
     if warranty:
         out["out_of_warranty"] = int((limits <= 0).sum())
     if n_doomed:
-        names = ", ".join(items[i]["name"] for i in np.flatnonzero(doomed)[:5])
+        names = ", ".join(list(dict.fromkeys(items[i]["name"] for i in np.flatnonzero(doomed)))[:5])
         many = n_doomed != 1
         out["warnings"] = [
             f"{n_doomed} item{'s' if many else ''} ({names}{', …' if n_doomed > 5 else ''}) "
@@ -1099,6 +1243,7 @@ def spares_answer(opts: dict, method: str, model, ages, rates, periods: int, lab
     bounds.append((0.0, float(periods)))  # the whole horizon: the year's demand (spares_year's rule)
     horizon = max(float(periods), (periods - 1) + protect)
     split = None
+    planned_in_hold = 0.0  # planned replacements in the hold's window (already in the year's demand)
 
     if method == "renewals" and opts.get("_replace_at"):
         events = fleet_strategy.simulate(model, ages, rates, horizon, float(opts["_replace_at"]))
@@ -1106,6 +1251,8 @@ def spares_answer(opts: dict, method: str, model, ages, rates, periods: int, lab
         hi = int(np.searchsorted(events["t"], float(periods), side="left"))
         planned = np.asarray(events["planned"][:hi], dtype=float)
         split = float(planned.sum()) * per / max(events["sims"], 1)
+        in_hold = int(np.searchsorted(events["t"], protect, side="left"))
+        planned_in_hold = float(np.asarray(events["planned"][:in_hold], dtype=float).sum()) * per / max(events["sims"], 1)
         basis = (f"From {events['sims']:,} simulated runs, counting planned replacements at age "
                  f"{opts['_replace_at']:g} as well as failures.")
     elif method == "renewals":
@@ -1147,7 +1294,7 @@ def spares_answer(opts: dict, method: str, model, ages, rates, periods: int, lab
     protects = demand[:periods]
     leads = demand[periods:] if lead_len is not None else [None] * periods
     now = spares.answer(protects[0], leads[0], opts.get("stock"), level, opts.get("unit_cost"))
-    year_out = _year_answer(year, now, opts.get("stock"), periods, label, split, repairable)
+    year_out = _year_answer(year, now, opts.get("stock"), periods, label, split, repairable, planned_in_hold)
     plan = [{"period": k + 1, "hold": protects[k].quantile(level),
              "reorder_at": leads[k].quantile(level) if leads[k] is not None else None,
              "expected_demand": protects[k].mean} for k in range(periods)]
@@ -1170,10 +1317,12 @@ def spares_answer(opts: dict, method: str, model, ages, rates, periods: int, lab
                                        rising=words)}
 
 
-def _year_answer(year, now: dict, stock, periods: int, label: str, planned, repairable: bool) -> dict:
+def _year_answer(year, now: dict, stock, periods: int, label: str, planned, repairable: bool,
+                 planned_in_hold: float = 0.0) -> dict:
     """The demand over the whole forecast and what to buy for it (``services.spares_year``'s rule):
-    order now = hold - in stock; buy = expected demand rounded up + hold - in stock, and a high case
-    with the 90th percentile in place of the expected. A repairable pool isn't bought by the year."""
+    order now = hold - in stock; buy = expected demand + the hold's buffer (the hold less the planned
+    replacements in its window, already in the demand) - in stock, rounded up, and a high case with the
+    90th percentile in place of the expected. A repairable pool isn't bought by the year."""
     from backend.services import spares_year
 
     mean = year.mean
@@ -1184,8 +1333,8 @@ def _year_answer(year, now: dict, stock, periods: int, label: str, planned, repa
     if stock is not None and not repairable:
         have = float(stock)
         out.update(order_now=max(0.0, now["hold"] - have),
-                   buy=max(0.0, math.ceil(mean - 1e-9) + now["hold"] - have),
-                   buy_high_case=max(0.0, out["p90"] + now["hold"] - have))
+                   buy=spares_year.buy(mean, now["hold"], planned_in_hold, have),
+                   buy_high_case=spares_year.buy(out["p90"], now["hold"], planned_in_hold, have))
     return out
 
 
@@ -1228,11 +1377,24 @@ def _compute_recurrent(db, fleet: Fleet, owners, spares_opts=None) -> dict:
     family = (doc.results or {}).get("family", "nhpp")
     if family == "regression":
         return {"status": "stale", "reason": REPAIRABLE_FAMILIES}
+    # The rest reads only these, and the live fit (the same object until it is fitted again):
+    # a forecast already worked out for exactly them is handed back.
+    raw = json.dumps([doc.id, doc.name, family, ((doc.results or {}).get("model") or {}).get("name"),
+                      (doc.results or {}).get("unit", ""), fleet.settings or {}, fleet.items or [], spares_opts],
+                     sort_keys=True, default=str)
+    return _REPAIRABLE_MEMO.get_or_compute(
+        f"{id(live)}:{hashlib.sha256(raw.encode()).hexdigest()}",
+        lambda: _compute_repairable(doc, live, family, fleet.settings or {}, fleet.items or [], spares_opts),
+        same=live)
 
-    settings = fleet.settings or {}
+
+_REPAIRABLE_MEMO = _Memo(64)
+
+
+def _compute_repairable(doc, live, family: str, settings: dict, items: list, spares_opts) -> dict:
+    """A repairable fleet's forecast from its model's live fit and its own settings and items."""
     periods = int(settings.get("periods", 12))
     default_rate = float(settings.get("default_rate", 0) or 0)
-    items = fleet.items or []
     base = {
         "status": "ok",
         "method": "repairable",
@@ -1345,5 +1507,117 @@ def headline(fleet: Fleet, forecast: dict) -> str:
     label = forecast.get("period_label", "periods")
     return (
         f"≈ {forecast.get('expected', 0):.1f} failures expected over "
-        f"{forecast.get('periods', 0)} {label} ({len(fleet.items or [])} items)"
+        f"{forecast.get('periods', 0)} {label} ({unit_count(fleet.items)} items)"
     )
+
+
+# ---- A quick spares forecast (unsaved) ---------------------------------------------
+# Decisions › Forecasts › Spares forecast (Derryn, 23 Nov 2026: quick one-off work lives in the
+# left menu's tools; the saved work for an asset lives in the Explorer). The same engine as a
+# saved fleet's forecast (_compute_life, the spares answer), on a model picked or typed, a number
+# of units at one age or a list of ages, a use rate and a replacement policy. Nothing is stored.
+
+MAX_SCRATCH_UNITS = 2000
+
+
+def _scratch_number(body: dict, key: str, label: str) -> float | None:
+    value = _optional_number(body.get(key), label)
+    return value
+
+
+def scratch_forecast(body: dict) -> dict:
+    """{distribution_id, params, extras?, unit?, name?, units?, ages (one or a list), rate (use per
+    period, in the model's unit), periods, period_label, strategy (run_to_failure | age),
+    replace_at?, failure_cost?, planned_cost?, planned_hours?, corrective_hours?, spare_cost?,
+    spares?}: the forecast a fleet with those items and settings would show, worked out once and
+    not saved, with its three answers: spares (the parts, and how many to hold), labour hours
+    (planned task hours plus corrective hours) and costs (planned plus corrective plus spares),
+    each by period with its 90% two-sided range from the same simulated runs."""
+    body = body or {}
+    distribution_id = body.get("distribution_id")
+    if not distribution_id or not body.get("params"):
+        raise FleetValidationError("Pick a saved model, or choose a distribution and type its parameters.")
+    raw_ages = body.get("ages")
+    if raw_ages in (None, "", []):
+        raise FleetValidationError("Give the units' age now: one age for them all, or one per unit.")
+    ages = raw_ages if isinstance(raw_ages, list) else [raw_ages]
+    try:
+        ages = [float(a) for a in ages]
+    except (TypeError, ValueError):
+        raise FleetValidationError("Each age must be a number, in the model's unit.") from None
+    if any(not math.isfinite(a) or a < 0 for a in ages):
+        raise FleetValidationError("An age can't be negative.")
+    if len(ages) == 1:
+        try:
+            raw = body.get("units")
+            units = 1 if raw in (None, "") else int(raw)
+        except (TypeError, ValueError):
+            raise FleetValidationError("The number of units must be a whole number.") from None
+        if units < 1:
+            raise FleetValidationError("The number of units must be at least 1.")
+        items = [{"name": "Each unit", "current_use": ages[0], "count": units}] if units > 1 else [
+            {"name": "Unit 1", "current_use": ages[0]}]
+    else:
+        items = [{"name": f"Unit {i + 1}", "current_use": a} for i, a in enumerate(ages)]
+    items = _clean_items(items)
+    if unit_count(items) > MAX_SCRATCH_UNITS:
+        raise FleetValidationError(f"A quick forecast takes up to {MAX_SCRATCH_UNITS:,} units: save a fleet for more.")
+    failure_cost = _scratch_number(body, "failure_cost", "The cost of a failure")
+    planned_cost = _scratch_number(body, "planned_cost", "The cost of a planned replacement")
+    planned_hours = _scratch_number(body, "planned_hours", "The hours a planned replacement takes")
+    corrective_hours = _scratch_number(body, "corrective_hours", "The hours a failure takes to put right")
+    spare_cost = _scratch_number(body, "spare_cost", "The cost of a spare")
+    base = {"periods": body.get("periods", 12), "period_label": body.get("period_label") or "months",
+            "default_rate": body.get("rate", 0), "method": "renewals",
+            "strategy": body.get("strategy") or "run_to_failure", "replace_at": body.get("replace_at"),
+            "spares": body.get("spares")}
+    results = {"params": body.get("params"), "distribution_id": distribution_id,
+               "extras": body.get("extras") or None, "unit": body.get("unit") or ""}
+    units_list = [it for it in items for _ in range(item_count(it))]
+    name = str(body.get("name") or "Typed parameters")[:120]
+
+    def run(per_failure, per_planned, spares=True):
+        # The same seeded runs every time, so each answer counts the same failures and replacements.
+        settings = _clean_settings({**base, "failure_cost": per_failure, "planned_cost": per_planned,
+                                    **({} if spares else {"spares": None})})
+        inputs = _LifeInputs(None, name, results, settings, units_list, False, settings.get("spares"))
+        return settings, _collapse_units(_LIFE_MEMO.get_or_compute(inputs.key(), lambda: _compute_life(inputs)), items)
+
+    settings, out = run(failure_cost, planned_cost)
+    out = {**out, "settings": settings, "items": items, "saved": False}
+    st = out.get("strategy")
+    if out.get("status") != "ok" or not st:
+        return out
+    age = st.get("kind") == "age"
+    views = {"spares": {"spare_cost": spare_cost}}
+    # Labour hours: each failure's corrective hours, each planned replacement's task hours.
+    if corrective_hours is not None or (age and planned_hours is not None):
+        _s, h = run(corrective_hours if corrective_hours is not None else 0.0, planned_hours if age else None, spares=False)
+        hs = h.get("strategy") or {}
+        views["hours"] = {"planned_hours": planned_hours if age else None, "corrective_hours": corrective_hours,
+                          "total": (hs.get("total") or {}).get("cost"),
+                          "per_period": [{"period": r["period"], "hours": r.get("cost"),
+                                          "planned": r["planned"]["expected"] * (planned_hours or 0.0) if age else 0.0,
+                                          "corrective": r["failures"]["expected"] * (corrective_hours or 0.0)}
+                                         for r in hs.get("per_period") or []],
+                          "yearly": [{**{k: y[k] for k in ("year", "from_period", "to_period", "complete")}, "hours": y.get("cost")}
+                                     for y in hs.get("yearly") or []] or None}
+    else:
+        views["hours"] = None
+    # Costs: planned work, corrective work and the spares each uses.
+    if any(v is not None for v in (failure_cost, spare_cost)) or (age and planned_cost is not None):
+        fc, pc, sc = failure_cost or 0.0, planned_cost or 0.0, spare_cost or 0.0
+        _s, c = run(fc + sc, (pc + sc) if age else None, spares=False)
+        cs = c.get("strategy") or {}
+        views["costs"] = {"failure_cost": failure_cost, "planned_cost": planned_cost if age else None, "spare_cost": spare_cost,
+                          "total": (cs.get("total") or {}).get("cost"),
+                          "per_period": [{"period": r["period"], "cost": r.get("cost"),
+                                          "planned": r["planned"]["expected"] * pc if age else 0.0,
+                                          "corrective": r["failures"]["expected"] * fc,
+                                          "spares": r["parts"]["expected"] * sc}
+                                         for r in cs.get("per_period") or []],
+                          "yearly": [{**{k: y[k] for k in ("year", "from_period", "to_period", "complete")}, "cost": y.get("cost")}
+                                     for y in cs.get("yearly") or []] or None}
+    else:
+        views["costs"] = None
+    return {**out, "views": views}

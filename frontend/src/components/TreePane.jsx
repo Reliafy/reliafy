@@ -7,10 +7,12 @@ import { NotesMark, Cell, CellEditor, LevelIcon, PhoneStatus, cellHint, cellTip,
 import useOutlineNav from "./useOutlineNav.js";
 import { pinsSkip, tailFor } from "../outlineTree.js";
 import { ARRANGEMENTS, CHIP_MARK, PANE, chipsFor, TREE_ROW_MARKERS, clampWidth, markersOf, nextGutter } from "../assetTree.js";
-import { TASK_WITH_INTERVAL, cellRow, fitWidths, isRcmRow, opensPanel, phonePositionLine } from "../explorerRcm.js";
+import { TASK_WITH_INTERVAL, cellRow, fitWidths, isRcmRow, opensWide, phonePositionLine } from "../explorerRcm.js";
 import { isFullScreenKey } from "../fullScreen.js";
 import { LEVEL_OF, NAME_COLUMN, ROLE } from "../rcmWorksheet.js";
 import { isDeleteKey } from "../treeDelete.js";
+import { isEditable, panelRowMore } from "../contextMenu.js";
+import { areaMenu } from "../explorerMenu.js";
 import { badge as redundancyBadge } from "../redundancy.js";
 import "./RedundancyPane.css";
 
@@ -180,6 +182,14 @@ export function RowIcon({ r }) {
     );
   }
   if (r.type === "mpref") return <RowIcon r={{ ...r, type: "mtask" }} />;
+  // A task's extra (its labour, a part, its cost: taskExtras.js): a quiet dot, as it's not a task.
+  if (r.type === "mxtra") {
+    return (
+      <svg className="tp-ic tp-ic-meas tp-ic-extra" viewBox="0 0 16 16" width="14" height="14" fill="currentColor" stroke="none" aria-hidden="true">
+        <circle cx="8" cy="8" r="1.6" />
+      </svg>
+    );
+  }
   if (r.type === "mfc") {
     return (
       <svg className="tp-ic tp-ic-meas" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" aria-hidden="true">
@@ -475,7 +485,7 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
     // details across the table; not on a data cell (an editable one's own
     // double-click edits it in place), a control or the chevron.
     // A measurement row (the Measurements tab) spreads its details the same way.
-    onDoubleClick: table && !phone && table.onOpen && (opensPanel(r) || r.type === "meas" || r.type === "pmodel" || r.type === "mission" || r.type === "phase" || r.type === "mcov" || r.type === "mrule" || r.type === "mtask" || r.type === "mpkg") ? (e) => {
+    onDoubleClick: table && !phone && table.onOpen && opensWide(r) ? (e) => {
       if (e.target.closest("input, select, .sel-trigger, .sel-menu, textarea, a, button, .tp-chev, .rw-c, [contenteditable='true']")) return;
       e.preventDefault();
       window.getSelection?.()?.removeAllRanges?.();
@@ -483,26 +493,35 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
     } : undefined,
     // Right-click opens the row's menu (the browser's own stays on a field
     // being edited in it, and on a row with no menu).
+    // The browser's menu is blocked only when the row's own opens (never a right-click that does
+    // nothing); a row with no menu leaves it to the tree's own fallback (TreePane's onContextMenu).
     onContextMenu: onMenu ? (e) => {
-      if (e.target.closest("input, textarea, select, .sel-trigger, .sel-menu, [contenteditable='true']")) return;
-      e.preventDefault();
+      if (isEditable(e.target)) return;
       // From the keyboard (the Menu key, Shift+F10) there's no pointer: under the row's name.
       const kb = e.button !== 2 || (!e.clientX && !e.clientY);
-      onMenu(r.key, kb ? cornerOf(e.currentTarget) : { x: e.clientX, y: e.clientY }, { keyboard: kb });
+      if (onMenu(r.key, kb ? cornerOf(e.currentTarget) : { x: e.clientX, y: e.clientY }, { keyboard: kb })) e.preventDefault();
     } : undefined,
     ...(phone && onMenu && !pinned ? {
       onTouchStart: (e) => {
         if (e.touches.length !== 1 || e.target.closest("input, button, a")) return;
         const { clientX: x, clientY: y } = e.touches[0];
         clearTimeout(press.current);
+        pressed.current = false;
         press.current = setTimeout(() => {
           pressed.current = true;
           onMenu(r.key, { x, y }, { keyboard: false });
-          setTimeout(() => { pressed.current = false; }, 600);
         }, 500);
       },
       onTouchMove: () => clearTimeout(press.current),
-      onTouchEnd: () => clearTimeout(press.current),
+      // Lifting the finger after a long press keeps the menu open: no mouse events or click are
+      // made from this touch (they closed the menu and opened the row's details sheet), and the
+      // guard on the click is dropped from the lift, not from when the menu opened.
+      onTouchEnd: (e) => {
+        clearTimeout(press.current);
+        if (!pressed.current) return;
+        if (e.cancelable) e.preventDefault();
+        setTimeout(() => { pressed.current = false; }, 400);
+      },
       onTouchCancel: () => clearTimeout(press.current),
     } : {}),
   };
@@ -546,7 +565,12 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
     // A tab with its own cells (the Measurements tab): each column's, and a
     // parent row's roll-up across them all.
     const span = table.rollupOf ? table.rollupOf(r, open) : "";
-    const allW = table.cols.reduce((t, c) => t + table.widths[c.id], 0);
+    // `rollupLead`: columns a parent row keeps as cells before its roll-up (the Maintenance tab's
+    // soonest Next due), drawn by `renderLead`; the roll-up runs across the rest.
+    const lead = span != null && span !== false && table.rollupLead?.length
+      ? table.cols.filter((c) => table.rollupLead.includes(c.id)) : [];
+    const spanCols = lead.length ? table.cols.filter((c) => !lead.includes(c)) : table.cols;
+    const allW = spanCols.reduce((t, c) => t + table.widths[c.id], 0);
     return (
       <div {...common}>
         <div className="tt-tree" role="rowheader" style={{ width: table.treeW }}>
@@ -556,9 +580,16 @@ function Row({ v, r, top, height, open, focused, dim, pinned, pinGap = false, un
             isn't applied, so the text kept its last (wide) one, the table kept its sideways
             scroll and the tree column slid out of sight. */}
         {!table.cols.length ? null : span != null && span !== false && r.type !== "meas" && r.type !== "pmodel" ? (
-          <div role="gridcell" aria-colspan={table.cols.length} className="rw-c tt-rollup-c" style={{ width: allW }}>
-            {span && <span className="rw-sum tt-rollup-t" style={{ width: Math.max(0, allW - 16) }} title={typeof span === "string" ? span : undefined}>{span}</span>}
-          </div>
+          <>
+            {lead.map((c) => (
+              <div key={c.id} role="gridcell" className={"rw-c" + (c.num ? " num" : "") + ` mt-c-${c.id}`} style={{ width: table.widths[c.id] }}>
+                {table.renderLead ? table.renderLead(r, c) : null}
+              </div>
+            ))}
+            <div role="gridcell" aria-colspan={spanCols.length} className="rw-c tt-rollup-c" style={{ width: allW }}>
+              {span && <span className="rw-sum tt-rollup-t" style={{ width: Math.max(0, allW - 16) }} title={typeof span === "string" ? span : undefined}>{span}</span>}
+            </div>
+          </>
         ) : table.cols.map((c) => (
           <div key={c.id} role="gridcell" className={"rw-c" + (c.num ? " num" : "") + ` mt-c-${c.id}`} style={{ width: table.widths[c.id] }}>
             {table.renderCell(r, c)}
@@ -699,11 +730,49 @@ export default function TreePane({
   const [rowOpen, setRowOpen] = useState(null);
   const itemsFor = (key, { keyboard = true } = {}) => (rowMenu && display.rows.has(key) ? rowMenu.actions(display.rows.get(key), { keyboard }) : []);
   const openMenu = (key, at, { keyboard = false } = {}) => {
-    if (!itemsFor(key, { keyboard }).length) return;
+    if (!itemsFor(key, { keyboard }).length) return false;
     // A row outside the rows picked together becomes the one picked (its menu acts on it alone).
     table?.multi?.onMenu?.(key);
     if (key !== focus) onPick(key, {});
+    setAreaOpen(null);
     setRowOpen({ key, at, keyboard });
+    return true;
+  };
+  // The tree's areas that aren't a row (column headers, the space under the rows, the add row, the
+  // headings): the tree's own menu (explorerMenu.js areaMenu). The panel beside it (its heading,
+  // tabs and body): the menu of the row it's about; a row in it with its own ⋯ opens that.
+  const [areaOpen, setAreaOpen] = useState(null);
+  const areaItems = areaMenu({
+    add: addRow ? { label: addRow.label, disabled: addRow.disabled, reason: addRow.reason } : null,
+    levels: !!onLevel, focused: !!focused, pinned: !!branch,
+  });
+  const onArea = (id) => {
+    if (id === "area-add") return addRow?.onAdd?.();
+    if (id.startsWith("level:")) return id === "level:0" ? onCloseAll?.() : onLevel?.(Number(id.slice(6)));
+    if (id === "focus-clear-area") return focused?.onClear?.();
+    if (id === "unpin-area") return branch?.onUnpin?.();
+    return undefined;
+  };
+  const fallbackMenu = (e) => {
+    if (e.defaultPrevented || isEditable(e.target) || e.target.closest(".ovm-menu")) return;
+    const at = { x: e.clientX, y: e.clientY };
+    const inRow = e.target.closest(".tp-row");
+    // A row of the panel with its own ⋯ (an LSA list, readings, the RCM worksheet's rows).
+    const more = !inRow && panelRowMore(e.target);
+    if (more) {
+      e.preventDefault();
+      more.click();
+      return;
+    }
+    const inTree = e.target.closest(".tp-scroll, .tt-head, .tp-head, .tt-bar > .tt-cell, .tt-row2 > .tt-cell, .tp-addrow-line, .tp-railcol");
+    if (!inTree && focus != null && display.rows.has(focus) && openMenu(focus, at)) {
+      e.preventDefault();
+      return;
+    }
+    if (!areaItems.length) return;
+    e.preventDefault();
+    setRowOpen(null);
+    setAreaOpen({ at });
   };
   const closeMenu = () => {
     const key = rowOpen?.key;
@@ -983,6 +1052,9 @@ export default function TreePane({
       {multiSel.mode && <button type="button" onClick={multiSel.onDone} title="Keep the selection and go back to opening rows">Done</button>}
     </span>
   ) : null;
+  // Nothing picked yet: a quiet one-line hint that several rows can be (no boxes to show it).
+  const selHint = table?.multi && !selHead && !focusHead && table.multi.hint
+    ? <span className="tt-select-hint" title={table.multi.hint}>{table.multi.hint}</span> : null;
   // The two slim rows over the tree (a wide screen, both tabs): the tree's
   // title, counts and ⋯ over the tree column, beside the panel's heading (the
   // way up over the row's name, and its actions); then the search box over the
@@ -1005,7 +1077,7 @@ export default function TreePane({
       {titleRow}
       {phoneTabs}
       {search}
-      {(focusHead || selHead) && <div className="tt-filterline">{focusHead}{selHead}</div>}
+      {(focusHead || selHead || selHint) && <div className="tt-filterline">{focusHead}{selHead}{selHint}</div>}
       {tfilter && (
         <div className="tt-filterline">
           <ColumnFilter wide label="Filter" facets={tfilter.facetsAll()} chosen={tfilter.chosen} onChange={tfilter.onChange} onClear={tfilter.onClear} />
@@ -1027,10 +1099,11 @@ export default function TreePane({
          style={{ width: wideTable ? table.total : width, height: HEAD_H }}>
       <div className="tt-h tt-h-tree" role={wideTable ? "columnheader" : undefined} style={{ width: wideTable ? table.treeW : width }}
            aria-label={wideTable && (pinHead || focusHead || selHead) ? table.treeHead || TREE_HEAD : undefined}
-           title={wideTable && !pinHead && !focusHead && !selHead && !table.treeHead ? TREE_HEAD_TIP : undefined}>
+           title={wideTable && !selHead && table.multi?.hint && (pinHead || focusHead || filterHead) ? table.multi.hint : wideTable && !pinHead && !focusHead && !selHead && !table.treeHead ? TREE_HEAD_TIP : undefined}>
         {pinHead || ((wideTable && filterHead) || focusHead || selHead ? null : wideTable ? table.treeHead || TREE_HEAD : treeLabel || title)}
         {focusHead}
         {selHead}
+        {selHint && wideTable && !filterHead && !pinHead ? selHint : null}
         {wideTable && filterHead}
       </div>
       {wideTable && table.cols.map((c) => {
@@ -1044,7 +1117,10 @@ export default function TreePane({
                title={c.title ? `${c.label}: ${c.title}` : c.label}>
             {sortable ? (
               <button type="button" className="tt-sortbtn" onClick={() => table.onSort(c.id)}
-                      aria-label={`${c.label}: sort${sorted === -1 ? " lowest first" : sorted === 1 ? ": back to the worksheet's order" : " highest first"}`}>
+                      aria-label={c.sortWords
+                        // A column sorted lowest first, then highest (Next due: soonest, then latest), then none.
+                        ? `${c.label}: sort${sorted === 1 ? ` ${c.sortWords[1]}` : sorted === -1 ? ": back to the tree's order" : ` ${c.sortWords[0]}`}`
+                        : `${c.label}: sort${sorted === -1 ? " lowest first" : sorted === 1 ? ": back to the worksheet's order" : " highest first"}`}>
                 {c.label}{sorted ? <span className="tt-sortarrow" aria-hidden="true">{sorted === -1 ? "▼" : "▲"}</span> : null}
               </button>
             ) : tfilter && tfilter.facetsFor(c.id).length ? <span className="tt-h-lbl">{c.label}</span> : c.label}
@@ -1060,7 +1136,7 @@ export default function TreePane({
   );
 
   return (
-    <aside className={"tp" + (table ? " tp-table" : "") + (railed ? " tp-railed" : "")} aria-label={title}>
+    <aside className={"tp" + (table ? " tp-table" : "") + (railed ? " tp-railed" : "")} aria-label={title} onContextMenu={fallbackMenu}>
       {controls}
       <div className={"tt-main" + (expanded ? " tt-expanded" : "")}>
         {railed ? <div className="tp-railcol" style={{ width: PANE.rail }} /> : (
@@ -1120,6 +1196,10 @@ export default function TreePane({
       {rowOpen && itemsFor(rowOpen.key, rowOpen).length > 0 && (
         <RowMenu items={itemsFor(rowOpen.key, rowOpen)} at={rowOpen.at} label={menuLabel(display.rows.get(rowOpen.key))} anchorId={`tp-${rowOpen.key}`} onClose={closeMenu}
                  onChoose={(id) => rowMenu.onAction(display.rows.get(rowOpen.key), id)} />
+      )}
+      {areaOpen && (
+        <RowMenu items={areaItems} at={areaOpen.at} label={`Actions for ${treeLabel || title}`} anchorId={null}
+                 onClose={() => setAreaOpen(null)} onChoose={onArea} />
       )}
       {wide && !railed && (
         <div className="tp-edge" role="separator" aria-orientation="vertical" aria-label={table ? "Resize the tree column" : "Resize the tree"}

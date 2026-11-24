@@ -766,6 +766,31 @@ def evidence_fetcher(db, owner_id, hidden=frozenset()):
                 memo[key] = None
         return memo[key]
 
+    def prefetch(refs) -> None:
+        """Read these (type, id) at once, one query per kind, into the memo: the same
+        documents, scoped the same way, as fetching each would."""
+        from backend.db import from_doc
+        from backend.schema import DegradationModelDoc, Model, StrategyAnalysis
+
+        kinds = {"model": ("models", Model), "strategy_analysis": ("strategy_analyses", StrategyAnalysis),
+                 "degradation_model": ("degradation_models", DegradationModelDoc)}
+        wanted: dict = {}
+        for etype, eid in refs:
+            if etype not in kinds or not isinstance(eid, str) or not eid or (etype, eid) in memo:
+                continue
+            if eid in hidden or (etype == "model" and eid.startswith("repairable:")):
+                continue  # looked up one at a time, as before
+            wanted.setdefault(etype, set()).add(eid)
+        for etype, ids in wanted.items():
+            collection, cls = kinds[etype]
+            query = {"_id": {"$in": sorted(ids)}}
+            if owner_id is not None:
+                query["owner_id"] = {"$in": access.owner_in(owner_id)}
+            found = {d["_id"]: d for d in db[collection].find(query)}
+            for eid in ids:
+                memo[(etype, eid)] = from_doc(cls, found.get(eid))
+
+    fetch.prefetch = prefetch
     return fetch
 
 

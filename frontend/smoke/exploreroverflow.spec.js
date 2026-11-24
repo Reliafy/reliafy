@@ -17,7 +17,7 @@ const conveyor = async (request) => {
 };
 const at = (id, extra = "") => `/asset-register/explorer?arrange=positions&root=${id}&sel=${id}${extra}`;
 const bar = (page) => page.getByRole("tablist", { name: "What to show for this row" });
-const ALL = ["Summary", "Maintenance", "Monitoring", "RCM", "FME(C)A", "Models", "History"];
+const ALL = ["Summary", "Operations", "Maintenance", "Monitoring", "RCM", "FME(C)A", "Models", "Missions", "History"];
 
 test.skip(!EXPLORER_PANEL_TABS, "the panel tabs are switched off");
 
@@ -36,23 +36,24 @@ test("panel tabs: the flat row, inner views, an old address", async ({ page, req
   // Its package is a row of the table (where its tasks meet).
   await expect(page.locator(".tp-row", { has: page.locator(".tp-nm", { hasText: "Smoke test weekly round" }) }).first()).toBeVisible();
   await expectHealthy(page, problems, { root: ".tx" });
-  // The old inner views' addresses open the one table: Packages with a package open, Forecast as Forecast….
+  // The old inner views' addresses open the one table (Packages with a package open); the old
+  // Forecast view opens the left menu's spares forecast, filled in from the row.
   await open(page, at(id, "&tab=lsa&mview=packages"));
   await expect(page).toHaveURL(/tab=maintenance/);
   await expect(page).not.toHaveURL(/mview=/);
   await expect(bar(page).getByRole("tab", { name: "Maintenance" })).toHaveAttribute("aria-selected", "true");
   await open(page, at(id, "&tab=maintenance&mview=forecast"));
-  await expect(page).toHaveURL(new RegExp(`forecast=${id}`));
-  await expect(page.locator("section.fc-view").first()).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/forecasts/spares\\?from=position%3A${id}`));
+  await expect(page.locator(".ft-from")).toBeVisible();
 
   // An old address: ?tab=condition is Monitoring › Life left.
   await open(page, at(id, "&tab=condition"));
   await expect(bar(page).getByRole("tab", { name: "Monitoring" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("radiogroup", { name: "Monitoring: what to show" }).getByRole("radio", { name: "Life left" }))
     .toHaveAttribute("aria-checked", "true");
-  // ?tab=missions (the old Missions view) is the Models tab: missions are rows under their models.
+  // ?tab=missions is the Missions tab again (23 Nov 2026).
   await open(page, at(id, "&tab=missions"));
-  await expect(bar(page).getByRole("tab", { name: "Models" })).toHaveAttribute("aria-selected", "true");
+  await expect(bar(page).getByRole("tab", { name: "Missions" })).toHaveAttribute("aria-selected", "true");
 });
 
 test("panel tabs overflow: ⋯ N folds what doesn't fit; picking one swaps it in; the keyboard reaches it", async ({ page, request }) => {

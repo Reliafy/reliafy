@@ -159,8 +159,8 @@ def test_the_forecast_lists_what_to_enter_with_links(setting):  # noqa: F811
     texts = {x["mode"]["text"] for x in p["no_failure_cost"] if x["mode"]}
     assert texts == set(COSTS) and all(x["counted"] for x in p["no_failure_cost"])
     plug = next(x for x in p["no_failure_cost"] if x["mode"] and x["mode"]["text"].startswith("Spark"))
-    assert plug["link"].startswith("/asset-register/explorer?") and f"sel={plug['mode']['id']}" in plug["link"] \
-        and "tab=rcm" in plug["link"] and f"root={top}" in plug["link"] and f"fm={plug['mode']['id']}" in plug["link"]
+    assert plug["link"].startswith("/asset-register/explorer?") and "addtask=" in plug["link"] \
+        and "tab=maintenance" in plug["link"] and "respond=failure" in plug["link"] and f"root={top}" in plug["link"] and f"fm={plug['mode']['id']}" in plug["link"]
     assert sum(1 for x in p["no_failure_cost"] if x["mode"] is None) == 2
     assert "no_failure_cost" in {s["kind"] for s in fc["states"]}
     # The plug inspection has no P-F interval; greasing restores none (set so here).

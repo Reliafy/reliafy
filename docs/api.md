@@ -415,6 +415,35 @@ it through standby phases, a failed block stays failed, and the notes open with
 "As of now" (such a result isn't kept for the lists). A phase missing a value waits: `reliability` is null,
 `through` says how far the mission was worked out and `needs` which blocks need
 what. Over MCP: `analyse rbd_mission` and `change rbd_mission`.
+
+The Explorer's Missions tab adds, on `POST /api/maintenance/positions/{id}/missions`:
+`link_id` may be an RBD on a position inside this one; `tree: true` builds it
+from the positions inside even where the position has an RBD of its own;
+`setup: {clock: "operating" | "calendar", label?, start: "now" | "YYYY-MM-DD",
+calendar: {linked: true} | {hours_per_day, days_per_week}, from: "new" |
+"today"}` is kept as `graph.mission_setup`; and `length: {value, unit}` becomes
+its one first phase, in running time. On operating time (`clock: "operating"`,
+the default for a mission saved with no start date or calendar) the length is in
+`hours` of operation (called `label`, e.g. "flight hours"), `cycles` or `km`, and
+no calendar is needed; on calendar time it's in `days`, `weeks`, `months` or
+`years`, through the calendar. A unit the RBD's models don't count in, with no
+rate per operating hour, is refused in words. `PUT
+/api/rbds/{id}/missions/mission {setup}` changes the setup (a mission's own
+RBD only); a list's mission carries `setup`. `POST
+/api/rbds/{id}/missions/{mission}/answers` gives its two answers over the whole
+phased mission: `chance {value, lower_bound {lower, confidence: 0.9, side:
+"lower"} | null, bound_note}` (one-sided; a mission of several phases has no
+bound yet) and `failures {expected, system, method (exact | simulated), range
+{lower, upper, level: 0.9, side: "two-sided"} | null, pro?, note}`: the part
+failures with each failed block replaced like new, the range from 2,000 seeded
+simulated missions (Pro). With them `calendar {start, end, days, clock}`,
+`setup`, `plan` (the tasks on its positions, read only), `assumed` and
+`length`/`phases`, `clock {kind, label, length, unit, per_day, words,
+calendar_length?}` ("12 months ≈ 2,087 operating hours at 8 h a day, 5 days a
+week") and `summary {chance, clock, length, unit, label, calendar_length}`, the
+one number with its clock and length; or `blocked: [{id, label, why}]` while a block some phase
+needs has no model or a placeholder. Over MCP: `analyse rbd_mission
+answers=true` and `change rbd_mission setup`.
 `fit: true` with `data` (`position`, `class`, or `both`: the position's history
 with its class's other positions' history as the prior) and `method` (`mle`:
 a plain fit with 95% confidence bounds; `bayes`: with a `prior`, 90% credible
@@ -572,11 +601,20 @@ also gives `against_actual`: over the last 90 days, the hours the position's hou
 share of the plan, with a `proposal` of that share as the plan's `utilisation` (`plan.utilisation`,
 0.01 to 1) when they differ. It is only offered; nothing changes until it is saved.
 
+`get operations` (`root` the asset opened, or `id` one position) is the Explorer's Operations tab in
+one read: each position's duty (`duty.source` `own`, `inherited` with `duty.from`, or `none`: it
+runs all the time), `parent_duty` (what ending its own plan leaves it on), `other_use` (km or cycles
+a day), `windows` (the shutdowns and outages that take it off-line over the next year: shutdown
+packages on it or above it whose scope covers it, and out-of-service spans on it or above it, each
+with `source` and `own`) and `time_zone`. The app's routes: `GET /api/maintenance/operations?root=`
+and `GET /api/maintenance/positions/{id}/shutdown-windows?start=&end=`.
+
 Tasks by use in operating hours fall due through the position's operating plan (its own, or the
 nearest above): the moment the hours counter, counted on from its latest reading, crosses the
 task's next reading (`limits[].due_moment`) and the stop after it (`stop_after`). With no plan,
-the date comes from the counter's recent rate, as before. `limits[].basis` says which (`kind`
-`plan`, `rate` or `readings`, with `text`).
+the date comes from the counter's recent rate, as before; with no rate either (one reading, or
+none rising), it runs all the time, 24 h a day from the latest reading. `limits[].basis` says
+which (`kind` `plan`, `rate`, `continuous` or `readings`, with `text`).
 
 `get forecast` (`id` a position; `root` the asset opened; `period` `month`, `quarter` or `year`;
 `periods`, default 12) is the forecast for the position and everything inside it, from today to
@@ -952,6 +990,7 @@ reliafy fit failures.csv --dist weibull --censor-column status
 reliafy fit failures.csv --dist best --criterion bic   # rank every distribution by BIC (aic, aic_c, bic, neg_ll)
 reliafy push model.json
 reliafy upload bearings.xlsx --name Bearings
+reliafy upload --notation "120, 310, [400, 450], 1000+" --name Seals --unit hours   # a few lives typed in
 reliafy upload replacements.csv --x-col fleet_hours --one-stream --record-end 216000   # no item column: one stream of events, record ending at 216000
 reliafy import rbd plant.xml
 reliafy import rcm fmea.csv --position POSITION_ID --dry-run   # preview, then again without --dry-run

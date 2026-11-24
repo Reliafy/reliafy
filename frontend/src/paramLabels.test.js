@@ -18,5 +18,6 @@ test("extraParamView: fit options' extras in plain words", async () => {
   assert.deepEqual(extraParamView("gamma (offset)", 100, "Hours", fmt), { label: "Offset γ: no failures before", value: "100 hours" });
   assert.deepEqual(extraParamView("f0 (failed at t=0)", 3.83e-9, "Hours", fmt), { label: "Share failed at time 0, f₀", value: "about 0%" });
   assert.deepEqual(extraParamView("p (max fraction failing)", 0.42, "", fmt), { label: "Share that can ever fail, p", value: "42%" });
+  assert.deepEqual(extraParamView("hr (hazard ratio)", 1.5, "Hours", fmt), { label: "Hazard ratio (times the original's hazard)", value: "×1.5" });
   assert.deepEqual(extraParamView("Spline terms", 3, "", fmt), { label: "Spline terms", value: "3" });
 });

@@ -154,6 +154,8 @@ export default function MaintenanceAssets() {
         placeholder="Name, tag or serial…"
         // Merge into another asset… opens the asset in the Explorer with the merge pane beside its tree.
         rowMenu={(p) => [
+          { id: "open", label: "Open", onSelect: () => navigate(assetOpenPath(p.id, fromExplorer || "")) },
+          { separator: true },
           { id: "merge", label: "Merge into another asset…", onSelect: () => navigate(assetOpenPath(p.id, "merge=1")) },
           { separator: true },
           { id: "delete", label: "Delete…", danger: true, onSelect: () => setDeleting(p) },

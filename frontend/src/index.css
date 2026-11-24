@@ -1149,8 +1149,23 @@ h6 {
   text-align: center;
 }
 
-.rbd-knode.invalid .rbd-knode-title {
+.rbd-knode.invalid .rbd-knode-title,
+.rbd-knode.invalid .rbd-knode-sub {
   color: var(--danger-text);
+}
+
+/* Needs all of its inputs: valid, but no redundancy (a caveat, not an error). */
+.rbd-knode.warn {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+}
+
+.rbd-knode.warn .rbd-knode-sub {
+  color: var(--warning-text);
+}
+
+.rbd-knode-fix {
+  margin-top: var(--space-1);
 }
 
 .rbd-knode-sub {
@@ -2247,7 +2262,9 @@ select.ctl { padding-right: var(--space-8); }
 .ctl-group > .ctl {
   flex: 1 1 4rem; min-height: calc(var(--control-md) - 2px); height: calc(var(--control-md) - 2px); border: 0; border-radius: 0; box-shadow: none; background-color: transparent;
 }
-.ctl-group > .ctl:focus { box-shadow: none; }
+/* One ring, the group's: its controls never draw their own, even inside a panel whose own
+   input rule would (.rw-panel :is(input, …):focus, the same weight, later in the file). */
+.ctl-group > .ctl:focus, .rw-panel .ctl-group > .ctl:focus { box-shadow: none; }
 .ctl-group > .ctl[aria-invalid="true"] { background-color: var(--danger-bg); }
 .ctl-group > .ctl:first-child { border-radius: var(--radius-md) 0 0 var(--radius-md); }
 .ctl-group > .ctl:last-child { border-radius: 0 var(--radius-md) var(--radius-md) 0; }
@@ -4316,6 +4333,9 @@ h1 .chip,
 .seg-btn:last-child {
   border-right: none;
 }
+/* Narrower than its options (a side panel, a phone): the segments shrink and their words wrap,
+   never clipped by the outline. */
+.seg > .seg-btn { flex: 0 1 auto; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 
 .seg .seg-btn:not(.active):hover:not(:disabled) {
   background: var(--bg-subtle);
@@ -7774,6 +7794,8 @@ button.pl-revoke:hover:not(:disabled) { background: var(--danger-bg); color: var
    not text (no alt text: the item's name stays "Focus"). */
 .row-menu .ovm-item.row-menu-parent { display: flex; align-items: center; gap: var(--space-3); }
 .row-menu-sep { height: 1px; margin: var(--space-1) var(--space-2); background: var(--border); }
+/* A section's small label in a menu ("What", "Depth" in Focus ›): not an item. */
+.row-menu-heading { padding: var(--space-1) 10px var(--space-0-5); font-size: var(--fs-12); line-height: var(--lh-12); font-weight: 500; color: var(--text-secondary); user-select: none; }
 .row-menu-parent::after { content: "›" / ""; margin-left: auto; color: var(--text-secondary); }
 .row-menu-parent.inline::after { content: "▸" / ""; }
 .row-menu-parent.inline.open::after { content: "▾" / ""; }
@@ -9337,6 +9359,7 @@ button.secondary.ccf:hover:not(:disabled) { color: var(--text); border-color: va
 .rbd-dlg-fold-body { display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-2); }
 .rbd-dlg-echo { margin: 0; font-size: var(--fs-13); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .rbd-dlg-echo.is-error { color: var(--danger-text); }
+.rbd-dlg-echo.is-warn { color: var(--warning-text); }
 .rbd-maint-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; }
 .rbd-maint-head .seg { flex-wrap: wrap; }
 .rbd-maint-head button.link { font-size: var(--fs-13); }
@@ -10211,6 +10234,9 @@ main.content:focus { outline: none; }
 .decision-cost { align-items: center; flex-wrap: wrap; gap: var(--space-2); }
 .rim-restore { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .rim-restore .rw-fhelp { flex-basis: 100%; margin: 0; }
+/* Keeps it on its life, for one failure mode (RcmModeTasks.jsx ModeSupport). */
+.rim-support { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); }
+.rim-support .rw-fhelp { margin: 0; }
 .rcm-on-tree { margin-bottom: var(--space-4); }
 .rcm-on-tree-table .lib-name { overflow-wrap: anywhere; }
 

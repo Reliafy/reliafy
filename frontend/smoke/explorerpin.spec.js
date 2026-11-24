@@ -182,15 +182,15 @@ test("the RCM tab with a pin: the one table shows only the branch, its rows' men
   await expect(page.locator(".tt-top .tp-status")).toHaveCount(0);
   // A position's menu: Add function, the worksheet in and out, then Pin this branch (the pinned row: Show whole tree), Delete… last.
   await trow(`^Works pump A ${tag}`).locator(".tt-tree").click({ button: "right" });
-  await expect(rowMenu(page, `Works pump A ${tag}`).getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Focus failure modes", "Focus to a depth", "Focus on incomplete rows", "Pin this branch", "Delete…"]);
+  await expect(rowMenu(page, `Works pump A ${tag}`).getByRole("menuitem")).toHaveText(["Open", "Rename…", "Move to…", "Focus", "Pin this branch", "Copy link", "Add function", "Import worksheet…", "Export CSV", "Delete…"]);
   await page.keyboard.press("Escape");
   await trow(`^Works line A ${tag}`).locator(".tt-tree").click({ button: "right" });
-  await expect(rowMenu(page, `Works line A ${tag}`).getByRole("menuitem")).toHaveText(["Add function", "Import worksheet…", "Export CSV", "Focus failure modes", "Focus to a depth", "Focus on incomplete rows", "Show whole tree", "Delete…"]);
+  await expect(rowMenu(page, `Works line A ${tag}`).getByRole("menuitem")).toHaveText(["Open", "Rename…", "Move to…", "Focus", "Show whole tree", "Copy link", "Add function", "Import worksheet…", "Export CSV", "Delete…"]);
   await page.keyboard.press("Escape");
   // A function's menu (with the mouse: Move to…, no Move up / down, a drag does them; Isolate before Delete).
   await trow(`^Function: Pump water ${tag}`).locator(".tt-tree").click({ button: "right" });
   await expect(rowMenu(page, `Function: Pump water ${tag}`).getByRole("menuitem"))
-    .toHaveText(["Add a performance standard…", "Add functional failure", "Open…", "Edit description", "Move to…", "Focus failure modes", "Focus to a depth", "Focus on incomplete rows", "Delete function…"]);
+    .toHaveText(["Open", "Rename…", "Move to…", "Focus", /^Pin this branch/, "Copy link", "Add a performance standard…", "Add functional failure", "Delete…"]);
   await page.keyboard.press("Escape");
   await trow(`^Works pump A ${tag}`).locator(".tt-tree").click();
   await shot(page, "3-pinned-rcm-tab");

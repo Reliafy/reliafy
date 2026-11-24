@@ -14,7 +14,7 @@ import { SubjectCell } from "./MaintenanceHome.jsx";
 import usePhone from "../usePhone.js";
 import { rollupLines, visitRuleText } from "../lsaTab.js";
 import HowOften from "../components/HowOften.jsx";
-import { HOURS_PACKAGE_NOTE, packageDates } from "../howOften.js";
+import { HOURS_PACKAGE_NOTE, previewFor } from "../howOften.js";
 import { PACKAGES_PATH, linesText, packagePath, workOrderPath } from "../maintenanceOrders.js";
 import {
   editBody, formProblem, initialForm, outcomeText, packageSentence, packageWithoutWorkOrders,
@@ -22,6 +22,7 @@ import {
 } from "../packagePage.js";
 import { ORDERS_PATH, PACKAGES_LABEL } from "../navigation.js";
 import { subjectPath } from "../maintenanceSubjects.js";
+import { noDutyBasis, dutyHref } from "../explorerOperations.js";
 import { tabPlace } from "../explorerTabs.js";
 import { useWorkManagementOn } from "../ConfigProvider.jsx";
 import { planWords } from "../workManagement.js";
@@ -152,7 +153,11 @@ function Details({ pkg }) {
             {pkg.cadence.by_hours.counter?.name || "None"}
             {pkg.cadence.by_hours.reading ? `: ${Number(pkg.cadence.by_hours.reading.value).toLocaleString("en-GB")} h on ${fmtDate(pkg.cadence.by_hours.reading.on)}` : ""}
             {` · counted from ${Number(pkg.cadence.by_hours.anchor_reading).toLocaleString("en-GB")} h`}
-            {pkg.cadence.by_hours.basis?.text ? <div className="lib-date">Dates: {pkg.cadence.by_hours.basis.text}</div> : null}
+            {pkg.cadence.by_hours.basis?.text ? (
+              <div className="lib-date">Dates: {pkg.cadence.by_hours.basis.text}
+                {noDutyBasis(pkg.cadence.by_hours.basis) && pkg.subject?.kind === "position"
+                  ? <>. <Link to={dutyHref(pkg.subject.id)}>Set a duty in Operations</Link>.</> : null}</div>
+            ) : null}
             {pkg.cadence.by_hours.note ? <div className="lib-date">No dates yet: {pkg.cadence.by_hours.note}.</div> : null}
           </dd></>
         )}
@@ -322,8 +327,9 @@ function EditPane({ pkg, phone, onClose, onSaved }) {
   const layer = !!pkg.parent;
   const fixed = layer || form.timing === "fixed";
   const today = workspaceToday();
-  const dates = problem ? null : packageDates(form.how, { anchor: pkg.cadence?.anchor, today, timing: fixed ? "fixed" : "from_last_visit" });
   const hours = form.how.unit === "hours";
+  // The next dates, from the server: on set dates from its anchor; counted from the last visit, from today.
+  const preview = problem || hours ? null : previewFor(form.how, { from: today, anchor: pkg.cadence?.anchor || today, fixed });
   const save = async (e) => {
     e.preventDefault();
     if (problem || nothing) return;
@@ -352,7 +358,8 @@ function EditPane({ pkg, phone, onClose, onSaved }) {
         <fieldset className="mt-how">
           <legend>How often</legend>
           <HowOften value={form.how} onChange={(how) => setForm((f) => ({ ...f, how }))} units={unitsFor(pkg)} patterns={fixed && !hours}
-                    dates={dates} datesNote={hours ? HOURS_PACKAGE_NOTE : fixed ? "" : "Counted from the last visit: each visit is the interval after the one before closes."} />
+                    preview={preview} datesNote={hours ? HOURS_PACKAGE_NOTE : ""} />
+          {!fixed && !hours && <p className="field-help">Counted from the last visit: each visit is the interval after the one before closes.</p>}
         </fieldset>
         {layer ? (
           <p className="lib-date">A layer visits on some of {pkg.parent.name}&apos;s set dates; its on-time window is {pkg.parent.name}&apos;s.</p>

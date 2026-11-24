@@ -94,8 +94,9 @@ export default function FailureFinding({ modelId = null, target = null, extraInp
   return (
     <div className="strategy-tool">
       <div className="strategy-form">
+        {/* "Mean" takes an MTBF; Parameters takes the rate λ, and asks when a rate reads like an MTBF. */}
         <ModelPicker label="Non-repairable model of the hidden function" value={model} onChange={pickModel} preferSaved wanted={wanted}
-                     onSource={setSource} />
+                     onSource={setSource} meanEntry="Mean life (MTBF)" unit={strategyUnit(model, unit) || ""} />
         {isRegression && (
           <p className="hint">Pick a plain distribution — proportional-hazards models aren't supported here.</p>
         )}

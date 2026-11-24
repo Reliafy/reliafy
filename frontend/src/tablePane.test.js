@@ -32,9 +32,11 @@ test("putting a pane in the address takes any other out", () => {
 });
 
 test("each pane has its address and its words for leaving it changed", () => {
-  assert.deepEqual(PANE_PARAMS, ["fit", "prior", "predict", "redundancy", "bind", "on", "plan", "mission", "strategy", "how", "forecast", "optimise", "rbd"]);
+  assert.deepEqual(PANE_PARAMS, ["fit", "prior", "predict", "redundancy", "bind", "on", "adjust", "plan", "mission", "strategy", "how", "forecast", "optimise", "rbd"]);
   // Optimise… on a task: the task and its position (?optimise=<task>&on=<position>).
   assert.deepEqual(paneFromQuery(new URLSearchParams("tab=maintenance&optimise=t1&on=p1")), { kind: "optimise", id: "p1", optimise: "t1" });
+  // Adjust for conditions… on a model row: the row's link and its position (?adjust=<link>&on=<position>).
+  assert.deepEqual(paneFromQuery(new URLSearchParams("tab=models&adjust=l1&on=p1")), { kind: "adjust", id: "p1", adjust: "l1" });
   assert.equal(TABLE_PANES.predict.discard.title, "Discard this prediction?");
   assert.equal(TABLE_PANES.rbd.discard.title, "Discard your changes to this RBD?");
   for (const p of Object.values(TABLE_PANES)) {

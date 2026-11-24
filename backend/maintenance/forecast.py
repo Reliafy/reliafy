@@ -175,21 +175,46 @@ def _use_age(m: Maintenance, position_id: str, fitment: dict, unit: str, horizon
             "counter": {"id": counter["id"], "name": counter["name"], "reading": last["value"], "read_on": last["on"]}}
 
 
-def _planned(m: Maintenance, positions: list[dict], starts: list[str], end: str) -> list[int]:
+def _planned(m: Maintenance, positions: list[dict], starts: list[str], end: str,
+             ages: dict | None = None, unit: str = "days") -> list[int]:
     """Scheduled replacements (fixed-interval tasks) on the class's positions falling
     due in each period: the next due date (overdue: the first period), then every
-    interval on the calendar. A task by use counts its next due date only."""
+    interval on the calendar. A task by use counts its next due date only. A shutdown
+    task done only on an item older than an age (``older_than``) counts only when the
+    item is that old by then: ``ages`` is {position id: (age now, per day)} in the
+    model's ``unit``, and a counted replacement starts the age again."""
+    from backend.maintenance.spares_year import _older_than
+
     counts = [0] * len(starts)
+    today = date.fromisoformat(m.today())
+    index = m._package_index() if ages else {}
     for p in positions:
         for task in m._tasks_on(p["id"]):
             if task.get("outcome") != "fixed_interval":
                 continue
+            entry = index.get(task["id"])
+            shutdown = bool(entry and entry["active"] and (entry["package"].get("shutdown")
+                                                           or entry["root"].get("shutdown")))
+            age_now, per_day = (ages or {}).get(p["id"], (None, None))
+            min_age = (_older_than(task, unit, per_day)
+                       if shutdown and age_now is not None and task.get("older_than") else None)
+            renewed_on = None  # a counted replacement: the age counts from it
             due = m._task_view(task)["scheduled_due"]
             seen = 0
             while due and due < end and seen < 1000:
-                k = max(0, sum(1 for s in starts if s <= due) - 1)
-                counts[k] += 1
                 seen += 1
+                if min_age is not None:
+                    on = max(date.fromisoformat(due), today)
+                    age = ((on - renewed_on).days * per_day if renewed_on is not None
+                           else age_now + (on - today).days * per_day)
+                    done = age >= min_age - 1e-9
+                    if done:
+                        renewed_on = on
+                else:
+                    done = True
+                if done:
+                    k = max(0, sum(1 for s in starts if s <= due) - 1)
+                    counts[k] += 1
                 if not svc._is_calendar(task["unit"]):
                     break
                 due = svc.add_interval(due, task["interval"], task["unit"])
@@ -378,7 +403,8 @@ def _forecast(m: Maintenance, name: str, period: str, periods: int, days: float,
                      f"{str(model.get('distribution')).capitalize()} model; a failed item is replaced and its "
                      "replacement can fail again."),
            "per_period": per_period, "at_risk": ranked[:MAX_RANKED], "at_risk_truncated": len(ranked) > MAX_RANKED,
-           "spares": spare_rows, "budget": _budget(m, node, positions, failures, starts, periods)}
+           "spares": spare_rows, "budget": _budget(m, node, positions, failures, starts, periods,
+                                                    {u["id"]: (u["age"], u["rate"] / days) for u in units}, unit)}
     out["stocking"] = stocking_meta
     if renewals["planned"]:
         notes.append("Planned replacements renew the items they replace: the failures after one count from new.")
@@ -433,7 +459,7 @@ def _headline(name, expected, interval, periods, word, n) -> str:
 
 
 def _budget(m: Maintenance, node: dict, positions, failures: np.ndarray, starts: list[str],
-            periods: int) -> dict | None:
+            periods: int, ages: dict | None = None, unit: str = "days") -> dict | None:
     """What the failures cost (each at the class's failure cost, else its default
     replacement cost), plus the scheduled replacements falling due at the planned
     cost; per period and in total, with the failures' P5–P95 (a 90% range)."""
@@ -444,7 +470,7 @@ def _budget(m: Maintenance, node: dict, positions, failures: np.ndarray, starts:
     planned_cost = node.get("planned_cost")
     if failure_cost is None and planned_cost is None:
         return None
-    planned = _planned(m, positions, starts[:-1], starts[-1]) if planned_cost is not None else [0] * periods
+    planned = _planned(m, positions, starts[:-1], starts[-1], ages, unit) if planned_cost is not None else [0] * periods
     fc, pc = float(failure_cost or 0), float(planned_cost or 0)
     rows = []
     for k in range(periods):

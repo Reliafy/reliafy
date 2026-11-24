@@ -4,7 +4,8 @@ import { PlusIcon } from "../icons.jsx";
 // A section of a panel or form (#UI): a 14 px heading, a count pill, and one
 // small action at the right ("+ Add", "Change…"). Sections sit 16 px apart
 // with a quiet line between them. `label` is the region's name (defaults to
-// the title); `action` is {label, onClick, ariaLabel?, plus?: true, disabled?, ref?}.
+// the title); `action` is {label, onClick, ariaLabel?, plus?: true, quiet?: true, disabled?, ref?}
+// (`quiet`: a ghost button with no "+", for an optional tool beside the heading: Optimise…).
 // `tip`: a few words of guidance behind a small "?" by the heading (shown on
 // press, so it works on a phone and from the keyboard), kept out of the way.
 // `aside`: a node between the heading and the action (a sort, "✓ Saved"); `id`
@@ -26,7 +27,7 @@ export default function Section({ title, count = null, action = null, label, cla
         )}
         {aside}
         {action && (
-          <button ref={action.ref} type="button" className={"sm psec-act " + (action.plus ? "ghost" : "secondary")} disabled={action.disabled}
+          <button ref={action.ref} type="button" className={"sm psec-act " + (action.plus || action.quiet ? "ghost" : "secondary")} disabled={action.disabled}
                   aria-label={action.ariaLabel} title={action.title}
                   onClick={(e) => { if (e.detail < 2) action.onClick(e); }}>
             {action.plus && <PlusIcon />}

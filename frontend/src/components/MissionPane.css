@@ -24,7 +24,7 @@
 .mission-phase-body { margin-top: var(--space-2); display: flex; flex-direction: column; gap: var(--space-3); align-items: flex-start; min-width: 0; }
 .mission-phase-body > * { max-width: 100%; }
 .mission-phase-body > section { width: 100%; }
-.mission-k { margin: 0 0 var(--space-1-5); font-size: var(--fs-13); font-weight: 600; }
+.mission-k { margin: 0 0 var(--space-1-5); font-size: var(--fs-14); line-height: var(--lh-14); font-weight: 600; }
 .mission-feeds { font-size: var(--fs-12); display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
 .mission-feeds-what { color: var(--text-secondary); }
 .mission-feeds ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
@@ -73,3 +73,62 @@
 .mission-simple-input, .mission-simple-age { display: inline-flex; align-items: center; gap: var(--space-1-5); font-weight: 400; }
 .mission-simple-input input, .mission-simple-age input { width: 8rem; min-width: 0; }
 .mission-simple-start { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-width: 0; }
+
+
+/* A mission's setup (MissionSetup): its fields stacked, each row's controls side by side. */
+.mission-setup { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; max-width: 40rem; }
+.mission-setup:not(:has(> .psec)) { gap: var(--space-3); }
+.mission-setup-sec { gap: var(--space-3); }
+.mission-setup-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-width: 0; }
+/* Length beside what its hours are called; one under the other in a narrow panel. */
+.mission-setup-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: var(--space-3); align-items: start; }
+.mission-setup .field-help, .mission-form .field-help { overflow-wrap: anywhere; }
+/* A new mission's form: one column of fields, as wide as reads well; text boxes and drop-downs fill it,
+   a number with its unit (QuantityInput) only as wide as it needs. Create bottom right, Cancel quiet. */
+.mission-form { display: flex; flex-direction: column; gap: var(--space-4); width: 100%; max-width: 40rem; min-width: 0; }
+.mission-form .field > input.ctl, .mission-form .field > .sel-trigger.ctl { width: 100%; }
+.mission-form-note { margin: 0; overflow-wrap: anywhere; }
+.mission-form-foot { padding-top: var(--space-3); border-top: 1px solid var(--border-subtle); }
+.mission-name-field { max-width: 28rem; }
+.mission-name-field > input.ctl { width: 100%; }
+
+/* Its two answers (MissionAnswers): two cards side by side, one under the other on a phone. */
+.mission-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: var(--space-4); }
+.mission-card { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); }
+.mission-figure { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); margin: 0; }
+.mission-figure b { font-size: var(--fs-24); line-height: var(--lh-24); font-weight: 600; font-variant-numeric: tabular-nums; }
+.mission-figure-sub { color: var(--text-secondary); font-size: var(--fs-13); line-height: var(--lh-13); }
+.mission-assumed { margin: var(--space-3) 0 0; padding-left: var(--space-4); color: var(--text-secondary); font-size: var(--fs-13); line-height: var(--lh-13); }
+.mission-plan { margin-top: var(--space-2); font-size: var(--fs-13); line-height: var(--lh-13); }
+.mission-blocked-list { margin: 0; padding-left: var(--space-4); }
+
+/* A mission's and a phase's own details (the Missions tab): sections, the compact phase table,
+   the phase's crumb back to its mission, its result and Previous / Next. */
+.mission-sec { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-4); }
+.mission-phase-table { width: 100%; border-collapse: collapse; font-size: var(--fs-13); line-height: var(--lh-13); }
+.mission-phase-table th { text-align: left; font-weight: 500; color: var(--text-secondary); background: var(--bg-subtle);
+  padding: var(--space-1-5) var(--space-2); border-bottom: 1px solid var(--border); white-space: nowrap; }
+.mission-phase-table td { padding: var(--space-1-5) var(--space-2); border-bottom: 1px solid var(--border-subtle); vertical-align: middle; }
+.mission-phase-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mission-phase-table td.mission-phase-tools { display: table-cell; white-space: nowrap; text-align: right; }
+.mission-sec > button.sm { align-self: flex-start; }
+.mission-back { font-size: var(--fs-13); line-height: var(--lh-13); white-space: nowrap; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.mission-pane .table-pane-head .rw-panel-btns { min-width: 0; flex: 0 1 auto; }
+.mission-phase-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: var(--space-3); align-items: start; max-width: 40rem; }
+.mission-phase-fields .field > input.ctl { width: 100%; }
+.mission-phase-result-list { display: grid; gap: var(--space-2); margin: 0; }
+.mission-phase-result-list > div { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: baseline; }
+.mission-phase-result-list dt { min-width: 8rem; color: var(--text-secondary); font-size: var(--fs-13); }
+.mission-phase-result-list dd { margin: 0; }
+.mission-phase-nav { display: flex; justify-content: space-between; gap: var(--space-2); margin-top: var(--space-4); }
+/* The Missions tab's landing state in the table area: what a mission is for, New mission… and the guide. */
+.missions-landing { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); max-width: 68ch; }
+.missions-landing h3 { margin: 0; font-size: var(--fs-16); line-height: var(--lh-16); font-weight: 600; }
+.missions-landing p { margin: 0; color: var(--text-secondary); }
+.missions-landing-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
+.mission-cov-list { display: flex; flex-direction: column; gap: var(--space-4); }
+.mission-cov-item { display: flex; flex-direction: column; gap: var(--space-2); padding-bottom: var(--space-3); border-bottom: 1px solid var(--border-subtle); }
+/* Operating time: its calendar, folded (only needed to put it on the calendar). */
+.mission-setup-cal { display: flex; flex-direction: column; gap: var(--space-3); }
+.mission-setup-cal > summary { cursor: pointer; font-size: var(--fs-13); line-height: var(--lh-13); font-weight: 500; color: var(--accent-text); width: fit-content; }
+.mission-setup-cal[open] > summary { margin-bottom: var(--space-3); }

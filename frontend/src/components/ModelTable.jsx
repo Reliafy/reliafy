@@ -28,6 +28,7 @@ import { strategyHeadline } from "../positionStrategy.js";
 import "./MeasurementTable.css";
 import "./ModelTable.css";
 import LibraryRecordPicker, { PickedRecord } from "./LibraryRecordPicker.jsx";
+import { adjustRequest } from "../modelAdjust.js";
 
 // The Explorer's Modelling tab is the tree with each position's life models in it
 // (explorerModels.js), like the RCM and Measurements tabs. This file has what the page
@@ -342,9 +343,9 @@ function RbdDetails({ d, model, age, onAge }) {
     <section aria-label="The diagram" className="ml-rbd">
       {model?.placeholders?.length > 0 && (
         <p className={`ml-stale${model.placeholder_blocks?.mostly ? " is-most" : ""}`} role="note">
-          {model.placeholder_blocks?.words ? `${model.placeholder_blocks.words.charAt(0).toUpperCase()}${model.placeholder_blocks.words.slice(1)}: ` : ""}
-          placeholders stand in for {model.placeholders.slice(0, 8).join(", ")}{model.placeholders.length > 8 ? ` and ${model.placeholders.length - 8} more` : ""}
-          {model.placeholder_blocks?.mostly ? ". Most of the answer rests on invented lives, so" : ":"} the figures aren't real until they have models.
+          {model.placeholder_blocks?.words ? `${model.placeholder_blocks.words.charAt(0).toUpperCase()}${model.placeholder_blocks.words.slice(1)}: ` : "No real life model yet: "}
+          {model.placeholders.slice(0, 8).join(", ")}{model.placeholders.length > 8 ? ` and ${model.placeholders.length - 8} more` : ""}.
+          The figures aren&rsquo;t real until each has one.
         </p>
       )}
       {model?.repairable && <p className="rim-tquiet">A repairable diagram: its availability is simulated on its own page.</p>}
@@ -368,7 +369,7 @@ function RbdDetails({ d, model, age, onAge }) {
                 <tr key={b.id} title={hover || undefined}>
                   <td>{b.label}</td>
                   <td>
-                    {b.placeholder ? <Chip tone="warning" title={b.inside ? "Every block inside this sub-system is a placeholder" : "A placeholder: no model in use for this position yet"}>{b.inside ? `Placeholders (${b.inside.placeholders} of ${b.inside.basic})` : "Placeholder"}</Chip>
+                    {b.placeholder ? <Chip tone="warning" title={b.inside ? "No block inside this sub-system has a real life model yet" : "No real life model for this position yet"}>{b.inside ? `No model (${b.inside.placeholders} of ${b.inside.basic})` : "No model"}</Chip>
                       : b.inside?.placeholders ? <>{b.model} <Chip tone="warning">{b.inside.placeholders} of {b.inside.basic} placeholders</Chip></> : b.model}
                     {hover && <span className="sr-only">. {hover}</span>}
                   </td>
@@ -589,6 +590,9 @@ export function ParamsModal({ position, link = null, onClose, onDone }) {
 // record" (a modal over this one, opened at once), which lists only the records that can be a model.
 export function LibraryAttachModal({ position, onClose, onDone, onBind = null }) {
   const [rec, setRec] = useState(null);
+  // Adjust for conditions (model_adjust.py): optional, a hazard ratio for the conditions here.
+  const [hr, setHr] = useState("");
+  const hrAsk = hr.trim() ? adjustRequest("hr", hr) : {};
   const [picking, setPicking] = useState(false);
   // Opened once this dialog is up, so the picker stacks above it (Escape closes the picker first).
   useEffect(() => setPicking(true), []);
@@ -597,8 +601,10 @@ export function LibraryAttachModal({ position, onClose, onDone, onBind = null })
   const save = async () => {
     setBusy(true);
     try {
-      const made = await linkPositionModel(position.id, { library_record_id: rec.id });
-      onDone(made, `Attached ${rec.label} (${rec.source}) to ${position.name}.`);
+      const made = await linkPositionModel(position.id, { library_record_id: rec.id,
+                                                          ...(hrAsk.hazardRatio ? { hazard_ratio: hrAsk.hazardRatio } : {}) });
+      onDone(made, hrAsk.hazardRatio ? `Attached ${rec.label} (${rec.source}) to ${position.name}, at ${hrAsk.hazardRatio} times its hazard.`
+        : `Attached ${rec.label} (${rec.source}) to ${position.name}.`);
     } catch (e) {
       setBusy(false);
       setFailed(saveErrorText(e, { offline: navigator.onLine === false }));
@@ -609,11 +615,17 @@ export function LibraryAttachModal({ position, onClose, onDone, onBind = null })
            footer={(
              <>
                <button type="button" className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
-               <button type="button" onClick={save} disabled={busy || !rec} aria-busy={busy || undefined}>{busy ? "Attaching…" : "Attach"}</button>
+               <button type="button" onClick={save} disabled={busy || !rec || !!hrAsk.error} aria-busy={busy || undefined}>{busy ? "Attaching…" : "Attach"}</button>
              </>
            )}>
       <p className="rw-fhelp">A published failure rate as {position.name}’s model: an exponential at the record’s mean rate, its 5–95% range as the source’s uncertainty, and the record cited.</p>
       <PickedRecord record={rec} onPick={() => setPicking(true)} />
+      {rec && (
+        <Field label="Adjust for conditions here" optional error={hrAsk.error || null}
+               help="A hazard ratio: 1.5 is 1.5 times the record's hazard (harsher conditions), 0.8 milder. Saved as a new model with it.">
+          <TextInput inputMode="decimal" value={hr} placeholder="1" onChange={(e) => setHr(e.target.value)} />
+        </Field>
+      )}
       {failed && <p className="field-error" role="alert">{failed}</p>}
       {picking && (
         <LibraryRecordPicker use={onBind ? "attach" : "model"} selectedId={rec?.id} onClose={() => setPicking(false)}

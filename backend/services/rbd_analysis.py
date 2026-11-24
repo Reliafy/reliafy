@@ -58,6 +58,78 @@ class AnalysisError(ValueError):
     """Raised when a graph can't be turned into an analysable RBD."""
 
 
+#: Block types whose life is a non-repairable model on the block itself.
+_MODEL_BLOCKS = ("component", "series", "parallel", "standby")
+
+
+#: The life "Make an RBD from this structure" used to invent for a position with no model (MTTF
+#: 1,000 h, flagged placeholder). Diagrams made before it stopped still hold it: it counts as no model.
+_DERIVED_PLACEHOLDER = ("exponential", 0.001)
+
+
+def _invented(model: dict, data: dict) -> bool:
+    """A placeholder life made up for a block with no model when a diagram was built from the tree
+    (not one a user or the assistant chose as a starting point, which says so on the block)."""
+    if not model.get("placeholder"):
+        return False
+    if str(data.get("model_source") or "").startswith("A placeholder"):
+        return True
+    params = model.get("params") or []
+    return (model.get("distribution_id"), params[0].get("value") if len(params) == 1 and isinstance(
+        params[0], dict) else None) == _DERIVED_PLACEHOLDER and not model.get("source")
+
+
+def _lacks_model(model, data: dict) -> bool:
+    """No life model, or only the life invented when the diagram was built from the tree."""
+    return not isinstance(model, dict) or not model or _invented(model, data)
+
+
+def blocks_needing_models(graph: dict) -> list[dict]:
+    """The blocks with no life model of their own (or only a life invented for them when the diagram was
+    built from the tree): ``[{id, label}]``.
+    A block pinned working or failed (Status) needs none, nor a linked copy of another block. While
+    any block is listed, no system figure is worked out: a made-up life is never put in its place."""
+    from backend.services import rbd_repeats
+
+    out = []
+    for node in (graph or {}).get("nodes") or []:
+        if not isinstance(node, dict) or node.get("type") not in _MODEL_BLOCKS:
+            continue
+        data = node.get("data") or {}
+        if data.get("state") in ("working", "failed") or rbd_repeats.repeat_of(node) is not None:
+            continue
+        if isinstance(data.get("rbd"), dict) and data["rbd"].get("id"):
+            continue  # a sub-system: its own blocks answer for it
+        models = _unit_models(data) if node.get("type") == "standby" else [data.get("model")]
+        if not models or any(_lacks_model(m, data) for m in models):
+            out.append({"id": node.get("id"), "label": data.get("label") or node.get("id")})
+    return out
+
+
+def needs_models_message(blocks: list[dict]) -> str:
+    """What a diagram with blocks on no life model says, naming every one."""
+    names = ", ".join(str(b["label"]) for b in blocks)
+    one = len(blocks) == 1
+    return (f"{'This block needs' if one else 'These blocks need'} a life model before the system can be "
+            f"worked out: {names}. Give {'it' if one else 'each one'} a model, or mark a block that never "
+            "fails (a frame, a pipe) as Working under Status.")
+
+
+class NeedsModels(AnalysisError):
+    """A diagram whose blocks need life models first (``blocks``: [{id, label}])."""
+
+    def __init__(self, blocks: list[dict]):
+        super().__init__(needs_models_message(blocks))
+        self.blocks = blocks
+
+
+def require_models(graph: dict) -> None:
+    """Refuse a diagram with any block on no life model (:func:`blocks_needing_models`)."""
+    blocks = blocks_needing_models(graph)
+    if blocks:
+        raise NeedsModels(blocks)
+
+
 class _DistName:
     """Minimal stand-in for a SurPyval ``model.dist`` so RePyability's
     fixed-probability check (``model.dist.name``) works on reduced blocks."""
@@ -730,6 +802,54 @@ def _repyability_message(exc: Exception) -> str:
     return text
 
 
+def _names_list(names: list[str]) -> str:
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def wiring_errors(nodes: list, edges: list, labels: dict) -> list[str]:
+    """Every block must sit on a path from the input to the output. The one check of it, for the
+    builder's badge and for Calculate alike: each block that doesn't is named, with what's
+    missing (no wires at all, nothing feeding it, or leading nowhere). Empty when the diagram has
+    no single input and output (:func:`_io_errors` says so)."""
+    ids = [n.get("id") for n in nodes if n.get("type") not in ("input", "output", None)]
+    if not ids or "input" not in {n.get("id") for n in nodes} or "output" not in {n.get("id") for n in nodes}:
+        return []
+    out_of: dict = {}
+    into: dict = {}
+    for src, tgt in edges:
+        out_of.setdefault(src, set()).add(tgt)
+        into.setdefault(tgt, set()).add(src)
+
+    def reach(start, step):
+        seen, todo = {start}, [start]
+        while todo:
+            for nxt in step.get(todo.pop(), ()):
+                if nxt not in seen:
+                    seen.add(nxt)
+                    todo.append(nxt)
+        return seen
+
+    fed, leads = reach("input", out_of), reach("output", into)
+    loose = [nid for nid in ids if nid not in fed or nid not in leads]
+    if not loose:
+        return []
+    groups: dict[str, list[str]] = {"no wires": [], "nothing feeds it": [], "leads nowhere": []}
+    for nid in loose:
+        name = str(labels.get(nid) or nid)
+        if nid not in out_of and nid not in into:
+            groups["no wires"].append(name)
+        elif nid not in fed:
+            groups["nothing feeds it"].append(name)
+        else:
+            groups["leads nowhere"].append(name)
+    words = {"no wires": "not wired in at all", "nothing feeds it": "nothing from the input reaches it",
+             "leads nowhere": "it doesn't lead on to the output"}
+    parts = [f"{_names_list(v)} ({words[k]})" for k, v in groups.items() if v]
+    n = len(loose)
+    return [f"{n} block{'s are' if n > 1 else ' is'} not wired between the input and the output, so the diagram "
+            f"can't be calculated: {'; '.join(parts)}. Wire each one in, or delete it."]
+
+
 def _io_errors(graph: dict) -> list[str]:
     """A diagram runs from exactly one input node to exactly one output node.
     Without them RePyability guesses the ends from the wiring, and a graph
@@ -746,40 +866,98 @@ def _io_errors(graph: dict) -> list[str]:
     return errors
 
 
-def _koon_checks(nodes: list, edges: list, labels: dict) -> tuple[list[str], list[str]]:
-    """``(errors, warnings)`` for the k-of-n voting nodes, checked up front
-    against the wiring (RePyability's own messages are replaced: one isn't
-    formatted, and an impossible gate otherwise surfaces as "RBD has no paths
-    through!")."""
-    errors: list[str] = []
-    warnings: list[str] = []
-    indeg: dict = {}
+def _vote_required(node: dict):
+    """A vote node's number of working inputs needed (``n``), from ``data`` or, for graphs not yet
+    normalised (imports, the structure-derived RBD), the node itself; 1 when unset."""
+    data = node.get("data") or {}
+    raw = data.get("n") if data.get("n") is not None else node.get("n")
+    return int(raw if raw is not None else 1)
+
+
+def _vote_label(node: dict, labels: dict) -> str:
+    data = node.get("data") or {}
+    nid = node.get("id")
+    return str(labels.get(nid) or data.get("label") or node.get("label") or nid)
+
+
+def all_must_work_message(label: str, need: int) -> str:
+    """The note for a vote node that needs every one of its inputs (k = n, two or more): valid,
+    but it adds no redundancy, so it behaves as series."""
+    if need == 2:
+        return (f"“{label}” is 2 of 2: both must work, so this pair adds no redundancy. "
+                "Did you mean 1 of 2?")
+    return (f"“{label}” is {need} of {need}: all {need} must work, so it adds no redundancy (it acts as "
+            f"series). Did you mean fewer, such as 1 of {need}?")
+
+
+def vote_node_notes(nodes: list, edges: list, labels: Optional[dict] = None) -> list[dict]:
+    """Each k-of-n vote node whose number needed doesn't fit its wiring, checked against the
+    inputs actually wired into it (never the total typed on the node)::
+
+        {"id", "label", "need", "inputs", "kind", "message"}
+
+    ``kind``: ``too_many`` (needs more working inputs than it has: refused), ``all_must_work``
+    (needs every input, two or more: valid, but series, no redundancy), ``pass_through`` (one
+    input, one output, needs 1: does nothing) or ``bad_number`` (not a whole number of at least 1:
+    refused)."""
+    labels = labels or {}
+    into: dict = {}
+    out_of: dict = {}
     for src, tgt in edges:
-        indeg[tgt] = indeg.get(tgt, 0) + 1
+        into[tgt] = into.get(tgt, 0) + 1
+        out_of[src] = out_of.get(src, 0) + 1
+    notes: list[dict] = []
     for node in nodes:
         if node.get("type") != "knode":
             continue
         nid = node.get("id")
-        data = node.get("data") or {}
-        label = labels.get(nid) or data.get("label") or nid
+        label = _vote_label(node, labels)
+        inputs = into.get(nid, 0)
+        base = {"id": nid, "label": label, "inputs": inputs}
         try:
-            required = int(data.get("n") if data.get("n") is not None else 1)
+            need = _vote_required(node)
         except (TypeError, ValueError):
-            errors.append(f"Vote node “{label}”: the number required (n) must be a whole number.")
+            notes.append({**base, "need": None, "kind": "bad_number", "message":
+                          f"Vote node “{label}”: the number of working inputs needed must be a whole number."})
             continue
-        feeding = indeg.get(nid, 0)
-        branches = f"{feeding} branch feeds" if feeding == 1 else f"{feeding} branches feed"
-        if required < 1:
-            errors.append(f"Vote node “{label}” must require at least 1 working input (n = {required}).")
-        elif required > feeding:
-            errors.append(
-                f"Vote node “{label}” requires {required} working inputs but only {branches} it. "
-                f"Wire {required} or more branches into it, or lower n.")
-        elif required == feeding and required > 1:
-            warnings.append(
-                f"Vote node “{label}” requires all {required} of its inputs to work, which is a series "
-                "structure. Is n correct, or should those blocks simply be in series?")
-    return errors, warnings
+        base["need"] = need
+        if need < 1:
+            notes.append({**base, "kind": "bad_number", "message":
+                          f"Vote node “{label}” must need at least 1 working input (it's set to {need})."})
+        elif need > inputs:
+            has = "nothing is wired into it" if inputs == 0 else f"it has {inputs}"
+            fix = (f"Wire in {need - inputs} more, or lower the number needed to {inputs}" if inputs
+                   else "Wire its inputs into it")
+            notes.append({**base, "kind": "too_many", "message":
+                          f"Vote node “{label}” needs at least {need} inputs for {need}-of-n; {has}, so the "
+                          f"diagram can't be calculated. {fix}."})
+        elif need == inputs and need > 1:
+            notes.append({**base, "kind": "all_must_work", "message": all_must_work_message(label, need)})
+        elif need == 1 and inputs == 1 and out_of.get(nid, 0) <= 1:
+            notes.append({**base, "kind": "pass_through", "message":
+                          f"Vote node “{label}” has one input and needs 1, so it does nothing: you can delete it "
+                          "and wire straight through."})
+    return notes
+
+
+_VOTE_ERRORS = ("too_many", "bad_number")
+
+
+def _koon_checks(nodes: list, edges: list, labels: dict) -> tuple[list[str], list[str]]:
+    """``(errors, warnings)`` for the k-of-n voting nodes (:func:`vote_node_notes`), checked up
+    front against the wiring (RePyability's own messages are replaced: one isn't formatted, and an
+    impossible gate otherwise surfaces as "RBD has no paths through!")."""
+    notes = vote_node_notes(nodes, edges, labels)
+    return ([x["message"] for x in notes if x["kind"] in _VOTE_ERRORS],
+            [x["message"] for x in notes if x["kind"] not in _VOTE_ERRORS])
+
+
+def all_must_work_notes(graph: dict) -> list[str]:
+    """The result's assumptions: each vote node that needs all of its two or more inputs."""
+    nodes = graph.get("nodes") or []
+    edges = [(e.get("source"), e.get("target")) for e in graph.get("edges") or []
+             if e.get("source") and e.get("target")]
+    return [x["message"] for x in vote_node_notes(nodes, edges) if x["kind"] == "all_must_work"]
 
 
 def _check_limits(graph: dict) -> None:
@@ -902,6 +1080,9 @@ def _build_rbd(
     input_node = "input" if "input" in node_ids else None
     output_node = "output" if "output" in node_ids else None
 
+    loose = wiring_errors(nodes, edges, labels)
+    if loose:
+        raise AnalysisError(loose[0])
     ccf_groups = _ccf_groups(graph, reliabilities)
     if repeats and not rbd_repeats.core_search_fits(
             edges, reliabilities, repeats, k, input_node, output_node):
@@ -1013,10 +1194,12 @@ def _ccf_warning(text: str, labels: dict) -> str:
                   "For lifetime figures, set the group's basis to rate (Reliafy's default).", text)
 
 
-def _structure_errors(sc: dict, labels: dict) -> tuple[list[str], list[str]]:
+def _structure_errors(sc: dict, labels: dict, wiring_checked: bool = False) -> tuple[list[str], list[str]]:
     """Turn a RePyability ``structure_check`` into user-facing messages.
 
-    Returns ``(errors, warnings)`` — errors block analysis, warnings don't.
+    Returns ``(errors, warnings)`` — errors block analysis, warnings don't. ``wiring_checked``:
+    :func:`wiring_errors` already named the blocks off the path, so the dangling and off-path
+    lists aren't said again.
     """
     errors: list[str] = []
     warnings: list[str] = []
@@ -1029,7 +1212,7 @@ def _structure_errors(sc: dict, labels: dict) -> tuple[list[str], list[str]]:
             "The diagram contains a loop. A reliability block diagram must "
             "flow from the input to the output without cycles."
         )
-    dangling_in = sc.get("nodes_with_no_predecessors") or []
+    dangling_in = [] if wiring_checked else sc.get("nodes_with_no_predecessors") or []
     if dangling_in:
         errors.append(
             "Nothing feeds into: "
@@ -1038,7 +1221,7 @@ def _structure_errors(sc: dict, labels: dict) -> tuple[list[str], list[str]]:
         )
     elif not sc.get("has_unique_input_node", True):
         errors.append("The diagram needs exactly one input node.")
-    dangling_out = sc.get("nodes_with_no_successors") or []
+    dangling_out = [] if wiring_checked else sc.get("nodes_with_no_successors") or []
     if dangling_out:
         errors.append(
             "These nodes don't lead anywhere: "
@@ -1055,7 +1238,9 @@ def _structure_errors(sc: dict, labels: dict) -> tuple[list[str], list[str]]:
         )
     # k-of-n problems are reported by :func:`_koon_checks` (with labels, and
     # without RePyability's unformatted / misspelt messages).
-    if sc.get("has_irrelevant_nodes"):
+    if sc.get("has_irrelevant_nodes") and not wiring_checked:
+        # Wired in, but never decisive (a repeated block absorbed by another path): :func:`wiring_errors`
+        # catches blocks that aren't wired in.
         warnings.append(
             "These nodes are not on any path and don't affect the result: "
             f"{names('irrelevant_nodes')}."
@@ -1074,6 +1259,15 @@ def validate_graph(
 
     with rbd_standby.simulation("check") as simulated:
         out = _validate_graph(graph, resolve_subsystem)
+    out = _with_needed_models(out, graph)
+    if not out.get("empty"):
+        # The vote nodes whose number needed doesn't fit their wiring, for the builder to mark on
+        # the node and offer its fix (``all_must_work``: "Make it 1 of 2").
+        edges = [(e.get("source"), e.get("target")) for e in graph.get("edges") or []
+                 if e.get("source") and e.get("target")]
+        votes = vote_node_notes(graph.get("nodes") or [], edges)
+        if votes:
+            out["vote_nodes"] = votes
     if simulated and not graph.get("repairable"):
         labels = list(dict.fromkeys(b.label for b in simulated))
         out["simulated_blocks"] = labels
@@ -1082,6 +1276,22 @@ def validate_graph(
             **(out.get("non_analytic_nodes") or {}),
             **{label: f"standby, simulated from {rbd_standby.SIM_LIVES:,} lifetimes with Pro" for label in labels}}
     return out
+
+
+def _with_needed_models(out: dict, graph: dict) -> dict:
+    """A check whose blocks on no life model are named once, together (``needs_model``: [{id,
+    label}], so the app can link each), in place of one error per block: the diagram isn't
+    calculated until each has one."""
+    if out.get("empty"):
+        return out
+    needs = blocks_needing_models(graph)
+    if not needs:
+        return out
+    own = tuple(f"{b['label']} has no" for b in needs)
+    errors = [e for e in out.get("errors") or []
+              if not e.startswith(own) and not e.startswith("These nodes have no non-repairable model")]
+    return {**out, "valid": False, "can_calculate": False, "errors": [needs_models_message(needs), *errors],
+            "needs_model": needs}
 
 
 def _validate_graph(
@@ -1188,6 +1398,8 @@ def _validate_graph(
     warnings.extend(koon_warnings)
 
     labels.update(rbd_repeats.copy_labels(nodes, repeats))
+    wiring = wiring_errors(nodes, edges, labels)
+    errors.extend(wiring)
     node_ids = {n.get("id") for n in nodes}
     too_tied = bool(edges and reliabilities and repeats) and not rbd_repeats.core_search_fits(
         edges, reliabilities, repeats, k,
@@ -1207,7 +1419,7 @@ def _validate_graph(
                 on_infeasible_rbd="ignore",
             )
             struct_errors, struct_warnings = _structure_errors(
-                rbd.structure_check, labels
+                rbd.structure_check, labels, wiring_checked=bool(wiring)
             )
             errors.extend(struct_errors)
             warnings.extend(struct_warnings)
@@ -1262,7 +1474,8 @@ def _validate_graph(
                 errors.append(
                     f"“{lbl}” has no repair-time distribution. Repairable diagrams "
                     "analyse availability, so every component needs one (double-click "
-                    "the block to set it), or mark it as repaired instantly.")
+                    "the block to set it), or mark it as repaired instantly. Structure that doesn't "
+                    "fail (a frame, a base): tick Never fails in its settings to leave it out of the model.")
         from backend.services import rbd_maintenance, rbd_policies, rbd_repairable_blocks
 
         errors.extend(rbd_repairable_blocks.validation_errors(graph))
@@ -2296,6 +2509,7 @@ def analyze(
     """
     from backend.services import rbd_standby
 
+    require_models(graph)  # no system figure while a block has no life model (nothing invented)
     # Blocks fitted in another unit of the same kind: converted to the diagram's unit, and listed.
     graph, conversions = model_units.convert_graph(graph)
     conversions += model_units.subsystem_conversions(graph, resolve_subsystem)
@@ -2316,7 +2530,8 @@ def analyze(
             relayed.append(_ccf_warning(str(w.message), labels))
         else:  # not ours to relay: let it through as it would have gone
             warnings.warn_explicit(w.message, w.category, w.filename, w.lineno, source=w.source)
-    out = list(dict.fromkeys(relayed + notes))
+    # A vote node that needs all of its inputs adds no redundancy: said with the result too.
+    out = list(dict.fromkeys(relayed + notes + all_must_work_notes(graph)))
     if out:
         result["warnings"] = out
     if conversions:
@@ -2771,6 +2986,7 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
     working_nodes: set = set()
     broken_nodes: set = set()
     schedule_notes: list = []
+    require_models(graph)
 
     for node in nodes:
         nid = node.get("id")
@@ -2865,6 +3081,9 @@ def _build_repairable_rbd(graph: dict, resolve_model=None, with_ccf=True, state:
     groups = _ccf_groups(graph, components, repairable=True)
     input_node = "input" if "input" in node_ids else None
     output_node = "output" if "output" in node_ids else None
+    loose = wiring_errors(nodes, edges, labels)
+    if loose:
+        raise AnalysisError(loose[0])
 
     def build(ccf_groups):
         try:
@@ -3792,6 +4011,8 @@ def analyze_availability(
         "current_state": state or None,
         "repyability_version": _repyability_version(),
         **({"unit_conversions": conversions} if conversions else {}),
+        # A vote node that needs all of its inputs adds no redundancy.
+        **({"warnings": series} if (series := all_must_work_notes(graph)) else {}),
     }
 
 

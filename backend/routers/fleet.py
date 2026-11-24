@@ -31,7 +31,7 @@ def _summary(fleet, ctx: AccessCtx, forecast: dict | None = None) -> dict:
         "model_id": fleet.model_id,
         "model_kind": fleet.model_kind,
         "settings": fleet.settings,
-        "n_items": len(fleet.items or []),
+        "n_items": fleet_service.unit_count(fleet.items),
         "is_sample": samples_service.is_sample(fleet.owner_id),
         "read_only": not access_service.can_write(ctx, fleet.owner_id),
         "updated_by": (fleet.updated_by or {}).get("name"),
@@ -74,6 +74,33 @@ def create_fleet(
         return JSONResponse(status_code=422, content={"detail": client_message(exc)})
     access_service.stamp_editor(session, "fleets", fleet.id, ctx)
     return JSONResponse(content=_summary(fleet, ctx))
+
+
+@router.post("/scratch-forecast")
+def scratch_forecast(body: dict = Body(...), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
+    """A quick spares forecast, not saved (Decisions › Forecasts › Spares forecast): a model
+    (distribution_id and params, as a saved model or typed), units at one age or a list of ages, the
+    use per period, a horizon and a replacement policy (run to failure, or planned replacement at an
+    age). The same numbers a saved fleet with those items would show: failures and replacements by
+    period with 90% two-sided ranges, costs, and spares to hold when a lead time is given."""
+    try:
+        return JSONResponse(content=fleet_service.scratch_forecast(body))
+    except fleet_service.FleetValidationError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+
+
+@router.post("/quick-forecast")
+def quick_forecast(body: dict = Body(...), ctx: AccessCtx = Depends(get_access)) -> JSONResponse:
+    """The quick forecast tool as a sentence (Decisions › Forecasts), not saved: units and how they run,
+    a horizon, and work on a schedule, a part that fails, or both. Lines by owner with the kind of
+    number and what each leaves out, totals with 90% two-sided ranges. Also over MCP and the CLI:
+    analyse forecast."""
+    from backend.services import quick_forecast as qf
+
+    try:
+        return JSONResponse(content=qf.quick_forecast(body))
+    except fleet_service.FleetValidationError as exc:
+        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
 
 
 @router.get("/fleets")
@@ -194,7 +221,9 @@ def running_units(
     try:
         out = fleet_items_service.running_units(session, fleet, [*ctx.read_owners, fleet.owner_id])
     except fleet_items_service.NoModelData as exc:
-        return JSONResponse(status_code=422, content={"detail": client_message(exc)})
+        # Nothing to list (a model typed from parameters, its data gone): an
+        # answer, not an error, so the page simply offers no button.
+        return JSONResponse(content={"items": [], "running": 0, "skipped": [], "reason": client_message(exc)})
     return JSONResponse(content=out)
 
 

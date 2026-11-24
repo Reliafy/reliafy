@@ -310,7 +310,7 @@ export function positionOf(r) {
   // A task row (the Maintenance tab): the position (or place) it's on.
   if (r.type === "mtask") return r.ref.position_id;
   // A work package (the Maintenance tab), a task listed under it and a Forecast row: where it sits.
-  if (r.type === "mpkg" || r.type === "mpref" || r.type === "mfc" || r.type === "mfcl") return r.ref.position_id;
+  if (r.type === "mpkg" || r.type === "mpref" || r.type === "mfc" || r.type === "mfcl" || r.type === "mxtra") return r.ref.position_id;
   return isRcmRow(r) ? r.ref.position_id : null;
 }
 
@@ -339,7 +339,8 @@ export function rowActions(r, { canRename = true, moves = true, viewOnly = null 
   // straight after the adds, so it's found without the double-click, and on a
   // phone, where there's none (there the details are a sheet).
   const open = opensItem(r) ? [{ id: "open", label: "Open…" }] : [];
-  const rename = canRename ? [{ id: "rename", label: "Edit description" }] : [];
+  const rename = [canRename ? { id: "rename", label: "Edit description" }
+    : { id: "rename", label: "Edit description", disabled: true, reason: "On a phone, change its text in its details: Open." }];
   // Delete… on any row takes everything under it (a dialog counts it first; Undo brings it back).
   if (r.type === "pos") {
     return withPositionDelete([
@@ -362,13 +363,13 @@ export function rowActions(r, { canRename = true, moves = true, viewOnly = null 
     const ids = r.ref.standard_ids || [];
     const at = ids.indexOf(r.ref.standard_id);
     const move = r.ref.legacy || !moves ? [] : [
-      { id: "move-up", label: "Move up", disabled: at <= 0 },
-      { id: "move-down", label: "Move down", disabled: at < 0 || at >= ids.length - 1 },
+      { id: "move-up", label: "Move up", ...(at <= 0 ? { disabled: true, reason: "It's first already." } : {}) },
+      { id: "move-down", label: "Move down", ...(at < 0 || at >= ids.length - 1 ? { disabled: true, reason: "It's last already." } : {}) },
     ];
     return [
       { id: "add-fail", label: "Add a functional failure…" },
       ...open,
-      ...(canRename ? [{ id: "rename", label: "Edit text" }] : []),
+      ...rename.map((it) => ({ ...it, label: "Edit text" })),
       ...move,
       // The old single text (legacy) is cleared; a standard of the list goes with the failures breaching it.
       { id: "delete", label: r.ref.legacy ? "Remove performance standard" : "Delete performance standard…", danger: true },
@@ -384,7 +385,7 @@ export function rowActions(r, { canRename = true, moves = true, viewOnly = null 
       { id: "delete", label: "Delete functional failure…", danger: true },
     ];
   }
-  if (r.type === "cause") return [{ id: "go", label: "Go to it" }, { id: "unlink", label: "Unlink", danger: true }];
+  if (r.type === "cause") return [{ id: "go", label: "Go to it" }, { id: "unlink", label: "Remove the link", danger: true }];
   // The group rows: adding inside them (their details open on the add row).
   if (r.type === "nostd") return [{ id: "add-fail", label: "Add a functional failure…" }];
   if (r.type === "unassigned") return [{ id: "add-mode", label: "Add a failure mode…" }];
@@ -410,6 +411,10 @@ export function rowActions(r, { canRename = true, moves = true, viewOnly = null 
       { id: "add-task", label: "Add a task…" },
       ...open,
       { id: "decide", label: r.ref.decision ? "Change the decision…" : "Decide…" },
+      // What's done when it fails, or when a check finds it: tasks raised by the event, kept on the
+      // Maintenance tab (Derryn, 23 Nov 2026), opened there.
+      { id: "add-response", label: "Add response if it fails…", title: "What's done when it fails: on the Maintenance tab" },
+      { id: "add-follow-on", label: "Add follow-on…", title: "What's done when an inspection finds it: on the Maintenance tab" },
       ...rename,
       { id: "delete", label: "Delete failure mode…", danger: true },
     ];
@@ -747,7 +752,15 @@ export const opensItem = (r) => !!r && ITEM_KINDS.has(r.type);
 // A double-click on the table also opens a position's own panel (its operating
 // context and functions, or its criticality matrix), expanded like the rest.
 // Its menu has no "Open…" (opensItem): a position is picked, not an item.
-export const opensPanel = (r) => opensItem(r) || r?.type === "pos";
+// A position shown above a place's positions (assetTree.js VIA) is a position all the same.
+export const opensPanel = (r) => opensItem(r) || r?.type === "pos" || (r?.type === "group" && !!r.ref?.via);
+// The one rule for a double-click on a tree-table row (a wide screen), every tab: a row whose
+// details open beside the table opens them across it (the tree kept beside), as Enter and Open do;
+// Esc or Back to table puts them beside it again. The RCM's rows and positions (opensPanel), a
+// measuring point, a model and its missions' rows, a maintenance task and a work package.
+// A cell edited in place keeps its own double-click (TreePane skips those).
+export const WIDE_KINDS = new Set(["meas", "pmodel", "mission", "phase", "mcov", "mrule", "mtask", "mpkg"]);
+export const opensWide = (r) => opensPanel(r) || WIDE_KINDS.has(r?.type);
 
 // A standard's structured limit, condition and source (its text is "name").
 export const STANDARD_FIELDS = ["parameter", "comparator", "value", "unit", "when", "source"];
