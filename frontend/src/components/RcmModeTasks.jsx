@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { urlAsk } from "../urlAsks.js";
 import { Link, useLocation } from "react-router-dom";
 import { useConfirm } from "./ConfirmProvider.jsx";
 import { useWorkManagementOn } from "../ConfigProvider.jsx";
@@ -1194,10 +1195,16 @@ function TaskReading({ task, can, onSaid }) {
 //   mode     the failure mode's row        task, kind   the task and its kind
 //   status   the evidence's status chip    saved        the saved evidence's link, kept under it
 export function IntervalBasis({ mode, task, kind, ops, can, status = null, saved = null, evidence = null, onLink = null, onSaid }) {
-  const [open, setOpen] = useState(false);
+  // ?basis=open (urlAsks.js): the task's saved calculation opens in place, worked out, as the page
+  // opens on it (?fm=T:<mode>:<task>). Once: another task opens closed as before.
+  const asked = useRef(urlAsk("basis") === "open");
+  const [open, setOpen] = useState(asked.current);
   const [got, setGot] = useState(null);
   const [tick, setTick] = useState(0);
-  useEffect(() => { setOpen(false); }, [task?.id]);
+  useEffect(() => {
+    if (asked.current) { asked.current = false; return; }
+    setOpen(false);
+  }, [task?.id]);
   useEffect(() => {
     let on = true;
     if (!mode?.ref?.id || !task?.id) return undefined;

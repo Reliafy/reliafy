@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getFailureRanking } from "../api.js";
 import { csvFileName, downloadCsv } from "../csv.js";
 import {
-  DEFAULT_RANKING, GROUP_BY, METRIC_AXIS, RANK_BY, WINDOWS, downtimeText, groupHeading, hoursText, moneyText,
+  rankingAsked,
+  GROUP_BY, METRIC_AXIS, RANK_BY, WINDOWS, downtimeText, groupHeading, hoursText, moneyText,
   paretoSeries, rangeText, rankingCsv, rankingParams, rateText, reportsFilter, shareText, totalsLine,
 } from "../failureRanking.js";
 import { ACCENT, INK } from "../plotTheme.js";
@@ -51,7 +52,8 @@ function Pareto({ data }) {
 }
 
 export default function FailureRanking({ positionId, version, onOpenReports, onSelect, onAdd = null }) {
-  const [opts, setOpts] = useState(DEFAULT_RANKING);
+  // ?group= ?rank= ?window= (failureRanking.js rankingAsked): the ranking a link asks for.
+  const [opts, setOpts] = useState(() => rankingAsked(typeof window !== "undefined" ? window.location.search : ""));
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
