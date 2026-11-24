@@ -523,7 +523,8 @@ def failure_ranking(m: Maintenance, position_id, group_by="position", rank_by="f
         top = rows[0]
         sentence = (f"{_plural(n_all, 'failure')} in {window_words} below {root['name']}. By {rank_words}, the "
                     f"{by_words} at the top is {top['name']}"
-                    + (f": {_share_words(top['share'])} of the total." if top["share"] else "."))
+                    + (f": {_share_words(top['share'])} of the total." if top["share"] and rank_by != "rate" else
+                       f": {_num(top['value'])} per 1,000 h." if rank_by == "rate" and top["value"] is not None else "."))
     else:
         sentence = f"No failures recorded in {window_words} below {root['name']}."
     notes = [
