@@ -290,3 +290,15 @@ def test_the_route_and_the_mcp_twin(api):  # noqa: F811
 
 
 from backend.tests.test_maintenance_rcm_api import api  # noqa: E402,F401,F811
+
+
+def test_count_words_never_a_long_float():
+    """The forecast's sentences say a count as its table does: "≈ 0" under 0.0005, one figure
+    under 0.01, three figures above (never 6.79e-12 or 0.00000000000679)."""
+    assert fl.count_words(6.79e-12) == "≈ 0"
+    assert fl.count_words(0.0004) == "≈ 0"
+    assert fl.count_words(0.00198) == "≈ 0.002"
+    assert fl.count_words(0.271) == "0.271"
+    assert fl.count_words(1234.5) == "1,230"
+    assert fl.count_words(0) == "0"
+    assert fl.count_words(None) == "—"

@@ -136,3 +136,21 @@ test("the calculators take a unit of use and say which unit the answer is in", (
   assert.match(answerUnitWords("ff", { device: "rate" }), /calendar time/);
   assert.equal(answerUnitWords("fixed", {}), null);
 });
+
+test("P-F units: a task by its Flight hours counter lists flight hours, and its interval now is in them", async () => {
+  const { currentOf, foundPct, meterUnit } = await import("./rcmIntervals.js");
+  const view = { by_use: true, unit: "hours", measurement: { name: "Flight hours", unit: "hours" } };
+  assert.equal(meterUnit(view), "flight hours");
+  assert.equal(meterUnit({ ...view, measurement: { name: "Hours" } }), null);
+  assert.equal(meterUnit({ ...view, by_use: false }), null);
+  const task = { interval: 25, unit: "hours" };
+  assert.ok(pfUnits(task, "hours", "flight hours").includes("flight hours"));
+  assert.deepEqual(currentOf(task, "flight hours", "flight hours"), { current_interval: 25, current_unit: "flight hours" });
+  assert.deepEqual(currentOf(task, "weeks", "flight hours"), { current_interval: 25, current_unit: "hours" });
+  assert.deepEqual(currentOf({ interval: 500, unit: "cycles" }, "weeks"), {});
+  // The run-sheet's figures for a check finding 90% with a 120 FH P-F interval.
+  assert.equal(foundPct(0.999972), "99.99%");
+  assert.equal(foundPct(0.9936), "99.4%");
+  assert.equal(foundPct(0.99), "99%");
+  assert.equal(foundPct(1), "100%");
+});

@@ -6,14 +6,14 @@ import InputGroup from "./ui/InputGroup.jsx";
 import { Select, TextInput } from "./ui/Controls.jsx";
 import { saveErrorText } from "../confirm.js";
 import {
-  getFailureModeIntervalInputs, getModel, listModels, modelAtRate, optimalReplacement, rcmFailureFindingInterval, rcmOnConditionInterval,
+  getFailureModeIntervalInputs, getModel, getTaskMeasurement, listModels, modelAtRate, optimalReplacement, rcmFailureFindingInterval, rcmOnConditionInterval,
 } from "../api.js";
 import { savedModelRef, twoClockAt } from "../modelNext.js";
 import { modeAnswers } from "../decisionCheck.js";
 import { formatCost } from "../money.js";
 import { tabPlace } from "../explorerTabs.js";
 import {
-  ANALYSIS_KIND, TASK_COST_FIELD, TIME_UNITS, analysisName, taskCostWords, answerUnitWords, calculatorFor, isUseUnit, money, num, pct, pfStartUnit, pfUnits, rationale, roundDown, taskUnit, withUnit,
+  ANALYSIS_KIND, TASK_COST_FIELD, TIME_UNITS, analysisName, taskCostWords, answerUnitWords, calculatorFor, foundPct, currentOf, isUseUnit, meterUnit, money, num, pct, pfStartUnit, pfUnits, rationale, roundDown, taskUnit, withUnit,
 } from "../rcmIntervals.js";
 
 // "Calculate…" on an RCM task card (RcmModeTasks): how often to do the task, worked out
@@ -52,15 +52,36 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse, inli
   const safety = ["safety", "environmental"].includes(modeAnswers(r.ref).consequence);
   const [showCosts, setShowCosts] = useState(!safety);
   const [why, setWhy] = useState(false);
+  // The task's own meter's unit when it's done by use ("flight hours" on a task every 25 hours of
+  // its Flight hours counter): a P-F interval in it is answered in it, with no costs needed.
+  const [meter, setMeter] = useState(null);
+  const [meterRead, setMeterRead] = useState(calc.key !== "pf" || !task?.id);
+  const unitChosen = useRef(false); // the user's choice, or a saved calculation's, beats the meter's
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
   // Inline, from a saved calculation: work it out once its inputs are in.
   const runSaved = useRef(false);
-  const set = (k) => (e) => { const v = e.target.value; setForm((f) => ({ ...f, [k]: v })); setResult(null); };
+  const set = (k) => (e) => {
+    const v = e.target.value;
+    if (k === "pf_unit") unitChosen.current = true;
+    setForm((f) => ({ ...f, [k]: v }));
+    setResult(null);
+  };
 
   useEffect(() => {
     let on = true;
     getFailureModeIntervalInputs(r.ref.id, task?.id).then((got) => { if (on) prefill(got); }, () => {});
+    if (calc.key === "pf" && task?.id) {
+      getTaskMeasurement(task.id).then((view) => {
+        const u = meterUnit(view);
+        if (!on) return;
+        setMeterRead(true);
+        if (!u) return;
+        setMeter(u);
+        // A task by its hours counter starts in that counter's unit, unless a unit is already chosen.
+        if (!unitChosen.current && taskUnit(task.unit) === "hours") setForm((f) => (f.pf_unit === "hours" ? { ...f, pf_unit: u } : f));
+      }, () => { if (on) setMeterRead(true); });
+    }
     if (calc.key !== "pf") {
       listModels().then((out) => {
         if (on) setModels((out.models || []).filter((m) => m.kind === "distribution"));
@@ -107,7 +128,7 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse, inli
       if (prev && got.previous.kind === ANALYSIS_KIND[calc.key]) {
         for (const [k, v] of Object.entries(prev)) if (k in next && blank(next[k]) && !blank(v)) next[k] = String(v);
         // The saved calculation's own unit and chance of finding, not the starting ones.
-        if (calc.key === "pf" && prev.pf_unit) next.pf_unit = prev.pf_unit;
+        if (calc.key === "pf" && prev.pf_unit) { next.pf_unit = prev.pf_unit; unitChosen.current = true; }
         if (calc.key === "pf" && !blank(prev.detection_probability)) next.detection_probability = String(Number(prev.detection_probability) * 100);
         if (inline) runSaved.current = true;
       }
@@ -139,8 +160,7 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse, inli
           failure_cost: n(form.failure_cost),
         } : {}),
         detection_probability: blank(form.detection_probability) ? 1 : n(form.detection_probability) / 100,
-        ...(task?.interval && (TIME_UNITS.includes(taskUnit(task.unit)) || taskUnit(task.unit) === taskUnit(form.pf_unit))
-          ? { current_interval: task.interval, current_unit: taskUnit(task.unit) } : {}),
+        ...currentOf(task, form.pf_unit, meter),
       };
     }
     if (calc.key === "ff") {
@@ -159,15 +179,20 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse, inli
     return { model: form.model, planned_cost: n(form.planned_cost), unplanned_cost: n(form.unplanned_cost) };
   };
 
-  // Costs given (shown and any typed): they add the cost-optimal interval, never change the P-F one.
-  const priced = () => showCosts && [form.inspection_cost, form.found_cost, form.failure_cost].some((v) => !blank(v));
+  // Costs (shown, all three and the failures a year, in calendar time): they add the cheapest
+  // interval and never change the P-F one, so a cost alone (the task's own, filled in) or a P-F
+  // interval by use never stops the answer; the result says what the cheapest interval still needs.
+  const priced = () => showCosts && !isUseUnit(form.pf_unit)
+    && [form.inspection_cost, form.found_cost, form.failure_cost, form.onset_rate].every((v) => !blank(v));
+  const costsLeftOut = () => {
+    if (calc.key !== "pf" || !showCosts || isUseUnit(form.pf_unit) || priced()) return null;
+    const typed = [form.found_cost, form.failure_cost, form.onset_rate].some((v) => !blank(v));
+    if (!typed) return null;
+    return "Costs left out: the cheapest interval needs the cost of a check, the cost when found, the cost of a failure and the failures a year.";
+  };
   const missing = () => {
     if (calc.key === "pf") {
       if (blank(form.pf_interval)) return "Enter the P-F interval: how long from the first sign to the failure.";
-      if (priced() && (blank(form.inspection_cost) || blank(form.found_cost) || blank(form.failure_cost))) {
-        return "Enter all three costs for the cost-optimal interval, or none for the interval from the P-F alone.";
-      }
-      if (priced() && blank(form.onset_rate)) return "The cost-optimal interval needs how many failures a year to expect if nothing is done.";
       return null;
     }
     if (calc.key === "ff") {
@@ -198,7 +223,7 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse, inli
         const m = b.model;
         out = await optimalReplacement(m.distribution_id, m.params, b.planned_cost, b.unplanned_cost, m.unit, m.extras);
       }
-      if (alive.current) setResult({ out, sent: b });
+      if (alive.current) setResult({ out, sent: b, leftOut: costsLeftOut() });
     } catch (e) {
       if (alive.current) setFailed(saveErrorText(e, { offline: navigator.onLine === false }));
     } finally {
@@ -207,10 +232,11 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse, inli
   };
 
   useEffect(() => {
-    if (!runSaved.current || busy || result) return;
+    // Its meter read first, so the task's interval now is compared in the right unit.
+    if (!runSaved.current || busy || result || !meterRead) return;
     runSaved.current = false;
     if (!missing()) work();
-  }, [form]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [form, meterRead]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const use = useOf(calc.key, result);
   const cheapest = result?.out?.cost_optimal?.recommended && !sameUse(result.out.cost_optimal.recommended, use)
@@ -263,7 +289,7 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse, inli
               <InputGroup label="P-F interval">
                 <TextInput type="number" inputMode="decimal" min="0" step="any" value={form.pf_interval} onChange={set("pf_interval")} aria-label="P-F interval" placeholder="e.g. 10" />
                 <Select value={form.pf_unit} onChange={set("pf_unit")} aria-label="P-F interval unit">
-                  {pfUnits(task, form.pf_unit).map((u) => <option key={u} value={u}>{u}{isUseUnit(u) ? " (use)" : ""}</option>)}
+                  {pfUnits(task, form.pf_unit, meter).map((u) => <option key={u} value={u}>{u}{isUseUnit(u) ? " (use)" : ""}</option>)}
                 </Select>
               </InputGroup>
             </Field>
@@ -363,7 +389,7 @@ export default function IntervalCalculator({ r, task, kind, onClose, onUse, inli
         </div>
       </form>
       {failed && <p className="field-error" role="alert">{failed}</p>}
-      {result && <Result k={calc.key} out={result.out} task={task} use={use} />}
+      {result && <Result k={calc.key} out={result.out} task={task} use={use} leftOut={result.leftOut} meter={meter} />}
     </>
   );
   if (inline) {
@@ -445,29 +471,33 @@ function useOf(key, result) {
   return out.recommended ? { value: out.recommended.value, unit: out.recommended.unit } : null;
 }
 
-function Result({ k, out, task, use }) {
+function Result({ k, out, task, use, leftOut = null, meter = null }) {
   const yours = task?.interval ? withUnit(task.interval, task.unit) : null;
   if (k === "pf") {
     const at = out.at_recommended;
     const c = out.cost_optimal;
     const priced = out.run_to_failure_cost_rate != null;
+    // How many warnings a check finds in time, at the recommended interval and at the task's now
+    // (the figures the run-sheet quotes: 99.99% at 25 FH, 99.4% at 50 FH for a check finding 90%).
+    const partial = Number(out.detection_probability) < 1;
+    const now = out.current ? withUnit(out.current.value, out.current.unit || (meter && taskUnit(task?.unit) === "hours" ? meter : task?.unit)) : yours;
     return (
       <div className="ivc-result" role="status">
         <p className="ivc-answer">{out.summary}</p>
         <dl className="ivc-facts">
           <dt>{out.basis === "net_pf" ? "Net P-F interval" : "Half the P-F interval"}</dt>
           <dd>{withUnit(out.interval, out.unit)} (rounded down to {withUnit(use.value, use.unit)})</dd>
-          {at.detection_probability < 0.9999 && <><dt>Warnings found in time</dt><dd>{pct(at.detection_probability)}</dd></>}
+          {partial && <><dt>Warnings found in time</dt><dd>{foundPct(at.detection_probability)} at {withUnit(use.value, use.unit)}{out.current?.detection_probability != null ? `; ${foundPct(out.current.detection_probability)} at ${now}, the task's now` : ""}</dd></>}
           {priced && <><dt>Cost a year there</dt><dd>{money(at.cost_rate)}, against {money(out.run_to_failure_cost_rate)} letting it fail</dd></>}
           {c && <><dt>Cheapest interval</dt><dd>{withUnit(c.interval, c.unit)}: {money(c.at_recommended.cost_rate)} a year at {withUnit(c.recommended.value, c.recommended.unit)}</dd></>}
           {out.current && (
             <><dt>Yours now</dt><dd>
-              {yours}{out.current.within ? " (within the P-F limit)" : " (longer than the P-F limit: warnings can be missed)"}
+              {now}{out.current.within ? " (within the P-F limit)" : " (longer than the P-F limit: warnings can be missed)"}
               {out.current.cost_rate != null ? `, ${money(out.current.cost_rate)} a year` : ""}
             </dd></>
           )}
         </dl>
-        {!priced && <p className="rw-fhelp">Costs only matter for whether the check pays for itself, not for the P-F interval.</p>}
+        {!priced && <p className="rw-fhelp">{leftOut || "Costs only matter for whether the check pays for itself, not for the P-F interval."}</p>}
       </div>
     );
   }

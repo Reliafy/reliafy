@@ -1174,7 +1174,8 @@ def failure_mode_interval_inputs(mode_id: str, task_id: str | None = None, sessi
         _, position = m._live_mode(mode_id)
         rows = m.life_data(position["id"]) if position else []
         fetch = rcm_decisions.evidence_fetcher(session, ctx.read_owners, ctx.hidden)
-        out = rcm_intervals.starting_inputs(mode, rows, fetch, _attached_models(m, session, ctx, position, mode_id))
+        out = rcm_intervals.starting_inputs(mode, rows, fetch, _attached_models(m, session, ctx, position, mode_id),
+                                             task_id=task_id)
         # The task's own cost per occurrence (its position's figure, typed or from its LSA): what a
         # check, a test or a planned replacement costs, so the calculator doesn't ask for it again.
         out["task_cost"] = m.task_cost(task_id) if task_id else None
