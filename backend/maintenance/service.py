@@ -89,6 +89,9 @@ from backend.maintenance import purge as _purge
 
 logger = logging.getLogger(__name__)
 
+# A read scoped to a row that holds no tasks or packages (an item, a unit): an empty answer.
+_NO_TASKS = object()
+
 # Outcomes that schedule a task; the others (run to failure, redesign,
 # accept) give a failure mode with no task.
 SCHEDULED_OUTCOMES = {
@@ -11101,8 +11104,10 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         that bundles a pump's check shows on the pump), each top with its layers."""
         if status not in (None, "", "all", "active", "paused", "retired"):
             raise Invalid("status is active, paused, retired or all.")
+        scope = self._read_scope(position_id, location_id)
+        if scope is _NO_TASKS:
+            return {"packages": [], "open_work_orders": 0, "late": 0}
         found = self.s.nodes(self.org, "WorkPackage")
-        scope = self._package_scope(position_id, location_id)
         if scope is not None:
             found = [p for p in found if self._package_touches(self._package_chain(p)[-1], scope)]
         rows = [self._package_brief(p) | {"rollup": self._package_rollup(p)} for p in found]
@@ -11122,14 +11127,15 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         (``resources``: its LSA record) and its ``instructions``. Everything inside is the
         Explorer's roll-up (``subtree_ids``), at any depth; ``within``: the asset opened, so
         nothing from another asset is listed."""
-        scope = self._package_scope(position_id, location_id)
+        scope = self._read_scope(position_id, location_id)
         if scope is None and within not in (None, ""):
             # The whole asset opened (the Explorer's Maintenance tab: its tree of tasks).
-            scope = self.s.node(self.org, str(within))
-            if scope is None or scope.get("retired") or scope["label"] not in ("Position", "Location"):
-                raise NotFound(within)
+            scope = self._read_scope(str(within), None)
         if scope is None:
             raise Invalid("Give position_id or location_id (or within, the asset opened).")
+        if scope is _NO_TASKS:
+            # A row that holds no tasks (an item, a unit): an empty table, not an error.
+            return {"scope": None, "tasks": [], "total": 0, "truncated": False, "design": False}
         inside = self.subtree_ids(scope["id"], within)
         index = self._rcm_index()
         modes_of: dict[str, list] = {}
@@ -11201,6 +11207,23 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
         # A product's design (or one of its design locations): its programme, packaged on the built items.
         return {"scope": self._subject_brief(scope), "tasks": rows[:limit], "total": len(rows),
                 "truncated": len(rows) > limit, "design": scope["id"] in designs or bool(scope.get("design_of"))}
+
+    def _read_scope(self, position_id=None, location_id=None):
+        """A read's scope (the task table, the packages list), forgiving of which name the
+        id came under: a position named as location_id or the other way round is read as
+        what it is; a row that holds no tasks or packages (an item, a unit) gives
+        ``_NO_TASKS``, an empty answer. An id nothing has is still not found."""
+        if position_id not in (None, "") and location_id not in (None, ""):
+            raise Invalid("Give position_id or location_id, not both.")
+        given = position_id if position_id not in (None, "") else location_id
+        if given in (None, ""):
+            return None
+        node = self.s.node(self.org, str(given))
+        if node is None:
+            raise NotFound(str(given))
+        if node.get("retired") or node["label"] not in ("Position", "Location"):
+            return _NO_TASKS
+        return node
 
     def _package_scope(self, position_id=None, location_id=None) -> dict | None:
         """The position or location a read is limited to (None: the whole workspace)."""

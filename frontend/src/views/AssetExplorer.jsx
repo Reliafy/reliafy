@@ -663,7 +663,10 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
   }, [root, base, selected, mode]);
   // A product's design has no packages or forecasts (no due dates there: they're the built items').
   const tasksDesign = isDesignScope(data, root);
-  const tasksKind = base?.rows?.get(tasksWithin)?.type || (data?.scope?.kind === "place" ? "loc" : "pos");
+  // The asset opened is what its scope says (a place opened by Positions draws its row as a
+  // position's heading); any other top row is what its row says.
+  const tasksKind = tasksWithin && data?.scope?.id === tasksWithin ? (data.scope.kind === "place" ? "loc" : "pos")
+    : base?.rows?.get(tasksWithin)?.type || (data?.scope?.kind === "place" ? "loc" : "pos");
   // The RCM tab reads them too: its header counts the tasks that serve no failure mode (the gap).
   const ptasks = useTreeTasks({ on: (tasksOn || (rcmOn && !fmeaOn)) && !!data, within: tasksWithin, kind: tasksKind, packages: !tasksDesign });
   // A change on the RCM tab (a task linked to a failure mode) changes the gap: read the tasks again.
@@ -3215,7 +3218,8 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     <SlimHeader display={whole} row={posRow} onSelect={reveal} onCrumb={(k) => crumbGo(k, reveal)} above={above}
                 headingRef={headingRef} fullScreenButton={fullButton} message={msg} heading={heading}
                 meta={rcm?.positions ? <span className="tt-rollup"><RollupBadges rollup={rollupOf(rcm, posRow.key, whole)} gap={fmeaOn ? null : {
-                  n: tasksWithoutMode(base?.rows, posRow.key, ptasks.tasks || []),
+                  // Hidden (0) when the tasks can't be read: the chip never puts an error on the page.
+                  n: ptasks.error ? 0 : tasksWithoutMode(base?.rows, posRow.key, ptasks.tasks || []),
                   onClick: () => { setTfilters(NO_MODE_FILTER); setTab("maintenance"); },
                 }} /></span> : null}
                 menu={headMenu(posRow, rcmMenu)} popover={columns} />
