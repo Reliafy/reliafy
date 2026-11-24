@@ -545,3 +545,31 @@ def test_cli_and_client_upload_typed_lives(server, capsys):
     assert code == 1 and "--notation" in err
     made = Client().upload_notation("P1: 120, 310, 1000+", name="Pump", unit="hours")
     assert made["columns"] == ["i", "x", "c"]
+
+
+def test_cli_and_client_make_a_sortie_once(server, capsys):
+    """reliafy mission create | list | get: a phased mission on a position, made once however often
+    it's re-run, then its answers."""
+    rf = Client()
+    pos = rf.call("maintenance", "positions.create", name="Power module")["id"]
+    model = rf.call("change", "model_save", name="Generator", distribution="weibull", params=WEIBULL)
+    rf.call("maintenance", "models.link", position_id=pos, model_id=model["model_id"])
+    argv = ["mission", "create", "--position", pos, "--name", "10 flight-hour sortie", "--length", "10",
+            "--hours-called", "flight hours", "--phase", "Take-off:0.2", "--phase", "Transit:2",
+            "--phase", "Survey:5.6", "--phase", "Return:2", "--phase", "Landing:0.2"]
+    code, out, err = run(capsys, *argv)
+    assert code == 0, err
+    assert "Made “10 flight-hour sortie”" in out and "5 phases, 10 flight hours in all." in out and "tab=missions" in out
+    code, out, err = run(capsys, *argv)
+    assert code == 0 and "Changed “10 flight-hour sortie”" in out
+    code, out, _ = run(capsys, "mission", "list", "--position", pos, "--json")
+    rows = [x for row in json.loads(out)["links"] for x in row["missions"]]
+    assert [x["name"] for x in rows] == ["10 flight-hour sortie"]
+    [rbd_id] = [row["rbd"]["id"] for row in json.loads(out)["links"] if row["rbd"]["mission_rbd"]]
+    assert rf.missions(pos)["links"]
+    code, out, err = run(capsys, "mission", "get", rbd_id)
+    assert code == 0, err
+    assert "name: 10 flight-hour sortie" in out and "phases (5):" in out and "Survey" in out
+    assert rf.mission_answers(rbd_id)["phases"][2]["name"] == "Survey"
+    code, _, err = run(capsys, "mission", "create", "--position", pos, "--phase", "Take-off")
+    assert code == 1 and "NAME:DURATION" in err

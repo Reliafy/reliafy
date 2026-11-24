@@ -2103,7 +2103,7 @@ def _mission_copy(graph: dict) -> tuple[dict, bool]:
 
 def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, name: str | None = None,
                       link_id: str | None = None, tree: bool = False, setup: dict | None = None,
-                      length: dict | None = None) -> dict:
+                      length: dict | None = None, ref: str | None = None) -> dict:
     """A new mission on a position, with an RBD of its own (one RBD per mission). It starts from a
     copy of the position's own RBD where it has one (wired as drawn there: parallel trains, standby
     and k-of-n stay as they are; a repairable one loses only its repairs and planned work), else is
@@ -2144,7 +2144,7 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
         name = f"Mission {k}"
     kids = [c for c in m.s.inn(m.org, position_id, "PART_OF") if c["label"] == "Position" and not c.get("retired")]
     notes, placeholders, source = [], [], "tree"
-    owner = {"position_id": position_id}
+    owner = {"position_id": position_id, **({"ref": str(ref)} if ref else {})}
     on = None
     if link_id:
         on = next((x for x in m.position_models(position_id) if x.get("id") == link_id), None)
@@ -2223,6 +2223,177 @@ def build_mission_rbd(m, db, owners, hidden, position_id: str, owner_id: str, na
             "mission": rbd_missions.summary(rbd.graph or graph, mission), "position_id": position_id,
             "notes": notes[:20], "placeholders": placeholders, "built_from": source,
             "series_warning": rbd_missions.series_warning(rbd.graph or graph)}
+
+
+def _mission_rbd_of(m, db, owners, hidden, position_id: str, rbd_id: str | None, ref: str | None,
+                    name: str | None):
+    """A mission's own RBD on ``position_id``: by its id, its ``ref`` or its mission's name (the
+    first that's given), or None where there's none. A diagram that isn't one of this position's
+    missions' own is refused."""
+    from backend.services import rbd_missions
+    from backend.services import rbds as rbds_service
+    from backend.services.access import owner_in
+
+    sv = _sv()
+    if rbd_id:
+        rbd = rbds_service.get_rbd(db, str(rbd_id), owners)
+        owner = rbd_missions.mission_of((rbd.graph or {}) if rbd else {}) or {}
+        if rbd is None or rbd.id in hidden or owner.get("position_id") != position_id:
+            raise sv.Invalid("That RBD isn't one of this position's missions: list them with get.position (missions true).")
+        return rbd
+    if not ref and not (name and str(name).strip()):
+        return None
+    key = " ".join(str(ref or "").split())[:80]
+    want = " ".join(str(name or "").split()).casefold()
+    query = {"graph.mission_of.position_id": position_id, "owner_id": {"$in": owner_in(owners)}}
+    for doc in db.rbds.find(query, {"_id": 1, "graph.mission_of": 1, "graph.mission_name": 1}).sort("created_at", 1):
+        if doc["_id"] in hidden:
+            continue
+        g = doc.get("graph") or {}
+        got = rbd_missions.mission_of(g) or {}
+        if key and got.get("ref") == key or not key and want and \
+                " ".join(str(g.get("mission_name") or "").split()).casefold() == want:
+            return rbds_service.get_rbd(db, doc["_id"], owners)
+    return None
+
+
+def _mission_phases(phases, length_unit: str, rbd_unit: str, clock) -> list[dict]:
+    """Phases given in the mission's length unit, each duration turned into the RBD's unit as the
+    length is (mission_answers.running_length)."""
+    from backend.services import mission_answers
+    from backend.services.rbd_analysis import AnalysisError
+
+    sv = _sv()
+    if not isinstance(phases, list) or not phases:
+        raise sv.Invalid("Give the phases as a list: [{name, duration}, ...], in order.")
+    try:
+        factor = mission_answers.running_length({"value": 1.0, "unit": length_unit}, rbd_unit, clock)
+    except AnalysisError as exc:
+        raise sv.Invalid(str(exc)) from None
+    out = []
+    for p in phases:
+        if not isinstance(p, dict):
+            raise sv.Invalid("Each phase is {name, duration, ...}.")
+        try:
+            d = float(p.get("duration"))
+        except (TypeError, ValueError):
+            raise sv.Invalid(f"Phase “{p.get('name') or len(out) + 1}” needs a duration: a number of 0 or more.") from None
+        out.append({**p, "duration": round(d * factor, 9)})
+    return out
+
+
+def _mission_changes(m, db, owners, hidden, position_id, owner_id, rbd, created, name, setup, length, phases):
+    """save_position_mission's second half: the phases, setup and name on the mission's RBD.
+    (rbd, graph)."""
+    from backend.services import mission_answers, rbd_missions
+    from backend.services import rbds as rbds_service
+    from backend.services.access import EditConflict
+    from backend.services.rbd_analysis import AnalysisError
+    from backend.services.rbd_graph import GraphError, check_limits
+
+    sv = _sv()
+    graph = dict(rbd.graph or {})
+    unit = graph.get("unit") or ""
+    stored = rbd_missions.setup_of(graph) or {}
+    # The setup after this call: what's stored, with what was given on top.
+    after = {**stored, **(setup or {}), **({"length": length} if length else {})} if (setup or length) else None
+    eff = rbd_missions.parse_setup(after) if after else (stored or None)
+    clock = mission_answers.clock_for(m, position_id, eff)
+    if phases is not None:
+        # Durations in the length's unit (given, else stored, else the RBD's), turned into the RBD's.
+        unit_of = (length or {}).get("unit") or (stored.get("length") or {}).get("unit") or unit or "hours"
+        phases = _mission_phases(phases, unit_of, unit, clock)
+        if not length and (eff or {}).get("length"):
+            # The length as entered follows the phases (they always add up to it).
+            factor = mission_answers.running_length({"value": 1.0, "unit": unit_of}, unit, clock)
+            total = sum(float(p.get("duration") or 0) for p in phases) / factor
+            after = {**(after or stored), "length": {"value": round(total, 9), "unit": unit_of}}
+    elif not created and length:
+        # A new length with no phases: one phase of that length, as a new mission starts.
+        try:
+            run = mission_answers.running_length(eff["length"], unit, clock)
+        except AnalysisError as exc:
+            raise sv.Invalid(str(exc)) from None
+        phases = [{"name": "Whole mission", "duration": round(run, 6)}]
+    rename = None
+    if not created and name and " ".join(str(name).split()) != (graph.get("mission_name") or ""):
+        rename = name
+        others = {x["name"].casefold() for row in rbd_missions.position_missions(m, db, owners, hidden, [position_id])
+                  if (row.get("rbd") or {}).get("id") != rbd.id for x in row["missions"]}
+        if " ".join(str(name).split()).casefold() in others:
+            raise sv.Invalid(f"This position already has a mission named “{' '.join(str(name).split())}”: give "
+                             "this one its own name.")
+    if phases is not None or (not created and after is not None) or rename:
+        try:
+            graph, _ = rbd_missions.save(graph, rbd_missions.LEGACY_ID, rename, phases,
+                                         **({"setup": after} if after is not None else {}))
+            check_limits(graph)
+        except (rbd_missions.MissionError, GraphError) as exc:
+            raise sv.Invalid(f"Nothing was saved — {exc}") from None
+        try:
+            rbd = rbds_service.save_rbd(db, rbd_missions.rbd_name_after(rbd.name, rbd.graph or {}, graph), graph,
+                                        owner_id, rbd_id=rbd.id,
+                                        expected_updated_at=rbd.updated_at.isoformat() if rbd.updated_at else None)
+        except EditConflict:
+            raise sv.Invalid("The mission was saved by someone else meanwhile. Nothing was saved: try again.") from None
+    return rbd, rbd.graph or graph
+
+
+def save_position_mission(m, db, owners, hidden, position_id: str, owner_id: str, *, name: str | None = None,
+                          ref: str | None = None, rbd_id: str | None = None, link_id: str | None = None,
+                          tree: bool = False, setup: dict | None = None, length: dict | None = None,
+                          phases: list | None = None, cap_check=None) -> dict:
+    """A mission on a position, made or changed in one call (the API's twin of the Missions tab's
+    New mission… and its phase table). Made as :func:`build_mission_rbd` makes it, then its phases
+    set; or, where the position already has a mission with this ``ref`` (the caller's own key) or,
+    with no ref, this name (or ``rbd_id``: a mission's own RBD), that mission is changed instead,
+    so a re-run doesn't make a second one. ``setup``: {clock, label, start, calendar, from}
+    (rbd_missions.parse_setup); ``length``: {value, unit}; ``phases``: [{name, duration, ...}] with
+    durations in the length's unit (default the RBD's), adding up to the length when both are
+    given. ``cap_check()``: called before a new RBD is saved (the Free plan's cap).
+    {created, rbd: {id, name}, mission_id, mission: summary, position_id, notes, ...}."""
+    from backend.services import rbd_missions
+    from backend.services import rbds as rbds_service
+
+    sv = _sv()
+    m._get(position_id, "Position")
+    try:
+        clean = rbd_missions.parse_setup({**(setup or {}), **({"length": length} if length else {})}) \
+            if (setup or length) else None
+    except rbd_missions.MissionError as exc:
+        raise sv.Invalid(str(exc)) from None
+    if phases is not None and clean and clean.get("length"):
+        given = clean["length"]["value"]
+        try:
+            total = sum(float(p.get("duration")) for p in phases)
+        except (TypeError, ValueError, AttributeError):
+            total = None  # a phase with no duration: said below, phase by phase
+        if total is not None and abs(total - given) > 1e-6 * max(1.0, given):
+            raise sv.Invalid(f"The phases add up to {total:g} {clean['length']['unit']}, not the length "
+                             f"{given:g}: change one so they agree, or leave the length out.")
+    existing = _mission_rbd_of(m, db, owners, hidden, position_id, rbd_id, ref, name)
+    created = existing is None
+    if created:
+        if cap_check is not None:
+            cap_check()
+        made = build_mission_rbd(m, db, owners, hidden, position_id, owner_id, name, link_id, tree, setup, length, ref)
+        rbd = rbds_service.get_rbd(db, made["rbd"]["id"], owners)
+        extra = {k: made[k] for k in ("notes", "placeholders", "built_from", "series_warning")}
+    else:
+        rbd, extra = existing, {}
+    try:
+        rbd, graph = _mission_changes(m, db, owners, hidden, position_id, owner_id, rbd, created, name, setup, length,
+                                      phases)
+    except Exception:
+        if created:
+            db.rbds.delete_one({"_id": rbd.id})  # nothing half-made
+        raise
+    graph = rbd.graph or graph
+    mission = rbd_missions.find(graph, rbd_missions.LEGACY_ID)
+    return {"created": created, "rbd": {"id": rbd.id, "name": rbd.name}, "mission_id": rbd_missions.LEGACY_ID,
+            "mission": rbd_missions.summary(graph, mission), "position_id": position_id,
+            **({"ref": (rbd_missions.mission_of(graph) or {}).get("ref")}
+               if (rbd_missions.mission_of(graph) or {}).get("ref") else {}), **extra}
 
 
 def _inside(m, position_id: str | None, top_id: str) -> bool:

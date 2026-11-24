@@ -227,6 +227,31 @@ class Client:
         return self.call("maintenance", "apply", operations=list(operations), dry_run=dry_run, on_error=on_error,
                          idempotency_key=idempotency_key)
 
+    # ---- missions on a position (Reliafy Maintenance) -------------------------
+
+    def save_mission(self, position_id: str, *, name: str | None = None, ref: str | None = None,
+                     phases: list | None = None, length: float | None = None, length_unit: str | None = None,
+                     clock: str | None = None, label: str | None = None, **more) -> dict:
+        """Make a mission on a position, or change the one with this ``ref``
+        (or, with no ref, this name): a re-run doesn't make a second.
+        ``phases``: ``[{"name": "Take-off", "duration": 0.2}, ...]`` in
+        ``length_unit``; ``clock`` "operating" (``label`` e.g. "flight hours")
+        or "calendar". ``more``: rbd_id, link_id, tree, start, calendar,
+        starting_state (``maintenance models.link`` with ``mission``)."""
+        spec = {"name": name, "ref": ref, "phases": phases, "length": length, "length_unit": length_unit,
+                "clock": clock, "label": label, **more}
+        return self.call("maintenance", "models.link", position_id=position_id,
+                         mission={k: v for k, v in spec.items() if v is not None})
+
+    def missions(self, position_id: str) -> dict:
+        """A position's missions (``maintenance get.position`` with ``missions`` true)."""
+        return self.call("maintenance", "get.position", id=position_id, missions=True)
+
+    def mission_answers(self, rbd_id: str, mission_id: str = "mission") -> dict:
+        """A mission's chance of completing, phase by phase, and its two
+        answers with their summary (``analyse rbd_mission``, answers true)."""
+        return self.call("analyse", "rbd_mission", rbd_id=rbd_id, mission_id=mission_id, answers=True)
+
     # ---- files (REST only: MCP can't carry bytes) -----------------------------
 
     def upload_file(self, path: str, purpose: str) -> dict:

@@ -140,9 +140,11 @@ def mission_of(graph: dict) -> Optional[dict]:
     # shows the mission, as a row under that model.
     on = str(raw.get("on_link") or "").strip()
     built = raw.get("built_from") if raw.get("built_from") in ("copy", "tree", "model") else None
+    # ref: the caller's own key for a mission made over the API, so a re-run finds it again.
+    ref = " ".join(str(raw.get("ref") or "").split())[:80]
     return {"position_id": pid[:80], **({"built_in_series": True} if raw.get("built_in_series") is True else {}),
             **({"from_rbd": src[:80]} if src else {}), **({"on_link": on[:80]} if on else {}),
-            **({"built_from": built} if built else {})}
+            **({"built_from": built} if built else {}), **({"ref": ref} if ref else {})}
 
 
 # ---- a mission on a plain life model: a length and a starting age (Derryn, 22 Nov 2026) -----------

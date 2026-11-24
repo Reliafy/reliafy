@@ -143,6 +143,22 @@ has over 25 operations, is a dry run unless `dry_run=False`. From the command
 line, `reliafy apply ops.json` dry-runs a file of operations and
 `reliafy apply ops.json --run` writes them, leaving `ops.undo.json` beside it.
 
+### Missions on a position
+
+A mission (a sortie, a shift, a campaign) is flown on a position's RBD, phase by
+phase. `save_mission` makes one, or changes the one with the same `ref` (or,
+with no ref, the same name), so running a script twice doesn't make two:
+
+```python
+m = rf.save_mission(POSITION_ID, name="10 flight-hour sortie", clock="operating", label="flight hours",
+                    length=10, length_unit="hours",
+                    phases=[{"name": "Take-off", "duration": 0.2}, {"name": "Transit", "duration": 2},
+                            {"name": "Survey", "duration": 5.6}, {"name": "Return", "duration": 2},
+                            {"name": "Landing", "duration": 0.2}])
+m["created"], m["rbd"]["id"], m["url"]          # True the first time; the mission's own RBD; its Missions tab
+rf.mission_answers(m["rbd"]["id"])["answers"]["summary"]   # {chance, clock, length}
+```
+
 ## The command line
 
 ```bash
@@ -174,6 +190,11 @@ reliafy maintenance products.build --product-id PRODUCT_ID --serial 0007 --dry-r
 reliafy maintenance get.design_rollup --id DESIGN_POSITION_ID   # one design position across every item built
 reliafy maintenance get.item_class --id ITEM_CLASS_ID --fleet true   # a class's positions, with risk now where a model is linked
 reliafy apply ops.json --run                     # maintenance changes in one call (dry run without --run)
+reliafy mission create --position POSITION_ID --name "10 flight-hour sortie" --length 10 \
+    --hours-called "flight hours" --phase Take-off:0.2 --phase Transit:2 --phase Survey:5.6 \
+    --phase Return:2 --phase Landing:0.2       # a mission on a position; a re-run changes the same one
+reliafy mission list --position POSITION_ID      # its missions, each with its RBD id
+reliafy mission get RBD_ID                       # chance of completing, phase by phase, and the failures to expect
 reliafy list search --q "oil filter"            # anything you can open, by name, tag, serial or part number
 reliafy list library --query "check valve" --record-kind rate   # published failure data
 reliafy get library_record --id nrc-inl-2020:ckv-fto
