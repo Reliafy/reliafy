@@ -123,9 +123,11 @@ def test_a_store_without_a_token_always_reads():
 
 
 def test_the_running_clock_is_kept_per_day_and_read_afresh_when_the_plan_changes(m, monkeypatch):
+    # The day is pinned before the plan is set, so the plan starts the day the clock is read
+    # from: a plan starting tomorrow would leave today idle (8 h x 364/365 over the year).
+    m.as_of = date(2026, 11, 23).isoformat()
     pid = m.create_position("Pump")["id"]
     m.set_operating_plan(pid, EIGHT_A_DAY)
-    m.as_of = date(2026, 11, 23).isoformat()
     calls = []
     real = rc._clock_of
     monkeypatch.setattr(rc, "_clock_of", lambda *a: calls.append(1) or real(*a))
