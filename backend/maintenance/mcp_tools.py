@@ -300,6 +300,10 @@ LIST_KINDS: Table = {
         since / until bound when it occurred; q searches title, description, finder, failure mode and position.
         sort newest (default), oldest, status, consequence or position; limit up to 500 and offset page it.
         counts is by status over the scope and the other filters."""),
+    "fracas": ("position_id", "group_by rank_by window since until", """Failures below a position ranked
+        (FRACAS): group_by position (default), part or failure_mode; rank_by failures (default), rate, downtime or
+        cost; window 12m (default), all or range (since / until). Each row: count, hours, rate per 1,000 h with
+        90% range, expected at the pooled rate, p-value."""),
     "rcm_evidence": ("position_id", "failure_mode_id q type", """What an RCM decision there could link as evidence,
         best first (this mode, the position, its class, the library): life models, saved analyses, failure
         history, condition readings, failure reports; q searches; type keeps one kind. Links nothing."""),
@@ -1499,6 +1503,9 @@ def register() -> None:
                              "failure_reports: a date, reports that occurred on or before it."))] = None,
                          q: Annotated[str | None, Field(description="failure_reports: words to search for.")] = None,
                          sort: Literal["newest", "oldest", "status", "consequence", "position"] | None = None,
+                         group_by: Literal["position", "part", "failure_mode"] | None = None,
+                         rank_by: Literal["failures", "rate", "downtime", "cost"] | None = None,
+                         window: Literal["12m", "all", "range"] | None = None,
                          offset: Annotated[int | None, Field(ge=0)] = None,
                          product_id: Annotated[str | None, Field(description=(
                              "A product's id (its design's top position); items_overview: 'none' for items of no "
@@ -1521,6 +1528,11 @@ def register() -> None:
         if kind == "failure_reports":
             return run(m.failure_reports, position_id, _d(below, True), location_id, item_id, status, consequence,
                        failure_mode_id, part_id, since, until, q, _d(sort, "newest"), _d(limit, 100), _d(offset, 0))
+        if kind == "fracas":
+            from backend.maintenance import failure_ranking
+
+            return run(failure_ranking.failure_ranking, m, position_id, _d(group_by, "position"),
+                       _d(rank_by, "failures"), window, since, until)
         if kind == "rcm_evidence":
             from backend.maintenance import rcm_evidence
 

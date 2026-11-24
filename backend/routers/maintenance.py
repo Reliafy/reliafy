@@ -504,6 +504,18 @@ def list_failure_reports(position_id: str | None = None, below: str = "1", locat
                 offset=offset)
 
 
+@router.get("/failure-ranking")
+def failure_ranking(position_id: str, group_by: str = "position", rank_by: str = "failures",
+                    window: str | None = None, since: str | None = None, until: str | None = None,
+                    m: Maintenance = Depends(maintenance)) -> JSONResponse:
+    """The failures below a position ranked (FRACAS): by position, part or failure mode; by
+    failures, rate, downtime or cost; over the last 12 months, all, or since / until."""
+    from backend.maintenance import failure_ranking as fr
+
+    return _run(fr.failure_ranking, m, position_id, group_by or "position", rank_by or "failures",
+                window or None, since or None, until or None)
+
+
 @router.post("/failure-reports")
 def file_failure_report(body: dict = Body(...), ctx: AccessCtx = Depends(get_access),
                         m: Maintenance = Depends(maintenance_write)) -> JSONResponse:

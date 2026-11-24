@@ -2852,6 +2852,13 @@ function jsonMethod(method, url, body) {
   return request(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
 }
 
+// The failures below a position ranked (FRACAS): backend/maintenance/failure_ranking.py.
+export function getFailureRanking(params = {}) {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
+  return request(`/api/maintenance/failure-ranking?${q}`);
+}
+
 export function listFailureReports(params = {}) {
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== "") q.set(k, String(v));

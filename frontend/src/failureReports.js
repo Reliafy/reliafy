@@ -190,6 +190,7 @@ export function queryParams(filters, scope, { limit = 50, offset = 0 } = {}) {
   if (f.status && f.status !== "all") out.status = f.status;
   if (f.consequence) out.consequence = f.consequence;
   if (f.failure_mode_id) out.failure_mode_id = f.failure_mode_id;
+  if (f.part_id) out.part_id = f.part_id;
   if (f.since) out.since = f.since;
   if (f.until) out.until = f.until;
   if (f.q && f.q.trim()) out.q = f.q.trim();
@@ -207,7 +208,7 @@ export const DESIGN_FILTERS = { ...DEFAULT_FILTERS, status: "all", sort: "status
 // filtering the list.
 export function filtering(filters, defaults = DEFAULT_FILTERS) {
   const f = { ...defaults, ...(filters || {}) };
-  return f.status !== defaults.status || !!f.consequence || !!f.failure_mode_id || !!f.since || !!f.until || !!(f.q && f.q.trim());
+  return f.status !== defaults.status || !!f.consequence || !!f.failure_mode_id || !!f.part_id || !!f.since || !!f.until || !!(f.q && f.q.trim());
 }
 
 // The built items a failure report can be filed on from a product's design

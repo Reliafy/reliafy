@@ -103,6 +103,7 @@ const SIGNED_IN = [
   ["GET", "/api/maintenance/rcm"], // the RCM in the Explorer's tree
   ["GET", "/api/maintenance/positions/smoke/rcm"], // a position's RCM
   ["GET", "/api/maintenance/failure-reports"], // the Explorer's Failure reports tab
+  ["GET", "/api/maintenance/failure-ranking"], // the History tab's Ranking (FRACAS)
   ["POST", "/api/maintenance/failure-reports"],
   // Products: design trees and the items built from them (the Products and Items pages).
   ["GET", "/api/maintenance/products"],
