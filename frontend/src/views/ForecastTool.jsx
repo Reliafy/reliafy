@@ -27,7 +27,7 @@ import {
   horizonWords, isCalendar, isHours, kindWords, lineCells, problems, requestOf, seriesOf, viewKey,
 } from "../quickForecast.js";
 import { formatNumber } from "../format.js";
-import { cells, countText, headline, metaLine, tableRows } from "../forecastLines.js";
+import { cells, countText, headline, hoursText, metaLine, tableRows, tidyMoney } from "../forecastLines.js";
 import "./ForecastTool.css";
 
 // Decisions › Forecasts › Spares, Hours and Cost forecast: one quick forecast tool (forecast plan step 1,
@@ -116,7 +116,7 @@ function ByPeriod({ out, view, money }) {
           {out.part && <th scope="col" className="num">Likely range (90% two-sided)</th>}</tr></thead>
         <tbody>{s.map((r) => (
           <tr key={r.period}><td className="num">{r.period}</td><td className="num">{sig3(r.work)}</td>
-            {out.part && <td className="num">{sig3(r.failures)}</td>}<td className="num">{fmt(r.value)}</td>
+            {out.part && <td className="num">{countText(r.failures)}</td>}<td className="num">{fmt(r.value)}</td>
             {out.part && <td className="num">{fmt(r.low)} to {fmt(r.high)}</td>}</tr>
         ))}</tbody>
       </table>
@@ -259,7 +259,7 @@ function FromRecords({ view, from, root }) {
   const total = out?.lines?.totals;
   const alt = out?.whatif || null;
   const altKey = view.value === "hours" ? "hours" : view.value === "costs" ? "cost" : "times";
-  const altFmt = altKey === "hours" ? (v) => `${sig3(v)} h` : altKey === "cost" ? money : sig3;
+  const altFmt = altKey === "hours" ? hoursText : altKey === "cost" ? tidyMoney(money) : countText;
   const altOf = (id) => {
     const x = (alt?.lines?.lines || []).find((l) => l.id === id);
     const v = x?.[altKey]?.expected;

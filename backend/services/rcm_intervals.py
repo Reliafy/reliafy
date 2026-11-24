@@ -839,7 +839,18 @@ def history_rate(rows: list[dict], mode_text: str = "") -> Optional[dict]:
             "text": f"{n} failure{'s' if n != 1 else ''} {what} in {fmt_num(years)} years of service at this position"}
 
 
-def starting_inputs(mode: dict, rows: list[dict], fetch, attached: list | None = None) -> dict:
+def _evidence_for(decision: dict, task_id: Optional[str]) -> dict:
+    """The evidence a task's interval rests on: its own member's in a combination of tasks
+    (each member keeps its own), else the decision's."""
+    if task_id:
+        for member in decision.get("outcomes") or []:
+            if isinstance(member, dict) and member.get("task_id") == task_id and (member.get("evidence") or {}).get("id"):
+                return member["evidence"]
+    return decision.get("evidence") or {}
+
+
+def starting_inputs(mode: dict, rows: list[dict], fetch, attached: list | None = None,
+                    task_id: Optional[str] = None) -> dict:
     """What the task card's calculators start from for a failure mode: its linked
     evidence (a non-repairable model, a saved replacement or interval analysis, a
     degradation model), then the models attached to its position (``attached``:
@@ -847,7 +858,7 @@ def starting_inputs(mode: dict, rows: list[dict], fetch, attached: list | None =
     its position's failure history. Each value says where it came from; anything not
     found is left for the user to type."""
     decision = mode.get("decision") or {}
-    evidence = decision.get("evidence") or {}
+    evidence = _evidence_for(decision, task_id)
     out: dict = {"onset_rate": None, "device": None, "life_model": None, "pf": None, "costs": {}, "evidence": None}
     artifact = fetch(evidence["type"], evidence["id"]) if evidence.get("type") and evidence.get("id") else None
     if artifact is not None:

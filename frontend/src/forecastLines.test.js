@@ -58,7 +58,7 @@ test("the headline: known costs with the 90% two-sided range, and the split by k
   const h = headline(OUT, "costs", money);
   assert.equal(h.lead, "$473 known costs expected in the next 12 months (90% two-sided: $351 to $1,251).");
   assert.deepEqual(h.tiles, [{ label: "Planned", value: "$351" }, { label: "Follow-on", value: "not known" },
-    { label: "Corrective", value: "$122" }]);
+    { label: "Corrective", value: "$122" }, { label: "Failures expected", value: "0.135", hint: "missed by the checks" }]);
   assert.equal(headline(OUT, "hours", money).lead, "4.2 h known hours expected in the next 12 months.");
   assert.match(headline(OUT, "spares", money).lead, /^1\.65 like items to replace failures \(0 to 3, 90% two-sided\)/);
   assert.equal(metaLine(OUT), "3 lives (each 900 h) · Hours from the operating plan (About 12 hours a week)");
@@ -66,7 +66,9 @@ test("the headline: known costs with the 90% two-sided range, and the split by k
 
 test("counts: three figures, a very small count reads \"≈ 0.002\", never a long float", () => {
   assert.equal(countText(0.00213456789012), "≈ 0.002");
-  assert.equal(countText(0.0004), "< 0.001");
+  assert.equal(countText(0.0004), "≈ 0");
+  assert.equal(countText(0.0006), "≈ 0.001");
+  assert.equal(countText(6.79e-12), "≈ 0");
   assert.equal(countText(0), "0");
   assert.equal(countText(1.78214309), "1.78");
   assert.equal(countText(1234.5678), "1,230");
@@ -77,4 +79,28 @@ test("counts: three figures, a very small count reads \"≈ 0.002\", never a lon
   assert.equal(c.times, "≈ 0.002 (0 to ≈ 0.01)");
   assert.equal(c.spares, "≈ 0.002 × a like item");
   for (const text of [c.times, c.spares]) assert.doesNotMatch(text, /\d\.\d{4,}/);
+});
+
+test("a line so unlikely it's almost nothing: every number reads \"≈ 0\", never 6.79e-12", () => {
+  const tiny = 6.79e-12;
+  const line = { id: "x", kind: "follow_on", number: "worked out", times: { expected: tiny, interval: [0, tiny] },
+    hours: { expected: tiny * 2 }, cost: { expected: tiny * 300 }, spares: [{ name: "a like item", expected: tiny }], gaps: [] };
+  const c = cells(line, money);
+  assert.equal(c.times, "≈ 0 (0 to ≈ 0)");
+  assert.equal(c.hours.text, "≈ 0 h");
+  assert.equal(c.cost.text, "≈ $0");
+  assert.equal(c.spares, "≈ 0 × a like item");
+  for (const text of [c.times, c.hours.text, c.cost.text, c.spares]) assert.doesNotMatch(text, /e-|0\.0{4,}/);
+});
+
+test("the headline's failures expected: the corrective lines added up, to the same figures", () => {
+  const out = { of: { months: 12 }, lines: { lines: [
+    { id: "a", kind: "corrective", times: { expected: 0.00198 } },
+    { id: "b", kind: "corrective", times: { expected: 6.79e-12 } },
+    { id: "c", kind: "follow_on", times: { expected: 0.271 } },
+  ], totals: { cost: { expected: 2741, by_kind: { planned: 2741 } }, hours: { expected: 28.8 } } } };
+  const tile = (h) => h.tiles.find((t) => t.label === "Failures expected");
+  assert.deepEqual(tile(headline(out, "costs", money)), { label: "Failures expected", value: "≈ 0.002", hint: "missed by the checks" });
+  assert.equal(tile(headline(out, "hours", money)).value, "≈ 0.002");
+  assert.equal(tile(headline({ ...out, lines: { ...out.lines, lines: [] } }, "costs", money)), undefined);
 });
