@@ -13,7 +13,7 @@
 // explorerTasks.test.js; the cells are drawn by TaskTreeTable.jsx.
 
 import { counted } from "./menuStandard.js";
-import { cellText, costWhere, fromRcm, kindText, money, SOURCE_WORDS } from "./lsaTab.js";
+import { cellText, costWhere, fromRcm, kindText, money } from "./lsaTab.js";
 import { sig } from "./positionForecast.js";
 import { formatDate } from "./dates.js";
 import { packageExtras, taskExtras } from "./taskExtras.js";
@@ -276,6 +276,31 @@ const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 const UNIT_ORDER = { hours: 0, days: 1, weeks: 2, months: 3, years: 4 };
 const SPAN = { hours: 1 / 24, days: 1, weeks: 7, months: 30.4375, years: 365.25 };
 
+// A task raised by a failure or a find (corrective, follow-on): it answers its failure mode.
+export const isResponseTask = (t) => ["failure", "found"].includes(t?.trigger?.kind);
+// Does a task serve a failure mode (prevent one, or answer one)?
+export const servesMode = (t) => isResponseTask(t) || (t?.modes || []).length > 0;
+export const DIRECT_LINKED = "direct-linked";
+export const DIRECT_NONE = "direct-none";
+// The Maintenance tab's filter to the tasks serving no failure mode (the RCM header's gap count).
+export const NO_MODE_FILTER = { from: [DIRECT_NONE] };
+// A task added directly (not an RCM decision's) that serves no failure mode.
+export const withoutMode = (t) => !fromRcm(t) && !servesMode(t);
+
+// The tasks at or below a row (`key`, in `rows`: the Explorer's tree) that serve no failure mode
+// (the RCM header's "N tasks not linked to a failure mode"). A task is on its subject's row.
+export function tasksWithoutMode(rows, key, tasks = []) {
+  if (!rows || key == null) return 0;
+  const under = (k) => {
+    for (let at = k, i = 0; at != null && i < 200; i += 1) {
+      if (at === key) return true;
+      at = rows.get(at)?.parent;
+    }
+    return false;
+  };
+  return tasks.filter((t) => withoutMode(t) && under(t.subject?.id)).length;
+}
+
 export const TASK_FACETS = [
   { id: "unit", col: "interval", label: "Unit",
     of: (t) => (t.on_event ? { value: "event", label: "On an event", order: 9 }
@@ -302,9 +327,11 @@ export const TASK_FACETS = [
   { id: "package", col: "package", label: "Packaged",
     of: (t) => (t.package ? { value: t.package.id, label: t.package.name }
       : t.why_not ? { value: "-", label: "Can't join a package", order: Infinity } : { value: "", label: "In no package", order: Infinity - 1 }) },
+  // Added directly, split by whether it serves a failure mode: the gap between a plan and its RCM.
   { id: "from", col: "from", label: "From",
     of: (t) => (fromRcm(t) ? { value: "rcm", label: "RCM", order: 0 }
-      : { value: t.source || "other", label: `Added directly: ${SOURCE_WORDS[t.source] || "other"}`, order: 1 }) },
+      : servesMode(t) ? { value: DIRECT_LINKED, label: "Added directly: linked to a failure mode", order: 1 }
+        : { value: DIRECT_NONE, label: "Added directly: no failure mode", order: 2 }) },
   { id: "kind", col: "kind", label: "Kind",
     of: (t) => { const k = kindText(t); return k ? { value: k, label: cap(k) } : { value: "", label: "None set", order: Infinity }; } },
 ];

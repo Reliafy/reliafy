@@ -16,6 +16,11 @@ test("the preview's counts in words: what it adds, and what's there already", ()
     failures_existing: 3, modes_existing: 1 });
   assert.deepEqual(again, { adds: [], there: ["2 functions", "3 functional failures", "1 failure mode"], nothing: true });
   assert.equal(importSummary(null).nothing, true);
+  // A plain plan: tasks with no failure mode.
+  const plain = importSummary({ functions: 0, modes: 0, tasks: 0, plain_tasks: 6 });
+  assert.deepEqual(plain.adds, ["0 failure modes", "6 tasks"]);
+  assert.equal(plain.nothing, false);
+  assert.deepEqual(importSummary({ plain_tasks: 0, plain_tasks_existing: 6 }).there, ["6 tasks"]);
   assert.equal(importSummary({ modes: 1200 }).adds[0], "1,200 failure modes");
 });
 

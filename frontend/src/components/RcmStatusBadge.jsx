@@ -28,8 +28,16 @@ export default function RcmStatusBadge({ status, kind = null }) {
   return <Chip tone={s.tone}>{s.label}</Chip>;
 }
 
-export function RollupBadges({ rollup }) {
-  if (!rollup) return null;
+// gap: the tasks at and below that serve no failure mode ({n, onClick}: a neutral chip, a fact
+// not a verdict, that opens them on the Maintenance tab).
+export function RollupBadges({ rollup, gap = null }) {
+  const gapChip = gap?.n > 0 ? (
+    <Chip tone="neutral" onClick={gap.onClick} data-testid="rcm-gap-chip"
+          title="Tasks here and below that serve no failure mode yet: open them on the Maintenance tab">
+      {gap.n} {gap.n === 1 ? "task" : "tasks"} not linked to a failure mode
+    </Chip>
+  ) : null;
+  if (!rollup) return gapChip ? <span className="chip-row">{gapChip}</span> : null;
   const parts = [
     ["supported", rollup.supported, "success"],
     ["contradicted", rollup.contradicted, "danger"],
@@ -39,12 +47,13 @@ export function RollupBadges({ rollup }) {
     ["interval differs", (rollup.shorter_than_evidence || 0) + (rollup.longer_than_evidence || 0), "warning"],
     ["stale", rollup.stale, "neutral"],
   ].filter(([, n]) => n > 0);
-  if (!parts.length) return null;
+  if (!parts.length && !gapChip) return null;
   return (
     <span className="chip-row">
       {parts.map(([label, n, tone]) => (
         <Chip key={label} tone={tone}>{n} {label}</Chip>
       ))}
+      {gapChip}
     </span>
   );
 }

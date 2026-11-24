@@ -92,7 +92,8 @@ def test_build_tree_carries_down_and_maps_values():
     assert bearing["notes"] == "Item P-101" and bearing["action"] == "Vibration analysis"
     assert impeller["notes"] == "OEM advice"
     assert bearing["effects"] == "Pump stops"
-    assert result["counts"] == {"functions": 2, "failures": 3, "modes": 4, "decisions": 3, "skipped_rows": 1}
+    assert result["counts"] == {"functions": 2, "failures": 3, "modes": 4, "decisions": 3, "skipped_rows": 1,
+                               "plain_tasks": 0}
     assert result["errors"] == [] and not any("RPN" in w for w in result["warnings"])
     assert any("1 row with no failure mode was skipped" in w for w in result["warnings"])
     rtf = next(v for v in result["values"]["outcome"] if v["value"] == "Run to failure")
