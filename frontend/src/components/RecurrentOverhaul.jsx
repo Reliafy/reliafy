@@ -1,5 +1,6 @@
 import { LEVEL_TEXT } from "../levels.js";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { positiveAsk } from "../urlAsks.js";
 import Plot from "./Plot.jsx";
 import { fitLine, optimumMarker, referenceShape } from "../plotTheme.js";
 import { recurrentOverhaul } from "../api.js";
@@ -18,8 +19,9 @@ import { beyondDataWords } from "../recurrentResults.js";
 // ahead tab: the curve fills the tab, the costs and the answer beside it.
 export default function RecurrentOverhaul({ modelId, unit: rawUnit, name = null }) {
   const unit = rawUnit ? String(rawUnit).toLowerCase() : rawUnit;
-  const [cr, setCr] = useState("");
-  const [co, setCo] = useState("");
+  // ?repair=<cost>&overhaul=<cost> (urlAsks.js): the costs filled in and worked out as the tab opens.
+  const [cr, setCr] = useState(() => positiveAsk("repair") || "");
+  const [co, setCo] = useState(() => positiveAsk("overhaul") || "");
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -39,6 +41,13 @@ export default function RecurrentOverhaul({ modelId, unit: rawUnit, name = null 
       setLoading(false);
     }
   };
+
+  const asked = useRef(!!(positiveAsk("repair") && positiveAsk("overhaul")));
+  useEffect(() => {
+    if (!asked.current || !modelId) return;
+    asked.current = false;
+    run();
+  }, [modelId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const opt = result?.optimal;
   const beyond = result?.beyond_data;

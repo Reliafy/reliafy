@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { urlAsk } from "../urlAsks.js";
 import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
 import { COLORWAY, DATA_INK, MUTED, bandPair, fitLine, pointMarker, referenceShape } from "../plotTheme.js";
@@ -1997,6 +1998,15 @@ export default function RbdCalculator({
       })
       .catch(() => {}); // nothing to resume
   }, [rbdId, graph.repairable]);
+
+  // ?calc=1 (or ?compare=, which needs an answer to compare with): Calculate pressed once, as the
+  // page opens, when the saved diagram is in (urlAsks.js).
+  const autoCalc = useRef(urlAsk("calc") === "1" || !!urlAsk("compare"));
+  useEffect(() => {
+    if (!autoCalc.current || !graph?.nodes?.length || diagramGap(graph)) return;
+    autoCalc.current = false;
+    calculate(false);
+  }); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setBlockState = (id, patch) =>
     setBlockStates((prev) => ({ ...prev, [id]: { mode: "new", value: "", ...prev[id], ...patch, fromTree: false } }));

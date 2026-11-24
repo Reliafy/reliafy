@@ -959,6 +959,17 @@ export default function AssetExplorer({ root: rootProp = null, tabKey = "tab", t
     reveal(fmParam);
     setPanel(true);
   }, [fmParam, display]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A link to a model on the Models tab (?model=<link id>): its row picked and its details open
+  // beside the table, once it's in the tree (a scripted demonstration's links, urlAsks.js).
+  const modelParam = modelsOn ? params.get("model") : null;
+  const modelShown = useRef(null);
+  useEffect(() => {
+    const key = modelParam ? modelKey(modelParam) : null;
+    if (!key || modelShown.current === key || !display.rows.has(key)) return;
+    modelShown.current = key;
+    reveal(key);
+    setPanel(true);
+  }, [modelParam, display]); // eslint-disable-line react-hooks/exhaustive-deps
   // The RCM row whose details are open is kept in the address (?fm=), so following a link from the
   // details and pressing Back opens them again (Derryn, 23 Nov 2026). One asked for by the address
   // waits until it's open.

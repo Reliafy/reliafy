@@ -8,7 +8,8 @@ import { isDesignRow } from "../explorerTabs.js";
 import { PRODUCTS_GUIDE } from "../products.js";
 import FailureReportDetail from "./FailureReportDetail.jsx";
 import FailureRanking from "./FailureRanking.jsx";
-import { VIEWS } from "../failureRanking.js";
+import { VIEWS, viewAsked } from "../failureRanking.js";
+import { choiceAsk } from "../urlAsks.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { Field, FormModal, PositionPicker, fmtDate } from "./MaintenanceParts.jsx";
 import { ShowMe } from "./SectionPage.jsx";
@@ -124,7 +125,9 @@ export default function FailureReportsPanel({ row, display, today, version, repo
   const scopeKey = scope ? `${row.type}:${row.key}` : "";
   const design = isDesignRow(row);
   const defaults = design ? DESIGN_FILTERS : DEFAULT_FILTERS;
-  const [filters, setFilters] = useState(defaults);
+  // ?status=<chip> (urlAsks.js): the reports a link asks for, e.g. all of them.
+  const askedStatus = useRef(choiceAsk("status", STATUS_CHIPS.map((c) => c.id)));
+  const [filters, setFilters] = useState(() => (askedStatus.current ? { ...defaults, status: askedStatus.current } : defaults));
   const [q, setQ] = useState("");
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -138,7 +141,7 @@ export default function FailureReportsPanel({ row, display, today, version, repo
   const [modes, setModes] = useState(new Map());
   const seq = useRef(0);
   // Reports (the list) or Ranking (FRACAS: the failures below, ranked), on a position's row.
-  const [view, setView] = useState("reports");
+  const [view, setView] = useState(() => viewAsked(typeof window !== "undefined" ? window.location.search : ""));
   const [partLabel, setPartLabel] = useState("");
   const canRank = row?.type === "pos";
 
@@ -150,7 +153,9 @@ export default function FailureReportsPanel({ row, display, today, version, repo
   // Another row: back to the usual filters, its list read afresh (the last
   // row's isn't shown meanwhile).
   useEffect(() => {
-    setFilters((f) => (f === defaults ? f : defaults));
+    // The first row's filters are the ones its address asked for (?status=), once.
+    if (askedStatus.current) askedStatus.current = null;
+    else setFilters((f) => (f === defaults ? f : defaults));
     setQ("");
     setModes(new Map());
     setData(null);

@@ -1045,10 +1045,15 @@ reliafy import rcm fmea.csv --position POSITION_ID --dry-run    # CSV or .xlsx, 
 reliafy ingest usage meters.csv --fleet FLEET_ID
 reliafy ingest measurements readings.csv --fleet TRACKED_FLEET_ID
 reliafy ingest lives new_failures.csv --dataset DATASET_ID
-reliafy photo add IMG_*.jpg --to POSITION_ID   # Reliafy Maintenance users`}</Code>
+reliafy photo add IMG_*.jpg --to POSITION_ID   # Reliafy Maintenance users
+reliafy mission create --position POSITION_ID --name "10 flight-hour sortie" --length 10 \\
+  --hours-called "flight hours" --phase Take-off:0.2 --phase Transit:2 --phase Survey:5.6 \\
+  --phase Return:2 --phase Landing:0.2       # a mission on a position (Reliafy Maintenance users)
+reliafy mission get RBD_ID                     # its chance of completing and the failures to expect`}</Code>
       <ul className="api-list">
         <li><code>reliafy fit</code> never guesses what a flag column means: Reliafy reads 0 = failed, 1 = still running. If yours is 1 = failed, add <code>--c-invert</code>.</li>
         <li>Reliafy Maintenance users also have <code>reliafy ingest readings</code>, <code>reliafy photo link|move|unlink</code>, and <code>reliafy document add FILE.pdf --to ID</code> / <code>reliafy document get ID -o FILE.pdf</code> for PDFs.</li>
+        <li><code>reliafy mission create</code> changes the mission already on the position with the same <code>--ref</code> (or, with no ref, the same name), so running it again never makes a second one. <code>reliafy mission list --position ID</code> lists them.</li>
         <li><code>reliafy photo add</code> and <code>reliafy document add</code> report each file and exit non-zero if any failed.</li>
       </ul>
     </div>

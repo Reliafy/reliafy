@@ -609,6 +609,11 @@ are reused). A part the handbook has no type for (a battery) takes {rate_per_mil
 mechanical part (airframe, propeller) takes {excluded: true}: left out, and the result names it. The environment is set once (default: the position's last, else the nearest above). It's saved as \
 a prediction and an exponential model at its rate (role prediction), replacing an earlier one; preview it in \
 the app. It compares designs early; it never says how the item will fail in service.
+- A mission (a sortie, a shift): models.link with position_id and mission {name, clock operating (label 'flight \
+hours') or calendar, length, length_unit, phases [{name, duration}] adding up to the length}. It gets an \
+RBD of its own (a copy of the position's, a repairable one without its repairs; or its tree, or its model). The \
+same ref, or with no ref the same name, changes that mission rather than making another. get.position with \
+missions true lists them; analyse rbd_mission (rbd_id, mission_id 'mission', answers true) answers the chance of completing it.
 - An RBD: every position can have a life model, an RBD or a prediction. models.link with build_rbd true makes \
 a new RBD whose blocks are the positions one level inside, each taking its model in use (a saved model, or its \
 own RBD as a sub-system); one with none gets a placeholder flagged placeholder=true (never invented data: say \

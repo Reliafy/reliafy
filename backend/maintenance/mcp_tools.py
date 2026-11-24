@@ -150,14 +150,14 @@ GET_KINDS: Table = {
         (each task; each failure mode's corrective and follow-on) with what's not counted; months (12, 24, 36,
         60): whole months from today; whatif {task_id: {drop: true} | {interval: N}} on supporting tasks: the same
         with them changed, beside it, and each supporting task's worth (guide topic forecast)."""),
-    "position": ("id", "", """Its path, positions inside it, the item fitted now, every past fitment (with
+    "position": ("id", "missions", """Its path, positions inside it, the item fitted now, every past fitment (with
         from_precision / to_precision for rough dates), failure modes (from RCM, by hand or ad hoc),
         class_failure_modes (seen at other positions of its class), tasks with last-done / next-due and trade,
         work orders, item_tasks (the fitted item's own), documents, parts_list (replacement part first, with
         stock, supersession, alternatives, critical minimums, notes), connections, life_data (one row per item
         fitted: days in service, c = 0 failed / 1 censored / 2 within xl..xr) and location (display, inherited,
         inherited_from; null when none is set on it or above it), models (the life models attached: maintenance
-        models.link)."""),
+        models.link). missions true: its missions instead."""),
     "item": ("id", "", """A serial-numbered thing: details, nameplate, notes with note_history, purchase /
         in-service / manufacture dates (precision, source), replacement cost, warranty (with a summary),
         documents, where it's fitted and where it is (location: how = fitted or placed; or last_at), every
@@ -774,7 +774,7 @@ RELIABILITY: Table = {
 # Life models on positions (the Explorer's Modelling tab, position_models.py). Read them with get.position (models).
 POSITION_MODELS: Table = {
     "link": ("position_id", "model_id model_type from_class fit distribution scope failure_mode_ids note "
-                            "replace_link_id baseline trust exclude prediction rbd_id build_rbd use_link_id data method prior library_record_id covariates hazard_ratio bind window", """Attach a life model to a position (a link: the model isn't
+                            "replace_link_id baseline trust exclude prediction rbd_id build_rbd use_link_id data method prior library_record_id covariates hazard_ratio bind window mission", """Attach a life model to a position (a link: the model isn't
         copied). One of: model_id (a saved model; model_type model default, recurrent_model, degradation_model,
         alt_model), from_class true (its position class's fitted model) or fit true (Pro: fit distribution, weibull
         default, to its own failure history, or its class's pooled history when its own is thin: scope auto,
@@ -790,8 +790,9 @@ POSITION_MODELS: Table = {
         prediction from its parts list (and inside it), saved as an exponential model. rbd_id: link an RBD; build_rbd true:
         a new RBD from the positions inside (each block its model in use, else a flagged placeholder; with
         replace_link_id, rebuilt). use_link_id: make that row its model in use. bind {source nswc|library|component|alt|ph, ref,
-        fixed?, roles?}: a covariate model or library record with some, all or none of its covariates fixed here (guide topic modelling). The RCM
-        offers these first."""),
+        fixed?, roles?}: a covariate model or library record with some, all or none of its covariates fixed here (guide topic modelling).
+        mission {name, phases, length, ...}: make or change a mission on the position instead, with an RBD of its own
+        (the Missions tab; re-runs with the same ref or name change it; guide topic modelling). The RCM offers these first."""),
     "unlink": ("link_id", "", "Take a model off its position (the model stays in Models)."),
 }
 
@@ -1375,6 +1376,9 @@ def register() -> None:
                         fleet: Annotated[bool | None, Field(description=(
                             "item_class: true for the class's fleet (its positions, with risk now) in place of "
                             "the class record."))] = None,
+                        missions: Annotated[bool | None, Field(description=(
+                            "position: true for its missions (each RBD on it with its missions, and each "
+                            "mission's own RBD, rbd.mission_rbd) in place of the position record."))] = None,
                         root: Annotated[str | None, Field(description=(
                             "operating_plan, operations, forecast, spares_year: the asset opened; nothing above it is used."))]
                         = None,
@@ -1422,6 +1426,13 @@ def register() -> None:
             return run(document_link, base_url(ctx), m, rid)
         if kind == "task_measurement":
             return run(m.task_measurement, rid, position_id)
+        if kind == "position" and missions:
+            from backend.services import rbd_missions
+
+            reader = _reader(_caller(ctx))
+            run(m._get, rid, "Position")
+            return {"position_id": rid, "links": run(rbd_missions.position_missions, m, _db(), reader.read_owners,
+                                                      reader.hidden, [rid])}
         if kind == "operating_plan":
             return run(m.operating_plan, rid, root)
         if kind == "operations":
@@ -2724,6 +2735,55 @@ def register() -> None:
         except fitting.FitError as err:
             raise ToolError(f"The fit didn't work: {err}") from None
 
+    MISSION_KEYS = ("name", "ref", "rbd_id", "link_id", "tree", "clock", "label", "length", "length_unit", "start",
+                    "calendar", "starting_state", "phases")
+
+    def position_mission(ctx, m, reader, position_id, spec):
+        """models.link with mission: the Missions tab's New mission… and phase table in one call."""
+        from backend.maintenance import position_models as pm
+
+        if not isinstance(spec, dict) or not position_id:
+            raise ToolError("A mission needs position_id and mission {name, phases, length, ...}: guide topic modelling.")
+        extra = sorted(set(spec) - set(MISSION_KEYS))
+        if extra:
+            raise ToolError(f"mission doesn't take {', '.join(extra)}: it takes {', '.join(MISSION_KEYS)}.")
+        name, ref, rbd_id, link_id = (spec.get(k) for k in ("name", "ref", "rbd_id", "link_id"))
+        clock, label, start, calendar = (spec.get(k) for k in ("clock", "label", "start", "calendar"))
+        length, length_unit, phases = spec.get("length"), spec.get("length_unit"), spec.get("phases")
+        starting_state, tree = spec.get("starting_state"), spec.get("tree") is True
+        for key, value in (("name", name), ("ref", ref), ("rbd_id", rbd_id), ("link_id", link_id), ("label", label),
+                           ("start", start)):
+            if value is not None and not isinstance(value, str):
+                raise ToolError(f"mission.{key} is text.")
+        if length is not None and (isinstance(length, bool) or not isinstance(length, (int, float))):
+            raise ToolError("mission.length is a number more than 0.")
+        user = _caller(ctx)
+        setup = {k: v for k, v in (("clock", clock), ("label", label), ("start", start), ("calendar", calendar),
+                                   ("from", starting_state)) if v is not None}
+        if length is None and length_unit is not None:
+            raise ToolError("length_unit goes with a length: give both, e.g. length 10, length_unit hours.")
+        size = ({"value": length, "unit": length_unit or ("months" if clock == "calendar" else "hours")}
+                if length is not None else None)
+        if setup or size:
+            setup.setdefault("clock", "calendar" if size and size["unit"] in ("days", "weeks", "months", "years")
+                             else "operating")
+
+        def cap_check():
+            # A new RBD counts toward the Free plan's cap, as one made in the app does.
+            mcp_server._cap(_db(), user, "rbds", "RBD")
+
+        out = run(pm.save_position_mission, m, _db(), reader.read_owners, reader.hidden, position_id, m.org,
+                  name=name, ref=ref, rbd_id=rbd_id, link_id=link_id, tree=tree, setup=setup or None, length=size,
+                  phases=phases, cap_check=cap_check)
+        rid = out["rbd"]["id"]
+        try:
+            root = base_url(ctx)
+        except Exception:  # noqa: BLE001 - no request (a batch, a test): the public address
+            root = mcp_server._url("")
+        out["url"] = (f"{root}/asset-register/explorer?root={position_id}&sel={position_id}&arrange=positions"
+                      f"&tab=missions&mission={rid}%3Amission&on={position_id}")
+        return out
+
     @tool("maintenance_models", _WRITE, "Life models on positions", POSITION_MODELS)
     def maintenance_models(action: _choice(POSITION_MODELS), ctx: Context, position_id: str | None = None,
                            model_id: str | None = None,
@@ -2767,7 +2827,16 @@ def register() -> None:
                                "{source: nswc (an NSWC-11 record), library (any other library record), component "
                                "(an NRC/INL component), alt or ph (a saved model), ref, fixed: {input: value} "
                                "(some, all or none), roles?: {input: design|use|environment}}. What isn't fixed is set "
-                               "on an RBD block or the diagram's Use and Environment values."))] = None) -> dict[str, Any]:
+                               "on an RBD block or the diagram's Use and Environment values."))] = None,
+                           mission: Annotated[dict[str, Any] | None, Field(description=(
+                               "A mission on the position: {name, ref? (your key; the same ref again changes it), "
+                               "rbd_id? (a mission's own RBD, to change it), link_id? (a model row of the position or "
+                               "an RBD at or below it to fly it on), tree?, clock? operating|calendar, label? ('flight "
+                               "hours'), length?, length_unit? (hours, cycles, km, days, weeks, months, years), start? "
+                               "('now' | date), calendar? ({linked: true} | {hours_per_day, days_per_week}), "
+                               "starting_state? new|today, phases? [{name, duration (length_unit), not_needed?, "
+                               "values?, ...}] as change rbd_mission's, adding up to the length}."))] = None,
+                           ) -> dict[str, Any]:
         """The life models on a position (a functional location, or a position of a product's design): attach a
         saved model, the class's model or a new fit from its history; take one off. The guide's modelling topic
         says how they feed the RCM."""
@@ -2778,6 +2847,8 @@ def register() -> None:
         if action == "unlink":
             return run(m.unlink_position_model, link_id)
         reader = _reader(_caller(ctx))
+        if mission is not None:
+            return position_mission(ctx, m, reader, position_id, mission)
         chosen = sum(bool(x) for x in (model_id, from_class, fit, prediction is not None, rbd_id, build_rbd, use_link_id,
                                        library_record_id, bind))
         if chosen != 1:

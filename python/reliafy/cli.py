@@ -17,6 +17,10 @@
     reliafy ingest usage fleet.csv --fleet FLEET_ID
     reliafy ingest readings readings.csv
     reliafy ingest snapshot burst.json
+    reliafy mission create --position POSITION_ID --name "10 flight-hour sortie" --length 10 \
+        --hours-called "flight hours" --phase Take-off:0.2 --phase Transit:2 ...   # made once, re-runs change it
+    reliafy mission list --position POSITION_ID
+    reliafy mission get RBD_ID                      # its chance of completing and failures to expect
     reliafy apply ops.json                          # maintenance changes in one call (a dry run)
     reliafy apply ops.json --run                    # ... for real
 
@@ -43,7 +47,7 @@ from reliafy.client import Client, ReliafyError, ServerTooOld, _version
 
 SPEC_TTL_S = 24 * 3600
 BUILTINS = ("login", "logout", "whoami", "tools", "spec", "call", "push", "fit", "upload", "import", "photo",
-            "document", "capture", "ingest", "apply", "help")
+            "document", "capture", "ingest", "apply", "mission", "help")
 
 
 # ---- output --------------------------------------------------------------------
@@ -646,6 +650,74 @@ def cmd_apply(client: Client, ns) -> int:
     return 0 if result.get("ok") else 1
 
 
+def _phase(text: str) -> dict:
+    """ "Take-off:0.2" as {name, duration}."""
+    name, sep, value = text.rpartition(":")
+    try:
+        duration = float(value)
+    except ValueError:
+        duration = None
+    if not sep or not name.strip() or duration is None:
+        raise ReliafyError(f'--phase {text!r}: give it as NAME:DURATION, e.g. --phase "Take-off:0.2".')
+    return {"name": name.strip(), "duration": duration}
+
+
+def cmd_mission(client: Client, ns) -> int:
+    """mission create | list | get: a mission on a maintenance position."""
+    if ns.verb == "list":
+        if not ns.position:
+            raise ReliafyError("mission list needs --position POSITION_ID.")
+        got = client.missions(ns.position)
+        rows = [{"rbd_id": (row.get("rbd") or {}).get("id"), "mission_id": x.get("id"), "name": x.get("name"),
+                 "phases": x.get("phases"), "length": x.get("duration"), "unit": x.get("unit"),
+                 "chance": (x.get("result") or {}).get("reliability")}
+                for row in got.get("links") or [] for x in row.get("missions") or []]
+        render(got if ns.json else rows, ns.json)
+        return 0
+    if ns.verb == "get":
+        if not ns.rbd_id:
+            raise ReliafyError("mission get needs the mission's RBD id (mission list shows it).")
+        got = client.mission_answers(ns.rbd_id, ns.mission or "mission")
+        if ns.json:
+            render(got, True)
+            return 0
+        summary = (got.get("answers") or {}).get("summary") or {}
+        result = got.get("result") or {}
+        render({"name": got.get("name"), "chance": summary.get("chance", result.get("mission_reliability")),
+                "clock": summary.get("clock"), "length": summary.get("length"),
+                "message": (got.get("answers") or {}).get("message") or result.get("message"),
+                "phases": [{"name": p.get("name"), "duration": p.get("duration"),
+                            "reliability_at_end": p.get("reliability_at_end")} for p in result.get("phases") or []]},
+               False)
+        return 0
+    if not ns.position:
+        raise ReliafyError("mission create needs --position POSITION_ID.")
+    calendar = None
+    if ns.duty:
+        try:
+            h, d = (float(x) for x in ns.duty.split(","))
+        except ValueError:
+            raise ReliafyError("--duty is HOURS_A_DAY,DAYS_A_WEEK, e.g. --duty 8,5.") from None
+        calendar = {"hours_per_day": h, "days_per_week": int(d)}
+    phases = [_phase(p) for p in ns.phase] if ns.phase else None
+    got = client.save_mission(ns.position, name=ns.name, ref=ns.ref, phases=phases, length=ns.length,
+                              length_unit=ns.length_unit, clock=ns.clock, label=ns.hours_called,
+                              rbd_id=ns.rbd_id_opt or ns.rbd_id, link_id=ns.runs_on, tree=True if ns.tree else None, start=ns.start,
+                              calendar=calendar, starting_state=ns.starting_state)
+    if ns.json:
+        render(got, True)
+        return 0
+    m = got.get("mission") or {}
+    m["unit"] = (m.get("setup") or {}).get("label") or m.get("unit")
+    print(f"{'Made' if got.get('created') else 'Changed'} “{m.get('name')}” on its own RBD {got['rbd']['id']}: "
+          f"{m.get('phases')} phases, {float(m.get('duration') or 0):g} {m.get('unit') or ''} in all.".replace(" .", "."))
+    for note in got.get("notes") or []:
+        print(f"  {note}")
+    if got.get("url"):
+        print(got["url"])
+    return 0
+
+
 def builtin_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="reliafy", description="Reliafy from the command line: every tool action, files, photos, documents "
@@ -765,6 +837,31 @@ def builtin_parser() -> argparse.ArgumentParser:
     sp.add_argument("--fleet")
     sp.add_argument("--dataset")
     sp.add_argument("--no-refit", action="store_true")
+    sp = add("mission", cmd_mission, "Missions on a maintenance position: make or change one (a re-run with the "
+                                     "same --ref or name changes it), list them, or read its answers.")
+    sp.add_argument("verb", choices=["create", "list", "get"])
+    sp.add_argument("rbd_id", nargs="?", help="get: the mission's RBD id (mission list shows it).")
+    sp.add_argument("--position", help="create, list: the position id.")
+    sp.add_argument("--name", help='create: its name, e.g. "10 flight-hour sortie".')
+    sp.add_argument("--ref", help="create: your own key for it; the same ref again changes that mission.")
+    sp.add_argument("--rbd-id", dest="rbd_id_opt", metavar="RBD_ID", help="create: change this mission (its RBD id).")
+    sp.add_argument("--clock", choices=["operating", "calendar"], help="create: operating time (default) or calendar.")
+    sp.add_argument("--hours-called", dest="hours_called", metavar="LABEL",
+                    help='create: what its operating hours are called, e.g. "flight hours".')
+    sp.add_argument("--length", type=float, help="create: its length, in --length-unit.")
+    sp.add_argument("--length-unit", dest="length_unit",
+                    choices=["hours", "cycles", "km", "days", "weeks", "months", "years"],
+                    help="create: the length's and phases' unit (default hours; months on calendar time).")
+    sp.add_argument("--phase", action="append", metavar="NAME:DURATION",
+                    help='create: a phase, in order (repeat): --phase "Take-off:0.2" --phase "Transit:2".')
+    sp.add_argument("--runs-on", dest="runs_on", metavar="LINK_ID",
+                    help="create: a model row of the position, or a saved RBD at or below it, to fly it on.")
+    sp.add_argument("--tree", action="store_true", help="create: build it from the positions inside.")
+    sp.add_argument("--start", help="create, calendar time: now or YYYY-MM-DD.")
+    sp.add_argument("--duty", metavar="H,D", help="create, calendar time: its own duty, hours a day and days a week.")
+    sp.add_argument("--from", dest="starting_state", choices=["new", "today"],
+                    help="create: blocks start new, or at their items' ages today.")
+    sp.add_argument("--mission", help="get: a named mission of the RBD (default its own).")
     sp = add("apply", cmd_apply, "Run a JSON file of Reliafy Maintenance operations as one maintenance apply "
                                  "call: a dry run unless --run.")
     sp.add_argument("file", help="A JSON list of {do, args, ref?, confirm?}, or {operations: [...]}.")
