@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   DEFAULT_RANKING, GROUP_BY, tickLabels, RANK_BY, VIEWS, groupHeading, paretoSeries, rangeText, rankingCsv, rankingParams, reportsFilter,
-  totalsLine,
+  totalsLine, rankingAsked, viewAsked,
 } from "./failureRanking.js";
 import { queryParams } from "./failureReports.js";
 
@@ -61,4 +61,16 @@ test("chart labels drop the words every name starts with, then fit", () => {
     ["today's plan (serial …", "the RCM plan"]);
   assert.deepEqual(tickLabels(["Generator belt worn or cracked", "Muffler cracked"]), ["Generator belt worn o…", "Muffler cracked"]);
   assert.deepEqual(tickLabels(["Only one name here"]), ["Only one name here"]);
+});
+
+test("the History tab opens on what the address asks for", () => {
+  assert.equal(viewAsked("?fview=ranking"), "ranking");
+  assert.equal(viewAsked("?fview=bogus"), "reports");
+  assert.equal(viewAsked(""), "reports");
+  assert.deepEqual(rankingAsked(""), DEFAULT_RANKING);
+  assert.equal(rankingAsked("?group=mode").group_by, "failure_mode");
+  assert.equal(rankingAsked("?group=part&rank=cost&window=all").rank_by, "cost");
+  assert.equal(rankingAsked("?group=part&rank=cost&window=all").window, "all");
+  assert.equal(rankingAsked("?window=range").window, "12m");
+  assert.equal(rankingAsked("?rank=nope").rank_by, "failures");
 });

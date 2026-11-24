@@ -28,6 +28,26 @@ export const WINDOWS = [
 ];
 export const DEFAULT_RANKING = { group_by: "position", rank_by: "failures", window: "12m", since: "", until: "" };
 
+// What the address asks the History tab to open on (urlAsks.js): ?fview=ranking, and the ranking's
+// ?group= (failure_mode, or "mode"; part; position), ?rank= and ?window=. Anything else: the usual.
+export function viewAsked(query) {
+  const v = new URLSearchParams(query || "").get("fview");
+  return VIEWS.some((x) => x.value === v) ? v : "reports";
+}
+export function rankingAsked(query) {
+  const q = new URLSearchParams(query || "");
+  const pick = (list, v) => (list.some((x) => x.value === v) ? v : null);
+  const group = pick(GROUP_BY, q.get("group") === "mode" ? "failure_mode" : q.get("group"));
+  const rank = pick(RANK_BY, q.get("rank"));
+  const win = pick(WINDOWS.filter((w) => w.value !== "range"), q.get("window"));
+  return {
+    ...DEFAULT_RANKING,
+    ...(group ? { group_by: group } : {}),
+    ...(rank ? { rank_by: rank } : {}),
+    ...(win ? { window: win } : {}),
+  };
+}
+
 // The query the server takes.
 export function rankingParams(positionId, opts = {}) {
   const o = { ...DEFAULT_RANKING, ...opts };

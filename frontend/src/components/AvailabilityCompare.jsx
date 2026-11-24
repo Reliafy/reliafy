@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { urlAsk } from "../urlAsks.js";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import Select from "./Select.jsx";
 import { compareRbds, listRbds, saveRbd } from "../api.js";
@@ -98,7 +99,9 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
   // diagram it was copied from ready to compare.
   const location = useLocation();
   const navigate = useNavigate();
-  const [otherId, setOtherId] = useState(location.state?.compareWith || "");
+  // ?compare=<rbd id> (urlAsks.js): that diagram picked and compared once the answer is in.
+  const asked = useRef(urlAsk("compare"));
+  const [otherId, setOtherId] = useState(location.state?.compareWith || asked.current || "");
   const [copying, setCopying] = useState(false);
   const [phase, setPhase] = useState("idle"); // idle | running
   const [comparison, setComparison] = useState(null);
@@ -141,6 +144,13 @@ export default function AvailabilityCompare({ graph, rbdId, result: availability
     }
     setPhase("idle");
   };
+
+  useEffect(() => {
+    if (!asked.current || !availability || !rbds || phase !== "idle") return;
+    const there = rbds.some((d) => d.id === asked.current);
+    asked.current = null;
+    if (there) run();
+  }, [availability, rbds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Save this diagram as it is now under "<name> (copy)" and open the copy,
   // to change one thing in it and compare it with this one.

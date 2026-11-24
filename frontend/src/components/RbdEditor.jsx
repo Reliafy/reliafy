@@ -88,15 +88,15 @@ import { applyTreePlan, treeGraph, treeKey, treePositionPath, treeRow } from "..
 import { getRbdTreePlan } from "../api.js";
 import { useRoles } from "../RolesProvider.jsx";
 import Loading from "./ui/Loading.jsx";
+import { choiceAsk } from "../urlAsks.js";
 
 // The "Outage history" tab (an observed-history import and charts) loads on
 // first open, so the builder's own bundle doesn't carry it.
 const OutageHistory = lazy(() => import("./OutageHistory.jsx"));
-// ?tab=outages (the MCP tools' links) opens the builder on that tab.
-const initialTab = () =>
-  typeof window !== "undefined" && new URLSearchParams(window.location.search).get("tab") === "outages"
-    ? "outages"
-    : "builder";
+// ?tab=<id> (the MCP tools' links: outages; a scripted demonstration's: calc, tree…) opens the
+// builder on that tab (urlAsks.js).
+const URL_TABS = ["builder", "calc", "tree", "design", "targets", "outages"];
+const initialTab = () => choiceAsk("tab", URL_TABS, "builder");
 // The result tabs; on a phone the row scrolls, with a cue on the hidden side.
 const RBD_TABS = [
   { id: "builder", label: "Builder" },

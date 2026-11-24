@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { urlAsk } from "../urlAsks.js";
 import { rateSpread } from "../rateSpread.js";
 import Plot from "./Plot.jsx";
 import ProbabilityPlot from "./ProbabilityPlot.jsx";
@@ -199,7 +200,11 @@ function LifeResult({ result, modelId = null, name = null, split = null, compare
   // The Calculator tab unmounts when you switch away, so its inputs live here
   // and survive tab switches. When the result itself changes in place (e.g.
   // fitting another model in the workspace) reset them for the new model.
-  const [calc, setCalc] = useState(() => initCalcState(result.functions, result.plot?.empirical?.x, baseLevels(result)));
+  // ?calc=time (urlAsks.js): the Calculator opens on Time at reliability (90%: the B10 life).
+  const [calc, setCalc] = useState(() => ({
+    ...initCalcState(result.functions, result.plot?.empirical?.x, baseLevels(result)),
+    ...(urlAsk("calc") === "time" && !result.tvc ? { mode: "time" } : {}),
+  }));
   const calcNextId = useRef(1);
   // One confidence for the calculator's bounds and the mean life's (#288).
   const level = Number(calc.ci.level);

@@ -8,7 +8,8 @@ import { isDesignRow } from "../explorerTabs.js";
 import { PRODUCTS_GUIDE } from "../products.js";
 import FailureReportDetail from "./FailureReportDetail.jsx";
 import FailureRanking from "./FailureRanking.jsx";
-import { VIEWS } from "../failureRanking.js";
+import { VIEWS, viewAsked } from "../failureRanking.js";
+import { choiceAsk } from "../urlAsks.js";
 import SegmentedControl from "./ui/SegmentedControl.jsx";
 import { Field, FormModal, PositionPicker, fmtDate } from "./MaintenanceParts.jsx";
 import { ShowMe } from "./SectionPage.jsx";
@@ -124,7 +125,11 @@ export default function FailureReportsPanel({ row, display, today, version, repo
   const scopeKey = scope ? `${row.type}:${row.key}` : "";
   const design = isDesignRow(row);
   const defaults = design ? DESIGN_FILTERS : DEFAULT_FILTERS;
-  const [filters, setFilters] = useState(defaults);
+  // ?status=<chip> (urlAsks.js): the reports a link asks for, e.g. all of them.
+  const [filters, setFilters] = useState(() => {
+    const status = choiceAsk("status", STATUS_CHIPS.map((c) => c.id));
+    return status ? { ...defaults, status } : defaults;
+  });
   const [q, setQ] = useState("");
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -138,7 +143,7 @@ export default function FailureReportsPanel({ row, display, today, version, repo
   const [modes, setModes] = useState(new Map());
   const seq = useRef(0);
   // Reports (the list) or Ranking (FRACAS: the failures below, ranked), on a position's row.
-  const [view, setView] = useState("reports");
+  const [view, setView] = useState(() => viewAsked(typeof window !== "undefined" ? window.location.search : ""));
   const [partLabel, setPartLabel] = useState("");
   const canRank = row?.type === "pos";
 

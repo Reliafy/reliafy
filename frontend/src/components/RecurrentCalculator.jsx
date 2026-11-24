@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { positiveAsk } from "../urlAsks.js";
 import { Link } from "react-router-dom";
 import Plot from "./Plot.jsx";
 import { fitLine, pointMarker, referenceShape } from "../plotTheme.js";
@@ -287,7 +288,8 @@ function calcNote({ r, modelId, server, serverError, active, renewal, regression
 // from where each of the model's systems is now (the end of its record), with
 // the systems that add most.
 function FromNow({ modelId, unit, renewal }) {
-  const [h, setH] = useState("");
+  // ?next=<hours> (urlAsks.js): the stretch filled in and worked out as the tab opens.
+  const [h, setH] = useState(() => positiveAsk("next") || "");
   const [level, setLevel] = useState("0.9");
   const [res, setRes] = useState(null);
   const [err, setErr] = useState(null);
@@ -306,6 +308,12 @@ function FromNow({ modelId, unit, renewal }) {
       setBusy(false);
     }
   };
+  const asked = useRef(!!positiveAsk("next"));
+  useEffect(() => {
+    if (!asked.current || !modelId) return;
+    asked.current = false;
+    run();
+  }, [modelId]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="calc-rail-card calc-eval-card">
       <div className="gofh">From now on</div>

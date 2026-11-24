@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { urlAsk } from "../urlAsks.js";
 import { Link } from "react-router-dom";
 import Select from "./Select.jsx";
 import Plot from "./Plot.jsx";
@@ -136,6 +137,14 @@ export default function CompareGroups({ dataset, splitBy, onClose }) {
       setLoading(false);
     }
   };
+
+  // ?compare=<column>&run=1 (urlAsks.js): compared once as it opens, as if Compare were pressed.
+  const autoRun = useRef(!!splitBy && urlAsk("run") === "1");
+  useEffect(() => {
+    if (!autoRun.current || !timeCol || !groupCol || !dataset?.id) return;
+    autoRun.current = false;
+    run();
+  }, [timeCol, groupCol, dataset?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // A new split starts from the default reference group.
   useEffect(() => { setReference(null); }, [groupCol, timeCol]);
