@@ -206,6 +206,19 @@ The Python client has `Client.apply(...)`, the command line
 `reliafy apply ops.json [--run]`, and `maintenance guide` topic `apply` the
 worked examples.
 
+A mission on a position (the Explorer's Missions tab) is `maintenance models.link` with `position_id`
+and `mission` {`name`, `clock` (`operating`, the default, with `label` such as "flight hours"; or `calendar` with
+`start`, `calendar` {linked: true} or {hours_per_day, days_per_week}, and `starting_state` new or
+today), `length` with `length_unit`, and `phases` ([{name, duration, not_needed?, values?, ...}], in the
+length's unit, adding up to it)}. It runs on `link_id` (a model row of the position, or a saved RBD at
+or below it; a repairable RBD is copied without its repairs and planned work, as the app does), `tree`
+true (the positions inside), or what the app picks. It's saved with an RBD of its own, which counts
+toward the Free plan's RBD cap. A mission already on the position with the same `ref` (the caller's
+own key) or, with no ref, the same name is changed, not doubled (`created` false). `maintenance
+get.position` (`id` a position, `missions` true) lists its missions; `analyse rbd_mission` (`rbd_id`, `mission_id`
+"mission", `answers` true) gives the chance of completing it and the failures to expect, with the
+summary {chance, clock, length}. The CLI has `reliafy mission create | list | get`.
+
 A failure mode's FMEA and FMECA fields live on the same record as its RCM:
 `maintenance failure_modes.score` (`failure_mode_id` plus any of `severity`,
 `occurrence`, `detection` (whole numbers 1–10), `cause`, `effect_local`,

@@ -1,6 +1,24 @@
 # Changelog
 
-## 0.12.7 (unreleased)
+## 0.12.8 (unreleased)
+
+Needs a server on the same release.
+
+- **Missions on a position** (Reliafy Maintenance): `maintenance models.link` with `mission` makes a mission on a
+  position with an RBD of its own, as the Explorer's Missions tab does, and sets its phases in the same
+  call: `clock` (operating, the default, with `label` e.g. "flight hours"; or calendar with `start`,
+  `calendar` and `starting_state`), `length` and `length_unit`, and `phases` (`[{name, duration, ...}]`
+  in the length's unit, adding up to it), all inside `mission`. It runs on `link_id` (a model row of the position, or a saved
+  RBD at or below it; a repairable RBD is copied without its repairs, as in the app), `tree` true, or
+  what the app would pick. A mission already there with the same `ref` (your own key) or, with no
+  ref, the same name is changed instead, so a re-run never makes a second one. `maintenance
+  get.position` with `missions` true lists a position's missions; their answers come from `analyse rbd_mission` with
+  `answers` true. On the command line: `reliafy mission create --position … --name "10 flight-hour
+  sortie" --length 10 --hours-called "flight hours" --phase Take-off:0.2 …`, `reliafy mission list
+  --position …` and `reliafy mission get RBD_ID`; in Python `Client.save_mission`, `Client.missions`
+  and `Client.mission_answers`.
+
+## 0.12.7
 
 Needs a server on the same release.
 
