@@ -154,6 +154,9 @@ def test_duty_basis_counts_its_hours(m):
     out = fr.failure_ranking(m, ids["fleet"], rank_by="rate", **WINDOW)
     rows = {r["name"]: r for r in out["rows"]}
     assert rows["Unit A"]["hours"] == pytest.approx(600, rel=1e-6)
+    # Ranked by rate, the answer gives the top group's rate (a share of summed rates means nothing).
+    # A: 6 in 600 h = 10 per 1,000 h; B: 1 in 2,400 h.
+    assert out["rows"][0]["name"] == "Unit A" and out["sentence"].endswith("Unit A: 10.0 per 1,000 h.")
     assert out["basis"]["counts"]["duty"] >= 1 and out["basis"]["counts"]["continuous"] >= 1
 
 
