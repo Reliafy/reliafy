@@ -76,6 +76,12 @@ def test_a_rerun_changes_the_same_mission_by_name_or_ref(maint):
     assert renamed["mission"]["name"] == "Long survey sortie" and renamed["ref"] == "sortie-1"
     assert renamed["rbd"]["name"] == "Power module — Long survey sortie"
     assert sorted(x["name"] for x in _missions(maint, pid)) == ["10 flight-hour sortie", "Long survey sortie"]
+    # A ref no mission has yet adopts the mission with that name (one made in the app), keeping the ref.
+    adopted = _sortie(maint, pid, ref="app-made").json()
+    assert adopted["created"] is False and adopted["rbd"]["id"] == first["rbd"]["id"] and adopted["ref"] == "app-made"
+    assert _sortie(maint, pid, ref="app-made").json()["rbd"]["id"] == first["rbd"]["id"]
+    clash = _sortie(maint, pid, ref="another")
+    assert clash.status_code >= 400 and "(ref app-made)" in clash.text
     # Renaming onto another mission's name is refused.
     r = _sortie(maint, pid, name="10 flight-hour sortie", ref="sortie-1")
     assert r.status_code >= 400 and "already has a mission" in r.text

@@ -2246,15 +2246,23 @@ def _mission_rbd_of(m, db, owners, hidden, position_id: str, rbd_id: str | None,
     key = " ".join(str(ref or "").split())[:80]
     want = " ".join(str(name or "").split()).casefold()
     query = {"graph.mission_of.position_id": position_id, "owner_id": {"$in": owner_in(owners)}}
+    by_name = None
     for doc in db.rbds.find(query, {"_id": 1, "graph.mission_of": 1, "graph.mission_name": 1}).sort("created_at", 1):
         if doc["_id"] in hidden:
             continue
         g = doc.get("graph") or {}
         got = rbd_missions.mission_of(g) or {}
-        if key and got.get("ref") == key or not key and want and \
-                " ".join(str(g.get("mission_name") or "").split()).casefold() == want:
+        if key and got.get("ref") == key:
             return rbds_service.get_rbd(db, doc["_id"], owners)
-    return None
+        if want and by_name is None and " ".join(str(g.get("mission_name") or "").split()).casefold() == want:
+            by_name = (doc["_id"], got.get("ref"))
+    if by_name is None:
+        return None
+    # No mission has the ref: the one with the name is it (made in the app, say), unless it has a ref of its own.
+    if key and by_name[1]:
+        raise sv.Invalid(f"This position already has a mission named “{' '.join(str(name).split())}” (ref "
+                         f"{by_name[1]}): give this one its own name, or send that ref.")
+    return rbds_service.get_rbd(db, by_name[0], owners)
 
 
 def _mission_phases(phases, length_unit: str, rbd_unit: str, clock) -> list[dict]:
@@ -2282,7 +2290,8 @@ def _mission_phases(phases, length_unit: str, rbd_unit: str, clock) -> list[dict
     return out
 
 
-def _mission_changes(m, db, owners, hidden, position_id, owner_id, rbd, created, name, setup, length, phases):
+def _mission_changes(m, db, owners, hidden, position_id, owner_id, rbd, created, name, setup, length, phases,
+                     ref=None):
     """save_position_mission's second half: the phases, setup and name on the mission's RBD.
     (rbd, graph)."""
     from backend.services import mission_answers, rbd_missions
@@ -2315,6 +2324,10 @@ def _mission_changes(m, db, owners, hidden, position_id, owner_id, rbd, created,
         except AnalysisError as exc:
             raise sv.Invalid(str(exc)) from None
         phases = [{"name": "Whole mission", "duration": round(run, 6)}]
+    owner = rbd_missions.mission_of(graph) or {}
+    adopt = ref if (not created and ref and not owner.get("ref")) else None
+    if adopt:
+        graph["mission_of"] = {**owner, "ref": " ".join(str(ref).split())[:80]}
     rename = None
     if not created and name and " ".join(str(name).split()) != (graph.get("mission_name") or ""):
         rename = name
@@ -2323,7 +2336,7 @@ def _mission_changes(m, db, owners, hidden, position_id, owner_id, rbd, created,
         if " ".join(str(name).split()).casefold() in others:
             raise sv.Invalid(f"This position already has a mission named “{' '.join(str(name).split())}”: give "
                              "this one its own name.")
-    if phases is not None or (not created and after is not None) or rename:
+    if phases is not None or (not created and after is not None) or rename or adopt:
         try:
             graph, _ = rbd_missions.save(graph, rbd_missions.LEGACY_ID, rename, phases,
                                          **({"setup": after} if after is not None else {}))
@@ -2383,7 +2396,7 @@ def save_position_mission(m, db, owners, hidden, position_id: str, owner_id: str
         rbd, extra = existing, {}
     try:
         rbd, graph = _mission_changes(m, db, owners, hidden, position_id, owner_id, rbd, created, name, setup, length,
-                                      phases)
+                                      phases, ref)
     except Exception:
         if created:
             db.rbds.delete_one({"_id": rbd.id})  # nothing half-made
