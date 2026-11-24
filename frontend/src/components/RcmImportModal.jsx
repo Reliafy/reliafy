@@ -4,7 +4,7 @@ import Select from "./Select.jsx";
 import ExcelSheetPicker, { useExcelInspection } from "./ExcelSheetPicker.jsx";
 import SheetColumnMapper, { mappingComplete } from "./SheetColumnMapper.jsx";
 import { excelTable, importPositionRcm, previewPositionRcmImport } from "../api.js";
-import { WORKSHEET_ACCEPT, importSummary, isCsvFile } from "../rcmImport.js";
+import { WORKSHEET_ACCEPT, importSummary, isCsvFile, planFields, planMapping, planSummary } from "../rcmImport.js";
 import { Checkbox } from "./ui/Controls.jsx";
 
 const CONSEQUENCES = [
@@ -30,7 +30,14 @@ const OUTCOMES = [
 // effects / consequence / decision…), check how consequence and decision
 // values map onto Reliafy's categories, then add it. The preview says what it
 // adds and what's there already, and the import only adds.
-export default function RcmImportModal({ position, onClose, onImported }) {
+//
+// ``mode="plan"`` (the Maintenance tab's Import maintenance plan…): the same
+// file, sheet and preview, but the mapping is a task's own columns only (Task,
+// Interval and its unit, task type, Task ID, trade, labour hours) and each row
+// becomes a task on the position: no functions, failures, consequences or
+// decision values (rcmImport.js planFields).
+export default function RcmImportModal({ position, onClose, onImported, mode = "rcm" }) {
+  const plan = mode === "plan";
   const fileRef = useRef(null);
   const [file, setFile] = useState(null);
   const [step, setStep] = useState("file"); // file | sheet | map
@@ -75,7 +82,7 @@ export default function RcmImportModal({ position, onClose, onImported }) {
     try {
       const t = await excelTable(f, at.sheet, at.headerRow, "rcm");
       setTable(t);
-      setMapping(t.guess || {});
+      setMapping(plan ? planMapping(t.guess) : t.guess || {});
       setExtras(t.extra_columns || []);
       setConsequenceMap({});
       setOutcomeMap({});
@@ -92,13 +99,15 @@ export default function RcmImportModal({ position, onClose, onImported }) {
     mapping,
     consequence_map: consequenceMap,
     outcome_map: outcomeMap,
-    extra_columns: extrasOn ? extras : [],
-  }), [mapping, consequenceMap, outcomeMap, extras, extrasOn]);
+    extra_columns: extrasOn && !plan ? extras : [],
+  }), [mapping, consequenceMap, outcomeMap, extras, extrasOn, plan]);
 
   // Failure mode isn't required here: a plain plan (a task on each row, no failure modes yet)
   // imports as tasks on the position, to link to failure modes later. One of the two is.
-  const fields = useMemo(() => (table?.fields || []).map((f) => (f.id === "mode" ? { ...f, required: false } : f)), [table]);
-  const ready = table && mappingComplete(fields, mapping, ["mode", "task", "causes"]);
+  // A plan: only a task's columns, Task and Interval required.
+  const fields = useMemo(() => (plan ? planFields(table?.fields)
+    : (table?.fields || []).map((f) => (f.id === "mode" ? { ...f, required: false } : f))), [table, plan]);
+  const ready = table && mappingComplete(fields, mapping, plan ? null : ["mode", "task", "causes"]);
 
   // Live preview from the server (debounced) whenever the mapping changes.
   useEffect(() => {
@@ -132,7 +141,7 @@ export default function RcmImportModal({ position, onClose, onImported }) {
     }
   };
 
-  const summary = preview ? importSummary(preview.counts) : null;
+  const summary = preview ? (plan ? planSummary(preview.counts) : importSummary(preview.counts)) : null;
   const canImport = ready && preview && !busy && preview.ok && !summary.nothing;
 
   let footer;
@@ -165,21 +174,37 @@ export default function RcmImportModal({ position, onClose, onImported }) {
   }
 
   return (
-    <Modal title={`Import a worksheet onto “${clip(position.name)}”`}
+    <Modal title={plan ? `Import maintenance plan onto “${clip(position.name)}”` : `Import a worksheet onto “${clip(position.name)}”`}
            className="modal-xl" locked={busy} onClose={onClose} footer={footer}>
       {step === "file" && (
         <div className="fit-step">
-          <p className="muted-line mt-0">
-            An FMEA or RCM worksheet with one row per failure mode — columns like Function,
-            Functional failure, Failure mode, Effects, Consequence, Task and Interval. Blank
-            function / failure cells carry down from the row above, as in most worksheets. Or an
-            existing maintenance plan, one task per row with no failure modes yet.
-          </p>
-          <p className="muted-line">
-            It's added to {clip(position.name)}'s RCM. Nothing there is changed or removed: a function or
-            functional failure with the same words is used as it is, and failure modes already there are left
-            alone, so importing the same file again adds nothing.
-          </p>
+          {plan ? (
+            <>
+              <p className="muted-line mt-0">
+                The maintenance plan you have, one task per row — columns like Task, Interval and
+                Interval unit, and optionally Task ID, Trade and Labour hours.
+              </p>
+              <p className="muted-line">
+                Each task is added to {clip(position.name)}, ready to link to the failure modes it prevents on
+                the RCM tab. Nothing there is changed or removed: a task with the same Task ID (or, without one,
+                the same name) is left as it is, so importing the same file again adds nothing.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="muted-line mt-0">
+                An FMEA or RCM worksheet with one row per failure mode — columns like Function,
+                Functional failure, Failure mode, Effects, Consequence, Task and Interval. Blank
+                function / failure cells carry down from the row above, as in most worksheets. For a
+                maintenance plan with no failure modes yet, use Import maintenance plan… on the Maintenance tab.
+              </p>
+              <p className="muted-line">
+                It's added to {clip(position.name)}'s RCM. Nothing there is changed or removed: a function or
+                functional failure with the same words is used as it is, and failure modes already there are left
+                alone, so importing the same file again adds nothing.
+              </p>
+            </>
+          )}
           {busy && <p className="hint">Reading the file…</p>}
           <div className="dropzone" onClick={() => fileRef.current?.click()}
                onDragOver={(e) => e.preventDefault()}
@@ -187,7 +212,7 @@ export default function RcmImportModal({ position, onClose, onImported }) {
             <span className="dz-big">Drop an Excel workbook or a CSV file here or <strong>click to browse</strong></span>
             <span className="dz-hint">.xlsx or .csv</span>
             <input ref={fileRef} type="file" accept={WORKSHEET_ACCEPT} hidden
-                   aria-label="Worksheet file"
+                   aria-label={plan ? "Maintenance plan file" : "Worksheet file"}
                    onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />
           </div>
         </div>
@@ -204,14 +229,19 @@ export default function RcmImportModal({ position, onClose, onImported }) {
       {step === "map" && table && (
         <div className="fit-step">
           <p className="muted-line m-0">
-            <b>{table.sheet}</b> · {table.n_rows.toLocaleString("en-AU")} rows. Map Failure mode, or Task for
-            a plain maintenance plan: a row with a task and no failure mode becomes a task on {clip(position.name)},
-            ready to link to a failure mode. A missing Function or Functional failure column puts everything under “Imported”.
+            {plan ? (
+              <><b>{table.sheet}</b> · {table.n_rows.toLocaleString("en-AU")} rows. Map Task and Interval: each row
+              with a task becomes a task on {clip(position.name)}. A row with no interval is left out.</>
+            ) : (
+              <><b>{table.sheet}</b> · {table.n_rows.toLocaleString("en-AU")} rows. Map Failure mode, or Task for
+              a plain maintenance plan: a row with a task and no failure mode becomes a task on {clip(position.name)},
+              ready to link to a failure mode. A missing Function or Functional failure column puts everything under “Imported”.</>
+            )}
           </p>
           <SheetColumnMapper fields={fields} columns={table.columns} mapping={mapping}
                              onChange={setMapping} rows={table.rows} />
 
-          {unmapped.length > 0 && (
+          {!plan && unmapped.length > 0 && (
             <div className="xl-extras">
               <Checkbox className="ds-check" checked={extrasOn} onChange={(e) => setExtrasOn(e.target.checked)}
                         label={<span>
@@ -231,7 +261,8 @@ export default function RcmImportModal({ position, onClose, onImported }) {
           )}
 
           {previewError && <div className="error">{previewError}</div>}
-          {preview && (
+          {preview && plan && <PositionResult preview={preview} summary={summary} name={position.name} plan />}
+          {preview && !plan && (
             <>
               <ValueMap title="Consequence values" items={preview.values.consequence} choices={CONSEQUENCES}
                         map={consequenceMap} setMap={setConsequenceMap} />
@@ -284,7 +315,7 @@ const clip = (text, max = 60) => (String(text || "").length > max ? `${String(te
 
 // What the worksheet adds to the position (the preview: nothing written yet),
 // what's there already, and any rows in error (then nothing can be added).
-function PositionResult({ preview, summary, name }) {
+function PositionResult({ preview, summary, name, plan = false }) {
   const notes = [...(preview.notes || []), ...(preview.warnings || [])];
   return (
     <div className="xl-summary" data-testid="rcm-import-result">
@@ -296,7 +327,7 @@ function PositionResult({ preview, summary, name }) {
       {summary.there.length > 0 && (
         <p className="xl-dim">Already there, left as they are: {summary.there.join(" · ")}.</p>
       )}
-      {preview.functions.length > 0 && (
+      {!plan && preview.functions.length > 0 && (
         <ul className="xl-tree">
           {preview.functions.slice(0, 4).map((f, i) => (
             <li key={i}>
@@ -317,7 +348,7 @@ function PositionResult({ preview, summary, name }) {
       )}
       {preview.tasks?.length > 0 && (
         <>
-          <p className="m-0">Tasks with no failure mode (link each to one on the RCM tab):</p>
+          <p className="m-0">{plan ? "Tasks (link each to its failure modes on the RCM tab):" : "Tasks with no failure mode (link each to one on the RCM tab):"}</p>
           <ul className="xl-tree" data-testid="rcm-import-tasks">
             {preview.tasks.slice(0, 6).map((t) => (
               <li key={t.row}>

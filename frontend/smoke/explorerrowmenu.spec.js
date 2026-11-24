@@ -14,7 +14,7 @@
 //
 // With SMOKE_SHOTS_DIR set, it also saves screenshots there (for the pull request).
 import { test, expect, open, expectHealthy } from "./health.js";
-import { phoneTree } from "./explorer.js";
+import { phoneTree, subItem } from "./explorer.js";
 import { choose, expectChosen, optionLabels } from "./select.js";
 
 const M = "/api/maintenance";
@@ -247,10 +247,12 @@ test("the Maintenance tab: Package the tasks… on a position's menu opens in th
   await expect(addRow).toHaveCount(0);
   await trow(`Menu circulation ${tag}`).locator(".tp-nm").click({ button: "right" });
   let menu = rowMenu(page, `Menu circulation ${tag}`);
-  await expect(menu.getByRole("menuitem", { name: "Package the tasks…" })).toBeVisible();
+  // Package the tasks… is under More › (with Import maintenance plan…).
+  const pack = await subItem(page, menu, "More", "Package the tasks…");
+  await expect(pack).toBeVisible();
   await shot(page, "rowmenu-5-maintenance-row-menu-1440");
   // It opens in the table area, beside the tree: no dialog.
-  await menu.getByRole("menuitem", { name: "Package the tasks…" }).click();
+  await pack.click();
   await expect(packaging).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(packaging.getByRole("list", { name: "Packages to make" }).getByRole("listitem")).toHaveCount(1);
@@ -276,9 +278,10 @@ test("the Maintenance tab: Package the tasks… on a position's menu opens in th
   await expect(addRow).toHaveCount(0);
   await trow(`Menu circulation ${tag}`).getByRole("button", { name: /^Actions for / }).click();
   menu = rowMenu(page, `Menu circulation ${tag}`);
-  await expect(menu.getByRole("menuitem", { name: "Package the tasks…" })).toBeVisible();
+  const packPhone = await subItem(page, menu, "More", "Package the tasks…");
+  await expect(packPhone).toBeVisible();
   await shot(page, "rowmenu-7-maintenance-row-menu-400");
-  await menu.getByRole("menuitem", { name: "Package the tasks…" }).click();
+  await packPhone.click();
   await expect(packaging).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);

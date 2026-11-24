@@ -7,6 +7,7 @@
 //
 // With SMOKE_SHOTS_DIR set, it also saves screenshots there (for the pull request).
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
+import { subItem } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -61,7 +62,10 @@ test("a higher position gets the whole position menu on Maintenance and RCM; Foc
   let menu = page.getByRole("menu").first();
   await expect(menu).toBeVisible();
   const s = await expectPositionMenu(menu);
-  expect(s).toEqual(expect.arrayContaining(["Add task…", "Open in", "Package the tasks…"]));
+  expect(s).toEqual(expect.arrayContaining(["Add task…", "Open in", "More"]));
+  // Package the tasks… and Import maintenance plan… fold under More ›.
+  await expect(await subItem(page, menu, "More", "Package the tasks…")).toBeVisible();
+  await expect(await subItem(page, menu, "More", "Import maintenance plan…")).toBeVisible();
   await shot(page, "maintenance-top-position-menu-1440");
 
   // Focus ›: What (tasks, packages), a line, Depth (as deep as House goes: 4); the labels aren't items.

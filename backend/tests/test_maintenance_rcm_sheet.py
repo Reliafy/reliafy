@@ -825,3 +825,33 @@ def test_a_plan_with_no_failure_mode_column_needs_a_task_column(m):
     assert any("no interval" in w and "row 3" in w for w in out["warnings"])
     with pytest.raises(Invalid):
         rcm_sheet.run(m, pid, table, {"mapping": {"interval": "Interval"}}, dry_run=True)
+
+
+PLAN_FIELDS = ("task", "interval", "interval_unit", "outcome", "task_ref", "trade", "labour_hours")
+
+
+def _plan_options(table):
+    """What the Maintenance tab's Import maintenance plan… sends: only a task's columns mapped."""
+    options = rcm_sheet.default_options(table)
+    return {**options, "extra_columns": [], "mapping": {k: v for k, v in options["mapping"].items() if k in PLAN_FIELDS}}
+
+
+def test_a_plan_import_maps_only_task_columns_so_every_row_is_a_task(m):
+    """The Maintenance tab's import of a mixed sheet: the Failure mode column isn't mapped,
+    so all three rows become plain tasks and nothing goes into the RCM."""
+    rows = [list(r) for r in PLAN_ROWS]
+    rows[2][8:12] = ["Provide power", "No spark", "Plug electrodes worn", "Operational"]
+    table = rcm_sheet.read_table(_csv(PLAN_HEADER, rows), "mixed.csv")
+    pid = m.create_position("Power module")["id"]
+    out = rcm_sheet.run(m, pid, table, _plan_options(table), dry_run=False)
+    assert out["ok"], out["errors"]
+    assert (out["counts"]["plain_tasks"], out["counts"]["modes"]) == (3, 0)
+    assert not _rcm(m, pid)["functions"]
+
+
+def test_a_plan_with_no_tasks_says_so_in_task_words(m):
+    rows = [[*r[:2], "", *r[3:]] for r in PLAN_ROWS]
+    table = rcm_sheet.read_table(_csv(PLAN_HEADER, rows), "empty.csv")
+    pid = m.create_position("Power module")["id"]
+    with pytest.raises(Exception, match="No tasks found"):
+        rcm_sheet.run(m, pid, table, _plan_options(table), dry_run=True)
