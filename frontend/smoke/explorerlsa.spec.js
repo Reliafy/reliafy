@@ -7,6 +7,7 @@
 // design has What it needs too (no packaging there), and its links stay on the product's page.
 // At 400 px nothing scrolls sideways. Each test makes its own small plant through the API.
 import { test, expect, open, expectHealthy, postOk } from "./health.js";
+import { subItem } from "./explorer.js";
 
 const M = "/api/maintenance";
 const SHOTS = process.env.SMOKE_SHOTS_DIR || "";
@@ -43,7 +44,8 @@ test("Package the tasks… on a level makes every draft; each package sits where
   await open(page, `/asset-register/explorer?arrange=positions&root=${set.id}&sel=${set.id}&tab=maintenance`);
   await expect(nameRow(page, `Battery ${tag}`)).toBeVisible();
   await nameRow(page, `Genset ${tag}`).first().locator(".tp-nm").click({ button: "right" });
-  await page.getByRole("menu").getByRole("menuitem", { name: "Package the tasks…" }).click();
+  // Package the tasks… is under More › (with Import maintenance plan…).
+  await (await subItem(page, page.getByRole("menu").first(), "More", "Package the tasks…")).click();
   const packaging = page.locator(".pk-packaging");
   await expect(packaging.locator(".pk-prow")).toHaveCount(2);
   await shot(page, "lsa-package-drafts");
