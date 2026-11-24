@@ -1,4 +1,4 @@
-// The Data section's upload (New dataset): "Split into datasets by" saves one
+// The Data section's upload (New dataset): "Group by" saves one
 // sheet of three equipment classes as three datasets, each named by its
 // class, with the rows left out said in the list. No columns are mapped here;
 // each dataset links to its own page, where it is fitted.
@@ -21,8 +21,8 @@ test("split one sheet into a dataset per equipment class from the Data page", as
   });
   await expect(dialog.getByText("plant.csv")).toBeVisible();
   // Off by default: one dataset, as before.
-  const pick = dialog.getByRole("combobox", { name: "Split into datasets by" });
-  await expect(pick).toContainText("no split");
+  const pick = dialog.getByRole("combobox", { name: "Group by" });
+  await expect(pick).toContainText("no grouping");
   await expect(dialog.getByRole("button", { name: "Create dataset" })).toBeVisible();
 
   await pick.click();

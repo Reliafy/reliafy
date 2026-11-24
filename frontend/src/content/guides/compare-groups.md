@@ -28,7 +28,7 @@ Open the dataset under [Data](/data) and press **Compare groups** at the
 top of the page. The panel on the right asks for:
 
 - **Time column**: the time to failure or removal. It starts at the dataset's own x (the column its reading uses for time), else a column named like a time (hours, cycles); check it before you compare.
-- **Split by**: the column that names each unit's group.
+- **Group by**: the column that names each unit's group.
 - **Failed or still running?**: the column that says which units failed and
   which are still running. A status column the data has (say *Status*, with
   *Failed* and *Removed, OK*) is picked for you, and each of its values gets
@@ -40,7 +40,7 @@ top of the page. The panel on the right asks for:
   running, just as when you fit a competing-risks model.
 - **Unit**, and an optional **Window** (more on that shortly).
 
-Press **Compare**. The sample *Valve seal life vs. temperature & load* split by
+Press **Compare**. The sample *Valve seal life vs. temperature & load* grouped by
 `load` gives:
 
 > load 0.5 lasts longer: log-rank p = 0.02; on average 306 hours more over the

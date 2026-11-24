@@ -195,7 +195,7 @@ dataset's page, on its **Measurements** tab, and feed a
 
 A sheet often holds more than one kind of thing: transformers, coal mills and
 boiler feed pumps, each row naming its class in a column. Once the file is
-chosen, pick that column in **Split into datasets by**. Each value becomes its
+chosen, pick that column in **Group by**. Each value becomes its
 own dataset, named by the value (*Transformer*, *Coal mill*). If you already
 have a dataset with that name, the file's name is added (*Transformer – plant*).
 

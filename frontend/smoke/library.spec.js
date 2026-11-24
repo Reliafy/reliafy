@@ -280,7 +280,7 @@ test("an upload split into datasets goes into a library, from Data and from the 
   await page.getByRole("button", { name: "New dataset" }).first().click();
   const dialog = page.getByRole("dialog");
   await dialog.locator('input[type="file"]').setInputFiles({ name: `sites ${tag}.csv`, mimeType: "text/csv", buffer: Buffer.from(sheet) });
-  await dialog.getByRole("combobox", { name: "Split into datasets by" }).click();
+  await dialog.getByRole("combobox", { name: "Group by" }).click();
   await page.getByRole("option", { name: "Site", exact: true }).click();
   await choose(dialog.getByRole("combobox", { name: "Also add to library" }), "new");
   await dialog.getByRole("textbox", { name: "New library's name" }).fill(`Sites ${tag}`);

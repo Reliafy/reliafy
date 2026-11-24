@@ -180,7 +180,7 @@ export default function CompareGroups({ dataset, splitBy, onClose }) {
       </div>
       {about && (
         <p className="muted-line cg-about">
-          Split the data by a column (supplier, site, design revision) to see whether one group lasts
+          Group the data by a column (supplier, site, design revision) to see whether one group lasts
           longer. Nothing is fitted: each group gets its Kaplan–Meier curve, the log-rank test says whether
           the difference is real, and the average life over a common window (RMST) says by how much.
         </p>
@@ -207,7 +207,7 @@ export default function CompareGroups({ dataset, splitBy, onClose }) {
           ) : (
             !error && (
               <p className="cg-empty muted-line">
-                {loading ? "Comparing…" : "Choose how to split the data, then Compare."}
+                {loading ? "Comparing…" : "Choose how to group the data, then Compare."}
               </p>
             )
           )}
@@ -219,7 +219,7 @@ export default function CompareGroups({ dataset, splitBy, onClose }) {
             <Select value={timeCol} onChange={setTimeCol} options={colOptions} />
           </label>
           <label className="calc-t">
-            <span>Split by</span>
+            <span>Group by</span>
             <Select value={groupCol} onChange={setGroupCol} options={colOptions} />
           </label>
           <label className="calc-t">
@@ -249,8 +249,8 @@ export default function CompareGroups({ dataset, splitBy, onClose }) {
           {modeCol && (
             <p className="muted-line cg-read-as">
               {groupCol === modeCol
-                ? "Split by groups of units (a site, a supplier), not by the failure mode. "
-                : "Compare splits the units into groups and compares each mode across them. "}
+                ? "Group by something the units share (a site, a supplier), not by the failure mode. "
+                : "Compare puts the units into groups and compares each mode across them. "}
               To see the failure modes side by side for the whole data,{" "}
               <Link to={`/models/new?dataset=${encodeURIComponent(dataset.id)}`}>fit by failure mode</Link>.
             </p>
