@@ -5069,7 +5069,8 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
             for o in fm["outcomes"]:
                 if o["outcome"] in SCHEDULED_OUTCOMES and o.get("task_id") not in live:
                     continue  # its task has gone: the member goes with it
-                members.append({"outcome": o["outcome"]} | ({"task_id": o["task_id"]} if o.get("task_id") else {}))
+                members.append({"outcome": o["outcome"]} | ({"task_id": o["task_id"]} if o.get("task_id") else {})
+                               | ({"evidence": o["evidence"]} if o.get("evidence") else {}))
         elif fm["outcome"] in SCHEDULED_OUTCOMES:
             own = fm.get("task_id") if fm.get("task_id") in live else (tasks[0]["id"] if tasks else None)
             # With no task of its own yet, a task of its kind is the decision's; another kind can't join a
@@ -5078,8 +5079,12 @@ class Maintenance(SignalOps, ProgressionOps, ProductOps, TreeDeleteOps, RcmDelet
                        else [] if outcome == fm["outcome"] else [{"outcome": fm["outcome"]}])
         else:
             members = [{"outcome": fm["outcome"]}]
+        shared = fm.get("evidence") or None
+        if shared and members and members[0].get("task_id") and not fm.get("outcomes"):
+            # A plain decision's evidence is its task's working: it stays that task's, never the new one's.
+            members[0]["evidence"], shared = shared, None
         members.append({"outcome": outcome, "task": name, "interval": interval, "interval_unit": unit})
-        decision = {"outcome": members[0]["outcome"], "evidence": fm.get("evidence") or None,
+        decision = {"outcome": members[0]["outcome"], "evidence": shared,
                     "outcomes": members} | ({"rtf_basis": fm["rtf_basis"]} if fm.get("rtf_basis") else {})
         before = live
         try:

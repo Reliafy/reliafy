@@ -899,6 +899,54 @@ def _fits(outcome: str, evidence: dict, fetch) -> bool:
     return True
 
 
+def task_evidence(decision: dict | None, task_id: str | None) -> dict:
+    """The evidence one task's interval rests on ({type, id, ...}, or {}): a combination member's
+    own; else the decision's, for a plain decision or the decision's own task (its first member).
+    Records from before each task kept its own working (Nov 2026) hold the first task's on the
+    decision, so another member of a combination never reads it as its own."""
+    if not decision:
+        return {}
+    shared = decision.get("evidence") or {}
+    members = [o for o in decision.get("outcomes") or [] if isinstance(o, dict)]
+    if not task_id or not members:
+        return shared
+    mine = next((o for o in members if o.get("task_id") == task_id), None)
+    if mine is None:
+        return {}
+    if (mine.get("evidence") or {}).get("id"):
+        return mine["evidence"]
+    own_task = decision.get("task_id") or members[0].get("task_id")
+    return shared if task_id == own_task else {}
+
+
+def with_task_evidence(decision: dict, task_id: str, evidence: dict) -> dict:
+    """The decision body (for decide) that makes ``evidence`` one combination member's own (the member
+    whose task is ``task_id``), every other member keeping its own. Evidence an older record holds on
+    the decision (its first task's, see task_evidence) moves onto that task's member, so linking one
+    task's working never takes away another's."""
+    members = decision.get("outcomes") or []
+    shared = decision.get("evidence") or None
+    own_task = decision.get("task_id") or (members[0].get("task_id") if members else None)
+
+    def ev(o):
+        if o.get("task_id") == task_id:
+            return evidence
+        if o.get("evidence"):
+            return {k: v for k, v in o["evidence"].items() if k in ("type", "id", "window")}
+        if shared and o.get("task_id") and o.get("task_id") == own_task:
+            return {k: v for k, v in shared.items() if k in ("type", "id", "window")}
+        return None
+
+    body = {"outcome": members[0]["outcome"], "evidence": None,
+            "outcomes": [{"outcome": o["outcome"]} | ({"task_id": o["task_id"]} if o.get("task_id") else {})
+                         | ({"evidence": ev(o)} if ev(o) else {})
+                         | ({"on_found": o["on_found"]} if o.get("on_found") else {})
+                         for o in members]}
+    if decision.get("rtf_basis"):
+        body["rtf_basis"] = decision["rtf_basis"]
+    return body
+
+
 def _resolve_member(member: dict, decision: dict, fetch) -> dict:
     """One member of a combination checked as a decision of its own: its own
     evidence, else the decision's (when it fits this member). A redesign is

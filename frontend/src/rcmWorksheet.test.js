@@ -5,7 +5,7 @@ import {
   addableOutcomes, cardLineText, decisionCardLines, decisionRows, decisionWithMember, decisionWithoutMember, memberEvidenceText,
   COLUMN, COLUMNS, DEFAULT_COLUMNS, FUNCTION_MAX, NAME_COLUMN, functionCount, buildRcmDisplay, checkValue, chipCounts, computeFilter,
   insideWords, intervalText, loadPrefs, savePrefs, siblingOrder, decisionBody, decisionText, hasTask, isCombination, memberEvidenceLine, memberLine, modeCounts, moreTasks, rowText, tasksOf,
-  tasksTip, LEVEL_OF, decisionWithMemberEvidence, taskRowWords, taskKindText, checkLabel, checkCounts, TO_LOOK_AT } from "./rcmWorksheet.js";
+  tasksTip, LEVEL_OF, decisionWithMemberEvidence, taskRowWords, taskKindText, checkLabel, checkCounts, TO_LOOK_AT, taskEvidence, decisionWithTaskEvidence } from "./rcmWorksheet.js";
 
 // A house pool pump's RCM, as the server sends it back (decisions resolved).
 const RCM = [
@@ -513,4 +513,24 @@ test("an interval far from its cost optimum reads amber words, not Contradicted"
   assert.equal(c.contradicted, 0);
   assert.deepEqual(checkCounts({ sum: { ...c, supported: 0 } }), [{ kind: "differs", n: 1, label: "interval differs" }]);
   assert.ok(TO_LOOK_AT.has("shorter_than_evidence") && TO_LOOK_AT.has("longer_than_evidence"));
+});
+
+// Each task keeps its own working: "Use" on one task of a combination never replaces another's.
+test("taskEvidence and decisionWithTaskEvidence keep each task's working its own", () => {
+  const pf = { type: "strategy_analysis", id: "pf1" };
+  const repl = { type: "strategy_analysis", id: "or1" };
+  // An older record: the check's P-F working on the decision, the replacement with none.
+  const d = { outcome: "on_condition", task_id: "tCheck", evidence: pf,
+    outcomes: [{ outcome: "on_condition", task_id: "tCheck" }, { outcome: "fixed_interval", task_id: "tChange" }] };
+  assert.deepEqual(taskEvidence(d, "tCheck"), pf);
+  assert.equal(taskEvidence(d, "tChange"), null); // never the check's
+  const body = decisionWithTaskEvidence(d, "tChange", repl);
+  assert.equal(body.evidence, undefined);
+  assert.deepEqual(body.outcomes.map((o) => [o.task_id, o.evidence?.id]), [["tCheck", "pf1"], ["tChange", "or1"]]);
+  // Again on the check, from the new shape: the replacement's stays.
+  const d2 = { ...d, evidence: null, outcomes: body.outcomes };
+  const again = decisionWithTaskEvidence(d2, "tCheck", { type: "strategy_analysis", id: "pf2" });
+  assert.deepEqual(again.outcomes.map((o) => o.evidence?.id), ["pf2", "or1"]);
+  // A plain decision: its one task's is the decision's.
+  assert.deepEqual(decisionWithTaskEvidence({ outcome: "on_condition", task_id: "t1", interval: 60, interval_unit: "hours" }, "t1", pf).evidence, pf);
 });

@@ -841,12 +841,10 @@ def history_rate(rows: list[dict], mode_text: str = "") -> Optional[dict]:
 
 def _evidence_for(decision: dict, task_id: Optional[str]) -> dict:
     """The evidence a task's interval rests on: its own member's in a combination of tasks
-    (each member keeps its own), else the decision's."""
-    if task_id:
-        for member in decision.get("outcomes") or []:
-            if isinstance(member, dict) and member.get("task_id") == task_id and (member.get("evidence") or {}).get("id"):
-                return member["evidence"]
-    return decision.get("evidence") or {}
+    (each member keeps its own; the decision's stands only for its own task), else the decision's."""
+    from backend.maintenance.rcm_decisions import task_evidence
+
+    return task_evidence(decision, task_id)
 
 
 def starting_inputs(mode: dict, rows: list[dict], fetch, attached: list | None = None,

@@ -193,8 +193,12 @@ def _member(decision: dict | None, task_id: str) -> dict | None:
 
 
 def _evidence_of(decision: dict | None, task_id: str) -> dict:
-    holder = _member(decision, task_id)
-    return (holder or {}).get("evidence") or ((decision or {}).get("evidence") if holder is not None else None) or {}
+    """The task's own evidence (rcm_decisions.task_evidence); {} for a task the decision doesn't name."""
+    from backend.maintenance.rcm_decisions import task_evidence
+
+    if _member(decision, task_id) is None:
+        return {}
+    return task_evidence(decision, task_id)
 
 
 # ---- reading a task --------------------------------------------------------------------
@@ -692,7 +696,8 @@ def use(m, db, owners, hidden, owner_id: str, task_id: str, failure_mode_id: str
 
 def _link_evidence(m, mode_id: str, task_id: str, evidence: dict, Invalid) -> tuple[bool, str | None]:
     """Make ``evidence`` the mode's evidence for this task (replacing what it had: the user chose
-    to use this answer). A combination's member takes it on the member."""
+    to use this answer). A combination's member takes it on the member; every other task keeps its
+    own (rcm_decisions.with_task_evidence)."""
     fm = m.rcm_mode(mode_id)
     decision = fm.get("decision")
     if not decision:
@@ -701,16 +706,10 @@ def _link_evidence(m, mode_id: str, task_id: str, evidence: dict, Invalid) -> tu
     if members:
         if not any(o.get("task_id") == task_id for o in members):
             return False, "The task isn't one of this failure mode's decided tasks."
-        body = {"outcome": members[0]["outcome"], "evidence": None,
-                "outcomes": [{"outcome": o["outcome"]} | ({"task_id": o["task_id"]} if o.get("task_id") else {})
-                             | ({"evidence": evidence} if o.get("task_id") == task_id
-                                else {"evidence": o["evidence"]} if o.get("evidence") else {})
-                             | ({"on_found": o["on_found"]} if o.get("on_found") else {})
-                             for o in members]}
-        if decision.get("rtf_basis"):
-            body["rtf_basis"] = decision["rtf_basis"]
+        from backend.maintenance.rcm_decisions import with_task_evidence
+
         try:
-            m.decide_failure_mode(mode_id, decision=body)
+            m.decide_failure_mode(mode_id, decision=with_task_evidence(decision, task_id, evidence))
         except Invalid as err:
             return False, str(err)
         return True, None
