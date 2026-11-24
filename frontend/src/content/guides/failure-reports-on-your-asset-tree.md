@@ -103,6 +103,45 @@ under the facts, and the card for the current stage is open.
 A closed, rejected or no-fault-found report can be reopened at any stage; its sign-off stays in
 the history. Photos can be added to a report as they can to a work order.
 
+## Rank what fails most
+
+On a position's **History** tab, switch **Reports · Ranking** to **Ranking**. It
+counts every failure at that position and everything inside it (on a
+product's design, on every item built from it) over the **last 12 months**,
+or **All**, or your own **Dates**, and ranks them:
+
+- **Group by** — **Position** (each position just below the one you opened; on
+  a product, each unit built), **Part** (part number, else item class) or
+  **Failure mode**.
+- **Rank by** — **Failures** (the count), **Failure rate** (per 1,000
+  operating hours), **Downtime** or **Cost**.
+
+A failure is a failure report (not rejected) or a failure recorded in the
+maintenance history (an item removed for a failure, found failed at an
+inspection, or repaired for a failure mode). A logged failure within 14 days of
+a report at the same position, with the same failure mode or none, is the same
+failure and is counted once. **No fault found** is shown beside each row but is
+never counted as a failure.
+
+Each row gives its operating hours, its rate with a **90% two-sided range**
+(exact Poisson), and how many failures it would have had at the pooled rate of
+everything there, given its hours, with the chance of seeing this many (or this
+few) by chance alone: *"21 failures where 8.9 would be expected at the rate of
+everything here pooled; this many or more would happen by chance less than 1
+time in 1,000."* With fewer than three failures (and fewer than three expected)
+it says the count is too few to tell apart from chance. The ranking never
+calls anything good or bad: you decide what the numbers mean.
+
+Operating hours come from each position's duty (its operating plan), else the
+recent rate of its hours readings, else running all the time (24 h a day); the
+fold **How this is counted** says which. Downtime and cost are each failure's
+figures from its failure mode (or its position's class), set on the RCM tab.
+
+The Pareto chart shows the groups by the measure you ranked by, with the
+cumulative share as a line. **Export CSV** saves the table; a row's **⋯ › Open
+in › Failure reports** shows the reports behind it, and a position's name picks
+it in the tree.
+
 ## What the list tells you over time
 
 Reports at the same position with the same failure mode are the signal that a
