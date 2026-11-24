@@ -130,11 +130,11 @@ export default function FailureRanking({ positionId, version, onOpenReports, onS
                 <th scope="col" className="num">Downtime</th>
                 <th scope="col" className="num">Cost</th>
                 <th scope="col" className="num">Share<span className="fr-rank-sub">cumulative</span></th>
-                <th scope="col">What it means</th>
                 <th scope="col"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
-            <tbody>
+            {/* One tbody a group: its numbers, then what they mean on a line under them (so the table
+                fits a wide screen without its widest cell, and the sentence wraps). */}
               {rows.map((r) => {
                 const filter = reportsFilter(r, data.window);
                 const pos = r.link?.kind === "position" ? r.link.id : null;
@@ -144,7 +144,8 @@ export default function FailureRanking({ positionId, version, onOpenReports, onS
                   pos && pos !== positionId && { id: `pick-${r.key}`, label: "Show in the tree", onSelect: () => onSelect?.(pos) },
                 ].filter(Boolean);
                 return (
-                  <tr key={r.key}>
+                  <tbody key={r.key} className="fr-rank-group">
+                  <tr>
                     <td className="num">{r.rank}</td>
                     <td className="fr-rank-name">
                       {pos && pos !== positionId && onSelect
@@ -159,12 +160,15 @@ export default function FailureRanking({ positionId, version, onOpenReports, onS
                     <td className="num">{downtimeText(r.downtime_hours)}{r.downtime_missing > 0 && r.failures > 0 && <span className="fr-rank-sub">{r.downtime_missing} not set</span>}</td>
                     <td className="num">{moneyText(r.cost)}{r.cost_missing > 0 && r.failures > 0 && <span className="fr-rank-sub">{r.cost_missing} not set</span>}</td>
                     <td className="num">{shareText(r.share)}<span className="fr-rank-sub">{shareText(r.cumulative_share)}</span></td>
-                    <td className="fr-rank-means">{r.sentence}</td>
                     {actions.length ? <RowActions item={{ name: r.name }} actions={actions} /> : <td />}
                   </tr>
+                  <tr className="fr-rank-means-row">
+                    <td />
+                    <td colSpan={9} className="fr-rank-means">{r.sentence}</td>
+                  </tr>
+                  </tbody>
                 );
               })}
-            </tbody>
           </table>
         </div>
         <Fold title="How this is counted">
