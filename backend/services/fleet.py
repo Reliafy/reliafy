@@ -1245,9 +1245,12 @@ def spares_answer(opts: dict, method: str, model, ages, rates, periods: int, lab
     split = None
     planned_in_hold = 0.0  # planned replacements in the hold's window (already in the year's demand)
 
+    running = int(np.count_nonzero(rates > 0))
     if method == "renewals" and opts.get("_replace_at"):
         events = fleet_strategy.simulate(model, ages, rates, horizon, float(opts["_replace_at"]))
         demand = [spares.Demand.from_samples(spares.window_demand(events, a, b) * per) for a, b in bounds]
+        fails = ~np.asarray(events["planned"], dtype=bool)
+        _wait_in_runs(demand[:periods], events, bounds, per, running, repairable, fails=fails, exact=False)
         hi = int(np.searchsorted(events["t"], float(periods), side="left"))
         planned = np.asarray(events["planned"][:hi], dtype=float)
         split = float(planned.sum()) * per / max(events["sims"], 1)
@@ -1258,6 +1261,10 @@ def spares_answer(opts: dict, method: str, model, ages, rates, periods: int, lab
     elif method == "renewals":
         events = _renewal_events(model, ages, rates, horizon)
         demand = [spares.Demand.from_samples(spares.window_demand(events, a, b) * per) for a, b in bounds]
+        # A pool's waits are exact for one constant rate, the same for each item; a shortfall is
+        # counted run by run, so it is exact (given the runs) for any life.
+        alike = spares.constant_hazard(model) is not None and np.unique(rates[rates > 0]).size <= 1
+        _wait_in_runs(demand[:periods], events, bounds, per, running, repairable, exact=alike or not repairable)
         basis = f"From {events['sims']:,} simulated runs, counting replacements that fail again."
     elif method == "single":
         clock = _ItemClock(model, ages, rates, Z)
@@ -1289,13 +1296,26 @@ def spares_answer(opts: dict, method: str, model, ages, rates, periods: int, lab
                     cache[x] = cum(x).sum() if x > 0 else 0.0
             means.append(max(0.0, cache[b] - cache[a]))
         demand = [spares.Demand.from_pmf(spares.poisson_pmf(mu), per) for mu in means]
+        for k in range(periods):
+            a, b = bounds[k]
+            grid = np.array([cum(x) - cum(a) for x in np.linspace(a, b, 5)])  # (5 times, items)
+            units = int(np.count_nonzero(grid[-1] > 0))
+            scale = max(float(np.abs(grid).max(initial=0.0)), 1e-300)
+            up = grid[:, grid[-1] > 0]
+            alike = up.size == 0 or float(np.abs(up - up[:, :1]).max()) <= 1e-9 * scale
+            steady = alike and (up.size == 0 or float(np.abs(up[:, 0] - up[-1, 0] * np.linspace(0, 1, 5)).max())
+                                <= 1e-9 * scale)
+            mu = means[k]
+            demand[k].with_waiting(spares.Waiting(
+                units, per, exact=steady if repairable else alike,
+                short=lambda st, mu=mu, units=units: spares.poisson_short(mu, units, st, per)))
         basis = "Poisson, given the model: every repeat failure is counted."
     year = demand.pop()
     protects = demand[:periods]
     leads = demand[periods:] if lead_len is not None else [None] * periods
     now = spares.answer(protects[0], leads[0], opts.get("stock"), level, opts.get("unit_cost"))
     year_out = _year_answer(year, now, opts.get("stock"), periods, label, split, repairable, planned_in_hold)
-    plan = [{"period": k + 1, "hold": protects[k].quantile(level),
+    plan = [{"period": k + 1, "hold": protects[k].hold(level, repairable),
              "reorder_at": leads[k].quantile(level) if leads[k] is not None else None,
              "expected_demand": protects[k].mean} for k in range(periods)]
     # The headline is for a window starting now; when a later one needs more
@@ -1315,6 +1335,22 @@ def spares_answer(opts: dict, method: str, model, ages, rates, periods: int, lab
             **({"hold_rising": rising} if rising else {}),
             "summary": spares.sentence(now, level, window, repairable=repairable, review=review > 0,
                                        rising=words)}
+
+
+def _wait_in_runs(demand, events, bounds, per: float, units: int, repairable: bool, *, fails=None,
+                  exact: bool) -> None:
+    """Each window's units waiting for a spare, from simulated runs: a pool's ``units`` items, or a
+    shortfall counted run by run (a unit down once the stock is used up fails no more)."""
+    t = events["t"]
+    for d, (a, b) in zip(demand, bounds):
+        lo, hi = np.searchsorted(t, [a, b], side="left")
+        if repairable:
+            d.with_waiting(spares.Waiting(units, per, exact=exact))
+            continue
+        sim, item = events["sim"][lo:hi], events["item"][lo:hi]
+        down = None if fails is None else fails[lo:hi]
+        d.with_waiting(spares.Waiting(units, per, exact=exact, short=lambda st, sim=sim, item=item, down=down:
+                                      spares.runs_short(sim, item, per, events["sims"], st, down)))
 
 
 def _year_answer(year, now: dict, stock, periods: int, label: str, planned, repairable: bool,

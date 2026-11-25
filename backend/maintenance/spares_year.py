@@ -750,12 +750,14 @@ def class_spares(m: Maintenance, name: str, positions: list[dict], periods: int,
         }
         level = inp["service_level"]
         protect = [spares.Demand.from_samples(engine.window(events, w, k * days, k * days + inp["window_days"]))
+                   .with_waiting(engine.waiting(events, w, units, pid, k * days, k * days + inp["window_days"],
+                                                inp["repairable"]))
                    for k in range(periods)]
         lead = None if inp["repairable"] else [
             spares.Demand.from_samples(engine.window(events, w, k * days, k * days + inp["lead_time_days"]))
             for k in range(periods)]
         now = spares.answer(protect[0], lead[0] if lead else None, have, level, pt.get("unit_cost"))
-        plan = [{"start": starts[k], "hold": protect[k].quantile(level),
+        plan = [{"start": starts[k], "hold": protect[k].hold(level, inp["repairable"]),
                  "reorder_at": lead[k].quantile(level) if lead else None, "expected_demand": protect[k].mean}
                 for k in range(periods)]
         if inp["repairable"]:
