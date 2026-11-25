@@ -173,6 +173,31 @@ def window(events: dict, weights: np.ndarray, start: float, end: float, kind: in
     return np.bincount(events["sim"][lo:hi], weights=w, minlength=events["sims"]).astype(float)
 
 
+def waiting(events: dict, weights: np.ndarray, units: list[dict], key, start: float, end: float,
+            pool: bool = False) -> spares.Waiting:
+    """How the units using part ``key`` wait for it over [start, end) days: a shortfall counted run
+    by run (a unit down once the stock is used up fails no more), or a pool's units for its
+    reweighting. A pool's is exact for alike units on one constant rate with no planned jobs using
+    the part; a shortfall's for any lives with none (a planned job left undone keeps its unit
+    running on the old part, which the runs don't follow)."""
+    qty = [float((u.get("fail_parts") or {}).get(key, 0.0)) for u in units]
+    users = [u for u, q in zip(units, qty) if q > 0]
+    per = float(np.mean([q for q in qty if q > 0])) if users else 1.0
+    t = events["t"]
+    lo, hi = np.searchsorted(t, [start, end], side="left")
+    planned = bool(np.any((events["kind"][lo:hi] == 1) & (weights[lo:hi] > 0)))
+    if pool:
+        rates = {round(spares.constant_hazard(u["dist"]) or -1.0, 12) if u.get("dist") is not None else -1.0
+                 for u in users}
+        alike = (not planned and len({q for q in qty if q > 0}) <= 1 and -1.0 not in rates and len(rates) <= 1
+                 and len({float(u.get("per_day") or 0.0) for u in users}) <= 1)
+        return spares.Waiting(len(users), per, exact=alike)
+    sim, unit, w = events["sim"][lo:hi], events["unit"][lo:hi], weights[lo:hi]
+    fails = events["kind"][lo:hi] == 0
+    return spares.Waiting(len(users), per, exact=not planned,
+                          short=lambda st: spares.runs_short(sim, unit, w, events["sims"], st, fails))
+
+
 def _q(values: np.ndarray, q: float) -> float:
     return float(np.quantile(values, q, method="inverted_cdf")) if values.size else 0.0
 
@@ -237,7 +262,8 @@ def answer_part(events: dict, units: list[dict], key, *, horizon_days: float, le
     fails = window(events, weights, 0.0, horizon_days, kind=0)
     planned = window(events, weights, 0.0, horizon_days, kind=1)
     protect_days = lead_days + review_days
-    protect = spares.Demand.from_samples(window(events, weights, 0.0, protect_days))
+    protect = spares.Demand.from_samples(window(events, weights, 0.0, protect_days)).with_waiting(
+        waiting(events, weights, units, key, 0.0, protect_days))
     lead = spares.Demand.from_samples(window(events, weights, 0.0, lead_days))
     ans = spares.answer(protect, lead, usable, level)
     hold = ans["hold"]
@@ -255,6 +281,7 @@ def answer_part(events: dict, units: list[dict], key, *, horizon_days: float, le
                         "failures": protect.mean - in_window},
         "hold": hold, "reorder_at": ans["reorder_at"], "usable_now": usable,
         "risk_at_stock": ans.get("risk_at_stock"), "expected_short": ans.get("expected_short"),
+        **({"waiting": ans["waiting"]} if "waiting" in ans else {}),
         "risk_curve": ans.get("risk_curve"),
         "order_now": order_now, "arrives": _day(today, lead_days) if order_now > 0 else None,
         "order_by": by,

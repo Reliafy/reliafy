@@ -102,7 +102,11 @@ def test_hold_matches_a_hand_computed_poisson_case(m):
     assert st["hold"] == poisson.ppf(0.95, mu) == 4 and st["reorder_at"] == 4  # no review: one for one
     assert st["expected_demand"] == pytest.approx(mu, rel=0.05)
     assert st["risk_at_stock"] == pytest.approx(poisson.sf(1, mu), abs=0.03)
-    assert st["expected_short"] == pytest.approx(sum((k - 1) * poisson.pmf(k, mu) for k in range(2, 40)), abs=0.06)
+    # Short, a unit waiting for a spare failing no more: 0.778 by the closed form (it was 0.965, the
+    # demand going on as if every waiting pump had been fixed), counted run by run in the simulation.
+    assert st["expected_short"] == pytest.approx(spares.poisson_short(mu, 3, 1), abs=0.04)
+    assert st["expected_short"] < sum((k - 1) * poisson.pmf(k, mu) for k in range(2, 40)) - 0.1
+    assert st["waiting"]["units"] == 3 and st["waiting"]["exact"]
     assert st["to_order"] == 3 and st["below_reorder"]
     assert st["hold_cost"] == 3600 and st["to_order_cost"] == 2700
     assert st["summary"].startswith("Hold 4: a 95% chance of no stock-out over the lead time (60 days).")
@@ -326,7 +330,10 @@ def test_a_repairable_fleet_is_poisson():
     assert "lead time and review period (3 months)" in out["summary"]
     pool = fleet_service.spares_answer({"repairable": True, "turnaround": 1}, "repairable", Hpp(), ages, rates, 4,
                                        "months")
-    assert pool["hold"] == poisson.ppf(0.95, 2) and pool["reorder_at"] is None and "pool" in pool["summary"]
+    # Two units waiting for a pool unit can't fail again: a pool of 4 now covers 95% (it was 5, Poisson(2)'s
+    # quantile, the demand going on while units waited; test_spares_waiting checks the chain).
+    assert pool["hold"] == 4 < poisson.ppf(0.95, 2) and pool["reorder_at"] is None and "pool" in pool["summary"]
+    assert pool["waiting"] == {"units": 2, "exact": True, "note": spares.WAITING_EXACT}
     assert fleet_service.spares_answer({}, "repairable", Hpp(), ages, rates, 4, "months")["status"] == \
         "needs_lead_time"
 
