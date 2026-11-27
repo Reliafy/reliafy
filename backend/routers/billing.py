@@ -20,6 +20,7 @@ from backend.auth import get_current_user
 from backend.db import get_session
 from backend.services import assistant as assistant_service
 from backend.services import billing as billing_service
+from backend.services import lifecycle_emails
 from backend.services import mcp_switch
 from backend.services import stripe_prices
 
@@ -363,13 +364,18 @@ def _handle_event(session, event) -> None:
 def _on_paid_plan(session, uid: str, was: str, plan: str) -> None:
     """A user who has just become Pro (not a renewal, a replay or a plan
     already held) turns the MCP connector on if it's off — MCP is part of
-    Pro. Never fails the webhook."""
+    Pro — and gets the welcome-to-Pro email (once per account, ever; sent
+    off the request thread). Never fails the webhook."""
     if plan != "pro" or was == "pro":
         return
     try:
         mcp_switch.turn_on_for_first_pro(session, uid)
     except Exception:  # noqa: BLE001
         logger.exception("Couldn't turn the MCP connector on for a new Pro subscriber")
+    try:
+        lifecycle_emails.maybe_send_pro_welcome(session, uid)
+    except Exception:  # noqa: BLE001
+        logger.exception("Couldn't start the Pro welcome email")
 
 
 def _subscriber(session, customer_id, subscription_id):
